@@ -22,13 +22,29 @@
   --shadow: 0 1px 3px rgba(31,34,48,0.09);
   --maxw: 960px;
 }
-/* per-skill palettes */
-.theme-home  { --accent:#2f3457; --accent-soft:#e0e2f0; --highlight:#ecedf5; --code-bg:#ecedf5; }
-.theme-c     { --accent:#2f5b8a; --accent-soft:#d8e6f2; --highlight:#e9f1f8; --code-bg:#e9f1f8; }
-.theme-shell { --accent:#2f6b4a; --accent-soft:#d6ece0; --highlight:#e7f4ec; --code-bg:#e7f4ec; }
-.theme-cpp   { --accent:#5a3f8f; --accent-soft:#e4dcf3; --highlight:#efe9f8; --code-bg:#efe9f8; }
-.theme-oops  { --accent:#1f6f74; --accent-soft:#d4ebec; --highlight:#e6f4f4; --code-bg:#e6f4f4; }
-.theme-ds    { --accent:#9a5a1e; --accent-soft:#f2e2d0; --highlight:#f8efe4; --code-bg:#f8efe4; }
+/* per-skill palettes: each sets only --accent; the soft tints are derived below */
+.theme-home        { --accent:#2f3457; }
+.theme-c           { --accent:#2f5b8a; }
+.theme-shell       { --accent:#2f6b4a; }
+.theme-cpp         { --accent:#5a3f8f; }
+.theme-oops        { --accent:#1f6f74; }
+.theme-ds          { --accent:#9a5a1e; }
+.theme-algo        { --accent:#a3384c; }
+.theme-db          { --accent:#3f4fa0; }
+.theme-net         { --accent:#1c6f8c; }
+.theme-os          { --accent:#6a3fa0; }
+.theme-concurrency { --accent:#b05a20; }
+.theme-linux       { --accent:#45526e; }
+.theme-arch        { --accent:#7a5230; }
+.theme-build       { --accent:#5f6a2c; }
+.theme-lld         { --accent:#93466e; }
+.theme-sysd        { --accent:#2b6b57; }
+.theme-git         { --accent:#b34733; }
+[class*="theme-"] {
+  --accent-soft: color-mix(in srgb, var(--accent) 20%, #ffffff);
+  --highlight:   color-mix(in srgb, var(--accent) 9%, #ffffff);
+  --code-bg:     color-mix(in srgb, var(--accent) 9%, #ffffff);
+}
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -108,6 +124,10 @@ p { margin: 0.7rem 0; }
 .skill-grid p { margin: 0.35rem 0 0; font-size: 0.88rem; color: var(--text-soft); font-family: Arial, sans-serif; }
 .skill-grid .status { display: inline-block; margin-top: 0.6rem; font-size: 0.72rem; font-family: Arial, sans-serif; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.16rem 0.5rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
 .skill-grid .status.soon { background: #ececf0; color: var(--text-soft); }
+.group-h { font-family: Arial, sans-serif; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-soft); border: none; padding: 0; margin: 2.2rem 0 0.5rem; }
+#home-groups > .group-h:first-child { margin-top: 1.4rem; }
+.planned-list { margin: 1rem 0 0; padding-left: 1.35rem; }
+.planned-list li { margin: 0.4rem 0; color: var(--text-soft); font-family: Arial, sans-serif; font-size: 0.94rem; }
 
 /* two-column topic layout */
 .layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 1.8rem; align-items: start; }
@@ -248,7 +268,7 @@ footer.site-footer { text-align: center; font-family: Arial, sans-serif; font-si
 
 <header class="site-header">
   <div class="header-inner">
-    <a href="#/" class="brand">Leo Interview Preparation Notebook<span class="sub">C &middot; Shell &middot; C++ &middot; OOPS &middot; Data Structures</span></a>
+    <a href="#/" class="brand">Leo Interview Preparation Notebook<span class="sub">Languages &middot; CS fundamentals &middot; Systems &middot; Design</span></a>
     <nav class="crumbs" id="crumbs"></nav>
   </div>
 </header>
@@ -270,63 +290,16 @@ footer.site-footer { text-align: center; font-family: Arial, sans-serif; font-si
     </ul>
   </div>
 
-  <ul class="skill-grid">
-    <li>
-      <a class="skill-link" href="#/c">C Concepts</a>
-      <p>Pointers, memory, storage classes, structs &amp; unions, the preprocessor, undefined behaviour.</p>
-      <span class="status">Ready &middot; 12 topics</span>
-    </li>
-    <li>
-      <a class="skill-link" href="#/shell">Shell Scripting</a>
-      <p>Bash scripting, quoting, conditionals, loops, text processing, traps and exit codes.</p>
-      <span class="status soon">Coming soon</span>
-    </li>
-    <li>
-      <a class="skill-link" href="#/cpp">C++</a>
-      <p>RAII, copy/move, templates, the STL, smart pointers, virtual dispatch, modern C++.</p>
-      <span class="status soon">Coming soon</span>
-    </li>
-    <li>
-      <a class="skill-link" href="#/oops">OOPS</a>
-      <p>Four pillars, polymorphism, inheritance, SOLID, design patterns, composition vs inheritance.</p>
-      <span class="status soon">Coming soon</span>
-    </li>
-    <li>
-      <a class="skill-link" href="#/ds">Data Structures</a>
-      <p>Big-O, lists, stacks, queues, hash tables, trees, heaps, graphs, sorting, recursion.</p>
-      <span class="status soon">Coming soon</span>
-    </li>
-  </ul>
+  <div id="home-groups"></div>
 
   <p class="install-hint">Tip: open this page in Chrome on your phone and choose &ldquo;Add to Home screen&rdquo; to install it as an offline app.</p>
 </section>
 
-<!-- ============================== SKILL: C ============================== -->
-<section class="view" id="v-skill-c">
-  <h1>C Concepts</h1>
-  <p class="subtitle">Twelve topics covering the language mechanics that interviewers actually probe.</p>
-  <ol class="topic-list" id="list-c"></ol>
-</section>
-
-<section class="view" id="v-skill-shell">
-  <h1>Shell Scripting</h1>
-  <p class="subtitle">Coming in the next build.</p>
-  <p><a href="#/">&larr; Back to home</a></p>
-</section>
-<section class="view" id="v-skill-cpp">
-  <h1>C++</h1>
-  <p class="subtitle">Coming in a later build.</p>
-  <p><a href="#/">&larr; Back to home</a></p>
-</section>
-<section class="view" id="v-skill-oops">
-  <h1>OOPS</h1>
-  <p class="subtitle">Coming in a later build.</p>
-  <p><a href="#/">&larr; Back to home</a></p>
-</section>
-<section class="view" id="v-skill-ds">
-  <h1>Data Structures</h1>
-  <p class="subtitle">Coming in a later build.</p>
-  <p><a href="#/">&larr; Back to home</a></p>
+<!-- ============================== SKILL LANDING (generic, filled by JS) ============================== -->
+<section class="view" id="v-skill">
+  <h1 id="skill-title"></h1>
+  <p class="subtitle" id="skill-sub"></p>
+  <div id="skill-body"></div>
 </section>
 
 <!-- ============================== C TOPICS ============================== -->
@@ -1913,22 +1886,42 @@ The C standard only guarantees that all-bits-zero is a valid representation for 
 </main>
 
 <footer class="site-footer">
-  Leo Interview Preparation Notebook &middot; personal study reference &middot; content from standard references (K&amp;R, ISO C, comp.lang.c FAQ) &amp; common interview material
+  Leo Interview Preparation Notebook &middot; personal study reference &middot; content compiled from standard references &amp; common technical-interview material
 </footer>
 
 <script>
 (function () {
   "use strict";
 
-  // ---- skill + topic registry (order defines sidebar / topic-list order) ----
+  // ---- skill registry ----------------------------------------------------
   var SKILLS = {
-    c:     { name: "C Concepts",       ready: true },
-    shell: { name: "Shell Scripting",  ready: false },
-    cpp:   { name: "C++",              ready: false },
-    oops:  { name: "OOPS",             ready: false },
-    ds:    { name: "Data Structures",  ready: false }
+    c:           { name: "C Concepts",                  blurb: "Pointers, memory, storage classes, structs &amp; unions, the preprocessor, undefined behaviour." },
+    cpp:         { name: "C++",                         blurb: "RAII, copy/move, templates &amp; metaprogramming, the STL, smart pointers, virtual dispatch, modern C++." },
+    shell:       { name: "Shell Scripting",             blurb: "Bash scripting, quoting, conditionals, loops, functions, text processing, traps, getopts, portability." },
+    oops:        { name: "OOPS",                        blurb: "Four pillars, polymorphism, inheritance, SOLID, the GoF design patterns, composition vs inheritance." },
+    ds:          { name: "Data Structures",             blurb: "Lists, stacks, queues, hash tables, trees, heaps, graphs, tries, union-find, segment trees." },
+    algo:        { name: "Algorithms",                  blurb: "Sorting &amp; searching, recursion &amp; backtracking, greedy, divide &amp; conquer, DP, graph algorithms, complexity." },
+    db:          { name: "DBMS &amp; SQL",              blurb: "Indexes, joins, transactions &amp; ACID, isolation levels, normalization, query plans, locking &amp; MVCC." },
+    net:         { name: "Computer Networks",           blurb: "TCP/IP, the handshake, HTTP/1.1 vs 2 vs 3, TLS, DNS, sockets, congestion control, the OSI model." },
+    os:          { name: "Operating Systems",           blurb: "Processes vs threads, scheduling, virtual memory &amp; paging, context switches, deadlock, IPC, syscalls." },
+    concurrency: { name: "Concurrency &amp; Multithreading", blurb: "Races, mutex/condvar/semaphore, atomics &amp; memory ordering, lock-free, thread pools, deadlock." },
+    linux:       { name: "Linux / Systems Programming", blurb: "File descriptors, fork/exec/wait, signals, epoll, mmap, pipes &amp; FIFOs, /proc, strace/gdb/perf." },
+    arch:        { name: "Computer Architecture",       blurb: "Cache hierarchy &amp; locality, branch prediction, pipelining, alignment, endianness, memory model, SIMD." },
+    build:       { name: "Build &amp; Toolchain",       blurb: "Preprocess/compile/assemble/link, static vs dynamic libraries, the ABI, symbols, Make/CMake, sanitizers." },
+    lld:         { name: "Low-Level Design",            blurb: "Designing an LRU cache, parking lot, rate limiter; SOLID applied, UML, patterns in practice." },
+    sysd:        { name: "System Design",               blurb: "Load balancing, caching, sharding, replication, CAP, queues, idempotency, back-of-envelope estimation." },
+    git:         { name: "Git",                         blurb: "Merge vs rebase, the reflog, bisect, cherry-pick, resolving conflicts, branching models." }
   };
 
+  // home-page grouping (order shown top to bottom)
+  var GROUPS = [
+    ["Languages",       ["c", "cpp", "shell"]],
+    ["CS fundamentals", ["oops", "ds", "algo", "db", "net"]],
+    ["Systems",         ["os", "concurrency", "linux", "arch", "build"]],
+    ["Design &amp; tools", ["lld", "sysd", "git"]]
+  ];
+
+  // ---- built topics: [slug, title, blurb]. Order defines sidebar order. --
   var TOPICS = {
     c: [
       ["types-storage",       "Data Types, Storage Classes & Type Qualifiers", "int vs int32_t, static/extern, const vs volatile, integer promotion."],
@@ -1943,8 +1936,230 @@ The C standard only guarantees that all-bits-zero is a valid representation for 
       ["bit-manipulation",    "Bit Manipulation Tricks",                       "Masks, set/clear/toggle/test, shifts, count bits, power-of-two checks."],
       ["undefined-behaviour", "Undefined Behaviour & Classic Pitfalls",        "Signed overflow, strict aliasing, sequence points, OOB, use-after-free."],
       ["stdlib-fileio",       "File I/O & Standard Library Essentials",        "FILE* vs fd, buffering, fread/fwrite, str* funcs, errno, format strings."]
+    ]
+  };
+
+  // ---- planned topics for skills not yet written (titles only) ----------
+  var PLANNED = {
+    cpp: [
+      "C vs C++, references vs pointers",
+      "Classes, constructors, destructors & RAII",
+      "Copy semantics & the Rule of 3/5/0",
+      "Move semantics & rvalue references",
+      "Inheritance & virtual dispatch (the vtable)",
+      "Templates & generic programming",
+      "Template metaprogramming (SFINAE, concepts, CRTP)",
+      "STL containers & iterators",
+      "STL algorithms & lambdas",
+      "Smart pointers & ownership",
+      "Operator overloading",
+      "Exception handling & the safety guarantees",
+      "constexpr & compile-time evaluation",
+      "Concurrency: std::thread, atomics, memory order",
+      "The ODR, linkage & name lookup (ADL)",
+      "Modern C++: a C++11 -> C++23 tour"
     ],
-    shell: [], cpp: [], oops: [], ds: []
+    shell: [
+      "Shell basics, the shebang & the execution model",
+      "Variables, quoting & parameter expansion",
+      "Conditionals: test, [ ] and [[ ]]",
+      "Loops: for, while, until",
+      "Functions & positional parameters",
+      "Arrays & string manipulation",
+      "I/O redirection, pipes & here-docs",
+      "Command substitution & arithmetic",
+      "Exit status, set -euo pipefail & trap",
+      "Text processing: grep, sed, awk, cut, sort, uniq",
+      "find, xargs & process management",
+      "getopts, debugging, portability & gotchas"
+    ],
+    oops: [
+      "The four pillars",
+      "Class vs object & access specifiers",
+      "Constructors, destructors & object lifecycle",
+      "Inheritance types & the diamond problem",
+      "Compile-time vs runtime polymorphism",
+      "Overloading vs overriding",
+      "Abstract classes & interfaces",
+      "Association, aggregation & composition",
+      "SOLID principles",
+      "Coupling, cohesion & the Law of Demeter",
+      "Creational patterns (Singleton, Factory, Builder, Prototype)",
+      "Structural patterns (Adapter, Decorator, Proxy, Facade, Composite)",
+      "Behavioural patterns (Observer, Strategy, State, Command, Iterator)",
+      "Anti-patterns & refactoring"
+    ],
+    ds: [
+      "Complexity analysis & Big-O",
+      "Arrays & dynamic arrays",
+      "Linked lists (singly, doubly, circular)",
+      "Stacks & queues (incl. deque, monotonic)",
+      "Hash tables & collision handling",
+      "Trees & binary search trees",
+      "Balanced trees (AVL, red-black, B-tree)",
+      "Heaps & priority queues",
+      "Graphs: representation & traversal",
+      "Union-find (disjoint set)",
+      "Tries & string structures",
+      "Segment trees & Fenwick trees",
+      "Sorting algorithms",
+      "Recursion, backtracking & intro to DP"
+    ],
+    algo: [
+      "Asymptotic analysis & recurrences",
+      "Sorting algorithms in depth",
+      "Binary search & the answer-space trick",
+      "Two pointers & sliding window",
+      "Recursion & backtracking",
+      "Greedy algorithms",
+      "Divide & conquer",
+      "Dynamic programming patterns",
+      "Graph traversal (BFS/DFS) & applications",
+      "Shortest paths (Dijkstra, Bellman-Ford, Floyd-Warshall)",
+      "Minimum spanning tree & topological sort",
+      "String matching (KMP, Rabin-Karp, Z)",
+      "Bit manipulation & math tricks",
+      "NP-completeness & intractability"
+    ],
+    db: [
+      "The relational model & keys",
+      "Normalization (1NF to BCNF)",
+      "SQL query fundamentals",
+      "Joins in depth",
+      "Indexes (B-tree, hash, covering)",
+      "Query planning & optimization",
+      "Transactions & ACID",
+      "Isolation levels & the anomalies",
+      "Locking, MVCC & deadlocks",
+      "Aggregation, window functions & CTEs",
+      "Schema design & constraints",
+      "SQL vs NoSQL & the CAP trade-off"
+    ],
+    net: [
+      "The OSI & TCP/IP models",
+      "IP addressing, subnets & routing",
+      "TCP: the handshake, flow & congestion control",
+      "UDP & when to use it",
+      "DNS resolution",
+      "HTTP/1.1, HTTP/2 & HTTP/3",
+      "HTTPS & the TLS handshake",
+      "Sockets & the client/server lifecycle",
+      "NAT, firewalls & proxies",
+      "Cookies, sessions & CORS",
+      "WebSockets & long polling",
+      "Debugging latency & throughput"
+    ],
+    os: [
+      "Processes, the PCB & the lifecycle",
+      "Threads vs processes",
+      "CPU scheduling algorithms",
+      "Context switches & mode switches",
+      "Virtual memory & address translation",
+      "Paging, page faults & replacement",
+      "Segmentation & memory protection",
+      "Synchronization primitives",
+      "Deadlock: conditions, prevention, avoidance",
+      "Inter-process communication",
+      "System calls & the kernel boundary",
+      "File systems & I/O",
+      "Demand paging, thrashing & the working set"
+    ],
+    concurrency: [
+      "Threads, races & the critical section",
+      "Mutexes & lock granularity",
+      "Condition variables & monitors",
+      "Semaphores",
+      "Producer-consumer & readers-writers",
+      "Deadlock, livelock & starvation",
+      "Atomics & compare-and-swap",
+      "Memory models & reordering",
+      "Memory ordering (acquire/release/seq-cst)",
+      "Lock-free & wait-free basics",
+      "Thread pools & work queues",
+      "Futures, promises & async",
+      "Common concurrency bugs & tools (TSan)"
+    ],
+    linux: [
+      "The file descriptor model",
+      "open/read/write/close & short reads",
+      "fork, exec & wait",
+      "Process groups, sessions & daemons",
+      "Signals & signal handlers",
+      "Pipes, FIFOs & socketpairs",
+      "I/O multiplexing (select/poll/epoll)",
+      "mmap & shared memory",
+      "File locking & fcntl",
+      "/proc & /sys",
+      "Environment, getopt & exit codes",
+      "Debugging with gdb, strace, ltrace",
+      "Profiling with perf & valgrind"
+    ],
+    arch: [
+      "Number representation & endianness",
+      "The memory hierarchy & caches",
+      "Cache lines, associativity & misses",
+      "Locality & cache-friendly code",
+      "The CPU pipeline & hazards",
+      "Branch prediction & speculation",
+      "Instruction-level parallelism & out-of-order",
+      "Alignment & structure layout",
+      "The hardware memory model & barriers",
+      "SIMD & vectorization",
+      "False sharing & cache coherence (MESI)",
+      "Measuring & reasoning about performance"
+    ],
+    build: [
+      "The C/C++ compilation pipeline",
+      "Translation units & the preprocessor",
+      "Object files, symbols & relocations",
+      "The linker: resolution & ordering",
+      "Static vs dynamic libraries",
+      "The ABI & name mangling",
+      "make & incremental builds",
+      "CMake fundamentals",
+      "Build types, flags & optimization levels",
+      "Sanitizers & static analysis in CI",
+      "Debug symbols, stripping & nm/objdump"
+    ],
+    lld: [
+      "Requirements -> classes -> responsibilities",
+      "SOLID applied to a real design",
+      "UML class & sequence diagrams",
+      "Design a parking lot",
+      "Design an LRU / LFU cache",
+      "Design a rate limiter",
+      "Design an elevator system",
+      "Design a logging library",
+      "Design seat booking (concurrency)",
+      "Thread-safety in LLD (singletons, locks)",
+      "Evolving a design & avoiding over-engineering"
+    ],
+    sysd: [
+      "The interview framework & estimation",
+      "Latency numbers & back-of-envelope math",
+      "Load balancing",
+      "Caching strategies & invalidation",
+      "Database scaling: replication & sharding",
+      "SQL vs NoSQL selection",
+      "The CAP theorem & consistency models",
+      "Message queues & async processing",
+      "Rate limiting & idempotency",
+      "CDNs, blob storage & static content",
+      "Design a URL shortener",
+      "Design a news feed / chat system"
+    ],
+    git: [
+      "The object model (blob / tree / commit)",
+      "The three trees (working / index / HEAD)",
+      "Branches, HEAD & fast-forward",
+      "Merge vs rebase",
+      "Interactive rebase & editing history",
+      "The reflog & recovering lost work",
+      "bisect for regression hunting",
+      "cherry-pick, revert & reset",
+      "Resolving merge conflicts",
+      "Branching models & the PR workflow"
+    ]
   };
 
   // ---- helpers ----
@@ -1959,19 +2174,51 @@ The C standard only guarantees that all-bits-zero is a valid representation for 
     return null;
   }
 
-  // ---- build the topic list on each skill page ----
-  function buildTopicList(skill) {
-    var ol = document.getElementById("list-" + skill);
-    if (!ol || ol.dataset.built) return;
-    var list = TOPICS[skill] || [];
+  function isReady(skill) { return !!(TOPICS[skill] && TOPICS[skill].length); }
+
+  // ---- build the grouped skill grid on the home page ----
+  function renderHome() {
+    var box = document.getElementById("home-groups");
+    if (box.dataset.built) return;
     var html = "";
-    for (var i = 0; i < list.length; i++) {
-      html += '<li><span class="num">' + (i + 1) + '</span><div>' +
-              '<a href="#/' + skill + '/' + list[i][0] + '">' + list[i][1] + '</a>' +
-              '<p>' + list[i][2] + '</p></div></li>';
+    GROUPS.forEach(function (g) {
+      html += '<h2 class="group-h">' + g[0] + '</h2><ul class="skill-grid">';
+      g[1].forEach(function (slug) {
+        var s = SKILLS[slug];
+        var status = isReady(slug)
+          ? '<span class="status">Ready &middot; ' + TOPICS[slug].length + ' topics</span>'
+          : '<span class="status soon">' + ((PLANNED[slug] || []).length || "") + ' topics planned</span>';
+        html += '<li><a class="skill-link" href="#/' + slug + '">' + s.name + '</a>' +
+                '<p>' + s.blurb + '</p>' + status + '</li>';
+      });
+      html += '</ul>';
+    });
+    box.innerHTML = html;
+    box.dataset.built = "1";
+  }
+
+  // ---- fill the generic skill landing page ----
+  function renderSkill(skill) {
+    document.getElementById("skill-title").innerHTML = SKILLS[skill].name;
+    var sub = document.getElementById("skill-sub");
+    var body = document.getElementById("skill-body");
+    if (isReady(skill)) {
+      var list = TOPICS[skill];
+      sub.textContent = list.length + " topics covering the ground interviewers actually probe.";
+      var html = '<ol class="topic-list">';
+      list.forEach(function (t, i) {
+        html += '<li><span class="num">' + (i + 1) + '</span><div>' +
+                '<a href="#/' + skill + '/' + t[0] + '">' + t[1] + '</a>' +
+                '<p>' + t[2] + '</p></div></li>';
+      });
+      body.innerHTML = html + '</ol>';
+    } else {
+      var planned = PLANNED[skill] || [];
+      sub.textContent = "Planned for an upcoming build — here's what it will cover.";
+      var ph = '<ol class="planned-list">';
+      planned.forEach(function (title) { ph += '<li>' + title + '</li>'; });
+      body.innerHTML = ph + '</ol><p style="margin-top:1.3rem"><a href="#/">← Back to home</a></p>';
     }
-    ol.innerHTML = html;
-    ol.dataset.built = "1";
   }
 
   // ---- fill a topic page's sidebar ----
@@ -2020,6 +2267,7 @@ The C standard only guarantees that all-bits-zero is a valid representation for 
 
     // home
     if (!p.skill || !SKILLS[p.skill]) {
+      renderHome();
       show("v-home", "theme-home");
       setCrumbs({});
       window.scrollTo(0, 0);
@@ -2043,8 +2291,8 @@ The C standard only guarantees that all-bits-zero is a valid representation for 
     }
 
     // skill landing page
-    buildTopicList(p.skill);
-    show("v-skill-" + p.skill, "theme-" + p.skill);
+    renderSkill(p.skill);
+    show("v-skill", "theme-" + p.skill);
     setCrumbs(p);
     window.scrollTo(0, 0);
   }

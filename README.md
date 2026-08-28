@@ -3,19 +3,28 @@
 A personal, offline-first quick-reference app for technical interview preparation and
 skill refresh. Single-page PWA, no build step, no dependencies.
 
-Skill areas:
-
-| Skill | Status |
-|-------|--------|
-| C Concepts | ✅ 12 topics |
-| Shell Scripting | ⏳ planned |
-| C++ | ⏳ planned |
-| OOPS | ⏳ planned |
-| Data Structures | ⏳ planned |
-
 Every topic has four blocks: **Notes** (full explanation), **Cheat Sheet** (condensed
 recall), **Q&A** (short self-check pairs), and **Interview Questions** graded
-Basic → Intermediate → Advanced with click-to-reveal answers.
+Basic → Intermediate → Advanced with click-to-reveal answers. No quizzes.
+
+## Roadmap — 16 skill areas
+
+Built one skill at a time, with a review checkpoint after each. The app already shows
+every area's planned topic list on its landing page (`#/<slug>`).
+
+**Languages**
+- ✅ **C Concepts** (`c`) — 12 topics, done
+- ⏳ C++ (`cpp`)
+- ⏳ Shell Scripting (`shell`) — *next*
+
+**CS fundamentals**
+- ⏳ OOPS (`oops`) · Data Structures (`ds`) · Algorithms (`algo`) · DBMS & SQL (`db`) · Computer Networks (`net`)
+
+**Systems**
+- ⏳ Operating Systems (`os`) · Concurrency & Multithreading (`concurrency`) · Linux / Systems Programming (`linux`) · Computer Architecture (`arch`) · Build & Toolchain (`build`)
+
+**Design & tools**
+- ⏳ Low-Level Design (`lld`) · System Design (`sysd`) · Git (`git`)
 
 ## Files
 
@@ -49,13 +58,26 @@ python -m http.server 8080
 4. The app will be live at `https://<you>.github.io/leo-interview/` within a minute.
    PWA install and offline caching work once it is served over HTTPS.
 
-## Adding a skill area (later phases)
+## How the app is wired
 
-1. In `index.html`, fill the placeholder `TOPICS.<skill>` array in the `<script>` with
-   `[slug, title, blurb]` rows.
-2. Add one `<section class="view topic" id="v-<skill>-<slug>">` block per topic, using an
-   existing C topic as the template (sidebar `<nav data-sidebar="<skill>">`, then the four
-   `<details class="section">` blocks).
-3. Flip the skill's card on the home page from `status soon` to `status`.
-4. Bump `CACHE_NAME` in `sw.js`.
-5. Commit.
+All content, styling and routing live in `index.html`. The `<script>` holds three data
+structures:
+
+- `SKILLS` — slug → `{name, blurb}` for every area.
+- `GROUPS` — home-page grouping/order.
+- `TOPICS` — slug → `[[topicSlug, title, blurb], ...]` for **written** skills only.
+- `PLANNED` — slug → `["Topic title", ...]` shown as a preview on skills not yet written.
+
+The home grid and each skill landing page are generated from these; a skill counts as
+"ready" once it has a `TOPICS` entry. Topic pages are static
+`<section class="view topic" id="v-<skill>-<slug>">` blocks; the sidebar and breadcrumb
+are filled by JS.
+
+### Adding the next skill area
+
+1. Move its list from `PLANNED.<skill>` into `TOPICS.<skill>` as `[slug, title, blurb]` rows.
+2. Add one `<section class="view topic" id="v-<skill>-<slug>">` per topic, copying an
+   existing C topic (sidebar `<nav class="sidebar" data-sidebar="<skill>">`, then the four
+   `<details class="section">` blocks: Notes / Cheat Sheet / Q&A / Interview Questions).
+3. Bump `CACHE_NAME` in `sw.js`.
+4. Commit.
