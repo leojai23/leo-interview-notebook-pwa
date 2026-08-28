@@ -32,13 +32,16 @@
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
+html, body { overflow-x: hidden; }
 body {
   margin: 0;
   font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
   background: var(--bg);
   color: var(--text);
   line-height: 1.65;
+  overflow-wrap: break-word;
 }
+img, pre, table { max-width: 100%; }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
@@ -58,6 +61,7 @@ a:hover { text-decoration: underline; }
 }
 .site-header a { color: #fff; }
 .site-header .brand { font-size: 1.1rem; font-weight: bold; letter-spacing: 0.02em; }
+@media (max-width: 480px) { .site-header .brand { font-size: 1rem; } .crumbs { font-size: 0.78rem; } }
 .site-header .brand .sub { display:block; font-family: Arial, sans-serif; font-size: 0.72rem; font-weight: normal; opacity: 0.82; margin-top: 0.12rem; }
 .crumbs { font-size: 0.83rem; font-family: Arial, sans-serif; opacity: 0.95; }
 .crumbs a { text-decoration: underline; }
@@ -106,8 +110,8 @@ p { margin: 0.7rem 0; }
 .skill-grid .status.soon { background: #ececf0; color: var(--text-soft); }
 
 /* two-column topic layout */
-.layout { display: grid; grid-template-columns: 210px 1fr; gap: 1.8rem; align-items: start; }
-@media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+.layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 1.8rem; align-items: start; }
+@media (max-width: 760px) { .layout { grid-template-columns: minmax(0, 1fr); } }
 .sidebar {
   background: var(--bg-panel);
   border: 1px solid var(--border);
