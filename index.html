@@ -3563,6 +3563,1651 @@ It removes the space from <code>IFS</code>, so unquoted expansions split only on
 </section>
 <!-- /TOPIC:shell:getopts-debug -->
 
+<!-- ============================== C++ TOPICS ============================== -->
+<!-- TOPIC:cpp:refs-vs-pointers -->
+<section class="view topic" id="v-cpp-refs-vs-pointers" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>References vs Pointers &amp; C-with-Classes</h1>
+<p class="subtitle">The first thing a C++ interview checks: do you know what a reference actually is.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What a reference is</h3>
+<p>A reference is an <em>alias</em> for an existing object &mdash; another name for the same storage.
+It must be initialised, can never be rebound, and cannot be null (barring UB). The compiler
+usually implements it as a pointer, but semantically it <em>is</em> the object.</p>
+<pre><code><span class="k">int</span> x = 10;
+<span class="k">int</span>&amp; r = x;      <span class="c">// r is x</span>
+r = 20;           <span class="c">// x is now 20</span>
+<span class="k">int</span>&amp; bad;         <span class="c">// error: must be initialised</span>
+
+<span class="k">int</span>* p = &amp;x;      <span class="c">// pointer: separate object holding an address</span>
+p = <span class="k">nullptr</span>;      <span class="c">// can be reseated, can be null</span></code></pre>
+<table>
+<tr><th></th><th>Reference</th><th>Pointer</th></tr>
+<tr><td>Nullable</td><td>No</td><td>Yes</td></tr>
+<tr><td>Reseatable</td><td>No</td><td>Yes</td></tr>
+<tr><td>Must init</td><td>Yes</td><td>No</td></tr>
+<tr><td>Arithmetic</td><td>No</td><td>Yes</td></tr>
+<tr><td>Extra storage</td><td>Often none (optimised)</td><td>Yes (a pointer variable)</td></tr>
+<tr><td>Syntax</td><td><code>obj.member</code></td><td><code>ptr-&gt;member</code></td></tr>
+</table>
+
+<h3>When to use which</h3>
+<ul>
+<li><strong>Pass by <code>const&amp;</code></strong> for non-trivial read-only parameters &mdash; no copy, can't be null, can't be changed.</li>
+<li><strong>Pass by <code>&amp;</code></strong> (non-const) for an out/in-out parameter that always exists.</li>
+<li><strong>Pass by pointer</strong> when "no object" is a valid argument (optional), or when you need to reseat, or for arrays/C APIs.</li>
+<li><strong>Pass by value</strong> for small/cheap types (<code>int</code>, <code>std::string_view</code>) or when the function needs its own copy anyway (then move from it).</li>
+</ul>
+
+<h3>Dangling references</h3>
+<pre><code><span class="k">const</span> std::string&amp; f() {
+    std::string local = <span class="s">"hi"</span>;
+    <span class="k">return</span> local;          <span class="c">// UB: reference to destroyed local</span>
+}
+<span class="k">auto</span>&amp;&amp; r = std::vector&lt;<span class="k">int</span>&gt;{1,2}[0];   <span class="c">// temp vector dies; r dangles</span></code></pre>
+<p>A <code>const&amp;</code> bound to a <em>temporary</em> extends that temporary's lifetime to the reference's
+scope &mdash; but only for the <em>immediate</em> temporary, not sub-objects reached through it.</p>
+
+<h3>C++ vs C, briefly</h3>
+<ul>
+<li>Stronger typing: no implicit <code>void*</code> &rarr; <code>T*</code>; <code>enum</code> is its own type; function prototypes required.</li>
+<li><code>struct</code> and <code>class</code> can have member functions, constructors/destructors, access control (<code>class</code> defaults private, <code>struct</code> public).</li>
+<li><code>new</code>/<code>delete</code> (call ctors/dtors) instead of <code>malloc</code>/<code>free</code>.</li>
+<li>References, function/operator overloading, templates, namespaces, RAII, exceptions, the STL.</li>
+<li><code>nullptr</code> not <code>NULL</code>; <code>bool</code> is built in; <code>//</code> comments (also in C99).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Reference = permanent alias: init required, no rebind, no null, no arithmetic.</li>
+<li>Pointer = object holding an address: nullable, reseatable, supports arithmetic.</li>
+<li>Read-only non-trivial param &rarr; <code>const T&amp;</code>. Optional param &rarr; <code>const T*</code> or <code>std::optional</code>.</li>
+<li>Small/trivially-copyable &rarr; pass by value. Strings you only read &rarr; <code>std::string_view</code>.</li>
+<li>Never return a reference/pointer to a local.</li>
+<li><code>const T&amp;</code> to a temporary extends the temporary's life to the ref's scope (immediate temp only).</li>
+<li><code>T&amp;&amp;</code> is an rvalue reference (see Move Semantics), <em>not</em> "reference to reference".</li>
+<li><code>class</code> members default <code>private</code>; <code>struct</code> default <code>public</code>. Otherwise identical.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Can a reference be null or rebound?</dt>
+<dd>No. It must be bound to a valid object at initialisation and refers to that same object for its whole life. If you need "maybe none" or "point somewhere else later", use a pointer.</dd>
+<dt>Why prefer <code>const std::string&amp;</code> over <code>std::string</code> for a read-only parameter?</dt>
+<dd>It avoids copying the string on every call. <code>const</code> documents and enforces that the function won't modify the caller's object. (For strings specifically, <code>std::string_view</code> is often even better.)</dd>
+<dt>Is a reference an object?</dt>
+<dd>Not observably &mdash; it has no size of its own (<code>sizeof(ref)</code> gives the referent's size), you can't take "the address of the reference" (you get the referent's address), and you can't have an array of references. Implementations typically use a pointer under the hood.</dd>
+<dt>What extends a temporary's lifetime?</dt>
+<dd>Binding it directly to a named <code>const&amp;</code> (or <code>&amp;&amp;</code>) reference. The temporary then lives as long as the reference. This does <em>not</em> apply to a reference returned from a function or to a temporary reached via a member access.</dd>
+<dt>Default access in <code>class</code> vs <code>struct</code>?</dt>
+<dd><code>class</code>: members and base classes are <code>private</code> by default. <code>struct</code>: <code>public</code>. That's the only language difference.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Give three differences between a reference and a pointer.</summary><div class="answer-box">
+A reference must be initialised and can't be reseated or null; a pointer can be uninitialised, reassigned, and null. A pointer supports arithmetic and has its own address/storage; a reference doesn't. Syntax: <code>.</code> vs <code>-&gt;</code>.
+</div></details>
+<details class="answer-reveal"><summary>How do you pass a large object to a function without copying it, read-only?</summary><div class="answer-box">
+By <code>const</code> reference: <code>void f(const BigThing&amp; b)</code>.
+</div></details>
+<details class="answer-reveal"><summary>What's wrong with returning <code>int&amp;</code> to a local variable?</summary><div class="answer-box">
+The local is destroyed when the function returns, so the caller holds a reference to freed stack memory &mdash; undefined behaviour on use.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>When is a pointer parameter the right choice over a reference?</summary><div class="answer-box">
+When "no argument" is meaningful (an optional out-param you can pass <code>nullptr</code> for), when the callee must store or reseat what it's given, when interoperating with a C API, or when passing an array with a separate length. Otherwise a reference is clearer and can't be null.
+</div></details>
+<details class="answer-reveal"><summary>Explain what happens: <code>const std::string&amp; s = std::string("x") + "y";</code></summary><div class="answer-box">
+The <code>+</code> produces a temporary <code>std::string</code>. Binding it to the named <code>const&amp;</code> extends its lifetime to match <code>s</code>'s scope, so using <code>s</code> afterwards is valid. Without the reference (or with <code>auto&amp;&amp;</code> plus a member access) it would be destroyed at the end of the full expression.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>int&amp; f(int&amp; x) { return x; }</code> enable, and what's the risk?</summary><div class="answer-box">
+Returning a reference lets the call be an lvalue: <code>f(a) = 5;</code> assigns to <code>a</code>. It's how <code>operator[]</code> and <code>operator*</code> work. The risk is returning a reference to something that won't outlive the call (a local, or a container element after the container is resized).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why does <code>std::vector&lt;bool&gt;</code> break the "references alias real objects" model?</summary><div class="answer-box">
+It's a space-optimised specialisation that packs bits, so <code>v[i]</code> can't return a real <code>bool&amp;</code> &mdash; it returns a <em>proxy</em> object that behaves like a reference. Consequences: <code>auto x = v[i];</code> deduces the proxy, not <code>bool</code>; <code>bool* p = &amp;v[i];</code> doesn't compile; and generic code written for "container of T" can misbehave. This is the standard example of "don't use <code>vector&lt;bool&gt;</code> when you want a container of bytes-sized bools".
+</div></details>
+<details class="answer-reveal"><summary>Does binding a temporary to a <code>const&amp;</code> member in a constructor extend its lifetime?</summary><div class="answer-box">
+No. Lifetime extension does <em>not</em> apply to reference <em>members</em>: the temporary is destroyed at the end of the constructor, leaving the member dangling. A class that stores a <code>const T&amp;</code> member must be documented as non-owning and the caller must guarantee the referent outlives the object. If you need ownership, store a value or a smart pointer.
+</div></details>
+<details class="answer-reveal"><summary>What is reference collapsing and where does it matter?</summary><div class="answer-box">
+When references-to-references arise through templates or <code>typedef</code>s, they collapse by the rule "<code>&amp;</code> wins": <code>T&amp; &amp;</code>, <code>T&amp;&amp; &amp;</code>, <code>T&amp; &amp;&amp;</code> &rarr; <code>T&amp;</code>; only <code>T&amp;&amp; &amp;&amp;</code> &rarr; <code>T&amp;&amp;</code>. This is the mechanism behind <em>forwarding references</em> (<code>template&lt;class T&gt; void f(T&amp;&amp; x)</code>): an lvalue argument deduces <code>T</code> as <code>U&amp;</code> so <code>T&amp;&amp;</code> collapses to <code>U&amp;</code>, an rvalue deduces <code>U</code> so it stays <code>U&amp;&amp;</code> &mdash; enabling <code>std::forward</code>.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:refs-vs-pointers -->
+
+<!-- TOPIC:cpp:raii -->
+<section class="view topic" id="v-cpp-raii" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Classes, Constructors, Destructors &amp; RAII</h1>
+<p class="subtitle">RAII is the single idea that makes C++ resource management sane. Know it cold.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Object lifetime</h3>
+<p>Construction runs when an object comes into existence (declaration, <code>new</code>, element
+insertion); the destructor runs deterministically when it leaves scope, is <code>delete</code>d, or its
+container is destroyed. This determinism &mdash; unlike GC languages &mdash; is what RAII exploits.</p>
+
+<h3>Member initialisation</h3>
+<pre><code><span class="k">class</span> Widget {
+    <span class="k">int</span> id_;
+    std::string name_;
+    <span class="k">const</span> Config&amp; cfg_;
+<span class="k">public</span>:
+    Widget(<span class="k">int</span> id, std::string name, <span class="k">const</span> Config&amp; c)
+        : id_(id), name_(std::move(name)), cfg_(c) {}   <span class="c">// member init list</span>
+};</code></pre>
+<ul>
+<li>Members are initialised <strong>in declaration order</strong>, not the order in the init list &mdash; compilers warn if they differ.</li>
+<li>Use the init list, not assignment in the body: <code>const</code> members, references, and members without a default ctor <em>must</em> be initialised there; others avoid a default-construct-then-assign.</li>
+<li>Prefer <strong>default member initialisers</strong> (<code>int id_ = 0;</code>) for defaults.</li>
+</ul>
+
+<h3>Special member functions</h3>
+<table>
+<tr><th>Function</th><th>Purpose</th></tr>
+<tr><td>Default constructor</td><td><code>T()</code> &mdash; suppressed once you declare any other ctor.</td></tr>
+<tr><td>Destructor</td><td><code>~T()</code> &mdash; release resources.</td></tr>
+<tr><td>Copy ctor / copy assign</td><td>Value-copy from another <code>T</code>.</td></tr>
+<tr><td>Move ctor / move assign</td><td>Steal resources from an rvalue <code>T</code>.</td></tr>
+</table>
+<p><code>= default</code> asks for the compiler's version; <code>= delete</code> forbids it (e.g. a non-copyable
+handle). Declaring a destructor or copy op suppresses the implicit move ops &mdash; see Rule of 5.</p>
+
+<h3>RAII</h3>
+<p><strong>Resource Acquisition Is Initialisation:</strong> wrap every resource (heap memory, file
+handle, lock, socket, DB transaction) in an object that acquires it in its constructor and
+releases it in its destructor. Then correctness is automatic &mdash; early return, exception,
+or normal exit all run the destructor.</p>
+<pre><code>{
+    std::lock_guard&lt;std::mutex&gt; lk(m);   <span class="c">// lock acquired</span>
+    std::ofstream out(<span class="s">"log.txt"</span>);        <span class="c">// file opened</span>
+    if (bad) <span class="k">return</span>;                     <span class="c">// dtors still run: file closed, mutex unlocked</span>
+    out &lt;&lt; data;
+}                                        <span class="c">// dtors run here on the normal path</span></code></pre>
+<p>Standard RAII types: <code>std::unique_ptr</code>/<code>shared_ptr</code>, <code>lock_guard</code>/<code>unique_lock</code>/<code>scoped_lock</code>,
+<code>fstream</code>, <code>std::vector</code>/<code>string</code>, <code>std::jthread</code>. Roll your own with a small wrapper
+class or <code>std::unique_ptr</code> with a custom deleter.</p>
+
+<h3><code>explicit</code></h3>
+<p>Mark single-argument constructors <code>explicit</code> to stop surprising implicit conversions
+(<code>void f(Widget); f(42);</code> silently building a <code>Widget</code> from <code>42</code>). <code>explicit</code> on
+conversion operators too. Rule of thumb: single-arg ctors are <code>explicit</code> unless you
+deliberately want the conversion (like <code>std::string</code> from <code>const char*</code>).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Dtor runs deterministically at scope exit / <code>delete</code> / container destruction &mdash; the basis of RAII.</li>
+<li>Init members in the <strong>member initialiser list</strong>; they run in <strong>declaration order</strong>.</li>
+<li><code>const</code> members, references, and no-default-ctor members <em>must</em> use the init list.</li>
+<li>Prefer default member initialisers (<code>T x_ = 0;</code>) for simple defaults.</li>
+<li>Declaring <em>any</em> constructor removes the implicit default constructor.</li>
+<li>RAII: acquire in ctor, release in dtor &rarr; exception-safe, leak-free, no manual cleanup.</li>
+<li>Use standard RAII types; never raw <code>new</code>/<code>delete</code>, raw <code>lock</code>/<code>unlock</code>, raw <code>fopen</code>.</li>
+<li><code>explicit</code> on single-argument constructors and conversion operators by default.</li>
+<li><code>= default</code> / <code>= delete</code> to request or forbid a special member.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is RAII in one sentence?</dt>
+<dd>Tie a resource's lifetime to an object's lifetime, so the destructor releases it automatically on every exit path.</dd>
+<dt>In what order are class members constructed?</dt>
+<dd>In the order they are <em>declared</em> in the class, regardless of the order in the constructor's initialiser list. Destructors run in reverse.</dd>
+<dt>Why prefer the member initialiser list to assigning in the constructor body?</dt>
+<dd>Body assignment first default-constructs the member then overwrites it (two steps, and impossible for <code>const</code>/reference/no-default-ctor members). The init list constructs it once with the right value.</dd>
+<dt>What does <code>explicit</code> prevent?</dt>
+<dd>Implicit conversions and copy-initialisation through that constructor/operator, so <code>Widget w = 5;</code> or passing <code>5</code> where a <code>Widget</code> is expected won't silently compile.</dd>
+<dt>When does the compiler stop giving you a default constructor?</dt>
+<dd>As soon as you declare any constructor of your own. Add <code>T() = default;</code> to get it back.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>When does a destructor run for a local object?</summary><div class="answer-box">
+When control leaves the object's scope &mdash; by reaching the closing brace, <code>return</code>, <code>break</code>, or an exception propagating through. Always, on every path.
+</div></details>
+<details class="answer-reveal"><summary>Name three standard RAII types.</summary><div class="answer-box">
+<code>std::unique_ptr</code> / <code>std::shared_ptr</code>, <code>std::lock_guard</code> / <code>std::scoped_lock</code>, <code>std::fstream</code>, <code>std::vector</code> / <code>std::string</code> &mdash; any three.
+</div></details>
+<details class="answer-reveal"><summary>What's the fix for a function that <code>new</code>s an object and might <code>throw</code> before <code>delete</code>?</summary><div class="answer-box">
+Don't use raw <code>new</code>. Hold it in a <code>std::unique_ptr</code> (or a value/container). Its destructor frees the memory whether the function returns normally or via an exception.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Members declared <code>a</code> then <code>b</code>; init list says <code>: b(1), a(b)</code>. What happens?</summary><div class="answer-box">
+<code>a</code> is constructed first (declaration order) using <code>b</code>, which hasn't been initialised yet &mdash; so <code>a</code> gets garbage. Then <code>b</code> is set to 1. The init-list order is misleading; reorder the declarations or don't cross-depend.
+</div></details>
+<details class="answer-reveal"><summary>Write a minimal RAII wrapper for a C <code>FILE*</code>.</summary><div class="answer-box">
+<pre><code><span class="k">class</span> File {
+    FILE* f_;
+<span class="k">public</span>:
+    <span class="k">explicit</span> File(<span class="k">const char</span>* p) : f_(std::fopen(p, <span class="s">"r"</span>)) {
+        <span class="k">if</span> (!f_) <span class="k">throw</span> std::runtime_error(<span class="s">"open"</span>);
+    }
+    ~File() { <span class="k">if</span> (f_) std::fclose(f_); }
+    File(<span class="k">const</span> File&amp;) = <span class="k">delete</span>;
+    File&amp; <span class="k">operator</span>=(<span class="k">const</span> File&amp;) = <span class="k">delete</span>;
+    FILE* get() <span class="k">const</span> { <span class="k">return</span> f_; }
+};</code></pre>
+Or just <code>std::unique_ptr&lt;FILE, decltype(&amp;std::fclose)&gt;</code> with <code>fclose</code> as the deleter.
+</div></details>
+<details class="answer-reveal"><summary>Why should you generally not do real work in a constructor that can't signal failure?</summary><div class="answer-box">
+A constructor has no return value, so the only way to report failure is to <code>throw</code>. If throwing isn't acceptable in your context, the object can end up half-constructed and invalid. Options: throw and let RAII clean up, use a factory function returning <code>std::optional</code>/<code>expected</code>, or a two-phase <code>init()</code> (least preferred &mdash; leaves a zombie state).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What happens if a destructor throws, and what's the rule?</summary><div class="answer-box">
+If a destructor throws while another exception is already propagating (stack unwinding), <code>std::terminate</code> is called &mdash; the program dies. Since C++11 destructors are implicitly <code>noexcept</code>, so a throw from one calls <code>terminate</code> anyway. Rule: destructors must not let exceptions escape. If cleanup can fail (e.g. <code>close()</code> on a buffered file), catch and log inside the destructor, and offer a separate <code>close()</code> method callers can use to handle errors explicitly.
+</div></details>
+<details class="answer-reveal"><summary>Explain the order of operations when an exception is thrown from a constructor's body.</summary><div class="answer-box">
+Any base-class subobjects and data members that were <em>fully constructed</em> before the throw are destroyed, in reverse order. The object's own destructor does <em>not</em> run (the object never finished construction). If the object was being created with <code>new</code>, the matching <code>operator delete</code> is called to free the raw storage. This is why a member that is itself RAII (like a <code>unique_ptr</code>) makes constructor bodies exception-safe for free.
+</div></details>
+<details class="answer-reveal"><summary>You need "run this cleanup on scope exit" without writing a whole class. Options?</summary><div class="answer-box">
+A scope-guard: a small template holding a callable and invoking it in its destructor (<code>ScopeGuard g{[&amp;]{ cleanup(); }};</code>), with a <code>dismiss()</code> to cancel. This is <code>std::experimental::scope_exit</code> / <code>gsl::finally</code> / Boost.ScopeExit, and is standardised as <code>std::scope_exit</code> in C++23's library fundamentals. Useful for C-API resources and rollback logic where a dedicated RAII type would be overkill.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:raii -->
+
+<!-- TOPIC:cpp:rule-of-five -->
+<section class="view topic" id="v-cpp-rule-of-five" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Copy Semantics &amp; the Rule of 3/5/0</h1>
+<p class="subtitle">If you write one of the special members, you probably need to think about all of them.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Shallow vs deep copy</h3>
+<p>The compiler-generated copy constructor and copy assignment do a <em>memberwise</em> copy. For a
+class holding a raw owning pointer that means two objects pointing at the same buffer &mdash; a
+double-free and aliasing bug. You then need a <strong>deep copy</strong> that duplicates the buffer.</p>
+<pre><code><span class="k">class</span> Buf {
+    <span class="k">int</span>* p_; size_t n_;
+<span class="k">public</span>:
+    Buf(<span class="k">const</span> Buf&amp; o) : p_(<span class="k">new int</span>[o.n_]), n_(o.n_) { std::copy(o.p_, o.p_+n_, p_); }
+    Buf&amp; <span class="k">operator</span>=(Buf o) { swap(*<span class="k">this</span>, o); <span class="k">return</span> *<span class="k">this</span>; }  <span class="c">// copy-and-swap</span>
+    ~Buf() { <span class="k">delete</span>[] p_; }
+};</code></pre>
+
+<h3>The rules</h3>
+<table>
+<tr><th>Rule</th><th>Statement</th></tr>
+<tr><td>Rule of 3</td><td>If you define a destructor, copy ctor, or copy assignment, you almost certainly need all three.</td></tr>
+<tr><td>Rule of 5</td><td>C++11: add the move ctor and move assignment to that set.</td></tr>
+<tr><td>Rule of 0</td><td><strong>Best:</strong> design classes that need <em>none</em> of them &mdash; hold resources in RAII members (<code>vector</code>, <code>unique_ptr</code>) so the compiler-generated versions are correct.</td></tr>
+</table>
+
+<h3>copy-and-swap</h3>
+<p>Take the parameter <em>by value</em> (invokes copy or move), then <code>swap</code> with <code>*this</code>. One
+implementation handles both copy and move assignment, is self-assignment safe, and gives the
+strong exception guarantee (the copy happens before any mutation).</p>
+
+<h3>Suppression rules</h3>
+<ul>
+<li>Declaring a destructor or any copy op &rArr; move ops are <strong>not</strong> generated (you silently get copies where you expected moves).</li>
+<li>Declaring a move op &rArr; copy ops are <strong>deleted</strong>.</li>
+<li>So: if you declare one special member, <code>= default</code> or <code>= delete</code> the rest explicitly.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Compiler copy = memberwise (shallow). Raw owning pointer &rarr; you must deep-copy.</li>
+<li>Rule of 3: dtor + copy ctor + copy assign travel together.</li>
+<li>Rule of 5: + move ctor + move assign (C++11).</li>
+<li>Rule of 0: hold resources in RAII members, declare none of the five, let the compiler do it right.</li>
+<li>copy-and-swap: <code>T&amp; operator=(T rhs){ swap(*this,rhs); return *this; }</code> &mdash; covers copy+move, self-assign safe, strong guarantee.</li>
+<li>User-declared dtor/copy &rArr; no implicit moves (perf trap). User-declared move &rArr; copies deleted.</li>
+<li>If you declare one, <code>=default</code>/<code>=delete</code> the others.</li>
+<li>Non-copyable resource handle: <code>T(const T&amp;)=delete; T&amp; operator=(const T&amp;)=delete;</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What's the Rule of 3?</dt>
+<dd>If a class needs a user-defined destructor, copy constructor, or copy-assignment operator, it almost certainly needs all three, because they all manage the same resource.</dd>
+<dt>What is the Rule of 0 and why is it preferred?</dt>
+<dd>Write classes so they need none of the special members &mdash; put each resource in a type that already manages itself (<code>std::vector</code>, <code>std::unique_ptr</code>, <code>std::string</code>). The implicitly generated copy/move/destroy then do the right thing, with less code to get wrong.</dd>
+<dt>Why does copy-and-swap handle self-assignment automatically?</dt>
+<dd>The right-hand side is copied into a by-value parameter <em>first</em>; only then do you swap. Even if <code>&amp;rhs == this</code>, you're swapping with an independent copy, so nothing is corrupted.</dd>
+<dt>You add a destructor to log object destruction. What breaks?</dt>
+<dd>The implicit move constructor and move assignment stop being generated, so operations you expected to move now silently copy &mdash; a performance regression. Add <code>T(T&amp;&amp;) = default; T&amp; operator=(T&amp;&amp;) = default;</code>.</dd>
+<dt>How do you make a class non-copyable but movable?</dt>
+<dd><code>= delete</code> the copy constructor and copy assignment; <code>= default</code> (or define) the move constructor and move assignment. This is exactly what <code>std::unique_ptr</code> does.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does the compiler-generated copy constructor do?</summary><div class="answer-box">
+Copies each base and member subobject from the source &mdash; a memberwise (shallow) copy. Fine for value-like members; wrong for a raw owning pointer.
+</div></details>
+<details class="answer-reveal"><summary>Which five functions does the Rule of 5 cover?</summary><div class="answer-box">
+Destructor, copy constructor, copy assignment, move constructor, move assignment.
+</div></details>
+<details class="answer-reveal"><summary>How do you forbid copying?</summary><div class="answer-box">
+<code>MyClass(const MyClass&amp;) = delete;</code> and <code>MyClass&amp; operator=(const MyClass&amp;) = delete;</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Implement copy-assignment for a class owning an <code>int* data_; size_t n_;</code> without copy-and-swap. What must you handle?</summary><div class="answer-box">
+Guard self-assignment, allocate the new buffer <em>before</em> freeing the old (strong guarantee), copy, then release the old and update pointers/size:
+<pre><code>Buf&amp; <span class="k">operator</span>=(<span class="k">const</span> Buf&amp; o) {
+    <span class="k">if</span> (<span class="k">this</span> == &amp;o) <span class="k">return</span> *<span class="k">this</span>;
+    <span class="k">int</span>* q = <span class="k">new int</span>[o.n_];
+    std::copy(o.data_, o.data_ + o.n_, q);
+    <span class="k">delete</span>[] data_;
+    data_ = q; n_ = o.n_;
+    <span class="k">return</span> *<span class="k">this</span>;
+}</code></pre>
+copy-and-swap does all of this more safely with less code.
+</div></details>
+<details class="answer-reveal"><summary>Why is Rule of 0 not always achievable?</summary><div class="answer-box">
+When you're wrapping a resource with no ready-made RAII type &mdash; an OS handle, a C library object, a resource needing a non-trivial release protocol. Then write one small RAII wrapper (Rule of 5, or <code>unique_ptr</code> with a custom deleter) and let everything else compose it (Rule of 0).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>A class has a <code>std::vector</code> member and a user-declared destructor that does nothing. Performance profile shows copies where moves were expected. Explain and fix.</summary><div class="answer-box">
+The empty user-declared <code>~T() {}</code> suppresses the implicit move constructor/assignment, so <code>T</code> is copy-only; returning one by value or inserting into a container deep-copies the vector. Fix: delete the pointless destructor entirely (best &mdash; back to Rule of 0), or if it must stay, add <code>T(T&amp;&amp;) = default; T&amp; operator=(T&amp;&amp;) = default;</code> (and the copies too, to be explicit).
+</div></details>
+<details class="answer-reveal"><summary>Is a defaulted copy assignment operator always noexcept? Why does it matter?</summary><div class="answer-box">
+No &mdash; if any member's copy assignment can throw (e.g. <code>std::string</code> reallocating), the defaulted one is potentially-throwing. It matters because <code>std::vector</code> and friends use <code>std::move_if_noexcept</code>: if a type's move constructor isn't <code>noexcept</code>, the vector copies instead of moves during reallocation to preserve the strong guarantee. So marking move operations <code>noexcept</code> (when they truly can't throw) is a real performance lever.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:rule-of-five -->
+
+<!-- TOPIC:cpp:move-semantics -->
+<section class="view topic" id="v-cpp-move-semantics" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Move Semantics &amp; rvalue References</h1>
+<p class="subtitle">Transferring ownership instead of copying it &mdash; and what <code>std::move</code> actually does (almost nothing).</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Value categories</h3>
+<ul>
+<li><strong>lvalue</strong> &mdash; has a name / identity, address-of works (<code>x</code>, <code>*p</code>, <code>arr[i]</code>).</li>
+<li><strong>prvalue</strong> &mdash; a pure "value" with no identity (<code>42</code>, <code>a + b</code>, <code>f()</code> returning by value).</li>
+<li><strong>xvalue</strong> &mdash; an "expiring" object, e.g. the result of <code>std::move(x)</code> &mdash; has identity but may be moved from.</li>
+</ul>
+<p><code>T&amp;&amp;</code> is an <em>rvalue reference</em>: it binds to rvalues (prvalues/xvalues) and lets an overload
+"claim" a temporary's guts.</p>
+
+<h3><code>std::move</code> and <code>std::forward</code></h3>
+<pre><code>std::string a = <span class="s">"hello"</span>;
+std::string b = std::move(a);   <span class="c">// move ctor: b steals a's buffer; a is valid-but-unspecified</span></code></pre>
+<p><code>std::move</code> is just a <code>static_cast&lt;T&amp;&amp;&gt;</code> &mdash; it produces no code, it only <em>changes the
+value category</em> so a move overload is selected. Nothing is moved until a move ctor/assignment
+actually runs. <code>std::forward&lt;T&gt;(x)</code> conditionally casts, used with forwarding references to
+preserve the caller's lvalue/rvalue-ness ("perfect forwarding").</p>
+
+<h3>Writing move operations</h3>
+<pre><code>Buf(Buf&amp;&amp; o) <span class="k">noexcept</span>
+    : p_(o.p_), n_(o.n_) { o.p_ = <span class="k">nullptr</span>; o.n_ = 0; }   <span class="c">// leave source destructible</span></code></pre>
+<ul>
+<li>Mark them <code>noexcept</code> &mdash; containers only move (rather than copy) on reallocation if the move can't throw.</li>
+<li>Leave the moved-from object in a <strong>valid but unspecified</strong> state: safe to destroy and to assign to, contents undefined. Don't read its value.</li>
+</ul>
+
+<h3>Copy elision / RVO</h3>
+<p>Returning a local by value doesn't copy <em>or</em> move &mdash; the object is constructed directly in
+the caller's slot (guaranteed for prvalues since C++17, and NRVO for named locals as an
+optimisation). So <code>return std::move(local);</code> is an <strong>anti-pattern</strong>: it disables NRVO
+and forces a move.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>lvalue = named/addressable; prvalue = pure value; xvalue = expiring (from <code>std::move</code>).</li>
+<li><code>std::move(x)</code> = <code>static_cast&lt;T&amp;&amp;&gt;(x)</code>: no runtime cost, just enables a move overload.</li>
+<li>Move ctor/assign: steal the pointers, null out the source, be <code>noexcept</code>.</li>
+<li>Moved-from = valid but unspecified: OK to destroy/reassign, don't rely on the value.</li>
+<li><code>noexcept</code> moves let <code>std::vector</code> move instead of copy on growth (<code>move_if_noexcept</code>).</li>
+<li>Don't <code>return std::move(local)</code> &mdash; it blocks NRVO. Just <code>return local;</code>.</li>
+<li><code>T&amp;&amp;</code> as a <em>deduced template</em> parameter is a forwarding reference; use <code>std::forward&lt;T&gt;</code>.</li>
+<li>Pass-by-value + <code>std::move</code> into a member is a clean "sink" parameter idiom.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does <code>std::move</code> do at runtime?</dt>
+<dd>Nothing. It's a compile-time cast to an rvalue reference. The actual work happens if and when a move constructor or move assignment operator is subsequently called.</dd>
+<dt>What state is a moved-from object left in?</dt>
+<dd>Valid but unspecified: its invariants hold, it can be destroyed and assigned a new value, but you must not assume anything about its contents. Standard-library types are typically left empty.</dd>
+<dt>Why should move operations be <code>noexcept</code>?</dt>
+<dd>Containers like <code>std::vector</code> use <code>std::move_if_noexcept</code> when reallocating: they move elements only if the move constructor is <code>noexcept</code>, otherwise they copy (to keep the strong exception guarantee). A throwing move op silently costs you copies.</dd>
+<dt>Is <code>return std::move(x);</code> a good idea?</dt>
+<dd>No. For a local returned by value, the compiler can elide the copy/move entirely (RVO/NRVO). Wrapping it in <code>std::move</code> turns the return expression into an xvalue that no longer qualifies for NRVO, forcing an actual move. Just <code>return x;</code>.</dd>
+<dt>What's a forwarding (universal) reference?</dt>
+<dd><code>T&amp;&amp;</code> where <code>T</code> is a template parameter deduced from the argument. It binds to both lvalues and rvalues; combined with <code>std::forward&lt;T&gt;</code> it passes the argument on with its original value category intact.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Difference between an lvalue and an rvalue, informally?</summary><div class="answer-box">
+An lvalue has a name and a stable address you can take (<code>x</code>, <code>obj.member</code>). An rvalue is a temporary/literal with no lasting identity (<code>x + 1</code>, <code>42</code>, a by-value function return).
+</div></details>
+<details class="answer-reveal"><summary>What type of reference does <code>std::move(x)</code> yield?</summary><div class="answer-box">
+An rvalue reference (<code>T&amp;&amp;</code>) &mdash; specifically an xvalue &mdash; so overload resolution picks the move constructor/assignment.
+</div></details>
+<details class="answer-reveal"><summary>After <code>auto b = std::move(a);</code> for a <code>std::string a</code>, can you still use <code>a</code>?</summary><div class="answer-box">
+Yes, but only operations with no precondition on its value: destroy it, or assign it a fresh value. Reading its contents is not meaningful (it's typically empty).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Write a "sink" setter that works efficiently for both lvalue and rvalue strings.</summary><div class="answer-box">
+<pre><code><span class="k">void</span> set_name(std::string n) { name_ = std::move(n); }</code></pre>
+Called with an lvalue &rarr; one copy into <code>n</code>, then a move. Called with an rvalue &rarr; one move into <code>n</code>, then a move. Single overload, near-optimal both ways.
+</div></details>
+<details class="answer-reveal"><summary>Why does adding a throwing move constructor sometimes make code slower?</summary><div class="answer-box">
+<code>std::vector</code> reallocation calls <code>move_if_noexcept</code>. If your move ctor isn't <code>noexcept</code>, the vector copies every element instead of moving during each growth, to preserve the strong guarantee if an element operation throws. Marking the move <code>noexcept</code> (when true) restores move-on-grow.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain why <code>template&lt;class T&gt; void wrap(T&amp;&amp; x){ inner(std::forward&lt;T&gt;(x)); }</code> forwards correctly but <code>inner(x)</code> or <code>inner(std::move(x))</code> would not.</summary><div class="answer-box">
+With a forwarding reference, an lvalue argument deduces <code>T = U&amp;</code> (so <code>T&amp;&amp;</code> collapses to <code>U&amp;</code>), an rvalue deduces <code>T = U</code> (<code>T&amp;&amp;</code> stays <code>U&amp;&amp;</code>). Inside, <code>x</code> itself is always an <em>lvalue</em> (it has a name). <code>inner(x)</code> would always pass an lvalue, losing move-ability. <code>inner(std::move(x))</code> would always pass an rvalue, wrongly stealing from an lvalue the caller still owns. <code>std::forward&lt;T&gt;(x)</code> casts back to <code>U&amp;</code> or <code>U&amp;&amp;</code> exactly matching what was passed.
+</div></details>
+<details class="answer-reveal"><summary>When is guaranteed copy elision (C++17) actually guaranteed, versus just NRVO?</summary><div class="answer-box">
+Guaranteed: initialising an object from a <em>prvalue</em> of the same type &mdash; <code>T x = T(args);</code>, <code>return T(args);</code>, passing <code>T(args)</code> by value. There is no temporary at all; the object is built in place. NRVO (returning a <em>named</em> local) is still only a permitted optimisation, not mandatory, and can be defeated by e.g. returning one of several different locals on different paths, or <code>return std::move(local)</code>.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:move-semantics -->
+
+<!-- TOPIC:cpp:virtual-dispatch -->
+<section class="view topic" id="v-cpp-virtual-dispatch" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Inheritance &amp; Virtual Dispatch</h1>
+<p class="subtitle">The vtable, the virtual destructor rule, and object slicing.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>How dynamic dispatch works</h3>
+<p>A class with any <code>virtual</code> function gets a hidden <strong>vptr</strong> pointing at its class's
+<strong>vtable</strong> &mdash; an array of function pointers. A call <code>base_ptr-&gt;draw()</code> reads the vptr,
+indexes the vtable, and calls the most-derived override. Cost: one extra indirection and a
+non-inlinable call.</p>
+<pre><code><span class="k">struct</span> Shape {
+    <span class="k">virtual</span> <span class="k">double</span> area() <span class="k">const</span> = 0;   <span class="c">// pure virtual -> abstract class</span>
+    <span class="k">virtual</span> ~Shape() = <span class="k">default</span>;         <span class="c">// REQUIRED for polymorphic base</span>
+};
+<span class="k">struct</span> Circle : Shape {
+    <span class="k">double</span> r;
+    <span class="k">double</span> area() <span class="k">const</span> <span class="k">override</span> { <span class="k">return</span> 3.14159 * r * r; }
+};</code></pre>
+
+<h3>The virtual destructor rule</h3>
+<p>If you ever <code>delete</code> a derived object through a base pointer, the base destructor
+<strong>must</strong> be <code>virtual</code> &mdash; otherwise only <code>~Base</code> runs and the derived part leaks / is
+UB. Any class with virtual functions should have a virtual (or protected) destructor.</p>
+
+<h3><code>override</code> and <code>final</code></h3>
+<ul>
+<li><code>override</code> &mdash; compiler error if it doesn't actually override (wrong signature, missing <code>const</code>). Always use it.</li>
+<li><code>final</code> &mdash; on a method: no further overriding; on a class: no further derivation. Can enable devirtualisation.</li>
+</ul>
+
+<h3>Object slicing</h3>
+<pre><code>Circle c{{}, 2.0};
+Shape s = c;        <span class="c">// SLICE: only the Shape subobject is copied; area() is Shape's</span>
+std::vector&lt;Shape&gt; v; v.push_back(c);   <span class="c">// slices too</span></code></pre>
+<p>Polymorphism needs a pointer or reference (<code>Shape&amp;</code>, <code>Shape*</code>, <code>unique_ptr&lt;Shape&gt;</code>).
+Store <code>std::unique_ptr&lt;Shape&gt;</code> in containers, not <code>Shape</code>.</p>
+
+<h3>Non-virtual by default</h3>
+<p>Unlike Java, C++ methods are <em>non</em>-virtual unless marked. Calling a non-virtual method
+through a base pointer uses the static type. Also: never call virtuals from a constructor or
+destructor &mdash; dispatch resolves to the currently-constructed class, not the derived one.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>virtual</code> &rarr; vptr + per-class vtable &rarr; call resolved by dynamic type. One indirection, no inlining.</li>
+<li>Polymorphic base &rArr; <code>virtual ~Base()</code> (or <code>protected ~Base()</code>). Non-negotiable if deleting via base ptr.</li>
+<li>Always write <code>override</code>; use <code>final</code> to seal and to help devirtualisation.</li>
+<li>Pure virtual (<code>= 0</code>) &rarr; abstract class, can't instantiate.</li>
+<li>Polymorphism only through pointer/reference. Value assignment &rarr; <strong>slicing</strong>.</li>
+<li>Containers of polymorphic objects: <code>vector&lt;unique_ptr&lt;Base&gt;&gt;</code>.</li>
+<li>Methods are non-virtual by default (unlike Java/C#).</li>
+<li>Don't call virtual functions from ctors/dtors &mdash; you won't get the derived override.</li>
+<li><code>dynamic_cast</code> for safe downcasts (needs RTTI); returns <code>nullptr</code> / throws on failure.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is a vtable?</dt>
+<dd>A per-class table of pointers to that class's virtual function implementations. Each polymorphic object holds a hidden pointer (vptr) to its class's vtable; a virtual call dereferences it to find the right override at runtime.</dd>
+<dt>Why must a polymorphic base class have a virtual destructor?</dt>
+<dd>So that <code>delete base_ptr;</code> invokes the derived destructor first (then the base's). Without <code>virtual</code>, only the base destructor runs &mdash; the derived members leak and it's undefined behaviour.</dd>
+<dt>What is object slicing?</dt>
+<dd>Copying a derived object into a base-type variable (by value) discards the derived part, leaving only the base subobject. Virtual calls then dispatch to the base version. Avoid by using references/pointers.</dd>
+<dt>Are C++ member functions virtual by default?</dt>
+<dd>No. You must write <code>virtual</code>. A call through a base pointer to a non-virtual method uses the pointer's static type.</dd>
+<dt>Why not call a virtual function from a constructor?</dt>
+<dd>During <code>Base</code>'s constructor the object <em>is</em> a <code>Base</code> (the derived part isn't built yet), so the call resolves to <code>Base</code>'s version, not the override you probably expected. Same in reverse during destruction.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What makes a class abstract?</summary><div class="answer-box">
+At least one pure virtual function (<code>virtual void f() = 0;</code>). You can't create instances of it, only of concrete derived classes that override every pure virtual.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>override</code> buy you?</summary><div class="answer-box">
+A compile-time check that the function really overrides a base virtual. It catches signature typos (missing <code>const</code>, wrong parameter type) that would otherwise silently create a new, non-overriding function.
+</div></details>
+<details class="answer-reveal"><summary>How should you store polymorphic objects in a <code>std::vector</code>?</summary><div class="answer-box">
+As <code>std::vector&lt;std::unique_ptr&lt;Base&gt;&gt;</code> (or <code>shared_ptr</code>). Storing <code>Base</code> by value slices.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Roughly what's the runtime cost of a virtual call vs a normal call?</summary><div class="answer-box">
+One extra load (vptr) plus an indirect call through the vtable slot &mdash; a few cycles, usually well-predicted. The bigger cost is that the compiler can't inline it, blocking downstream optimisation. <code>final</code> or a known concrete type lets the compiler devirtualise and inline.
+</div></details>
+<details class="answer-reveal"><summary>A base class has no virtual functions but is used polymorphically via <code>Base*</code>. Someone adds <code>virtual void foo()</code>. What just changed about <code>sizeof(Base)</code> and layout?</summary><div class="answer-box">
+The class gains a vptr (typically 8 bytes on 64-bit), so <code>sizeof</code> grows and the member layout shifts. This breaks binary compatibility and any code that assumed a POD layout (e.g. <code>memcpy</code>, C interop, serialization by raw bytes).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does virtual dispatch interact with multiple inheritance and virtual bases?</summary><div class="answer-box">
+Each base subobject that introduces virtuals gets its own vptr, so a multiply-derived object can hold several vptrs. Calling through a pointer to a secondary base requires a "this-pointer adjustment" (a fixed offset, often stored in the vtable as a thunk) so the override sees the correct <code>this</code>. Virtual inheritance adds a level of indirection (a vbase pointer/offset) to locate the shared base subobject. This is why MI with polymorphism has real layout and call-cost complexity, and why interfaces (pure-virtual, no data) are the usual disciplined use of MI.
+</div></details>
+<details class="answer-reveal"><summary>What is the "deleting destructor" in a vtable and why is it there?</summary><div class="answer-box">
+For a class with a virtual destructor, the compiler typically puts two destructor entries in the vtable: a "complete object destructor" (runs member/base dtors) and a "deleting destructor" (does that <em>and then</em> calls <code>operator delete</code>). <code>delete base_ptr</code> goes through the deleting-destructor slot so the correct <code>operator delete</code> (possibly a class-specific one, with the right size) is invoked for the dynamic type.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:virtual-dispatch -->
+
+<!-- TOPIC:cpp:operator-overload -->
+<section class="view topic" id="v-cpp-operator-overload" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Operator Overloading</h1>
+<p class="subtitle">Make your type behave like a built-in &mdash; and know the canonical forms so it behaves <em>correctly</em>.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Member vs free function</h3>
+<ul>
+<li><strong>Member</strong>: <code>=</code>, <code>[]</code>, <code>()</code>, <code>-&gt;</code>, and anything that must have a class lvalue on the left.</li>
+<li><strong>Free (often <code>friend</code>)</strong>: symmetric binary operators (<code>+</code>, <code>==</code>, <code>&lt;&lt;</code>) so that implicit conversions work on <em>both</em> sides (<code>2 + mynum</code> as well as <code>mynum + 2</code>).</li>
+</ul>
+
+<h3>Canonical arithmetic</h3>
+<pre><code><span class="k">struct</span> Vec2 {
+    <span class="k">double</span> x, y;
+    Vec2&amp; <span class="k">operator</span>+=(<span class="k">const</span> Vec2&amp; r) { x += r.x; y += r.y; <span class="k">return</span> *<span class="k">this</span>; }
+};
+<span class="k">inline</span> Vec2 <span class="k">operator</span>+(Vec2 a, <span class="k">const</span> Vec2&amp; b) { a += b; <span class="k">return</span> a; }  <span class="c">// define + in terms of +=</span></code></pre>
+<p>Pattern: implement the compound-assignment version as a member, then the binary version as a
+free function taking the left operand <em>by value</em> and reusing <code>+=</code>.</p>
+
+<h3>Comparison &mdash; the C++20 spaceship</h3>
+<pre><code><span class="k">auto</span> <span class="k">operator</span>&lt;=&gt;(<span class="k">const</span> Vec2&amp;) <span class="k">const</span> = <span class="k">default</span>;   <span class="c">// generates &lt; &lt;= &gt; &gt;= and ==</span></code></pre>
+<p>Pre-C++20 you wrote <code>==</code> and <code>&lt;</code> and derived the rest (or used <code>std::rel_ops</code> / Boost).
+<code>&lt;=&gt;</code> returns <code>std::strong_ordering</code> / <code>weak_ordering</code> / <code>partial_ordering</code>.</p>
+
+<h3>Stream insertion</h3>
+<pre><code><span class="k">friend</span> std::ostream&amp; <span class="k">operator</span>&lt;&lt;(std::ostream&amp; os, <span class="k">const</span> Vec2&amp; v) {
+    <span class="k">return</span> os &lt;&lt; <span class="s">'('</span> &lt;&lt; v.x &lt;&lt; <span class="s">", "</span> &lt;&lt; v.y &lt;&lt; <span class="s">')'</span>;
+}</code></pre>
+
+<h3>Rules &amp; pitfalls</h3>
+<ul>
+<li>You cannot invent new operators or change arity/precedence. Can't overload <code>.</code>, <code>::</code>, <code>?:</code>, <code>sizeof</code>.</li>
+<li><code>++</code>/<code>--</code>: prefix returns <code>T&amp;</code>; postfix takes a dummy <code>int</code> and returns a <code>T</code> by value.</li>
+<li><code>[]</code> usually needs a <code>const</code> and non-<code>const</code> overload; C++23 allows multi-arg <code>[]</code>.</li>
+<li>Overload only when the meaning is <em>obvious</em>. Cute operators (<code>+</code> for "run pipeline") hurt readers.</li>
+<li>Conversion operators: make them <code>explicit</code> unless the implicit conversion is genuinely wanted (<code>explicit operator bool()</code> is the common case).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Members: <code>= [] () -&gt;</code> and left-operand-mutating ops. Free/<code>friend</code>: symmetric <code>+ - == &lt;&lt;</code>.</li>
+<li>Define <code>op=</code> as a member, then <code>op</code> as a free function: <code>T operator+(T a, const T&amp; b){ a += b; return a; }</code>.</li>
+<li>C++20: <code>auto operator&lt;=&gt;(const T&amp;) const = default;</code> &rarr; all six relational + <code>==</code>.</li>
+<li>Pre-20: write <code>==</code> and <code>&lt;</code>, build the rest from them.</li>
+<li><code>operator&lt;&lt;</code> for streams is a <code>friend</code> taking <code>(ostream&amp;, const T&amp;)</code>, returns the stream.</li>
+<li>Prefix <code>++</code>: <code>T&amp; operator++()</code>. Postfix: <code>T operator++(int)</code>.</li>
+<li>Can't create new operators or touch <code>. :: ?: sizeof</code>.</li>
+<li><code>explicit operator bool()</code> for "is valid" checks; keep other conversions explicit too.</li>
+<li>Overload only when semantics are unambiguous.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why implement <code>operator+</code> as a non-member?</dt>
+<dd>So implicit conversions apply symmetrically. A member <code>operator+</code> only converts the right operand, so <code>2 + obj</code> wouldn't compile while <code>obj + 2</code> would. A free function converts both.</dd>
+<dt>How do prefix and postfix <code>++</code> differ in signature?</dt>
+<dd>Prefix: <code>T&amp; operator++();</code>. Postfix: <code>T operator++(int);</code> &mdash; the unused <code>int</code> parameter is just a tag; it returns a copy of the old value.</dd>
+<dt>What does <code>operator&lt;=&gt;</code> generate?</dt>
+<dd>From a single defaulted (or user) three-way comparison, the compiler synthesises <code>&lt;</code>, <code>&lt;=</code>, <code>&gt;</code>, <code>&gt;=</code>; a defaulted <code>&lt;=&gt;</code> also gives you <code>==</code> and <code>!=</code>.</dd>
+<dt>Which operators cannot be overloaded?</dt>
+<dd><code>.</code> (member access), <code>.*</code>, <code>::</code>, <code>?:</code>, <code>sizeof</code>, <code>alignof</code>, <code>typeid</code>, and the preprocessor's <code>#</code>/<code>##</code>.</dd>
+<dt>Why make a conversion operator <code>explicit</code>?</dt>
+<dd>To prevent it firing in unexpected contexts (arithmetic, overload resolution, function arguments). <code>explicit operator bool()</code> still works in <code>if</code>/<code>while</code> conditions (contextual conversion) but not in <code>int x = obj;</code>.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which operator must be a member function?</summary><div class="answer-box">
+<code>operator=</code>, <code>operator[]</code>, <code>operator()</code>, and <code>operator-&gt;</code> must be non-static members.
+</div></details>
+<details class="answer-reveal"><summary>What's the return type of a well-behaved copy-assignment operator?</summary><div class="answer-box">
+<code>T&amp;</code> (returning <code>*this</code>), so assignments can chain: <code>a = b = c;</code>.
+</div></details>
+<details class="answer-reveal"><summary>How do you print a custom type with <code>std::cout &lt;&lt; obj;</code>?</summary><div class="answer-box">
+Provide <code>friend std::ostream&amp; operator&lt;&lt;(std::ostream&amp; os, const T&amp; t) { os &lt;&lt; ...; return os; }</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Give the two overloads of <code>operator[]</code> a container needs and why.</summary><div class="answer-box">
+<code>T&amp; operator[](size_t i);</code> for mutable access and <code>const T&amp; operator[](size_t i) const;</code> for read access on a <code>const</code> container. Without the <code>const</code> overload you can't index a <code>const</code> object at all.
+</div></details>
+<details class="answer-reveal"><summary>Implement <code>operator==</code> and <code>operator!=</code> for a struct in C++14. Any shortcut in C++20?</summary><div class="answer-box">
+C++14: write <code>bool operator==(const T&amp; a, const T&amp; b){ return a.x==b.x &amp;&amp; a.y==b.y; }</code> and <code>bool operator!=(...){ return !(a==b); }</code>. C++20: just <code>bool operator==(const T&amp;) const = default;</code> &mdash; <code>!=</code> is synthesised, and the members are compared in declaration order.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What ordering category should <code>operator&lt;=&gt;</code> return for a type holding a <code>float</code>, and what's the consequence?</summary><div class="answer-box">
+<code>std::partial_ordering</code>, because floating-point has NaN: <code>NaN</code> is unordered with everything, so no total order exists. Consequence: you can't use such a type directly as a <code>std::set</code>/<code>map</code> key or with algorithms requiring a strict weak ordering without defining a custom total-order comparator (e.g. one that gives NaN a defined position). A defaulted <code>&lt;=&gt;</code> on a struct with a <code>float</code> member yields <code>partial_ordering</code> automatically.
+</div></details>
+<details class="answer-reveal"><summary>Why can overloading <code>operator&amp;&amp;</code> / <code>operator||</code> be a subtle bug source?</summary><div class="answer-box">
+The built-in <code>&amp;&amp;</code>/<code>||</code> short-circuit and impose a sequence point between operands. An overloaded version is an ordinary function call: <em>both</em> operands are fully evaluated, in unspecified order, before the "operator" runs. Code relying on short-circuit semantics (<code>p &amp;&amp; p-&gt;ok()</code>) silently breaks. Same trap historically with overloading <code>operator,</code>. Best practice: don't overload these three.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:operator-overload -->
+
+<!-- TOPIC:cpp:templates -->
+<section class="view topic" id="v-cpp-templates" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Templates &amp; Generic Programming</h1>
+<p class="subtitle">Compile-time code generation &mdash; how deduction, specialization and instantiation actually work.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Function and class templates</h3>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> T&gt;
+<span class="k">const</span> T&amp; max_of(<span class="k">const</span> T&amp; a, <span class="k">const</span> T&amp; b) { <span class="k">return</span> a &lt; b ? b : a; }
+
+<span class="k">template</span>&lt;<span class="k">class</span> T, size_t N&gt;
+<span class="k">struct</span> Array { T data[N]; size_t size() <span class="k">const</span> { <span class="k">return</span> N; } };</code></pre>
+<p>A template is a <em>pattern</em>; the compiler <strong>instantiates</strong> a concrete version for each set
+of arguments actually used. Unused member functions of a class template aren't instantiated.</p>
+
+<h3>Argument deduction</h3>
+<ul>
+<li>Function templates deduce <code>T</code> from the call arguments; class templates need explicit args (or CTAD in C++17: <code>std::vector v{1,2,3};</code>).</li>
+<li>Deduction strips top-level <code>const</code> and references (unless the parameter is <code>T&amp;</code>/<code>T&amp;&amp;</code>).</li>
+<li><code>auto</code> uses the same rules; <code>decltype(auto)</code> preserves references/const.</li>
+</ul>
+
+<h3>Specialization</h3>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> T&gt; <span class="k">struct</span> Hash { size_t operator()(<span class="k">const</span> T&amp;) <span class="k">const</span>; };
+<span class="k">template</span>&lt;&gt; <span class="k">struct</span> Hash&lt;std::string&gt; { size_t operator()(<span class="k">const</span> std::string&amp;) <span class="k">const</span>; };  <span class="c">// full</span>
+<span class="k">template</span>&lt;<span class="k">class</span> T&gt; <span class="k">struct</span> Hash&lt;T*&gt; { size_t operator()(T*) <span class="k">const</span>; };  <span class="c">// partial (classes only)</span></code></pre>
+<p>Function templates can only be <em>fully</em> specialized &mdash; for "partial" behaviour, overload instead.</p>
+
+<h3>Where the code must live</h3>
+<p>Template definitions normally go <strong>in the header</strong>: the compiler needs the full definition
+at each instantiation point. Putting them in a <code>.cpp</code> gives "undefined reference" link errors
+unless you use explicit instantiation.</p>
+
+<h3>Two-phase lookup</h3>
+<p>Names that don't depend on <code>T</code> are looked up when the template is <em>defined</em>; dependent
+names when it's <em>instantiated</em>. Hence <code>this-&gt;member</code>, <code>typename T::iterator</code>, and
+<code>template</code> disambiguators in dependent contexts.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Template = pattern; compiler instantiates one concrete version per distinct argument set.</li>
+<li>Function templates deduce args; class templates need explicit args or CTAD (C++17).</li>
+<li>Definitions go in headers (or use explicit instantiation in a <code>.cpp</code>).</li>
+<li>Full specialization: <code>template&lt;&gt; struct X&lt;int&gt; {...};</code>. Partial: classes only. Functions: overload instead.</li>
+<li>Dependent type &rarr; prefix <code>typename</code>; dependent template &rarr; prefix <code>template</code>; dependent member &rarr; <code>this-&gt;</code>.</li>
+<li>Non-type params: integers, enums, pointers, <code>auto</code> (C++17), and structural types (C++20).</li>
+<li>Unused member functions of a class template are never instantiated (can hold ill-formed code for unused types &mdash; fragile).</li>
+<li>Concepts (C++20) &gt; SFINAE for constraining; error messages are far better.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why do template definitions usually go in headers?</dt>
+<dd>The compiler generates code separately for each translation unit that instantiates the template, so it needs the full definition visible there. A definition hidden in one <code>.cpp</code> can't be instantiated elsewhere &rarr; link error.</dd>
+<dt>Difference between full and partial specialization?</dt>
+<dd>Full: you fix <em>all</em> template parameters (<code>template&lt;&gt; class X&lt;int, 4&gt;</code>). Partial: you fix some or constrain the shape (<code>template&lt;class T&gt; class X&lt;T*, 4&gt;</code>). Only class templates and variable templates support partial specialization.</dd>
+<dt>Why <code>typename T::value_type</code> and not just <code>T::value_type</code>?</dt>
+<dd>Inside a template, <code>T::value_type</code> is a <em>dependent</em> name and the compiler assumes it's a value, not a type, unless you write <code>typename</code>. (C++20 relaxes this in some contexts.)</dd>
+<dt>What is CTAD?</dt>
+<dd>Class Template Argument Deduction (C++17): <code>std::pair p{1, 2.0};</code> deduces <code>std::pair&lt;int,double&gt;</code> without you spelling the arguments, using implicit or user-written deduction guides.</dd>
+<dt>Does instantiating <code>std::vector&lt;MyType&gt;</code> instantiate all its members?</dt>
+<dd>No &mdash; only the member functions you actually call. That's why a type missing, say, <code>operator&lt;</code> can still be stored in a <code>vector</code>, as long as you never call <code>sort</code> on it.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does "template instantiation" mean?</summary><div class="answer-box">
+The compiler generating a concrete function or class from the template pattern for a specific set of template arguments, the first time that combination is used.
+</div></details>
+<details class="answer-reveal"><summary>Where do you put a class template's member function definitions?</summary><div class="answer-box">
+In the header (inline in the class, or after it in the same header). Not in a separate <code>.cpp</code>, unless you explicitly instantiate for each needed type there.
+</div></details>
+<details class="answer-reveal"><summary>Can a function template be partially specialized?</summary><div class="answer-box">
+No. Only fully specialized. For partial-specialization-like behaviour you write additional overloads.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Given <code>template&lt;class T&gt; void f(T x)</code>, what is <code>T</code> for <code>const int&amp; r; f(r);</code>?</summary><div class="answer-box">
+<code>T = int</code>. By-value deduction strips the reference and the top-level <code>const</code>, so <code>x</code> is a plain <code>int</code> copy. If the parameter were <code>T&amp;</code>, <code>T</code> would be <code>const int</code>; if <code>T&amp;&amp;</code> (forwarding ref), <code>T</code> would be <code>const int&amp;</code>.
+</div></details>
+<details class="answer-reveal"><summary>Why might a template compile for <code>int</code> but fail only when instantiated with <code>std::string</code>?</summary><div class="answer-box">
+Non-dependent errors are caught at definition, but anything depending on <code>T</code> is only checked at instantiation. If the body does something valid for <code>int</code> but not <code>std::string</code> (e.g. <code>x * 2</code>, or calls a member <code>string</code> lacks), you only find out when that instantiation is required. Concepts / <code>static_assert</code> surface it earlier with a clear message.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how explicit instantiation lets you keep template definitions in a <code>.cpp</code>.</summary><div class="answer-box">
+Put the template definition in a <code>.cpp</code>, then in that same file write <code>template class Foo&lt;int&gt;;</code> / <code>template void bar&lt;double&gt;(double);</code> for each type you support. The compiler emits those concrete instantiations into the object file, so other TUs (which see only a declaration in the header) link against them. Trade-off: the set of supported types is fixed and centralised; used for compile-time reduction and to hide implementation in libraries.
+</div></details>
+<details class="answer-reveal"><summary>What is the ODR hazard with templates and how do implementations avoid link errors from duplicate instantiations?</summary><div class="answer-box">
+The same template instantiation (e.g. <code>std::vector&lt;int&gt;::push_back</code>) is generated in many translation units, technically violating the one-definition rule for a normal function. Templates get a special ODR exemption <em>provided</em> every definition is token-for-token identical. The linker then deduplicates: instantiations are emitted into COMDAT sections / weak symbols, and the linker keeps one copy and discards the rest. Inconsistent definitions (different compile flags, macros, headers) produce silent ODR violations rather than errors.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:templates -->
+
+<!-- TOPIC:cpp:template-meta -->
+<section class="view topic" id="v-cpp-template-meta" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Metaprogramming: SFINAE, Concepts, CRTP</h1>
+<p class="subtitle">Constraining templates and computing with types &mdash; the old way and the C++20 way.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Type traits &amp; <code>if constexpr</code></h3>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> T&gt;
+<span class="k">void</span> dump(<span class="k">const</span> T&amp; v) {
+    <span class="k">if</span> <span class="k">constexpr</span> (std::is_integral_v&lt;T&gt;)  std::cout &lt;&lt; std::hex &lt;&lt; v;
+    <span class="k">else</span> <span class="k">if</span> <span class="k">constexpr</span> (std::is_floating_point_v&lt;T&gt;)  std::cout &lt;&lt; std::scientific &lt;&lt; v;
+    <span class="k">else</span>  std::cout &lt;&lt; v;
+}</code></pre>
+<p><code>&lt;type_traits&gt;</code> gives compile-time predicates (<code>is_pointer_v</code>, <code>is_same_v</code>,
+<code>is_base_of_v</code>&hellip;) and transformations (<code>remove_cv_t</code>, <code>decay_t</code>,
+<code>conditional_t</code>). <code>if constexpr</code> (C++17) discards the untaken branch at compile time, so
+each branch only needs to be valid for the types that reach it.</p>
+
+<h3>SFINAE (pre-C++20 constraint mechanism)</h3>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> T,
+         <span class="k">class</span> = std::enable_if_t&lt;std::is_arithmetic_v&lt;T&gt;&gt;&gt;
+T twice(T x) { <span class="k">return</span> x + x; }</code></pre>
+<p>"Substitution Failure Is Not An Error": if forming the signature with a given <code>T</code> is
+ill-formed, that overload is silently removed from the set rather than causing a hard error.
+Powerful but produces infamous error messages.</p>
+
+<h3>Concepts (C++20 &mdash; use these instead)</h3>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> T&gt;
+<span class="k">concept</span> Number = std::integral&lt;T&gt; || std::floating_point&lt;T&gt;;
+
+<span class="k">template</span>&lt;Number T&gt;
+T twice(T x) { <span class="k">return</span> x + x; }        <span class="c">// clear constraint, clear errors</span>
+
+<span class="k">auto</span> f(std::ranges::range <span class="k">auto</span>&amp;&amp; r);   <span class="c">// terse form</span></code></pre>
+
+<h3>CRTP &mdash; static polymorphism</h3>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> Derived&gt;
+<span class="k">struct</span> Printable {
+    <span class="k">void</span> print() <span class="k">const</span> {
+        std::cout &lt;&lt; <span class="k">static_cast</span>&lt;<span class="k">const</span> Derived&amp;&gt;(*<span class="k">this</span>).to_string();
+    }
+};
+<span class="k">struct</span> Widget : Printable&lt;Widget&gt; { std::string to_string() <span class="k">const</span>; };</code></pre>
+<p>The base is parameterised on the derived class, so it can call derived methods with no vtable
+&mdash; compile-time dispatch, zero runtime cost. Used for mixins, <code>enable_shared_from_this</code>,
+expression templates.</p>
+
+<h3>Variadic templates</h3>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span>... Args&gt;
+<span class="k">void</span> log(Args&amp;&amp;... args) {
+    (std::cout &lt;&lt; ... &lt;&lt; args) &lt;&lt; <span class="s">'\n'</span>;   <span class="c">// C++17 fold expression</span>
+}</code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>&lt;type_traits&gt;</code>: <code>is_*_v</code> predicates, <code>*_t</code> transforms, <code>conditional_t</code>, <code>decay_t</code>.</li>
+<li><code>if constexpr (cond)</code> &mdash; compile-time branch; untaken branch not instantiated.</li>
+<li>SFINAE = remove an overload when its signature is ill-formed for the given types (<code>enable_if_t</code>, trailing-return <code>decltype</code>).</li>
+<li>C++20 <strong>concepts</strong> replace SFINAE for constraints: readable, better errors, subsumption-based overload ordering.</li>
+<li>Terse constrained templates: <code>void f(std::integral auto x)</code>.</li>
+<li>CRTP: <code>struct D : Base&lt;D&gt;</code> &mdash; static polymorphism, no vtable; base uses <code>static_cast&lt;D&amp;&gt;(*this)</code>.</li>
+<li>Variadic: <code>template&lt;class... Ts&gt;</code>, <code>sizeof...(Ts)</code>, fold expressions <code>(... op pack)</code>.</li>
+<li><code>static_assert(cond, "msg")</code> to fail loudly and early.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does SFINAE stand for and do?</dt>
+<dd>Substitution Failure Is Not An Error. When the compiler substitutes template arguments and the resulting <em>signature</em> is invalid, that candidate is dropped from overload resolution instead of triggering a compile error &mdash; letting you select overloads by type properties.</dd>
+<dt>Why prefer concepts over <code>enable_if</code>?</dt>
+<dd>Concepts express the requirement directly, produce short "constraint not satisfied" errors instead of pages of substitution noise, participate in overload ordering (more-constrained wins), and can be reused and named.</dd>
+<dt>What problem does CRTP solve?</dt>
+<dd>Polymorphic-style code reuse (a base providing behaviour in terms of derived operations) <em>without</em> the runtime cost of virtual calls, because the derived type is known at compile time.</dd>
+<dt>What is <code>if constexpr</code> good for?</dt>
+<dd>Writing one template that does different things per type, where the non-selected branch would be ill-formed for that type. The discarded branch isn't instantiated, so it doesn't need to compile.</dd>
+<dt>How do you get the number of arguments in a variadic pack?</dt>
+<dd><code>sizeof...(Args)</code> (or <code>sizeof...(args)</code>) &mdash; a compile-time <code>size_t</code>.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What header gives you <code>std::is_same</code>, <code>std::is_integral</code>, etc.?</summary><div class="answer-box">
+<code>&lt;type_traits&gt;</code>.
+</div></details>
+<details class="answer-reveal"><summary>Write a concept for "has a <code>.size()</code> returning something convertible to <code>size_t</code>".</summary><div class="answer-box">
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> T&gt;
+<span class="k">concept</span> Sized = <span class="k">requires</span>(<span class="k">const</span> T&amp; t) {
+    { t.size() } -&gt; std::convertible_to&lt;std::size_t&gt;;
+};</code></pre>
+</div></details>
+<details class="answer-reveal"><summary>In CRTP, how does the base call a derived method?</summary><div class="answer-box">
+<code>static_cast&lt;Derived&amp;&gt;(*this).method()</code> &mdash; a safe downcast because <code>Derived</code> is the template argument and is guaranteed to be the actual most-derived type.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Rewrite an <code>enable_if</code>-constrained function using a concept.</summary><div class="answer-box">
+<pre><code><span class="c">// old</span>
+<span class="k">template</span>&lt;<span class="k">class</span> T, std::enable_if_t&lt;std::is_integral_v&lt;T&gt;, <span class="k">int</span>&gt; = 0&gt;
+<span class="k">void</span> f(T);
+<span class="c">// new</span>
+<span class="k">void</span> f(std::integral <span class="k">auto</span>);</code></pre>
+</div></details>
+<details class="answer-reveal"><summary>What's the runtime and binary-size trade-off of CRTP vs virtual functions?</summary><div class="answer-box">
+CRTP: no vptr, calls inline, fastest &mdash; but each derived type instantiates its own copy of the base's code (code bloat), the type must be known at compile time, and you can't store heterogeneous objects in one container. Virtual: one shared implementation, runtime polymorphism, heterogeneous containers &mdash; at the cost of an indirection and no inlining. Use virtual for open sets / plugin-style designs; CRTP for closed sets in hot paths.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain the "detection idiom" and what replaced it in C++20.</summary><div class="answer-box">
+Pre-C++20, to ask "does <code>T</code> have member <code>x</code>?" you used <code>std::void_t</code> plus a primary/partial-specialization pair: the specialization is only viable if <code>decltype(std::declval&lt;T&gt;().x)</code> is well-formed, and you check which one was chosen. It's verbose and easy to get subtly wrong (value category, const). C++20 <code>requires</code>-expressions do this directly and readably: <code>requires(T t){ t.x; }</code>, usable inline or as a named concept.
+</div></details>
+<details class="answer-reveal"><summary>How does concept subsumption affect overload resolution?</summary><div class="answer-box">
+When two candidate function templates are both viable and constrained, the one whose constraints <em>subsume</em> the other's (are strictly more specific, decomposed into atomic constraints) is preferred &mdash; no ambiguity. E.g. an overload constrained on <code>std::random_access_iterator</code> beats one on <code>std::forward_iterator</code> for a pointer argument. This gives clean "pick the best-matching implementation" tag-dispatch without helper types, but only works if the concepts are defined so one genuinely implies the other.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:template-meta -->
+
+<!-- TOPIC:cpp:stl-containers -->
+<section class="view topic" id="v-cpp-stl-containers" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>STL Containers &amp; Iterators</h1>
+<p class="subtitle">Pick the right container by its complexity guarantees &mdash; and know when your iterators die.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The containers</h3>
+<table>
+<tr><th>Container</th><th>Layout</th><th>Access / insert</th><th>Use when</th></tr>
+<tr><td><code>vector</code></td><td>contiguous</td><td>O(1) index, O(1) amortised push_back, O(n) middle insert</td><td>default choice; cache-friendly</td></tr>
+<tr><td><code>deque</code></td><td>chunked</td><td>O(1) both ends, O(1) index</td><td>queue with random access</td></tr>
+<tr><td><code>list</code></td><td>doubly linked</td><td>O(1) splice/insert given iterator, no random access</td><td>rare &mdash; only if you splice a lot</td></tr>
+<tr><td><code>map</code>/<code>set</code></td><td>balanced BST</td><td>O(log n), sorted iteration</td><td>ordered keys, range queries</td></tr>
+<tr><td><code>unordered_map</code>/<code>set</code></td><td>hash table</td><td>O(1) average, O(n) worst</td><td>fast lookup, order irrelevant</td></tr>
+<tr><td><code>array&lt;T,N&gt;</code></td><td>contiguous, fixed</td><td>O(1)</td><td>compile-time size, no heap</td></tr>
+</table>
+<p>Container adaptors: <code>stack</code>, <code>queue</code> (on <code>deque</code>), <code>priority_queue</code> (on <code>vector</code> + heap).</p>
+
+<h3>Iterator invalidation &mdash; the exam favourite</h3>
+<table>
+<tr><th>Container</th><th>On insert</th><th>On erase</th></tr>
+<tr><td><code>vector</code></td><td>all iterators/refs if reallocation; else those at/after the point</td><td>those at/after the erased element</td></tr>
+<tr><td><code>deque</code></td><td>all iterators (refs safe if at ends)</td><td>all iterators/refs (unless an end)</td></tr>
+<tr><td><code>list</code>, <code>map</code>, <code>set</code></td><td>none</td><td>only the erased element's</td></tr>
+<tr><td><code>unordered_*</code></td><td>iterators on rehash; refs never</td><td>only the erased element's</td></tr>
+</table>
+<p><code>reserve()</code> up front to avoid <code>vector</code> reallocation churn and invalidation.</p>
+
+<h3>Iterator categories</h3>
+<p>input &rarr; forward &rarr; bidirectional &rarr; random-access &rarr; contiguous. Algorithms require a minimum
+category: <code>std::sort</code> needs random-access (so it doesn't work on <code>std::list</code> &mdash; use
+<code>list::sort</code>). C++20 adds the <code>ranges</code> iterator concepts.</p>
+
+<h3>Lookup &amp; modification idioms</h3>
+<pre><code><span class="k">auto</span> it = m.find(key);
+<span class="k">if</span> (it != m.end()) use(it-&gt;second);
+
+<span class="k">auto</span> [pos, inserted] = m.try_emplace(key, make_value());   <span class="c">// no wasted construction</span>
+m.insert_or_assign(key, v);
+<span class="k">if</span> (m.contains(key)) ...   <span class="c">// C++20</span></code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Default to <code>vector</code>. <code>reserve()</code> when you know the size.</li>
+<li><code>deque</code> for push/pop both ends; <code>list</code> almost never (only heavy splicing).</li>
+<li>Ordered keys / range queries &rarr; <code>map</code>/<code>set</code> (O(log n)). Just fast lookup &rarr; <code>unordered_map</code>/<code>set</code> (O(1) avg).</li>
+<li><code>vector</code> insert/erase in the middle is O(n); at the end O(1) amortised.</li>
+<li>Invalidation: node-based (<code>list</code>/<code>map</code>/<code>set</code>) only invalidates the erased node; <code>vector</code> realloc invalidates everything; <code>deque</code> insert invalidates all iterators.</li>
+<li><code>std::sort</code> needs random-access &rarr; not on <code>list</code> (use <code>list::sort</code>).</li>
+<li>Erase-remove: <code>v.erase(std::remove(b,e,x), v.end())</code>; C++20: <code>std::erase(v, x)</code>.</li>
+<li><code>emplace</code>/<code>try_emplace</code> to construct in place; <code>reserve</code> before bulk <code>push_back</code>.</li>
+<li>Prefer <code>at()</code> for checked access, <code>[]</code> when you know the index is valid (and note <code>map::operator[]</code> <em>inserts</em>).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Default container, and why?</dt>
+<dd><code>std::vector</code> &mdash; contiguous storage means great cache locality and O(1) indexing; amortised O(1) append. Only move away from it when a measured need (front insertion, ordered keys, hashed lookup, stable node addresses) says so.</dd>
+<dt>What invalidates <code>vector</code> iterators?</dt>
+<dd>Any operation that reallocates (<code>push_back</code>/<code>insert</code>/<code>resize</code> past capacity) invalidates <em>all</em> iterators, pointers, and references. Insert/erase without reallocation invalidates those at or after the modification point.</dd>
+<dt>Why can't you <code>std::sort</code> a <code>std::list</code>?</dt>
+<dd><code>std::sort</code> needs random-access iterators (it does index arithmetic); <code>list</code> only offers bidirectional. Use the member <code>list::sort()</code>, which is a merge sort over the nodes.</dd>
+<dt><code>map</code> vs <code>unordered_map</code>?</dt>
+<dd><code>map</code>: red-black tree, O(log n), keeps keys sorted, stable iteration order, needs <code>operator&lt;</code>. <code>unordered_map</code>: hash table, O(1) average / O(n) worst, no order, needs a hash + <code>operator==</code>. Pick <code>unordered</code> for raw speed, <code>map</code> when you need ordering or range queries.</dd>
+<dt>What's the gotcha with <code>map::operator[]</code>?</dt>
+<dd>If the key isn't present it <em>inserts</em> a default-constructed value and returns a reference to it. Read-only lookups should use <code>find</code> or <code>at</code> to avoid accidental insertion (and it doesn't work on a <code>const map</code>).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which container gives O(1) random access and contiguous storage?</summary><div class="answer-box">
+<code>std::vector</code> (and <code>std::array</code> for fixed size).
+</div></details>
+<details class="answer-reveal"><summary>How do you remove all elements equal to <code>x</code> from a <code>vector</code>?</summary><div class="answer-box">
+<code>v.erase(std::remove(v.begin(), v.end(), x), v.end());</code> &mdash; or C++20 <code>std::erase(v, x);</code>.
+</div></details>
+<details class="answer-reveal"><summary>Which containers keep their elements sorted?</summary><div class="answer-box">
+<code>std::map</code>, <code>std::set</code>, <code>std::multimap</code>, <code>std::multiset</code> (ordered associative, tree-based).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You append 10 million ints to a <code>vector</code> in a loop and it's slow. Fix?</summary><div class="answer-box">
+Call <code>v.reserve(10'000'000)</code> first. Without it the vector reallocates and moves all elements ~log&#8322;(n) times as it grows (geometric growth), which dominates. With <code>reserve</code>, every <code>push_back</code> is a true O(1) write.
+</div></details>
+<details class="answer-reveal"><summary>You store objects in a <code>vector</code> and keep pointers to them elsewhere. What's the danger?</summary><div class="answer-box">
+Any reallocation (further <code>push_back</code>, <code>insert</code>, <code>resize</code>) moves the storage, leaving your external pointers dangling. Options: <code>reserve</code> enough up front, use <code>std::deque</code> (stable element addresses except at the modified end), a node-based container, or store <code>std::unique_ptr&lt;T&gt;</code> in the vector so the pointees don't move.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>When can <code>unordered_map</code> degrade to O(n), and how do you defend against it?</summary><div class="answer-box">
+When many keys hash to the same bucket &mdash; a weak hash function, or adversarial input (hash-flooding DoS). All operations on that bucket become linear. Defences: a good/seeded hash (randomised per process), monitoring <code>load_factor()</code> and <code>bucket_size</code>, switching to <code>std::map</code> (guaranteed O(log n)) for untrusted keys, or a container with better worst-case behaviour. Note <code>unordered_map</code> also has poor cache behaviour vs a flat hash map because of its node-per-element, chained design.
+</div></details>
+<details class="answer-reveal"><summary>Compare <code>std::map</code> and a sorted <code>std::vector</code> of pairs for a lookup-heavy, insert-rarely workload.</summary><div class="answer-box">
+Sorted <code>vector</code> + <code>std::lower_bound</code>: O(log n) lookup like <code>map</code>, but contiguous &mdash; far better cache locality, smaller memory (no per-node pointers/colour bit), and prefetch-friendly, so typically several times faster in practice. Downside: insertion/erase is O(n) (shift elements), and iterators/references are invalidated on insert. For "build once, query many" it's the better structure; <code>map</code> wins when inserts and deletes are frequent and interleaved with lookups.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:stl-containers -->
+
+<!-- TOPIC:cpp:stl-algorithms -->
+<section class="view topic" id="v-cpp-stl-algorithms" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>STL Algorithms &amp; Lambdas</h1>
+<p class="subtitle">"No raw loops" &mdash; and the capture and <code>std::function</code> costs behind the convenience.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The algorithm library</h3>
+<pre><code>std::sort(v.begin(), v.end(), [](<span class="k">auto</span>&amp; a, <span class="k">auto</span>&amp; b){ <span class="k">return</span> a.score &gt; b.score; });
+<span class="k">auto</span> it = std::find_if(v.begin(), v.end(), pred);
+<span class="k">int</span> n  = std::count_if(v.begin(), v.end(), pred);
+<span class="k">auto</span> last = std::remove_if(v.begin(), v.end(), pred);  <span class="c">// then v.erase(last, v.end())</span>
+std::transform(a.begin(), a.end(), std::back_inserter(out), fn);
+<span class="k">auto</span> total = std::accumulate(v.begin(), v.end(), 0L);
+<span class="k">bool</span> ok = std::all_of(v.begin(), v.end(), pred);</code></pre>
+<p>C++20 <strong>ranges</strong> remove the begin/end noise and compose lazily:</p>
+<pre><code><span class="k">namespace</span> rv = std::ranges::views;
+<span class="k">for</span> (<span class="k">int</span> x : v | rv::filter(is_even) | rv::transform(square) | rv::take(5))
+    use(x);
+std::ranges::sort(v, std::greater{});</code></pre>
+
+<h3>Lambdas</h3>
+<table>
+<tr><th>Capture</th><th>Meaning</th></tr>
+<tr><td><code>[x]</code></td><td>copy of <code>x</code></td></tr>
+<tr><td><code>[&amp;x]</code></td><td>reference to <code>x</code> (must outlive the lambda)</td></tr>
+<tr><td><code>[=]</code> / <code>[&amp;]</code></td><td>capture all used, by copy / by reference (avoid the defaults; be explicit)</td></tr>
+<tr><td><code>[this]</code> / <code>[*this]</code></td><td>the enclosing object by pointer / by value (C++17)</td></tr>
+<tr><td><code>[x = expr]</code></td><td>init-capture (C++14) &mdash; e.g. <code>[p = std::move(ptr)]</code></td></tr>
+</table>
+<p>A lambda is a compiler-generated functor. <code>mutable</code> lets it modify its by-copy captures.
+Non-capturing lambdas convert to a plain function pointer. Generic lambdas: <code>[](auto x){...}</code>.</p>
+
+<h3><code>std::function</code> cost</h3>
+<p><code>std::function&lt;R(Args...)&gt;</code> is a type-erased callable wrapper: convenient for storing
+heterogeneous callables, but it may heap-allocate (unless the callable fits its small-buffer)
+and each call is an indirect call that can't inline. In hot paths prefer a template parameter
+(<code>template&lt;class F&gt; void run(F f)</code>) or a function pointer.</p>
+
+<h3>Dangling-capture bug</h3>
+<pre><code><span class="k">auto</span> make() {
+    <span class="k">int</span> local = 42;
+    <span class="k">return</span> [&amp;]{ <span class="k">return</span> local; };   <span class="c">// UB: captures ref to a local that's about to die</span>
+}</code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Reach for <code>&lt;algorithm&gt;</code> / <code>&lt;numeric&gt;</code> before writing a raw loop: <code>sort</code>, <code>find_if</code>, <code>count_if</code>, <code>transform</code>, <code>accumulate</code>, <code>all_of</code>/<code>any_of</code>/<code>none_of</code>, <code>min/max_element</code>.</li>
+<li>Remove is a two-step: <code>v.erase(std::remove_if(b,e,pred), v.end())</code>. C++20: <code>std::erase_if(v, pred)</code>.</li>
+<li>C++20 ranges: <code>std::ranges::sort(v)</code>; lazy pipelines with <code>v | views::filter | views::transform</code>.</li>
+<li>Capture explicitly: <code>[&amp;total, factor]</code>, not <code>[&amp;]</code>/<code>[=]</code>.</li>
+<li><code>[x = std::move(x)]</code> init-capture to move into a lambda.</li>
+<li><code>mutable</code> to modify by-copy captures inside the lambda body.</li>
+<li>Non-capturing lambda &rarr; convertible to function pointer.</li>
+<li><code>std::function</code> = type erasure: possible heap alloc + indirect call. Use a template param in hot code.</li>
+<li>Never return/store a lambda that captures a local by reference.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is the erase-remove idiom?</dt>
+<dd><code>std::remove(_if)</code> shuffles the "kept" elements to the front and returns an iterator to the new logical end, but doesn't change the container's size. You then call <code>container.erase(newEnd, container.end())</code> to actually drop the tail. C++20 wraps both in <code>std::erase</code>/<code>std::erase_if</code>.</dd>
+<dt>Difference between <code>[=]</code> and <code>[&amp;]</code> capture?</dt>
+<dd><code>[=]</code> copies every used variable into the closure (safe lifetime, but copies, and <code>this</code> is captured by pointer). <code>[&amp;]</code> captures by reference (no copy, but the closure must not outlive those variables). Explicit lists are preferred over both.</dd>
+<dt>Why can a non-capturing lambda be assigned to a function pointer but a capturing one can't?</dt>
+<dd>A capturing lambda carries state, so it's a unique class type with data members &mdash; there's nothing for a plain function pointer to point at. A stateless lambda has an implicit conversion to <code>R(*)(Args...)</code>.</dd>
+<dt>What's the runtime cost of <code>std::function</code>?</dt>
+<dd>Type erasure: it may allocate on the heap for larger callables, and invoking it is an indirect call through a vtable-like mechanism, so it doesn't inline. Fine for callbacks and event tables; avoid in tight inner loops.</dd>
+<dt>How do you move a <code>unique_ptr</code> into a lambda?</dt>
+<dd>Init-capture: <code>[p = std::move(ptr)]() mutable { ... }</code> (C++14+). Plain <code>[ptr]</code> would try to copy it.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Sort a <code>vector&lt;int&gt;</code> in descending order.</summary><div class="answer-box">
+<code>std::sort(v.begin(), v.end(), std::greater&lt;&gt;{});</code> or a lambda <code>[](int a, int b){ return a &gt; b; }</code>. C++20: <code>std::ranges::sort(v, std::greater{});</code>.
+</div></details>
+<details class="answer-reveal"><summary>Sum a <code>vector&lt;double&gt;</code>.</summary><div class="answer-box">
+<code>std::accumulate(v.begin(), v.end(), 0.0)</code> &mdash; note the <code>0.0</code>: the accumulator type follows the init value, so <code>0</code> would truncate to <code>int</code>.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>[&amp;]</code> mean at the start of a lambda?</summary><div class="answer-box">
+Capture every variable the lambda uses from the enclosing scope by reference.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why does <code>std::accumulate(v.begin(), v.end(), 0)</code> on a <code>vector&lt;double&gt;</code> give a wrong answer?</summary><div class="answer-box">
+The init value <code>0</code> is <code>int</code>, so the accumulator is <code>int</code> and every addition truncates the running total to an integer. Pass <code>0.0</code> (or <code>0.0L</code>) so the accumulator is floating-point.
+</div></details>
+<details class="answer-reveal"><summary>Convert a loop that filters even numbers and squares them into a ranges pipeline.</summary><div class="answer-box">
+<pre><code><span class="k">auto</span> result = v
+    | std::views::filter([](<span class="k">int</span> x){ <span class="k">return</span> x % 2 == 0; })
+    | std::views::transform([](<span class="k">int</span> x){ <span class="k">return</span> x * x; });
+<span class="k">for</span> (<span class="k">int</span> y : result) use(y);   <span class="c">// lazy: nothing computed until iterated</span></code></pre>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>A view pipeline stored in a variable produces garbage when iterated later. Why?</summary><div class="answer-box">
+Views are non-owning: they hold iterators/pointers into the underlying range (and sometimes capture predicates by reference). If the source container is a temporary (<code>getVec() | views::filter(...)</code>) or goes out of scope, or is mutated in a way that invalidates iterators, the stored view dangles. Fixes: keep the source alive as a named lvalue, use <code>views::all</code> / owning views (<code>std::ranges::owning_view</code>, C++20; <code>ranges::to</code> in C++23 to materialise into a container), or don't store the pipeline &mdash; consume it immediately.
+</div></details>
+<details class="answer-reveal"><summary>When is passing a callable as a template parameter meaningfully faster than <code>std::function</code>, and what do you give up?</summary><div class="answer-box">
+With <code>template&lt;class F&gt; void each(F f)</code>, the exact callable type is known at the call site, so the call inlines and the optimiser can see through it &mdash; in a hot loop over millions of elements this can be 2&ndash;10&times;. <code>std::function</code> forces an indirect call and possibly a heap allocation. What you give up: the function can't be in a <code>.cpp</code> (it's a template), you can't store heterogeneous callables in one container of that type, and you get one instantiation per distinct callable (code size). Use templates for algorithms, <code>std::function</code> for stored callbacks / plugin boundaries.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:stl-algorithms -->
+
+<!-- TOPIC:cpp:smart-pointers -->
+<section class="view topic" id="v-cpp-smart-pointers" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Smart Pointers &amp; Ownership</h1>
+<p class="subtitle">Express who owns what in the type system, so leaks and double-frees become compile-time-ish problems.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3><code>std::unique_ptr</code> &mdash; sole ownership</h3>
+<pre><code><span class="k">auto</span> w = std::make_unique&lt;Widget&gt;(args);   <span class="c">// no raw new</span>
+<span class="k">use</span>(*w); w-&gt;method();
+<span class="k">return</span> w;                                 <span class="c">// moves out; cheap</span></code></pre>
+<ul>
+<li>Zero overhead vs a raw pointer (same size, no refcount) &mdash; the default owning pointer.</li>
+<li>Move-only: transfers ownership, can't be copied.</li>
+<li>Custom deleter for C resources: <code>std::unique_ptr&lt;FILE, decltype(&amp;fclose)&gt; f(fopen(...), &amp;fclose);</code>.</li>
+<li>Use it for pimpl, factory returns, and members that own a resource.</li>
+</ul>
+
+<h3><code>std::shared_ptr</code> &mdash; shared ownership</h3>
+<ul>
+<li>Holds a <strong>control block</strong> with a strong count and a weak count; the object is destroyed when the strong count hits 0, the control block when the weak count also hits 0.</li>
+<li>Refcount updates are atomic &mdash; thread-safe count, but <em>not</em> a thread-safe object.</li>
+<li><code>make_shared</code> does one allocation for object + control block (faster, better locality); a separate <code>shared_ptr(new T)</code> does two.</li>
+<li>Twice the size of a raw pointer; copies touch atomics. Don't pass <code>shared_ptr</code> around when you only need to <em>use</em> the object &mdash; pass <code>T&amp;</code> or <code>T*</code>.</li>
+</ul>
+
+<h3><code>std::weak_ptr</code> &mdash; break cycles</h3>
+<pre><code>std::weak_ptr&lt;Node&gt; parent;          <span class="c">// child-&gt;parent is weak; parent-&gt;child is shared</span>
+<span class="k">if</span> (<span class="k">auto</span> p = parent.lock()) use(*p);   <span class="c">// lock() returns shared_ptr or null</span></code></pre>
+<p>Two <code>shared_ptr</code>s pointing at each other never reach refcount 0 &rarr; leak. Make one direction
+<code>weak_ptr</code>. Also used for caches and observer lists.</p>
+
+<h3>Ownership signalling in APIs</h3>
+<table>
+<tr><th>Parameter</th><th>Means</th></tr>
+<tr><td><code>unique_ptr&lt;T&gt;</code> by value</td><td>"I take ownership"</td></tr>
+<tr><td><code>shared_ptr&lt;T&gt;</code> by value</td><td>"I share ownership (will keep it alive)"</td></tr>
+<tr><td><code>T&amp;</code> / <code>T*</code></td><td>"I just use it; caller keeps ownership"</td></tr>
+<tr><td><code>T*</code> (nullable) or <code>optional&lt;T&amp;&gt;</code>-ish</td><td>"use it if provided"</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>make_unique</code> / <code>make_shared</code> &mdash; never bare <code>new</code>/<code>delete</code>.</li>
+<li><code>unique_ptr</code>: sole owner, move-only, zero overhead. The default.</li>
+<li><code>shared_ptr</code>: refcounted, atomic count, 2&times; pointer size, control block. Use only when ownership is genuinely shared.</li>
+<li><code>make_shared</code>: single allocation (object + control block); <code>shared_ptr(new T)</code>: two.</li>
+<li><code>weak_ptr</code>: non-owning observer; <code>.lock()</code> to get a <code>shared_ptr</code> or null; breaks reference cycles.</li>
+<li>Pass smart pointers only to transfer/share ownership; otherwise pass <code>const T&amp;</code> / <code>T*</code>.</li>
+<li>Custom deleter: part of the type for <code>unique_ptr</code>, type-erased for <code>shared_ptr</code>.</li>
+<li>Atomic refcount = thread-safe <em>count</em>, not thread-safe <em>object</em>.</li>
+<li><code>enable_shared_from_this</code> to hand out <code>shared_ptr</code> to <code>this</code> safely.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt><code>unique_ptr</code> vs <code>shared_ptr</code> &mdash; default choice?</dt>
+<dd><code>unique_ptr</code>. It's the same size as a raw pointer, has no atomic operations, and expresses the common case (one owner). Reach for <code>shared_ptr</code> only when multiple parts of the program genuinely need to keep the object alive independently.</dd>
+<dt>What's inside a <code>shared_ptr</code>'s control block?</dt>
+<dd>The strong reference count, the weak reference count, the deleter, and (for <code>make_shared</code>) the object storage itself. Strong hits 0 &rarr; object destroyed; weak also 0 &rarr; control block freed.</dd>
+<dt>Why <code>make_shared</code> over <code>shared_ptr&lt;T&gt;(new T)</code>?</dt>
+<dd>One heap allocation instead of two (object + control block combined), better cache locality, and it's exception-safe in argument lists. Downside: the object's memory isn't freed until the last <code>weak_ptr</code> also goes away.</dd>
+<dt>How does <code>weak_ptr</code> prevent leaks?</dt>
+<dd>It observes an object without contributing to the strong count, so a parent&harr;child or node&harr;node relationship where one side is <code>weak_ptr</code> can still reach refcount 0 and be destroyed.</dd>
+<dt>Is <code>shared_ptr</code> thread-safe?</dt>
+<dd>The reference count is atomic, so copying/destroying <code>shared_ptr</code>s to the same object from multiple threads is safe. Accessing the <em>pointed-to object</em> concurrently, or mutating the <em>same <code>shared_ptr</code> instance</em> from multiple threads, is not &mdash; you need your own synchronisation (or <code>atomic&lt;shared_ptr&gt;</code>).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How do you create a <code>unique_ptr</code> to a new <code>Foo(1, 2)</code>?</summary><div class="answer-box">
+<code>auto p = std::make_unique&lt;Foo&gt;(1, 2);</code>.
+</div></details>
+<details class="answer-reveal"><summary>Can you copy a <code>unique_ptr</code>?</summary><div class="answer-box">
+No &mdash; it's move-only. <code>auto q = std::move(p);</code> transfers ownership and leaves <code>p</code> null.
+</div></details>
+<details class="answer-reveal"><summary>Which smart pointer breaks reference cycles?</summary><div class="answer-box">
+<code>std::weak_ptr</code> &mdash; it references the object without keeping it alive.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A tree where each node has <code>shared_ptr</code> children and a <code>shared_ptr</code> back to its parent leaks. Fix it.</summary><div class="answer-box">
+Make the parent link a <code>std::weak_ptr&lt;Node&gt;</code>. Children keep the parent alive is the wrong direction; the parent owns the children (<code>shared_ptr</code> down), children merely observe the parent (<code>weak_ptr</code> up). Now destroying the root drops all strong counts to 0.
+</div></details>
+<details class="answer-reveal"><summary>A function takes <code>std::shared_ptr&lt;Config&gt;</code> by value but only reads from it. What's wrong and what's better?</summary><div class="answer-box">
+Every call bumps and later drops an atomic refcount, and copies 16 bytes, for no ownership reason. Take <code>const Config&amp;</code> (or <code>const Config*</code> if it can be absent). Pass the <code>shared_ptr</code> itself only if the function stores it or spawns work that outlives the call.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is returning <code>shared_ptr(this)</code> from a member function a bug, and what's the correct mechanism?</summary><div class="answer-box">
+It creates a <em>second, independent</em> control block for an object that's presumably already owned by another <code>shared_ptr</code> &mdash; now two control blocks think they own it, and you get a double delete. Correct: derive from <code>std::enable_shared_from_this&lt;T&gt;</code> and call <code>shared_from_this()</code>, which returns a <code>shared_ptr</code> sharing the <em>existing</em> control block. Precondition: the object must already be managed by a <code>shared_ptr</code> (else <code>shared_from_this</code> throws / is UB pre-C++17).
+</div></details>
+<details class="answer-reveal"><summary>What's the memory cost difference between <code>make_shared&lt;T&gt;()</code> and <code>shared_ptr&lt;T&gt;(new T)</code> beyond the allocation count, and when does it matter?</summary><div class="answer-box">
+<code>make_shared</code> puts the object and control block in one block, so the object's storage can't be reclaimed until the last <code>weak_ptr</code> dies (the whole block is freed together). With separate allocation, the object is freed as soon as the strong count hits 0, and only the small control block lingers for the weak count. So for large objects with long-lived <code>weak_ptr</code>s (caches, observers), separate allocation frees the big buffer sooner. Otherwise <code>make_shared</code> wins on speed and locality.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:smart-pointers -->
+
+<!-- TOPIC:cpp:exceptions -->
+<section class="view topic" id="v-cpp-exceptions" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Exception Handling &amp; Safety Guarantees</h1>
+<p class="subtitle">Stack unwinding, <code>noexcept</code>, and the three levels of "this function is exception-safe".</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Mechanics</h3>
+<pre><code><span class="k">try</span> {
+    risky();
+} <span class="k">catch</span> (<span class="k">const</span> std::out_of_range&amp; e) {
+    log(e.what());
+} <span class="k">catch</span> (<span class="k">const</span> std::exception&amp; e) {   <span class="c">// base last</span>
+    log(e.what());
+} <span class="k">catch</span> (...) {                        <span class="c">// anything else</span>
+    cleanup(); <span class="k">throw</span>;                    <span class="c">// rethrow current exception</span>
+}</code></pre>
+<ul>
+<li><code>throw expr;</code> copies/moves <code>expr</code> into an implementation-managed area, then unwinds the stack: every fully-constructed local's destructor runs, up to a matching <code>catch</code>.</li>
+<li>Catch by <code>const&amp;</code> (no slicing, no copy). Order handlers most-derived first.</li>
+<li>Throw by value, catch by reference. Throw types deriving from <code>std::exception</code>.</li>
+<li>No matching handler anywhere &rarr; <code>std::terminate</code>.</li>
+</ul>
+
+<h3><code>noexcept</code></h3>
+<ul>
+<li><code>void f() noexcept;</code> promises not to throw. If it does, <code>std::terminate</code> &mdash; no unwinding.</li>
+<li>Destructors and (usually) move operations should be <code>noexcept</code>; the library optimises based on it (<code>move_if_noexcept</code>).</li>
+<li><code>noexcept(expr)</code> is also a compile-time query.</li>
+</ul>
+
+<h3>The three exception-safety guarantees</h3>
+<table>
+<tr><th>Guarantee</th><th>Meaning</th></tr>
+<tr><td><strong>No-throw</strong></td><td>Never throws (swap, destructors, most moves). The strongest.</td></tr>
+<tr><td><strong>Strong</strong></td><td>If it throws, state is exactly as before &mdash; commit-or-rollback (e.g. copy-and-swap).</td></tr>
+<tr><td><strong>Basic</strong></td><td>If it throws, no leaks and all invariants hold, but state may have changed. The minimum acceptable.</td></tr>
+</table>
+
+<h3>Writing exception-safe code</h3>
+<ul>
+<li>Lean on RAII &mdash; every resource in a guard object, so unwinding cleans up automatically.</li>
+<li>Do all the "can throw" work (allocate, copy) into locals <em>first</em>, then commit with non-throwing operations (<code>swap</code>, moves, pointer assignment).</li>
+<li>Never let an exception escape a destructor or a <code>noexcept</code> function.</li>
+<li>Exceptions are for <em>exceptional</em>, rare failures. For expected failures (parse error, key not found) prefer <code>std::optional</code> / <code>std::expected</code> / error codes &mdash; exceptions have near-zero cost when not thrown but are expensive when thrown.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Throw by value, catch by <code>const&amp;</code>, order handlers derived&rarr;base, <code>catch(...)</code> last.</li>
+<li><code>throw;</code> (no operand) rethrows the in-flight exception.</li>
+<li>Unwinding runs destructors of fully-constructed locals up to the handler.</li>
+<li>Derive exception types from <code>std::exception</code>; override <code>what()</code>.</li>
+<li><code>noexcept</code>: violate it &rarr; <code>std::terminate</code>. Put it on dtors and true-nothrow moves.</li>
+<li>Guarantees: <strong>nothrow</strong> &gt; <strong>strong</strong> (rollback) &gt; <strong>basic</strong> (no leak, valid state). Aim for basic everywhere, strong where it matters.</li>
+<li>Technique for strong: prepare in locals, commit via nothrow ops (copy-and-swap).</li>
+<li>Destructors must not throw (they're implicitly <code>noexcept</code>).</li>
+<li>Use <code>optional</code>/<code>expected</code>/error codes for expected failures; exceptions for rare ones.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is stack unwinding?</dt>
+<dd>When an exception propagates, the runtime walks back up the call stack, running the destructor of every fully-constructed automatic object in each frame, until it finds a matching <code>catch</code>. This is what makes RAII cleanup automatic on the error path.</dd>
+<dt>Why catch by <code>const</code> reference?</dt>
+<dd>Catching by value slices a derived exception down to the handler's type and makes a copy (which could itself throw). By reference you get the real dynamic type and no copy; <code>const</code> because you shouldn't be mutating it.</dd>
+<dt>What are the three exception-safety guarantees?</dt>
+<dd>No-throw (never throws), strong (throw &rArr; state unchanged, like a transaction), basic (throw &rArr; no leaks and invariants intact, but state may differ). Basic is the minimum; strong is ideal for operations users treat as atomic.</dd>
+<dt>What happens if a <code>noexcept</code> function throws?</dt>
+<dd><code>std::terminate</code> is called immediately &mdash; no stack unwinding, no <code>catch</code> gets a chance.</dd>
+<dt>Why not use exceptions for a "key not found" lookup?</dt>
+<dd>That's an expected outcome, not an exceptional one. Throwing/catching is comparatively slow and clutters control flow; return <code>std::optional</code>, an iterator compared to <code>end()</code>, or <code>std::expected</code>.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Should you throw a pointer, a value, or a reference?</summary><div class="answer-box">
+Throw by value (typically a temporary of a type derived from <code>std::exception</code>). Catch by <code>const</code> reference.
+</div></details>
+<details class="answer-reveal"><summary>What does a bare <code>throw;</code> inside a <code>catch</code> block do?</summary><div class="answer-box">
+Rethrows the exception currently being handled, preserving its dynamic type, so an outer handler can deal with it.
+</div></details>
+<details class="answer-reveal"><summary>What's the ordering rule for multiple <code>catch</code> clauses?</summary><div class="answer-box">
+Most-derived types first, base types after &mdash; the first matching handler wins, so a <code>catch(std::exception&amp;)</code> placed first would shadow all more specific ones.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Make this give the strong guarantee: <code>void add(T x){ items_.push_back(x); ++count_; }</code></summary><div class="answer-box">
+<code>push_back</code> can throw (allocation). If it does, <code>count_</code> hasn't changed yet &mdash; good &mdash; but if you'd incremented first you'd be inconsistent. As written it's already close to strong <em>provided</em> <code>count_</code> is only incremented after a successful <code>push_back</code>. Even better: drop <code>count_</code> and use <code>items_.size()</code>, so there's nothing to keep in sync. If you must keep both, order matters: throwing operation first, bookkeeping after.
+</div></details>
+<details class="answer-reveal"><summary>Why is a throwing move constructor a problem for <code>std::vector</code>?</summary><div class="answer-box">
+On reallocation the vector must relocate elements. To preserve the strong guarantee it uses <code>move_if_noexcept</code>: if the move ctor isn't <code>noexcept</code>, it <em>copies</em> instead (so a mid-relocation throw leaves the original intact). So a throwing move silently forces copies on every growth.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is the runtime cost model of exceptions ("zero-cost" EH), and when is it a poor fit?</summary><div class="answer-box">
+Modern table-based EH (Itanium ABI) adds essentially no cost on the non-throwing path &mdash; no per-<code>try</code> setup; instead the compiler emits static unwind tables consulted only when a throw happens. But a throw is expensive: table lookup, per-frame destructor dispatch, RTTI type matching &mdash; often microseconds. Poor fit: hot loops where "failure" is common (parsing, search misses), hard-real-time / latency-critical code where the unbounded throw cost is unacceptable, and constrained embedded targets where the unwind tables bloat the binary or EH is disabled entirely. There, use return-based error handling (<code>expected</code>, error codes).
+</div></details>
+<details class="answer-reveal"><summary>Two exceptions in flight at once &mdash; when does that happen and what's the result?</summary><div class="answer-box">
+It happens if a destructor (or other cleanup) throws <em>while</em> stack unwinding is already in progress for an earlier exception. The standard doesn't try to handle two simultaneously: <code>std::terminate</code> is called. This is the core reason destructors must be <code>noexcept</code>. If cleanup genuinely can fail, catch and swallow (or log) inside the destructor, and expose a separate throwing <code>close()</code>/<code>commit()</code> for callers who want to handle it. <code>std::uncaught_exceptions()</code> lets a type detect it's being destroyed during unwinding.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:exceptions -->
+
+<!-- TOPIC:cpp:constexpr -->
+<section class="view topic" id="v-cpp-constexpr" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1><code>constexpr</code>, <code>consteval</code> &amp; Compile-time</h1>
+<p class="subtitle">Moving work from run time to compile time &mdash; and the keywords that force it.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The spectrum</h3>
+<table>
+<tr><th>Keyword</th><th>Meaning</th></tr>
+<tr><td><code>const</code></td><td>Runtime-immutable. May or may not be a compile-time constant.</td></tr>
+<tr><td><code>constexpr</code> (var)</td><td>Must be initialised by a constant expression; usable where the language needs one (array sizes, template args, <code>case</code> labels).</td></tr>
+<tr><td><code>constexpr</code> (function)</td><td><em>Can</em> run at compile time if all inputs are constant; otherwise runs normally at run time.</td></tr>
+<tr><td><code>consteval</code> (C++20)</td><td>An <em>immediate</em> function &mdash; every call must be evaluated at compile time or it's an error.</td></tr>
+<tr><td><code>constinit</code> (C++20)</td><td>Guarantees static/thread-storage init happens at compile time (no dynamic-init order fiasco), but the object stays mutable.</td></tr>
+</table>
+
+<h3>Example</h3>
+<pre><code><span class="k">constexpr</span> <span class="k">int</span> factorial(<span class="k">int</span> n) {
+    <span class="k">int</span> r = 1;
+    <span class="k">for</span> (<span class="k">int</span> i = 2; i &lt;= n; ++i) r *= i;   <span class="c">// loops, locals, branches all fine since C++14</span>
+    <span class="k">return</span> r;
+}
+<span class="k">constexpr</span> <span class="k">int</span> f5 = factorial(5);   <span class="c">// computed at compile time -> 120</span>
+<span class="k">int</span> x = read_int();
+<span class="k">int</span> fx = factorial(x);            <span class="c">// same function, now runs at run time</span>
+
+<span class="k">if</span> <span class="k">constexpr</span> (sizeof(<span class="k">void</span>*) == 8) { ... }   <span class="c">// compile-time branch (see Metaprogramming)</span></code></pre>
+
+<h3>What's allowed in a <code>constexpr</code> function</h3>
+<p>Progressively relaxed: C++11 was one <code>return</code>; C++14 added loops, locals, mutation; C++20
+added <code>try</code>/<code>catch</code> (no throw), <code>constexpr</code> <code>new</code>/<code>delete</code>,
+<code>std::vector</code>/<code>std::string</code> in <code>constexpr</code> context (if freed before the constant is
+finalised), virtual calls. Still no reinterpret_cast, no non-constexpr calls, no undefined
+behaviour (a <code>constexpr</code> eval that hits UB is a compile error &mdash; a nice bonus).</p>
+
+<h3>Why it matters</h3>
+<ul>
+<li>Lookup tables, hashes, parsers built at compile time &rarr; zero startup cost.</li>
+<li>Values usable as template arguments / array bounds.</li>
+<li>UB in a constant-evaluated path is diagnosed by the compiler.</li>
+<li>Replaces most old template-metaprogramming "value computation" with ordinary code.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>const</code> = won't change at runtime. <code>constexpr</code> = usable as a compile-time constant.</li>
+<li><code>constexpr</code> function: compile-time <em>if it can be</em>, else runtime. Same body serves both.</li>
+<li><code>consteval</code>: must be compile-time (immediate function).</li>
+<li><code>constinit</code>: compile-time initialisation, still mutable &mdash; kills static-init-order problems.</li>
+<li>C++14+: loops, mutable locals, multiple statements allowed in <code>constexpr</code>.</li>
+<li>C++20: <code>constexpr</code> <code>std::vector</code>/<code>std::string</code>, <code>new</code>/<code>delete</code>, virtual, <code>try</code> (no <code>throw</code>).</li>
+<li>UB during constant evaluation = compile error (a feature).</li>
+<li>Use for lookup tables, compile-time parsing/validation, and template/array-bound values.</li>
+<li><code>if constexpr</code> is a compile-time branch, unrelated to <code>constexpr</code> variables/functions but same family.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt><code>const</code> vs <code>constexpr</code> on a variable?</dt>
+<dd><code>const</code> just means "not modified after init" &mdash; the initialiser can be a runtime value. <code>constexpr</code> additionally requires the initialiser to be a constant expression, so the variable can be used where the language demands a compile-time constant.</dd>
+<dt>Does a <code>constexpr</code> function always run at compile time?</dt>
+<dd>No. It runs at compile time when called in a constant-expression context or with all-constant arguments; otherwise it's an ordinary function call at run time. <code>consteval</code> is the version that <em>must</em> be compile-time.</dd>
+<dt>What does <code>consteval</code> add over <code>constexpr</code>?</dt>
+<dd>It forbids runtime evaluation: every call site must produce a compile-time constant, or the program is ill-formed. Useful for things like compile-time-only factories or reflection helpers.</dd>
+<dt>What problem does <code>constinit</code> solve?</dt>
+<dd>The static initialisation order fiasco: it guarantees a namespace-scope or <code>static</code> variable is initialised at compile time (constant initialisation), so it can't depend on another TU's not-yet-run dynamic initialiser. Unlike <code>constexpr</code>, the object can still be modified later.</dd>
+<dt>What happens if compile-time evaluation of a <code>constexpr</code> hits undefined behaviour?</dt>
+<dd>It's a compilation error. The constant evaluator is not allowed to have UB, so things like signed overflow or out-of-bounds access in a constant-evaluated call are caught at build time.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Where can you use a <code>constexpr int</code> that you can't use a <code>const int</code> (initialised from input)?</summary><div class="answer-box">
+As an array size, a non-type template argument, a <code>case</code> label, a <code>static_assert</code> operand &mdash; anywhere a compile-time constant is required.
+</div></details>
+<details class="answer-reveal"><summary>Can a <code>constexpr</code> function contain a <code>for</code> loop?</summary><div class="answer-box">
+Yes, since C++14 (along with local variables, mutation, multiple statements, branches).
+</div></details>
+<details class="answer-reveal"><summary>Which keyword forces every call to be evaluated at compile time?</summary><div class="answer-box">
+<code>consteval</code> (C++20) &mdash; an "immediate function".
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Build a 256-entry compile-time lookup table.</summary><div class="answer-box">
+<pre><code><span class="k">constexpr</span> <span class="k">auto</span> make_table() {
+    std::array&lt;<span class="k">uint8_t</span>, 256&gt; t{};
+    <span class="k">for</span> (<span class="k">int</span> i = 0; i &lt; 256; ++i) t[i] = popcount(i);
+    <span class="k">return</span> t;
+}
+<span class="k">constexpr</span> <span class="k">auto</span> kBitCounts = make_table();   <span class="c">// fully built at compile time</span></code></pre>
+No static initialiser runs at program startup; the array is baked into the binary.
+</div></details>
+<details class="answer-reveal"><summary>Why might marking a function <code>constexpr</code> be a compile error even though the body looks fine?</summary><div class="answer-box">
+It calls something not usable in constant evaluation (a non-<code>constexpr</code> function, I/O, <code>reinterpret_cast</code>, a <code>throw</code> in C++17), or it can never be evaluated as a constant for any arguments. The compiler diagnoses <code>constexpr</code> functions that have no possible constant-expression instantiation.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How can C++20 allow <code>std::vector</code> in a <code>constexpr</code> function when heap allocation is runtime?</summary><div class="answer-box">
+The constant evaluator has its own model of allocation ("transient allocation"): <code>new</code>/<code>delete</code> during constant evaluation operate on the evaluator's abstract memory, not the real heap. The rule is that any memory allocated during constant evaluation must be <em>freed</em> before that evaluation completes &mdash; you can build and manipulate a <code>std::vector</code> inside a <code>constexpr</code> function and return, say, its computed sum or a fixed-size <code>std::array</code>, but you can't have a <code>constexpr</code> variable that still owns heap memory at the end. C++23 relaxes some cases with <code>constexpr</code>-friendly allocators and <code>std::string</code> SSO.
+</div></details>
+<details class="answer-reveal"><summary>What's the difference between <code>if constexpr</code>, a <code>constexpr if</code> condition, and a normal <code>if</code> with a <code>constexpr</code> condition?</summary><div class="answer-box">
+A normal <code>if (constexpr_cond)</code> still compiles <em>both</em> branches and just picks one at runtime (the optimiser may drop the dead one). <code>if constexpr (cond)</code> requires <code>cond</code> to be a constant expression and <em>discards</em> the untaken branch at compile time &mdash; it isn't instantiated, so it may contain code that would be ill-formed for the current template type. That discarding behaviour is the whole point in templates; outside templates it's just a guaranteed dead-branch elimination.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:constexpr -->
+
+<!-- TOPIC:cpp:modern-cpp -->
+<section class="view topic" id="v-cpp-modern-cpp" data-skill="cpp">
+<div class="layout">
+<nav class="sidebar" data-sidebar="cpp"></nav>
+<div class="topic-body">
+<h1>Modern C++: C++11 to C++23</h1>
+<p class="subtitle">The features an interviewer expects you to reach for by default now.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>C++11/14 &mdash; the reset</h3>
+<ul>
+<li><code>auto</code>, <code>decltype</code>, range-<code>for</code>, uniform init <code>{}</code>, <code>nullptr</code>, <code>enum class</code>.</li>
+<li>Move semantics, <code>&amp;&amp;</code>, <code>std::move</code>/<code>forward</code>, smart pointers, <code>std::thread</code>/<code>mutex</code>/<code>atomic</code>.</li>
+<li>Lambdas (init-capture &amp; generic lambdas in C++14), <code>constexpr</code>, <code>= default</code>/<code>= delete</code>, <code>override</code>/<code>final</code>.</li>
+<li><code>std::array</code>, <code>unordered_*</code>, <code>tuple</code>, <code>chrono</code>, variadic templates.</li>
+</ul>
+
+<h3>C++17</h3>
+<ul>
+<li>Structured bindings: <code>auto [it, ok] = m.insert(...);</code>.</li>
+<li><code>if</code>/<code>switch</code> with initialiser: <code>if (auto v = f(); v.ok())</code>.</li>
+<li><code>if constexpr</code>, fold expressions, CTAD, <code>inline</code> variables.</li>
+<li><code>std::optional</code>, <code>std::variant</code>, <code>std::any</code>, <code>std::string_view</code>, <code>std::filesystem</code>.</li>
+<li>Guaranteed copy elision; parallel algorithms (<code>std::execution::par</code>).</li>
+</ul>
+
+<h3>C++20 &mdash; the big one</h3>
+<ul>
+<li><strong>Concepts</strong>, <strong>ranges</strong>, <strong>coroutines</strong>, <strong>modules</strong>.</li>
+<li><code>operator&lt;=&gt;</code>, designated initialisers, <code>consteval</code>/<code>constinit</code>.</li>
+<li><code>std::span</code>, <code>std::format</code>, <code>std::jthread</code> (auto-join + stop token), <code>std::atomic_ref</code>.</li>
+<li><code>[[likely]]</code>/<code>[[unlikely]]</code>, <code>using enum</code>.</li>
+</ul>
+
+<h3>C++23 highlights</h3>
+<ul>
+<li><code>std::expected&lt;T,E&gt;</code> &mdash; value-or-error return type.</li>
+<li><code>std::print</code>/<code>println</code>, <code>std::mdspan</code>, <code>std::flat_map</code>/<code>flat_set</code>.</li>
+<li><code>ranges::to</code> (materialise a view into a container), more <code>constexpr</code>, <code>if consteval</code>.</li>
+<li>Deducing <code>this</code> (explicit object parameter).</li>
+</ul>
+
+<h3>Default toolkit today</h3>
+<pre><code><span class="k">auto</span> [name, age] = person;                 <span class="c">// structured bindings</span>
+std::optional&lt;User&gt; u = find(id);
+<span class="k">if</span> (u) greet(*u);
+std::string_view sv = arg;                  <span class="c">// non-owning, no copy</span>
+std::span&lt;<span class="k">int</span>&gt; window(buf.data() + 4, 8);      <span class="c">// bounds-carrying view</span>
+std::cout &lt;&lt; std::format(<span class="s">"{} is {}\n"</span>, name, age);</code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>C++11/14:</strong> <code>auto</code>, range-for, move, lambdas, smart pointers, <code>enum class</code>, <code>nullptr</code>, threads.</li>
+<li><strong>C++17:</strong> structured bindings, <code>if (init; cond)</code>, <code>optional</code>/<code>variant</code>/<code>string_view</code>, <code>filesystem</code>, <code>if constexpr</code>, CTAD.</li>
+<li><strong>C++20:</strong> concepts, ranges, coroutines, modules, <code>&lt;=&gt;</code>, <code>span</code>, <code>format</code>, <code>jthread</code>.</li>
+<li><strong>C++23:</strong> <code>expected</code>, <code>print</code>, <code>mdspan</code>, <code>flat_map</code>, <code>ranges::to</code>, deducing <code>this</code>.</li>
+<li>Prefer <code>string_view</code> for read-only string params, <code>span</code> for read/write contiguous ranges.</li>
+<li><code>optional</code>/<code>expected</code> for "might not have a value / might fail" instead of sentinels or exceptions.</li>
+<li><code>std::format</code>/<code>std::print</code> over iostream <code>&lt;&lt;</code> chains and <code>printf</code>.</li>
+<li><code>enum class</code> always (scoped, no implicit int conversion).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>When should a function parameter be <code>std::string_view</code> vs <code>const std::string&amp;</code>?</dt>
+<dd><code>string_view</code> when the function only reads the characters and doesn't need a null terminator or ownership &mdash; it binds to <code>std::string</code>, string literals, and substrings with no allocation. Keep <code>const std::string&amp;</code> if you pass it to something that needs an actual <code>std::string</code> or a C string.</dd>
+<dt>What are structured bindings?</dt>
+<dd>C++17 syntax to unpack a tuple/pair/struct/array into named variables in one declaration: <code>auto [key, value] = *it;</code>. They bind to the elements (with the chosen value category), not copies unless you say <code>auto</code> by value.</dd>
+<dt><code>std::optional</code> vs <code>std::expected</code>?</dt>
+<dd><code>optional&lt;T&gt;</code> is "a T or nothing". <code>expected&lt;T,E&gt;</code> (C++23) is "a T or an error value of type E", so the caller learns <em>why</em> it failed &mdash; a lightweight alternative to exceptions for recoverable errors.</dd>
+<dt>What does <code>std::span</code> give you?</dt>
+<dd>A non-owning view over a contiguous sequence (pointer + length), so one function signature accepts C arrays, <code>std::array</code>, <code>std::vector</code>, and sub-ranges without templates or losing the size.</dd>
+<dt>What problem do modules solve over headers?</dt>
+<dd>Headers are textually re-parsed in every translation unit and leak macros/definitions. Modules are compiled once into a binary interface, import order-independent, don't leak the preprocessor, and dramatically cut build times &mdash; adoption is still maturing across toolchains.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How do you iterate a container with a range-based <code>for</code> without copying elements?</summary><div class="answer-box">
+<code>for (const auto&amp; x : container)</code> for read-only, <code>for (auto&amp; x : container)</code> to modify.
+</div></details>
+<details class="answer-reveal"><summary>Which C++ version introduced <code>std::optional</code> and <code>std::string_view</code>?</summary><div class="answer-box">
+C++17.
+</div></details>
+<details class="answer-reveal"><summary>What's the modern replacement for <code>printf</code>-style formatting?</summary><div class="answer-box">
+<code>std::format</code> (C++20) and <code>std::print</code>/<code>std::println</code> (C++23) &mdash; type-safe, no format-string/argument mismatch UB.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>What's the danger of returning a <code>std::string_view</code> from a function?</summary><div class="answer-box">
+If it views a local <code>std::string</code> or a temporary, the underlying buffer is destroyed when the function returns and the caller reads freed memory. Only return a <code>string_view</code> into storage that outlives the call (a member string, a string literal, a caller-provided buffer).
+</div></details>
+<details class="answer-reveal"><summary>Rewrite <code>int err = doThing(&amp;out); if (err) ...</code> using a modern return type.</summary><div class="answer-box">
+<code>std::expected&lt;Result, Error&gt; r = doThing(); if (!r) return handle(r.error()); use(*r);</code> (C++23). Pre-23: <code>std::optional&lt;Result&gt;</code> if you don't need the error detail, or a small <code>struct { Result value; Error err; }</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is a coroutine in C++20 and why is the language-level support "low-level"?</summary><div class="answer-box">
+A function containing <code>co_await</code>, <code>co_yield</code>, or <code>co_return</code>; the compiler transforms it into a state machine with a heap-allocated (usually) coroutine frame holding locals across suspension points. C++20 only standardised the <em>mechanism</em> (promise type, awaiter protocol, <code>coroutine_handle</code>) &mdash; not ready-to-use types. You either write the promise/awaiter boilerplate yourself or use a library (<code>cppcoro</code>, folly, and C++23's <code>std::generator</code>). The design lets it serve generators, async I/O, and tasks, at the cost of needing a library layer for everyday use.
+</div></details>
+<details class="answer-reveal"><summary>Explain "deducing <code>this</code>" (C++23) and one problem it removes.</summary><div class="answer-box">
+You can write the object parameter explicitly: <code>template&lt;class Self&gt; auto&amp;&amp; value(this Self&amp;&amp; self)</code>. This collapses the four near-identical overloads you previously needed for <code>&amp;</code>/<code>const&amp;</code>/<code>&amp;&amp;</code>/<code>const&amp;&amp;</code> into one function, and it enables recursive lambdas (the lambda can name itself via <code>self</code>) and CRTP-free mixins. It removes the const/ref-qualifier overload explosion for accessors and builder-style APIs.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:cpp:modern-cpp -->
+
 </main>
 
 <footer class="site-footer">
@@ -3630,29 +5275,27 @@ It removes the space from <code>IFS</code>, so unquoted expansions split only on
       ["text-processing",  "Text Processing: grep, sed, awk, cut, sort",  "grep -E/-o, sed substitution, awk fields & patterns, cut, sort -k, uniq -c."],
       ["find-xargs-proc",  "find, xargs & Process Management",           "find -exec vs xargs, -print0, job control, &, wait, kill, signals, subshells."],
       ["getopts-debug",    "getopts, Debugging, Portability & Gotchas",  "getopts option parsing, set -x, bash -n, shellcheck, POSIX vs bashisms."]
+    ],
+    cpp: [
+      ["refs-vs-pointers", "References vs Pointers & C-with-Classes",     "Reference semantics, const&, dangling, when C++ differs from C, RAII preview."],
+      ["raii",             "Classes, Constructors, Destructors & RAII",   "Init order, member init lists, delegating ctors, RAII, explicit, =default/=delete."],
+      ["rule-of-five",     "Copy Semantics & the Rule of 3/5/0",         "Deep vs shallow copy, copy ctor/assign, self-assignment, rule of zero."],
+      ["move-semantics",   "Move Semantics & rvalue References",         "lvalue/rvalue/xvalue, std::move, noexcept moves, moved-from state, RVO."],
+      ["virtual-dispatch", "Inheritance & Virtual Dispatch",             "vtable/vptr, override/final, virtual dtor, slicing, abstract classes, cost."],
+      ["operator-overload","Operator Overloading",                       "Member vs free, canonical forms, ==/<=> , conversion ops, [] and (), pitfalls."],
+      ["templates",        "Templates & Generic Programming",            "Function/class templates, deduction, specialization, two-phase lookup, ODR."],
+      ["template-meta",    "Metaprogramming: SFINAE, Concepts, CRTP",    "enable_if, type traits, if constexpr, concepts, CRTP, variadic templates."],
+      ["stl-containers",   "STL Containers & Iterators",                 "vector/map/unordered_map/deque/list, iterator categories, invalidation rules."],
+      ["stl-algorithms",   "STL Algorithms & Lambdas",                   "<algorithm>, ranges, lambda captures, std::function cost, erase-remove."],
+      ["smart-pointers",   "Smart Pointers & Ownership",                 "unique_ptr, shared_ptr control block, weak_ptr cycles, make_*, custom deleters."],
+      ["exceptions",       "Exception Handling & Safety Guarantees",     "throw/catch, stack unwinding, noexcept, RAII cleanup, the 3 guarantees."],
+      ["constexpr",        "constexpr, consteval & Compile-time",        "constexpr functions/vars, consteval, constinit, compile-time containers."],
+      ["modern-cpp",       "Modern C++: C++11 to C++23",                 "auto, range-for, structured bindings, optional/variant/expected, ranges, modules."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    cpp: [
-      "C vs C++, references vs pointers",
-      "Classes, constructors, destructors & RAII",
-      "Copy semantics & the Rule of 3/5/0",
-      "Move semantics & rvalue references",
-      "Inheritance & virtual dispatch (the vtable)",
-      "Templates & generic programming",
-      "Template metaprogramming (SFINAE, concepts, CRTP)",
-      "STL containers & iterators",
-      "STL algorithms & lambdas",
-      "Smart pointers & ownership",
-      "Operator overloading",
-      "Exception handling & the safety guarantees",
-      "constexpr & compile-time evaluation",
-      "Concurrency: std::thread, atomics, memory order",
-      "The ODR, linkage & name lookup (ADL)",
-      "Modern C++: a C++11 -> C++23 tour"
-    ],
     oops: [
       "The four pillars",
       "Class vs object & access specifiers",
