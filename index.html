@@ -1,0 +1,2061 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#2f3457">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<title>Leo Interview Preparation Notebook</title>
+<style>
+:root {
+  --bg: #f4f5f8;
+  --bg-panel: #ffffff;
+  --text: #1f2230;
+  --text-soft: #5b607a;
+  --border: #dcdfea;
+  --accent: #2f3457;
+  --accent-soft: #e0e2f0;
+  --highlight: #ecedf5;
+  --code-bg: #ecedf5;
+  --shadow: 0 1px 3px rgba(31,34,48,0.09);
+  --maxw: 960px;
+}
+/* per-skill palettes */
+.theme-home  { --accent:#2f3457; --accent-soft:#e0e2f0; --highlight:#ecedf5; --code-bg:#ecedf5; }
+.theme-c     { --accent:#2f5b8a; --accent-soft:#d8e6f2; --highlight:#e9f1f8; --code-bg:#e9f1f8; }
+.theme-shell { --accent:#2f6b4a; --accent-soft:#d6ece0; --highlight:#e7f4ec; --code-bg:#e7f4ec; }
+.theme-cpp   { --accent:#5a3f8f; --accent-soft:#e4dcf3; --highlight:#efe9f8; --code-bg:#efe9f8; }
+.theme-oops  { --accent:#1f6f74; --accent-soft:#d4ebec; --highlight:#e6f4f4; --code-bg:#e6f4f4; }
+.theme-ds    { --accent:#9a5a1e; --accent-soft:#f2e2d0; --highlight:#f8efe4; --code-bg:#f8efe4; }
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: Georgia, 'Iowan Old Style', 'Palatino Linotype', serif;
+  background: var(--bg);
+  color: var(--text);
+  line-height: 1.65;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+.site-header {
+  background: var(--accent);
+  color: #fff;
+  padding: 1rem 1.25rem;
+}
+.site-header .header-inner {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+.site-header a { color: #fff; }
+.site-header .brand { font-size: 1.1rem; font-weight: bold; letter-spacing: 0.02em; }
+.site-header .brand .sub { display:block; font-family: Arial, sans-serif; font-size: 0.72rem; font-weight: normal; opacity: 0.82; margin-top: 0.12rem; }
+.crumbs { font-size: 0.83rem; font-family: Arial, sans-serif; opacity: 0.95; }
+.crumbs a { text-decoration: underline; }
+.crumbs span { opacity: 0.7; }
+
+main { max-width: var(--maxw); margin: 0 auto; padding: 1.5rem 1.1rem 4rem; }
+.view { display: none; }
+.view.active { display: block; }
+
+h1 { font-size: 1.6rem; margin: 0 0 0.35rem; }
+h2 {
+  font-size: 1.2rem;
+  margin: 2rem 0 0.75rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 2px solid var(--accent-soft);
+  color: var(--accent);
+}
+h3 { font-size: 1.02rem; margin: 1.3rem 0 0.5rem; color: var(--accent); }
+h4 { font-size: 0.95rem; margin: 1rem 0 0.4rem; }
+p { margin: 0.7rem 0; }
+.subtitle { color: var(--text-soft); font-family: Arial, sans-serif; font-size: 0.93rem; margin-bottom: 1.2rem; }
+
+.callout {
+  background: var(--highlight);
+  border-left: 4px solid var(--accent);
+  padding: 0.9rem 1.1rem;
+  border-radius: 4px;
+  margin: 1.1rem 0;
+  font-size: 0.97rem;
+}
+.callout h4 { margin: 0 0 0.4rem; font-family: Arial, sans-serif; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); }
+.callout ul { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+
+/* home skill grid */
+.skill-grid { list-style: none; padding: 0; margin: 1.2rem 0 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1rem; }
+.skill-grid li {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  border-radius: 10px;
+  padding: 1.1rem 1.2rem;
+  box-shadow: var(--shadow);
+}
+.skill-grid a.skill-link { font-size: 1.08rem; font-weight: bold; }
+.skill-grid p { margin: 0.35rem 0 0; font-size: 0.88rem; color: var(--text-soft); font-family: Arial, sans-serif; }
+.skill-grid .status { display: inline-block; margin-top: 0.6rem; font-size: 0.72rem; font-family: Arial, sans-serif; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.16rem 0.5rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
+.skill-grid .status.soon { background: #ececf0; color: var(--text-soft); }
+
+/* two-column topic layout */
+.layout { display: grid; grid-template-columns: 210px 1fr; gap: 1.8rem; align-items: start; }
+@media (max-width: 760px) { .layout { grid-template-columns: 1fr; } }
+.sidebar {
+  background: var(--bg-panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  font-family: Arial, sans-serif;
+  font-size: 0.85rem;
+  position: sticky;
+  top: 0.8rem;
+}
+@media (max-width: 760px) { .sidebar { position: static; } }
+.sidebar h3 { margin: 0 0 0.5rem; font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-soft); }
+.sidebar ol { margin: 0; padding-left: 1.2rem; }
+.sidebar li { margin-bottom: 0.4rem; }
+.sidebar li.active > a { font-weight: bold; color: var(--accent); }
+.sidebar .back { display: inline-block; margin-bottom: 0.7rem; font-size: 0.83rem; }
+.topic-body { min-width: 0; }
+
+/* topic list on skill page */
+.topic-list { list-style: none; padding: 0; margin: 1rem 0 0; }
+.topic-list li {
+  border: 1px solid var(--border);
+  background: var(--bg-panel);
+  border-radius: 8px;
+  margin-bottom: 0.65rem;
+  padding: 0.8rem 1rem;
+  display: flex;
+  gap: 0.8rem;
+  align-items: baseline;
+}
+.topic-list .num { font-family: Arial, sans-serif; font-weight: bold; color: var(--accent); min-width: 1.6rem; }
+.topic-list a { font-weight: bold; }
+.topic-list p { margin: 0.2rem 0 0; font-size: 0.87rem; color: var(--text-soft); font-family: Arial, sans-serif; }
+
+/* collapsible content sections */
+details.section {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-panel);
+  margin: 0.9rem 0;
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+details.section > summary {
+  cursor: pointer;
+  padding: 0.8rem 1.1rem;
+  font-family: Arial, sans-serif;
+  font-weight: bold;
+  font-size: 0.9rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  background: var(--highlight);
+  list-style: none;
+}
+details.section > summary::-webkit-details-marker { display: none; }
+details.section > summary::before { content: "\25B8  "; }
+details.section[open] > summary::before { content: "\25BE  "; }
+details.section > .section-body { padding: 0.4rem 1.1rem 1.1rem; }
+
+/* click-to-reveal answers */
+.qlevel { margin: 0.6rem 0 1.2rem; }
+details.answer-reveal {
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 6px;
+  margin: 0.55rem 0;
+  background: var(--bg);
+}
+details.answer-reveal > summary {
+  cursor: pointer;
+  padding: 0.6rem 0.9rem;
+  font-family: Arial, sans-serif;
+  font-size: 0.92rem;
+  font-weight: bold;
+  list-style: none;
+}
+details.answer-reveal > summary::-webkit-details-marker { display: none; }
+details.answer-reveal > summary::before { content: "Q \00B7 "; color: var(--accent); font-weight: bold; }
+details.answer-reveal[open] > summary { border-bottom: 1px solid var(--border); }
+.answer-box { padding: 0.75rem 0.95rem; font-size: 0.96rem; }
+.answer-box::before { content: "Answer"; display: block; font-family: Arial, sans-serif; font-size: 0.7rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-soft); margin-bottom: 0.35rem; }
+.lvl-tag { display: inline-block; font-family: Arial, sans-serif; font-size: 0.68rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.12rem 0.45rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); vertical-align: middle; margin-left: 0.4rem; }
+
+/* Q&A list */
+.qa { margin: 0.5rem 0; }
+.qa dt { font-weight: bold; margin-top: 0.8rem; }
+.qa dt::before { content: "Q. "; color: var(--accent); }
+.qa dd { margin: 0.2rem 0 0; }
+.qa dd::before { content: "A. "; color: var(--text-soft); font-weight: bold; font-family: Arial, sans-serif; }
+
+/* key terms */
+.term-list dt { font-weight: bold; margin-top: 0.6rem; color: var(--accent); }
+.term-list dd { margin-left: 0; }
+
+/* code */
+pre {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 8px;
+  padding: 0.9rem 1rem;
+  overflow-x: auto;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  margin: 0.9rem 0;
+}
+pre .c { color: #7f849c; font-style: italic; }
+pre .k { color: #cba6f7; }
+pre .s { color: #a6e3a1; }
+pre .n { color: #fab387; }
+code {
+  background: var(--code-bg);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', 'Liberation Mono', monospace;
+  font-size: 0.88em;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; display: block; overflow-x: auto; }
+th, td { border: 1px solid var(--border); padding: 0.45rem 0.65rem; text-align: left; vertical-align: top; }
+th { background: var(--highlight); font-family: Arial, sans-serif; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.03em; }
+
+ul, ol { padding-left: 1.3rem; }
+li { margin: 0.25rem 0; }
+
+footer.site-footer { text-align: center; font-family: Arial, sans-serif; font-size: 0.78rem; color: var(--text-soft); padding: 2rem 1rem 3rem; }
+
+.install-hint { font-family: Arial, sans-serif; font-size: 0.82rem; color: var(--text-soft); margin-top: 1.5rem; }
+</style>
+</head>
+<body class="theme-home">
+
+<header class="site-header">
+  <div class="header-inner">
+    <a href="#/" class="brand">Leo Interview Preparation Notebook<span class="sub">C &middot; Shell &middot; C++ &middot; OOPS &middot; Data Structures</span></a>
+    <nav class="crumbs" id="crumbs"></nav>
+  </div>
+</header>
+
+<main id="main">
+
+<!-- ============================== HOME ============================== -->
+<section class="view" id="v-home">
+  <h1>Quick reference for technical interviews</h1>
+  <p class="subtitle">Personal prep &amp; skill-refresh notebook. Pick a skill, pick a topic, read the notes, skim the cheat sheet, then drill the interview questions.</p>
+
+  <div class="callout">
+    <h4>How each topic is organised</h4>
+    <ul>
+      <li><strong>Notes</strong> &mdash; the concept explained properly, with code and tables.</li>
+      <li><strong>Cheat Sheet</strong> &mdash; condensed points for last-minute revision.</li>
+      <li><strong>Q&amp;A</strong> &mdash; short question / answer pairs to self-check.</li>
+      <li><strong>Interview Questions</strong> &mdash; Basic &rarr; Intermediate &rarr; Advanced, each with a hidden model answer. Tap to reveal.</li>
+    </ul>
+  </div>
+
+  <ul class="skill-grid">
+    <li>
+      <a class="skill-link" href="#/c">C Concepts</a>
+      <p>Pointers, memory, storage classes, structs &amp; unions, the preprocessor, undefined behaviour.</p>
+      <span class="status">Ready &middot; 12 topics</span>
+    </li>
+    <li>
+      <a class="skill-link" href="#/shell">Shell Scripting</a>
+      <p>Bash scripting, quoting, conditionals, loops, text processing, traps and exit codes.</p>
+      <span class="status soon">Coming soon</span>
+    </li>
+    <li>
+      <a class="skill-link" href="#/cpp">C++</a>
+      <p>RAII, copy/move, templates, the STL, smart pointers, virtual dispatch, modern C++.</p>
+      <span class="status soon">Coming soon</span>
+    </li>
+    <li>
+      <a class="skill-link" href="#/oops">OOPS</a>
+      <p>Four pillars, polymorphism, inheritance, SOLID, design patterns, composition vs inheritance.</p>
+      <span class="status soon">Coming soon</span>
+    </li>
+    <li>
+      <a class="skill-link" href="#/ds">Data Structures</a>
+      <p>Big-O, lists, stacks, queues, hash tables, trees, heaps, graphs, sorting, recursion.</p>
+      <span class="status soon">Coming soon</span>
+    </li>
+  </ul>
+
+  <p class="install-hint">Tip: open this page in Chrome on your phone and choose &ldquo;Add to Home screen&rdquo; to install it as an offline app.</p>
+</section>
+
+<!-- ============================== SKILL: C ============================== -->
+<section class="view" id="v-skill-c">
+  <h1>C Concepts</h1>
+  <p class="subtitle">Twelve topics covering the language mechanics that interviewers actually probe.</p>
+  <ol class="topic-list" id="list-c"></ol>
+</section>
+
+<section class="view" id="v-skill-shell">
+  <h1>Shell Scripting</h1>
+  <p class="subtitle">Coming in the next build.</p>
+  <p><a href="#/">&larr; Back to home</a></p>
+</section>
+<section class="view" id="v-skill-cpp">
+  <h1>C++</h1>
+  <p class="subtitle">Coming in a later build.</p>
+  <p><a href="#/">&larr; Back to home</a></p>
+</section>
+<section class="view" id="v-skill-oops">
+  <h1>OOPS</h1>
+  <p class="subtitle">Coming in a later build.</p>
+  <p><a href="#/">&larr; Back to home</a></p>
+</section>
+<section class="view" id="v-skill-ds">
+  <h1>Data Structures</h1>
+  <p class="subtitle">Coming in a later build.</p>
+  <p><a href="#/">&larr; Back to home</a></p>
+</section>
+
+<!-- ============================== C TOPICS ============================== -->
+<!-- TOPIC:c:types-storage -->
+<section class="view topic" id="v-c-types-storage" data-skill="c" data-title="Data Types, Storage Classes &amp; Type Qualifiers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Data Types, Storage Classes &amp; Type Qualifiers</h1>
+<p class="subtitle">The vocabulary question set: what a type guarantees, where a variable lives, and how long it lives.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Fundamental types and their sizes</h3>
+<p>C guarantees only <em>minimum</em> ranges, not exact sizes. The standard promises
+<code>1 == sizeof(char) &le; sizeof(short) &le; sizeof(int) &le; sizeof(long) &le; sizeof(long long)</code>,
+with <code>char</code> at least 8 bits, <code>short</code> and <code>int</code> at least 16, <code>long</code> at least 32,
+<code>long long</code> at least 64. On the common LP64 model (Linux/macOS 64-bit): <code>int</code> 4 bytes,
+<code>long</code> 8, pointer 8. On Windows LLP64: <code>long</code> is 4. Use <code>&lt;stdint.h&gt;</code>
+(<code>int32_t</code>, <code>uint64_t</code>, <code>intptr_t</code>) when the width matters.</p>
+<p><code>char</code> may be signed or unsigned &mdash; it is <em>implementation-defined</em>. That is a classic bug source
+when using <code>char</code> to index a table with bytes &ge; 0x80.</p>
+
+<h3>Storage classes</h3>
+<p>A storage-class specifier sets two things: <strong>storage duration</strong> (lifetime) and <strong>linkage</strong> (name visibility across translation units).</p>
+<table>
+<tr><th>Specifier</th><th>Duration</th><th>Linkage</th><th>Notes</th></tr>
+<tr><td><code>auto</code></td><td>automatic</td><td>none</td><td>Default for locals; keyword almost never written.</td></tr>
+<tr><td><code>register</code></td><td>automatic</td><td>none</td><td>Hint only; you cannot take its address. Ignored by modern compilers.</td></tr>
+<tr><td><code>static</code> (at file scope)</td><td>static</td><td>internal</td><td>Visible only in this <code>.c</code> file.</td></tr>
+<tr><td><code>static</code> (inside a function)</td><td>static</td><td>none</td><td>Keeps its value between calls; initialised once.</td></tr>
+<tr><td><code>extern</code></td><td>static</td><td>external</td><td>Declares a name defined elsewhere.</td></tr>
+<tr><td>(none, at file scope)</td><td>static</td><td>external</td><td>A normal global.</td></tr>
+</table>
+<pre><code><span class="k">int</span> counter(<span class="k">void</span>) {
+    <span class="k">static</span> <span class="k">int</span> n = <span class="n">0</span>;   <span class="c">// initialised once, lives for the whole program</span>
+    <span class="k">return</span> ++n;          <span class="c">// 1, 2, 3, ... across calls</span>
+}</code></pre>
+
+<h3>Type qualifiers</h3>
+<ul>
+<li><code>const</code> &mdash; the program will not modify this object through this name. Enables optimisation and lets the compiler catch mistakes. <code>const</code> objects with static duration can go in read-only memory.</li>
+<li><code>volatile</code> &mdash; the value may change outside the program's control (memory-mapped hardware register, variable touched by a signal handler or another thread). The compiler must not cache it in a register or elide reads/writes.</li>
+<li><code>restrict</code> (C99, pointers only) &mdash; a promise that this pointer is the only way the pointed-to object is accessed in its scope, so the compiler may keep values in registers across writes through other pointers.</li>
+</ul>
+<p>Read declarations right-to-left: <code>const char *p</code> is &ldquo;p is a pointer to char that is const&rdquo; (data read-only, pointer rebindable); <code>char * const p</code> is &ldquo;p is a const pointer to char&rdquo; (pointer fixed, data writable).</p>
+
+<h3>Integer promotion and usual arithmetic conversions</h3>
+<p>Anything narrower than <code>int</code> is promoted to <code>int</code> before arithmetic. In a mixed
+signed/unsigned expression of the same rank, the signed operand converts to unsigned &mdash; so
+<code>-1 &gt; 0u</code> is <em>true</em>. This bites in loops like <code>for (size_t i = n-1; i &gt;= 0; i--)</code>, which never ends.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Sizes are <em>minimums</em>; use <code>&lt;stdint.h&gt;</code> for fixed width. <code>sizeof(char) == 1</code> always.</li>
+<li><code>char</code> signedness is implementation-defined &rarr; use <code>unsigned char</code> for raw bytes.</li>
+<li><strong>Storage duration:</strong> static (whole program), automatic (block), allocated (malloc/free), thread (<code>_Thread_local</code>).</li>
+<li><strong>Linkage:</strong> external (default global), internal (<code>static</code> at file scope), none (locals).</li>
+<li><code>static</code> local = persistent + private; <code>static</code> global = file-private.</li>
+<li><code>const</code> = I won't write it. <code>volatile</code> = someone else might. They can combine: <code>const volatile</code> (read-only hardware status register).</li>
+<li>Declaration reading: right-to-left / &ldquo;spiral&rdquo;. <code>const char *</code> vs <code>char * const</code>.</li>
+<li>Mixed signed/unsigned compare &rarr; signed becomes unsigned. Beware backward <code>size_t</code> loops.</li>
+<li>Uninitialised static/global &rarr; zero. Uninitialised automatic &rarr; indeterminate (garbage).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Is <code>sizeof(int)</code> guaranteed to be 4?</dt>
+<dd>No. Only <code>&ge; 2</code> bytes and <code>&ge; sizeof(short)</code>. It is 4 on most 32/64-bit desktop targets but 2 on some embedded ones.</dd>
+<dt>What is the difference between <code>static</code> on a global and on a local?</dt>
+<dd>On a file-scope variable/function it changes <em>linkage</em> to internal (invisible to other translation units). On a local it changes <em>duration</em> to static (value persists between calls); linkage is already none.</dd>
+<dt>Where do <code>const</code> globals and string literals live?</dt>
+<dd>Typically a read-only data segment (<code>.rodata</code>); writing to them is undefined behaviour and usually faults.</dd>
+<dt>When do you actually need <code>volatile</code>?</dt>
+<dd>Memory-mapped I/O registers, a variable shared with a signal handler (<code>volatile sig_atomic_t</code>), or a spin flag on bare metal. It is <em>not</em> a substitute for atomics/locks in multithreaded code.</dd>
+<dt>What is the default value of an uninitialised local <code>int</code>?</dt>
+<dd>Indeterminate. Reading it is undefined behaviour. Only static-duration objects are zero-initialised.</dd>
+<dt>Why can <code>register</code> variables not have their address taken?</dt>
+<dd>The whole point is to allow the compiler to keep them in a CPU register, which has no memory address.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the storage classes in C and what each does.</summary><div class="answer-box">
+<code>auto</code> (automatic duration, the default for locals), <code>register</code> (automatic, hint to keep in a register, address cannot be taken), <code>static</code> (static duration; internal linkage at file scope, persistent value for locals), and <code>extern</code> (static duration, external linkage &mdash; refers to a definition elsewhere).
+</div></details>
+<details class="answer-reveal"><summary>What is the difference between <code>const</code> and <code>#define</code> for a constant?</summary><div class="answer-box">
+<code>#define</code> is textual substitution by the preprocessor: no type, no scope, not visible to the debugger. <code>const int</code> has a type, obeys scope, is type-checked, and can be given internal linkage. Prefer <code>const</code> / <code>enum</code> for constants; use <code>#define</code> only when you need a compile-time constant expression in contexts like array sizes in C89 or conditional compilation.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>sizeof</code> return, and is it evaluated at run time?</summary><div class="answer-box">
+It yields a <code>size_t</code> &mdash; the number of bytes of its operand's type. It is a compile-time constant for all normal types; the operand is not evaluated (e.g. <code>sizeof(a++)</code> does not increment <code>a</code>). The one exception is a C99 variable-length array, where <code>sizeof</code> is computed at run time.
+</div></details>
+<details class="answer-reveal"><summary>Is <code>char</code> signed or unsigned?</summary><div class="answer-box">
+Implementation-defined. It is a distinct type from both <code>signed char</code> and <code>unsigned char</code>. For portable byte manipulation use <code>unsigned char</code>.
+</div></details>
+</div>
+
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Explain the output: <code>unsigned int a = 1; int b = -1; if (b &gt; a) puts("yes");</code></summary><div class="answer-box">
+It prints <code>yes</code>. In the comparison, the usual arithmetic conversions turn the signed <code>b</code> into <code>unsigned int</code>. <code>-1</code> becomes <code>UINT_MAX</code>, which is greater than <code>1</code>. This is why mixing signed and unsigned in comparisons is dangerous.
+</div></details>
+<details class="answer-reveal"><summary>What is integer promotion and where does it apply?</summary><div class="answer-box">
+Any operand of an integer type with rank lower than <code>int</code> (<code>char</code>, <code>short</code>, bit-fields, <code>enum</code>) is converted to <code>int</code> (or <code>unsigned int</code> if <code>int</code> can't hold all its values) before arithmetic, in function arguments to variadic/unprototyped functions, and for the operands of unary <code>+ - ~</code> and the shift operators. So <code>char a=200, b=100; a+b</code> is computed in <code>int</code> and is well-defined even though it overflows a <code>char</code>.
+</div></details>
+<details class="answer-reveal"><summary>Give a real use of <code>const volatile</code> together.</summary><div class="answer-box">
+A hardware status register that firmware can only read but whose bits change on their own, e.g. <code>const volatile uint32_t *STATUS = (uint32_t *)0x40001000;</code>. <code>const</code> stops the code writing it; <code>volatile</code> forces an actual bus read on every access so the compiler doesn't reuse a stale cached value.
+</div></details>
+<details class="answer-reveal"><summary>What linkage and duration does a <code>static</code> function have, and why use one?</summary><div class="answer-box">
+Internal linkage, static duration. It is invisible outside its translation unit, so it doesn't pollute the global namespace, can't collide with a same-named symbol in another file, and gives the compiler freedom to inline or drop it. It's the C equivalent of &ldquo;private helper&rdquo;.
+</div></details>
+</div>
+
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Does <code>volatile</code> make a variable safe to share between threads?</summary><div class="answer-box">
+No. <code>volatile</code> only prevents the compiler from optimising away or reordering accesses <em>to that variable</em>. It provides no atomicity (a read-modify-write can still tear), no ordering guarantees for <em>other</em> memory, and no CPU memory barriers. Correct sharing needs <code>_Atomic</code> / <code>&lt;stdatomic.h&gt;</code> or a mutex. <code>volatile</code>'s legitimate uses are memory-mapped I/O, <code>sig_atomic_t</code> flags, and <code>setjmp</code>/<code>longjmp</code> locals.
+</div></details>
+<details class="answer-reveal"><summary>What is the <code>restrict</code> qualifier and what does the programmer promise?</summary><div class="answer-box">
+Applied to a pointer, <code>restrict</code> promises that, for the lifetime of the pointer, the object it points to is accessed <em>only</em> through that pointer (or pointers derived from it). This lets the compiler assume no aliasing between, say, <code>src</code> and <code>dst</code> in a copy loop and keep values in registers across stores. Breaking the promise (passing overlapping buffers to a <code>restrict</code> API like <code>memcpy</code>) is undefined behaviour.
+</div></details>
+<details class="answer-reveal"><summary>An <code>int</code> global is defined in <code>a.c</code> and used in <code>b.c</code> via <code>extern</code>. What happens if <code>b.c</code> instead writes <code>int g;</code> at file scope with no <code>extern</code>?</summary><div class="answer-box">
+Both files now have a file-scope definition of <code>g</code>. Under the older &ldquo;common symbol&rdquo; model (default in many C compilers historically) the linker merges them into one object &mdash; it links but is fragile. Under the stricter C standard rule and modern compilers using <code>-fno-common</code> (now the GCC/Clang default), it is a multiple-definition link error. The correct pattern is one definition (<code>int g = 0;</code>) in exactly one <code>.c</code> and a declaration (<code>extern int g;</code>) in a shared header.
+</div></details>
+</div>
+
+</div></details>
+
+</div><!-- /topic-body -->
+</div><!-- /layout -->
+</section>
+<!-- /TOPIC:c:types-storage -->
+
+<!-- TOPIC:c:pointers -->
+<section class="view topic" id="v-c-pointers" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Pointers &amp; Pointer Arithmetic</h1>
+<p class="subtitle">The topic that separates people who have used C from people who have read about it.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What a pointer is</h3>
+<p>A pointer is a variable whose value is an address. Its <em>type</em> tells the compiler
+the type of the object at that address, which drives dereferencing and arithmetic.
+<code>int *p;</code> declares <code>p</code> as &ldquo;pointer to int&rdquo;. <code>&amp;x</code> takes the address of <code>x</code>;
+<code>*p</code> is the object <code>p</code> points to (an lvalue &mdash; you can read or assign it).</p>
+
+<h3>Pointer arithmetic is in units of the pointed-to type</h3>
+<pre><code><span class="k">int</span> a[<span class="n">5</span>] = {<span class="n">10</span>,<span class="n">20</span>,<span class="n">30</span>,<span class="n">40</span>,<span class="n">50</span>};
+<span class="k">int</span> *p = a;        <span class="c">// &a[0]</span>
+p + <span class="n">3</span>              <span class="c">// address of a[3]  == (char*)p + 3*sizeof(int)</span>
+*(p + <span class="n">3</span>)           <span class="c">// 40   -- identical to p[3] and to a[3]</span>
+p[<span class="n">3</span>] <span class="c">is defined as *(p + 3), so 3[a] is legal C and equals a[3]</span>
+&amp;a[<span class="n">5</span>]             <span class="c">// one-past-the-end: legal to form, UB to dereference</span></code></pre>
+<p>Subtracting two pointers into the same array yields a <code>ptrdiff_t</code> count of elements.
+Adding/subtracting or comparing pointers into <em>different</em> objects is undefined behaviour
+(except forming &mdash; not dereferencing &mdash; the one-past-the-end pointer).</p>
+
+<h3>Levels of indirection</h3>
+<p><code>int **pp</code> is a pointer to a pointer to int. You need it to let a function modify the
+caller's pointer (e.g. allocate and hand back a buffer), or for a dynamically allocated
+&ldquo;2-D&rdquo; array built as an array of row pointers.</p>
+<pre><code><span class="k">void</span> make(<span class="k">int</span> **out) {          <span class="c">// caller passes &amp;ptr</span>
+    *out = malloc(<span class="n">10</span> * <span class="k">sizeof</span> **out);
+}
+<span class="k">int</span> *buf;
+make(&amp;buf);                       <span class="c">// buf now points to 10 ints</span></code></pre>
+
+<h3><code>void *</code> and function pointers</h3>
+<p><code>void *</code> is a generic object pointer: any object pointer converts to it and back without
+loss, but you cannot dereference it or do arithmetic on it (GCC allows <code>void*</code> arithmetic
+as an extension, treating it as <code>char*</code>). <code>malloc</code> returns <code>void *</code>. Function
+pointers are a separate family &mdash; a <code>void *</code> is not guaranteed to hold one portably.</p>
+
+<h3>Null, wild, and dangling</h3>
+<ul>
+<li><strong>Null pointer</strong> &mdash; compares equal to <code>0</code>/<code>NULL</code>; dereferencing is UB (usually a segfault). Always check the result of <code>malloc</code>.</li>
+<li><strong>Wild pointer</strong> &mdash; uninitialised; contains garbage. Initialise to <code>NULL</code>.</li>
+<li><strong>Dangling pointer</strong> &mdash; still holds an address whose object has ended its lifetime (freed, or a local that went out of scope). Set to <code>NULL</code> after <code>free</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>*&amp;x == x</code>; <code>&amp;*p == p</code> (when <code>p</code> is valid).</li>
+<li><code>p[i]</code> &equiv; <code>*(p + i)</code> &equiv; <code>*(i + p)</code> &equiv; <code>i[p]</code>.</li>
+<li><code>p + n</code> moves <code>n * sizeof(*p)</code> bytes.</li>
+<li><code>q - p</code> = element count (<code>ptrdiff_t</code>), only valid within one array.</li>
+<li>Array name decays to <code>&amp;array[0]</code> in expressions &mdash; but not for <code>sizeof</code>, <code>&amp;</code>, or a string-literal initialiser.</li>
+<li><code>int *p, q;</code> &rarr; <code>q</code> is an <code>int</code>, not a pointer. The <code>*</code> binds to the declarator.</li>
+<li>Prefer <code>sizeof *p</code> over <code>sizeof(int)</code> in <code>malloc</code> &mdash; stays correct if the type changes.</li>
+<li>After <code>free(p)</code>: <code>p = NULL;</code>. Never <code>free</code> a pointer not from <code>malloc</code>/<code>calloc</code>/<code>realloc</code>, and never twice.</li>
+<li><code>const</code> position: <code>const T *</code> (pointee const) vs <code>T * const</code> (pointer const).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is the size of a pointer?</dt>
+<dd>Implementation-defined; on a given platform all object pointers are usually the same size (4 bytes on 32-bit, 8 on 64-bit). <code>void*</code> and <code>char*</code> are guaranteed to have the same representation; function pointers may differ.</dd>
+<dt>Difference between <code>NULL</code>, <code>0</code>, and <code>nullptr</code>?</dt>
+<dd>In C, <code>NULL</code> is a macro for a null pointer constant, typically <code>((void*)0)</code> or <code>0</code>. A <code>0</code> in pointer context is a null pointer constant too. <code>nullptr</code> is C++11 (and C23); it has a distinct type and avoids ambiguity in overloads/variadic calls.</dd>
+<dt>Why does <code>sizeof(arr)/sizeof(arr[0])</code> break inside a function?</dt>
+<dd>The array parameter has decayed to a pointer, so <code>sizeof(arr)</code> is the pointer size, not the array size. You must pass the length separately.</dd>
+<dt>Can you do arithmetic on a <code>void *</code>?</dt>
+<dd>Not in standard C &mdash; the element size is unknown. GCC/Clang allow it as an extension, treating it like <code>char *</code>. Cast to <code>char *</code> for portable byte offsets.</dd>
+<dt>What does <code>int (*p)[10]</code> mean?</dt>
+<dd>&ldquo;p is a pointer to an array of 10 ints.&rdquo; <code>p + 1</code> advances 40 bytes. Contrast <code>int *p[10]</code> = &ldquo;array of 10 pointers to int&rdquo;.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What do <code>&amp;</code> and <code>*</code> do?</summary><div class="answer-box">
+<code>&amp;x</code> yields the address of <code>x</code> (a pointer). <code>*p</code> dereferences <code>p</code> &mdash; it names the object at that address and can be used on either side of an assignment.
+</div></details>
+<details class="answer-reveal"><summary>What is wrong with <code>char *p; strcpy(p, "hi");</code>?</summary><div class="answer-box">
+<code>p</code> is uninitialised (a wild pointer); it points nowhere valid, so the copy writes to a random address &mdash; undefined behaviour. You need real storage: <code>char buf[8]; strcpy(buf, "hi");</code> or <code>char *p = malloc(8);</code>.
+</div></details>
+<details class="answer-reveal"><summary>Is <code>arr</code> the same as <code>&amp;arr</code>?</summary><div class="answer-box">
+They hold the same address but have different types. <code>arr</code> decays to <code>int *</code>; <code>&amp;arr</code> is <code>int (*)[N]</code>. So <code>arr + 1</code> moves one <code>int</code>; <code>&amp;arr + 1</code> moves the whole array.
+</div></details>
+<details class="answer-reveal"><summary>How do you return an error <em>and</em> a value from a C function using pointers?</summary><div class="answer-box">
+Return the status code and write the result through an out-parameter: <code>int parse(const char *s, long *out);</code>. The caller passes <code>&amp;value</code>; the function fills <code>*out</code> on success.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why prefer <code>p = malloc(n * sizeof *p)</code> over <code>malloc(n * sizeof(int))</code>?</summary><div class="answer-box">
+<code>sizeof *p</code> is always the size of whatever <code>p</code> points to, so if the type of <code>p</code> changes later the allocation stays correct and you can't get a mismatch. It also removes the need to name the type twice.
+</div></details>
+<details class="answer-reveal"><summary>Explain the difference between <code>const char *p</code>, <code>char * const p</code>, and <code>const char * const p</code>.</summary><div class="answer-box">
+<code>const char *p</code>: the characters are read-only through <code>p</code>, but <code>p</code> can be repointed. <code>char * const p</code>: <code>p</code> is fixed for its lifetime, but the characters are writable. <code>const char * const p</code>: both the pointer and the data are read-only.
+</div></details>
+<details class="answer-reveal"><summary>What is pointer decay and where does it <em>not</em> happen?</summary><div class="answer-box">
+In most expressions an array is implicitly converted to a pointer to its first element. It does not decay as the operand of <code>sizeof</code>, as the operand of unary <code>&amp;</code>, or when used to initialise a <code>char[]</code> from a string literal. Function parameters written as arrays are silently adjusted to pointers.
+</div></details>
+<details class="answer-reveal"><summary>How is a dynamically allocated 2-D array typically built, and how do you free it?</summary><div class="answer-box">
+Either (a) a single block: <code>int *m = malloc(rows*cols*sizeof *m);</code> indexed as <code>m[r*cols + c]</code> &mdash; one <code>free</code>; or (b) an array of row pointers: <code>int **m = malloc(rows*sizeof *m);</code> then <code>m[r] = malloc(cols*sizeof *m[r]);</code> in a loop &mdash; free every row then <code>free(m)</code>. Option (a) has better locality and one allocation.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Is comparing two pointers with <code>&lt;</code> always defined?</summary><div class="answer-box">
+Only when both point into (or one past) the same array object or the same struct. Relational comparison of pointers to unrelated objects is undefined behaviour, even though it &ldquo;works&rdquo; on flat address spaces. Equality comparison (<code>==</code>, <code>!=</code>) is always defined. <code>qsort</code>-style code that needs a total order across arbitrary pointers should compare via <code>uintptr_t</code>.
+</div></details>
+<details class="answer-reveal"><summary>What does the standard say about converting a pointer to an integer and back?</summary><div class="answer-box">
+Any pointer can be converted to <code>intptr_t</code>/<code>uintptr_t</code> (if provided) and back, yielding a pointer that compares equal to the original. Conversions to smaller integer types are implementation-defined and may not round-trip. The bit pattern and whether the result is meaningful arithmetic is not guaranteed by the standard &mdash; only the round-trip.
+</div></details>
+<details class="answer-reveal"><summary>Given <code>int a[3][4];</code>, what are the types of <code>a</code>, <code>a[0]</code>, <code>*a</code>, <code>&amp;a[0][0]</code>, and <code>a[1] - a[0]</code>?</summary><div class="answer-box">
+<code>a</code> &rarr; <code>int (*)[4]</code> (after decay). <code>a[0]</code> &rarr; <code>int[4]</code> decaying to <code>int *</code>. <code>*a</code> is <code>a[0]</code>, same thing. <code>&amp;a[0][0]</code> &rarr; <code>int *</code> to the very first element. <code>a[1] - a[0]</code> is a <code>ptrdiff_t</code> equal to <code>4</code> (elements), because both are <code>int *</code> into contiguous storage.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:pointers -->
+
+<!-- TOPIC:c:arrays-strings -->
+<section class="view topic" id="v-c-arrays-strings" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Arrays, Strings &amp; Multidimensional Arrays</h1>
+<p class="subtitle">C strings are a convention, not a type &mdash; know exactly what that convention costs.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Arrays</h3>
+<p>An array is a contiguous block of <code>N</code> objects of one type. Its name is not a pointer,
+but decays to <code>&amp;arr[0]</code> in most expressions. You cannot assign or pass an array by value;
+passing one to a function passes a pointer, losing the size. C99 adds variable-length arrays
+(VLAs) &mdash; array objects whose size is a run-time expression; they live on the stack and can
+blow it, so many code bases ban them.</p>
+
+<h3>C strings</h3>
+<p>A &ldquo;string&rdquo; is a <code>char</code> array containing a <code>'\0'</code> terminator. The length is found by
+scanning for that byte (<code>strlen</code> is O(n)). Every buffer must have room for the terminator:
+storing <code>"cat"</code> needs 4 bytes. The classic overflow is forgetting the <code>+1</code>.</p>
+<pre><code><span class="k">char</span> a[] = <span class="s">"cat"</span>;     <span class="c">// 4 bytes: 'c' 'a' 't' '\0'  -- modifiable</span>
+<span class="k">char</span> *b   = <span class="s">"cat"</span>;     <span class="c">// pointer to a string literal -- read-only, writing is UB</span>
+<span class="k">sizeof</span> a               <span class="c">// 4</span>
+strlen(a)              <span class="c">// 3</span></code></pre>
+<p>Prefer bounded functions: <code>snprintf</code> over <code>sprintf</code>; be careful that <code>strncpy</code> does
+<em>not</em> guarantee termination if the source is longer than <code>n</code>. <code>strlcpy</code>/<code>strlcat</code>
+(BSD, and now C23's <code>strcpy_s</code> family) are safer where available.</p>
+
+<h3>Multidimensional arrays</h3>
+<p><code>int m[3][4]</code> is &ldquo;array of 3 arrays of 4 ints&rdquo;, stored row-major and fully contiguous
+(48 bytes). Indexing <code>m[i][j]</code> is <code>*(*(m + i) + j)</code>. When passed to a function, all
+dimensions except the first must be known: <code>void f(int m[][4], int rows)</code>. Contrast an
+&ldquo;array of pointers&rdquo; <code>char *argv[]</code>, where each element is a separately located string and
+rows can have different lengths &mdash; this is what <code>main</code>'s <code>argv</code> is.</p>
+
+<h3>Common bugs</h3>
+<ul>
+<li>Off-by-one: looping <code>i &lt;= n</code> instead of <code>i &lt; n</code>.</li>
+<li><code>sizeof(arr)</code> inside a function (pointer size, not array size).</li>
+<li>Returning a pointer to a local array (dangles once the function returns).</li>
+<li>Comparing strings with <code>==</code> (compares addresses); use <code>strcmp</code>.</li>
+<li>Assuming <code>char buf[64]</code> from <code>fgets</code> has no trailing <code>'\n'</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Buffer size for a string of visible length <code>L</code> is <code>L + 1</code>.</li>
+<li><code>sizeof arr</code> = total bytes; <code>sizeof arr / sizeof arr[0]</code> = element count (only where <code>arr</code> is a real array).</li>
+<li><code>strlen</code> is O(n); cache it, don't call it in a loop condition.</li>
+<li><code>strcmp</code> returns <code>&lt;0 / 0 / &gt;0</code>, not a boolean.</li>
+<li><code>strncpy(d, s, n)</code>: pads with <code>\0</code> if <code>s</code> is short, but does <em>not</em> terminate if <code>s</code> has <code>&ge; n</code> chars.</li>
+<li>Use <code>snprintf(buf, sizeof buf, ...)</code> and check the return (it's the length that <em>would</em> have been written).</li>
+<li>2-D array param: <code>int m[][COLS]</code>. Array-of-pointers: <code>char *rows[]</code>.</li>
+<li>String literal &rarr; <code>const</code> in spirit; assign to <code>const char *</code>. Never modify.</li>
+<li>VLAs: legal C99, stack-allocated, no size check &mdash; avoid for untrusted sizes.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between <code>char s[] = "hi"</code> and <code>char *s = "hi"</code>?</dt>
+<dd>The first copies the 3 bytes into a local, modifiable array. The second makes <code>s</code> point at a (usually read-only) string literal; modifying it is UB and <code>s</code> can be repointed.</dd>
+<dt>How do you find the length of an array passed to a function?</dt>
+<dd>You can't from the pointer alone &mdash; pass the length as a separate argument, or use a sentinel value, or wrap pointer+length in a struct.</dd>
+<dt>Why is <code>if (str == "yes")</code> wrong?</dt>
+<dd>It compares two pointers for address equality, which is almost never what you want. Use <code>strcmp(str, "yes") == 0</code>.</dd>
+<dt>Is <code>a[i]</code> ever different from <code>*(a + i)</code>?</dt>
+<dd>No &mdash; they are defined to be identical, including the commutative <code>i[a]</code> form.</dd>
+<dt>What does <code>strncpy</code> not do that people assume it does?</dt>
+<dd>It doesn't guarantee a null terminator when the source length is <code>&ge; n</code>. You must set <code>dst[n-1] = '\0'</code> yourself or use a safer API.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How is a string represented in C?</summary><div class="answer-box">
+As a contiguous array of <code>char</code> ending in a null byte <code>'\0'</code>. There is no length field; functions find the end by scanning for the terminator.
+</div></details>
+<details class="answer-reveal"><summary>What will <code>sizeof("hello")</code> give?</summary><div class="answer-box">
+<code>6</code> &mdash; five letters plus the null terminator. (<code>strlen("hello")</code> is <code>5</code>.)
+</div></details>
+<details class="answer-reveal"><summary>Can you assign one array to another with <code>=</code>?</summary><div class="answer-box">
+No. Arrays are not assignable. You copy element by element or with <code>memcpy</code>. (A <code>struct</code> containing an array <em>can</em> be assigned, which copies the array.)
+</div></details>
+<details class="answer-reveal"><summary>What's the risk in <code>gets(buf)</code>?</summary><div class="answer-box">
+It has no way to know the size of <code>buf</code>, so any input longer than the buffer overflows it. <code>gets</code> was removed from the C standard in C11. Use <code>fgets(buf, sizeof buf, stdin)</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why must all but the first dimension be specified when passing a 2-D array?</summary><div class="answer-box">
+Indexing <code>m[i][j]</code> compiles to <code>*( (int*)m + i*COLS + j )</code>. The compiler needs <code>COLS</code> (and any further dimensions) to compute the row stride. The first dimension is just a count and isn't needed for addressing.
+</div></details>
+<details class="answer-reveal"><summary>Contrast <code>int m[3][4]</code> with <code>int *m[3]</code> in memory.</summary><div class="answer-box">
+<code>int m[3][4]</code> is one contiguous 48-byte block, row-major, no pointers stored. <code>int *m[3]</code> is three pointers (24 bytes on 64-bit) that you must each point at separately allocated rows; rows can be non-contiguous and of different lengths. The first has better cache behaviour; the second is more flexible (jagged arrays).
+</div></details>
+<details class="answer-reveal"><summary>Write a safe copy of a C string into a fixed buffer.</summary><div class="answer-box">
+<pre><code><span class="k">int</span> n = snprintf(dst, <span class="k">sizeof</span> dst, <span class="s">"%s"</span>, src);
+<span class="k">if</span> (n &lt; <span class="n">0</span> || (size_t)n &gt;= <span class="k">sizeof</span> dst) {
+    <span class="c">/* truncated -- handle as error */</span>
+}</code></pre>
+<code>snprintf</code> always null-terminates (given size &gt; 0) and its return tells you whether truncation happened.
+</div></details>
+<details class="answer-reveal"><summary>What's undefined about <code>char *f(void){ char b[4]="abc"; return b; }</code>?</summary><div class="answer-box">
+It returns the address of a local array whose lifetime ends when <code>f</code> returns. Any use of the returned pointer is a dangling-pointer access (UB). Fix: make <code>b</code> <code>static</code>, allocate with <code>malloc</code>, or have the caller pass in a buffer.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Is <code>int m[3][4]; int *p = &amp;m[0][0]; p[10];</code> well-defined?</summary><div class="answer-box">
+Contentious. The whole object is contiguous, so the address arithmetic lands inside <code>m</code>. But strictly, <code>p</code> points into the sub-array <code>m[0]</code> which has only 4 elements, so <code>p + 10</code> steps outside <em>that</em> array object, which the standard treats as UB even though it stays inside <code>m</code>. Portable code indexes via <code>m[i][j]</code> or uses a genuine 1-D view allocated as one block. Compilers in practice make it work, but sanitizers may flag it.
+</div></details>
+<details class="answer-reveal"><summary>How does a flexible array member help with variable-length string records?</summary><div class="answer-box">
+<pre><code><span class="k">struct</span> msg { <span class="k">int</span> len; <span class="k">char</span> data[]; };
+<span class="k">struct</span> msg *m = malloc(<span class="k">sizeof</span> *m + n + <span class="n">1</span>);
+m-&gt;len = n; memcpy(m-&gt;data, src, n); m-&gt;data[n] = <span class="s">'\0'</span>;</code></pre>
+One allocation holds header and payload contiguously &mdash; better locality, one <code>free</code>, and no separate pointer to keep in sync. The FAM must be the last member and the struct can't be array-of or nested non-last.
+</div></details>
+<details class="answer-reveal"><summary>What does the <code>restrict</code> keyword let a compiler assume about <code>memcpy(dst, src, n)</code>?</summary><div class="answer-box">
+Both parameters are declared <code>restrict</code>, so the compiler assumes <code>src</code> and <code>dst</code> ranges do not overlap. It can then vectorise / load-ahead freely. If they <em>do</em> overlap you must use <code>memmove</code>, which is defined for overlapping regions.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:arrays-strings -->
+
+<!-- TOPIC:c:dynamic-memory -->
+<section class="view topic" id="v-c-dynamic-memory" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Dynamic Memory Management</h1>
+<p class="subtitle">Every interviewer's favourite failure modes: leak, dangling, double free, and the null you didn't check.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The four functions</h3>
+<table>
+<tr><th>Call</th><th>Does</th><th>Gotcha</th></tr>
+<tr><td><code>malloc(size)</code></td><td>Returns a block of <code>size</code> bytes, <em>uninitialised</em>.</td><td>Returns <code>NULL</code> on failure; contents are garbage.</td></tr>
+<tr><td><code>calloc(n, size)</code></td><td><code>n*size</code> bytes, <em>zeroed</em>, with overflow-checked multiplication.</td><td>All-bits-zero is not guaranteed to be a valid <code>NULL</code> pointer or <code>0.0</code> on exotic targets (fine on mainstream ones).</td></tr>
+<tr><td><code>realloc(p, newsize)</code></td><td>Grows/shrinks a block, copying contents; may move it.</td><td>If it returns <code>NULL</code>, the <em>old</em> block is still valid &mdash; don't overwrite <code>p</code> directly.</td></tr>
+<tr><td><code>free(p)</code></td><td>Returns the block to the allocator.</td><td><code>free(NULL)</code> is a safe no-op. Freeing anything else twice, or a non-heap pointer, is UB.</td></tr>
+</table>
+<pre><code><span class="k">int</span> *tmp = realloc(p, n * <span class="k">sizeof</span> *p);
+<span class="k">if</span> (!tmp) { <span class="c">/* handle; p still valid, still must be freed */</span> }
+<span class="k">else</span> { p = tmp; }</code></pre>
+
+<h3>The bug catalogue</h3>
+<ul>
+<li><strong>Leak</strong> &mdash; losing the last pointer to a block without freeing it. Long-running processes die slowly.</li>
+<li><strong>Dangling / use-after-free</strong> &mdash; reading or writing through a pointer after <code>free</code>. Often &ldquo;works&rdquo; until the allocator reuses the block, then corrupts unrelated data.</li>
+<li><strong>Double free</strong> &mdash; corrupts allocator metadata; a classic exploit primitive. Null the pointer after freeing.</li>
+<li><strong>Buffer overrun</strong> &mdash; writing past the end smashes the next block's header (heap) or the return address (stack).</li>
+<li><strong>Mismatched size</strong> &mdash; allocating <code>n</code> bytes but treating it as <code>n</code> elements.</li>
+<li><strong>Unchecked <code>NULL</code></strong> &mdash; dereferencing a failed <code>malloc</code>.</li>
+</ul>
+
+<h3>Ownership discipline</h3>
+<p>C has no destructors, so decide for every allocation <em>who frees it</em> and <em>when</em>. Common
+patterns: the creator frees; the last user frees; a cleanup label with <code>goto</code> for functions
+with multiple exit points; reference counting for shared objects. Tools: Valgrind, AddressSanitizer
+(<code>-fsanitize=address</code>), LeakSanitizer, static analysers.</p>
+
+<h3>Stack vs heap allocation</h3>
+<p>Stack: automatic, extremely fast (bump a pointer), freed on scope exit, limited size (often 1&ndash;8&nbsp;MB),
+size usually fixed. Heap: explicit, slower, large, size decided at run time, must be freed. Use the
+heap when the object must outlive the function, is large, or has a run-time-determined size.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Always check the return of <code>malloc</code>/<code>calloc</code>/<code>realloc</code>.</li>
+<li><code>realloc</code> idiom: assign to a <em>temp</em>, test, then reassign.</li>
+<li><code>free(NULL)</code> is fine. After any other <code>free(p)</code>: <code>p = NULL;</code>.</li>
+<li>One <code>malloc</code> &harr; one <code>free</code>. Match them like brackets.</li>
+<li><code>calloc(n, sz)</code> for zeroed memory and safe size multiplication.</li>
+<li>Never <code>free</code> stack memory, string literals, or a pointer you did arithmetic on (free the original base).</li>
+<li><code>sizeof *p</code> not <code>sizeof(type)</code>.</li>
+<li>Don't cast <code>malloc</code> in C (hides a missing <code>&lt;stdlib.h&gt;</code>); do cast in C++.</li>
+<li>Free everything before process exit only for tooling cleanliness &mdash; the OS reclaims it anyway; but <em>do</em> free inside loops/long-lived services.</li>
+<li>Debug with <code>valgrind --leak-check=full</code> or <code>-fsanitize=address,undefined</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt><code>malloc</code> vs <code>calloc</code>?</dt>
+<dd><code>calloc</code> zero-initialises and checks <code>n*size</code> for overflow; <code>malloc</code> does neither and is marginally faster. Use <code>calloc</code> when you need zeroed memory or are multiplying a count by a size.</dd>
+<dt>What happens if <code>realloc</code> fails?</dt>
+<dd>It returns <code>NULL</code> and leaves the original block untouched and still allocated. If you wrote <code>p = realloc(p, ...)</code> you've just leaked it.</dd>
+<dt>Is <code>free(NULL)</code> safe?</dt>
+<dd>Yes, it is defined to do nothing. That's why you can null-then-free without guarding.</dd>
+<dt>Do you have to free memory before the program exits?</dt>
+<dd>Not for correctness &mdash; the OS reclaims the whole address space. But you must free inside long-running loops/services, and freeing at exit keeps leak detectors quiet.</dd>
+<dt>What is a memory leak in a language with no GC?</dt>
+<dd>Allocated heap memory that the program can no longer reach (all pointers to it lost or overwritten) and therefore can never free.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>malloc</code> return on failure, and what should you do?</summary><div class="answer-box">
+<code>NULL</code>. Check for it immediately and handle the error (return, retry with less, or abort). Never dereference the result unconditionally.
+</div></details>
+<details class="answer-reveal"><summary>What is a dangling pointer?</summary><div class="answer-box">
+A pointer that still holds an address whose object has been freed or has gone out of scope. Dereferencing it is undefined behaviour. Mitigation: set pointers to <code>NULL</code> right after <code>free</code>.
+</div></details>
+<details class="answer-reveal"><summary>How many <code>free</code> calls for a block from <code>malloc</code>?</summary><div class="answer-box">
+Exactly one. Zero leaks it; two or more corrupt the heap.
+</div></details>
+<details class="answer-reveal"><summary>Is the memory from <code>malloc</code> zeroed?</summary><div class="answer-box">
+No. It holds indeterminate bytes. Use <code>calloc</code> or <code>memset</code> if you need it zeroed.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Show the correct way to grow a dynamic array.</summary><div class="answer-box">
+<pre><code>size_t cap = ...;
+<span class="k">int</span> *tmp = realloc(arr, cap * <span class="n">2</span> * <span class="k">sizeof</span> *arr);
+<span class="k">if</span> (!tmp) { free(arr); <span class="k">return</span> -<span class="n">1</span>; }   <span class="c">// or keep arr and report</span>
+arr = tmp;
+cap *= <span class="n">2</span>;</code></pre>
+Doubling gives amortised O(1) appends. Never assign <code>realloc</code>'s result straight back to the only pointer you have.
+</div></details>
+<details class="answer-reveal"><summary>Why is a double free a security problem, not just a bug?</summary><div class="answer-box">
+<code>free</code> writes bookkeeping data into the freed chunk and links it into free lists. Freeing it again, especially interleaved with attacker-controlled allocations, lets an attacker corrupt those lists and eventually get <code>malloc</code> to return a pointer into memory they choose &mdash; a write-what-where primitive.
+</div></details>
+<details class="answer-reveal"><summary>How would you find a leak in a large C program?</summary><div class="answer-box">
+Run under Valgrind (<code>--leak-check=full --show-leak-kinds=all</code>) or build with <code>-fsanitize=address</code> (bundles LeakSanitizer). Both report the allocation stack of unreachable blocks at exit. For production, hook <code>malloc</code>/<code>free</code> or use <code>jemalloc</code>/<code>tcmalloc</code> heap profiling.
+</div></details>
+<details class="answer-reveal"><summary>What is the cleanup pattern for a function with several failure points?</summary><div class="answer-box">
+Single-exit with <code>goto</code>: allocate progressively, and on any error <code>goto</code> a cleanup label that frees whatever has been allocated so far (freeing <code>NULL</code> is safe, so initialise all pointers to <code>NULL</code> first). This avoids duplicating the free sequence at every <code>return</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is heap fragmentation and when does it bite?</summary><div class="answer-box">
+Over time, interleaved allocations and frees of varying sizes leave the heap as many small non-contiguous free gaps. A later large request can fail even though the total free bytes suffice (external fragmentation), and each block also wastes some bytes to headers/alignment (internal fragmentation). It hurts long-running processes with mixed allocation sizes. Mitigations: size-class allocators (jemalloc/tcmalloc), pool/arena allocators for same-size objects, allocating up front, or compacting designs that use offsets not pointers.
+</div></details>
+<details class="answer-reveal"><summary>What alignment guarantee does <code>malloc</code> give, and when isn't it enough?</summary><div class="answer-box">
+<code>malloc</code> returns memory aligned for <em>any</em> standard type (<code>alignof(max_align_t)</code>, typically 8 or 16 bytes). It is not enough for over-aligned types &mdash; SIMD vectors needing 32/64-byte alignment, or cache-line-aligned structures. Use C11 <code>aligned_alloc(alignment, size)</code> or POSIX <code>posix_memalign</code>; free both with <code>free</code>.
+</div></details>
+<details class="answer-reveal"><summary>Your program calls <code>free(p)</code> then later <code>free(p)</code> again but the code &ldquo;seems fine&rdquo; in testing. Why is that dangerous reasoning?</summary><div class="answer-box">
+Undefined behaviour isn't required to fail visibly. Whether the second free corrupts anything depends on intervening allocations, allocator implementation, and build flags. It can pass every test and then corrupt the heap in production under different timing. The correct stance: treat any UB as a defect regardless of observed behaviour. Null the pointer after the first free so a second free becomes a harmless no-op.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:dynamic-memory -->
+
+<!-- TOPIC:c:memory-layout -->
+<section class="view topic" id="v-c-memory-layout" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Program Memory Layout &amp; Stack vs Heap</h1>
+<p class="subtitle">Where each kind of variable lives, how long it lives, and why the stack is fast but small.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Segments of a running C program</h3>
+<table>
+<tr><th>Segment</th><th>Holds</th><th>Lifetime</th></tr>
+<tr><td><code>.text</code> (code)</td><td>Machine instructions; often read-only + executable.</td><td>Whole program.</td></tr>
+<tr><td><code>.rodata</code></td><td>String literals, <code>const</code> globals.</td><td>Whole program; read-only.</td></tr>
+<tr><td><code>.data</code></td><td>Initialised globals / <code>static</code>s with non-zero value.</td><td>Whole program.</td></tr>
+<tr><td><code>.bss</code></td><td>Globals / <code>static</code>s that are zero or uninitialised. Takes no file space.</td><td>Whole program; zeroed at start.</td></tr>
+<tr><td>Heap</td><td><code>malloc</code>'d memory. Grows upward.</td><td>Until you <code>free</code> it.</td></tr>
+<tr><td>Stack</td><td>Function frames: locals, saved registers, return address, args. Grows downward.</td><td>Until the function returns.</td></tr>
+</table>
+
+<h3>The stack</h3>
+<p>Each call pushes a <strong>stack frame</strong>: space for the function's automatic variables, the
+return address, and saved registers. Returning pops it &mdash; which is why returning a pointer to a
+local is a bug, and why deep or infinite recursion causes <strong>stack overflow</strong>. Allocation
+is a single register adjustment, so it's essentially free; there's no fragmentation. Typical size
+is 1&ndash;8&nbsp;MB (tunable with <code>ulimit -s</code> or thread attributes).</p>
+
+<h3>The heap</h3>
+<p>A pool the C library manages via <code>brk</code>/<code>sbrk</code> or <code>mmap</code> under the hood. Allocation
+walks free lists / size classes, so it's slower and can fragment, but blocks live until freed and
+can be huge. Good for objects whose size or count is known only at run time, or that must outlive
+their creating function.</p>
+
+<h3>Where variables go</h3>
+<pre><code><span class="k">int</span> g;                 <span class="c">// .bss  (zero-init global)</span>
+<span class="k">int</span> gi = <span class="n">7</span>;             <span class="c">// .data</span>
+<span class="k">const char</span> *msg = <span class="s">"hi"</span>;  <span class="c">// msg in .data/.bss; "hi" in .rodata</span>
+<span class="k">void</span> f(<span class="k">void</span>) {
+    <span class="k">int</span> x;             <span class="c">// stack</span>
+    <span class="k">static int</span> s;      <span class="c">// .bss  (persists, but file-local)</span>
+    <span class="k">int</span> *h = malloc(<span class="n">40</span>); <span class="c">// h on stack, the 40 bytes on the heap</span>
+}</code></pre>
+
+<h3>Related concepts</h3>
+<ul>
+<li><strong>ASLR</strong> randomises segment base addresses each run for security &mdash; don't rely on absolute addresses.</li>
+<li><strong>Guard page</strong> below the stack triggers a fault on overflow instead of silent corruption.</li>
+<li><strong>Data vs BSS</strong>: BSS costs nothing on disk because the loader just zero-fills it.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Segments: <code>text</code> / <code>rodata</code> / <code>data</code> / <code>bss</code> / heap &uarr; / stack &darr;.</li>
+<li>Zero/uninit globals &rarr; <code>.bss</code> (no disk cost). Non-zero init globals &rarr; <code>.data</code>.</li>
+<li>String literals &rarr; <code>.rodata</code> (read-only).</li>
+<li>Locals &amp; call bookkeeping &rarr; stack. <code>static</code> locals &rarr; <code>.bss</code>/<code>.data</code>.</li>
+<li><code>malloc</code> block &rarr; heap; the pointer variable itself lives wherever it's declared.</li>
+<li>Stack alloc = adjust SP, O(1), auto-freed, small (~1&ndash;8&nbsp;MB), no fragmentation.</li>
+<li>Heap alloc = free-list search, slower, big, manual free, can fragment.</li>
+<li>Stack overflow &rarr; deep/infinite recursion or huge VLAs/local arrays.</li>
+<li>Never return the address of a local; its frame is gone after <code>return</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is stack allocation faster than heap allocation?</dt>
+<dd>It's a single adjustment of the stack pointer, with no bookkeeping, no search, and no locking. Heap allocation must find a suitable free block, update metadata, and be thread-safe.</dd>
+<dt>What goes in BSS vs DATA?</dt>
+<dd>BSS: globals/statics that are zero or uninitialised &mdash; stored as just a size, zero-filled by the loader. DATA: globals/statics with an explicit non-zero initial value &mdash; the bytes are in the executable.</dd>
+<dt>Does the heap grow up or down?</dt>
+<dd>Conventionally the heap grows toward higher addresses and the stack toward lower ones, so they grow &ldquo;toward each other&rdquo; in the classic diagram. Real layouts with <code>mmap</code> and ASLR are more scattered.</dd>
+<dt>Where does a <code>static</code> local variable live?</dt>
+<dd>In <code>.data</code> or <code>.bss</code> (static storage), not on the stack &mdash; that's why it keeps its value between calls.</dd>
+<dt>What causes a stack overflow?</dt>
+<dd>Exceeding the stack limit: unbounded recursion, very large local arrays or VLAs, or too many nested calls.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the memory segments of a C program.</summary><div class="answer-box">
+Text (code), read-only data (literals, const), initialised data (<code>.data</code>), uninitialised/zero data (<code>.bss</code>), heap, and stack.
+</div></details>
+<details class="answer-reveal"><summary>Which segment is a string literal in, and what does that imply?</summary><div class="answer-box">
+<code>.rodata</code> (read-only). Writing through a <code>char *</code> that points at a literal is undefined behaviour and typically faults.
+</div></details>
+<details class="answer-reveal"><summary>What is a stack frame?</summary><div class="answer-box">
+The per-call region on the stack holding that invocation's local variables, saved registers, the return address, and (depending on ABI) some arguments. It's created on call and destroyed on return.
+</div></details>
+<details class="answer-reveal"><summary>Heap memory lifetime &mdash; when does it end?</summary><div class="answer-box">
+When you explicitly <code>free</code> it (or the process exits). It is not tied to scope.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why does a large <code>char buf[8*1024*1024]</code> local often crash but the same via <code>malloc</code> doesn't?</summary><div class="answer-box">
+The local is carved out of the thread's stack, which is typically only 1&ndash;8&nbsp;MB, so the frame overflows the stack (often hitting a guard page). <code>malloc</code> draws from the heap, which can be gigabytes and grows via <code>mmap</code>/<code>sbrk</code>.
+</div></details>
+<details class="answer-reveal"><summary>Two globals: <code>int a[1000000];</code> and <code>int b[1000000] = {1};</code>. How do they differ in the binary?</summary><div class="answer-box">
+<code>a</code> is all-zero, so it goes in <code>.bss</code> and adds essentially nothing to the file &mdash; just a recorded size. <code>b</code> has a non-zero initialiser, so all 4&nbsp;MB of its initial contents are stored in <code>.data</code> inside the executable.
+</div></details>
+<details class="answer-reveal"><summary>How can two calls to the same recursive function have variables at different addresses?</summary><div class="answer-box">
+Each call gets its own frame at a lower stack address than the previous, so the &ldquo;same&rdquo; local occupies a different address per depth. That's what makes recursion work &mdash; each level has independent storage.
+</div></details>
+<details class="answer-reveal"><summary>What is ASLR and how does it affect your code?</summary><div class="answer-box">
+Address Space Layout Randomisation places the stack, heap, libraries, and (with PIE) the executable at randomised base addresses each run, to make memory-corruption exploits harder. Practical impact: never hard-code or persist absolute addresses; pointer values differ between runs; debugging needs symbolised traces.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how <code>malloc</code> gets memory from the OS and why <code>free</code> often doesn't shrink RSS.</summary><div class="answer-box">
+Small requests are carved from an arena the allocator grows with <code>sbrk</code> (moving the program break) or anonymous <code>mmap</code>; large requests get their own <code>mmap</code> region. <code>free</code> returns the block to the allocator's free lists, not necessarily to the OS &mdash; the top-of-heap can only shrink if the freed block is at the break, and mmapped blocks are unmapped only when fully free. So resident memory (RSS) frequently stays high after freeing; that's caching, not a leak. <code>malloc_trim</code> or a different allocator can be more aggressive.
+</div></details>
+<details class="answer-reveal"><summary>You must allocate millions of same-sized nodes with minimal overhead and fast free. What design?</summary><div class="answer-box">
+A pool / slab allocator: <code>malloc</code> one big slab, hand out fixed-size slots by bumping an index, keep a free list of returned slots (an intrusive singly linked list stored in the free slots themselves). O(1) alloc/free, near-zero per-object header overhead, excellent locality, and you can free the whole pool at once. Trade-off: only one object size, and memory isn't returned to the general heap until the pool is destroyed.
+</div></details>
+<details class="answer-reveal"><summary>Why can taking <code>&amp;local</code> and comparing it across frames give surprising results under optimisation?</summary><div class="answer-box">
+The compiler may keep a local entirely in a register (no address at all until forced), reorder or coalesce frame slots, elide frames via inlining or tail-call optimisation, or reuse the same stack slot for non-overlapping locals. So &ldquo;stack grows down&rdquo; reasoning about specific offsets is unreliable; only lifetime and scope rules are guaranteed.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:memory-layout -->
+
+<!-- TOPIC:c:structs-unions -->
+<section class="view topic" id="v-c-structs-unions" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Structures, Unions, Bit-fields, Padding &amp; Alignment</h1>
+<p class="subtitle">Why <code>sizeof(struct)</code> isn't the sum of its members, and how to control it.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Alignment &amp; padding</h3>
+<p>Each scalar type has an <strong>alignment requirement</strong> (usually its own size): an <code>int</code>
+must sit at an address divisible by 4, a <code>double</code> by 8. The compiler inserts <strong>padding</strong>
+bytes between members so each is aligned, and <strong>tail padding</strong> at the end so that in an
+array every element stays aligned. The whole struct's alignment is that of its strictest member.</p>
+<pre><code><span class="k">struct</span> bad { <span class="k">char</span> a; <span class="k">int</span> b; <span class="k">char</span> c; };  <span class="c">// 1 +3pad +4 +1 +3pad = 12</span>
+<span class="k">struct</span> good { <span class="k">int</span> b; <span class="k">char</span> a; <span class="k">char</span> c; };  <span class="c">// 4 +1 +1 +2pad = 8</span></code></pre>
+<p>Order members large&rarr;small to minimise padding. <code>offsetof(type, member)</code> from
+<code>&lt;stddef.h&gt;</code> gives the real offset. C11 <code>_Alignas</code> / <code>alignof</code> let you query or force alignment.</p>
+
+<h3>Unions</h3>
+<p>All members share the same storage; <code>sizeof</code> is the largest member (plus alignment). Writing
+one member and reading another is <strong>type punning</strong> &mdash; in C this is defined for
+inspecting bytes and for a <em>common initial sequence</em> of struct members, but reading a
+different type generally has implementation-defined/UB corners (the popular <code>float</code>&harr;<code>int</code>
+trick works on GCC/Clang; <code>memcpy</code> is the fully portable route). A <strong>tagged union</strong>
+(an <code>enum</code> tag + a union) is the safe idiom.</p>
+<pre><code><span class="k">struct</span> value {
+    <span class="k">enum</span> { V_INT, V_STR } tag;
+    <span class="k">union</span> { <span class="k">long</span> i; <span class="k">char</span> *s; } as;
+};</code></pre>
+
+<h3>Bit-fields</h3>
+<p>Members declared with a bit width pack flags/small counters tightly:
+<code>unsigned mode : 3;</code>. Useful for protocol headers and hardware registers, but
+<em>allocation order, straddling of storage units, and signedness of plain <code>int</code> bit-fields
+are implementation-defined</em> &mdash; not portable across compilers/endianness. You cannot take a
+bit-field's address.</p>
+
+<h3>Flexible array member (C99)</h3>
+<p>A trailing <code>T arr[];</code> with no size lets one allocation hold a header plus a run-time-sized
+payload contiguously. Must be the last member; the struct must have at least one other member.</p>
+
+<h3>Copying &amp; comparing</h3>
+<p>Struct assignment and passing by value copy all members (including padding, whose contents are
+unspecified). That's why you <em>cannot</em> compare structs with <code>memcmp</code> reliably &mdash;
+padding bytes may differ. Compare field by field, or <code>memset</code> the whole struct to 0 before
+filling it if you must byte-compare.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>sizeof(struct)</code> &ge; sum of members, rounded so arrays stay aligned.</li>
+<li>Struct alignment = max alignment of any member.</li>
+<li>Reorder members big&rarr;small to cut padding.</li>
+<li><code>offsetof(T, m)</code> for real offsets; <code>alignof(T)</code> / <code>_Alignas</code> (C11).</li>
+<li><code>union</code> size = largest member; only one member valid at a time &mdash; track with a tag.</li>
+<li>Portable type-pun = <code>memcpy</code>, not union reads.</li>
+<li>Bit-field layout is implementation-defined &mdash; don't rely on it for wire formats across toolchains.</li>
+<li>Can't <code>&amp;</code> a bit-field.</li>
+<li>Don't <code>memcmp</code> structs &mdash; padding bytes are unspecified. Compare fields.</li>
+<li><code>#pragma pack(1)</code> / <code>__attribute__((packed))</code> removes padding &mdash; at the cost of unaligned access (slow / faulting on some CPUs).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is <code>struct {char a; int b;}</code> 8 bytes, not 5?</dt>
+<dd>3 padding bytes after <code>a</code> so <code>b</code> lands on a 4-byte boundary. Total is also rounded up to the struct's alignment (4) &mdash; here already satisfied.</dd>
+<dt>Difference between a struct and a union?</dt>
+<dd>Struct members have distinct storage laid out sequentially; union members overlap in the same storage. A struct's size is the sum (plus padding); a union's is the max.</dd>
+<dt>How do you portably reinterpret a <code>float</code>'s bits as <code>uint32_t</code>?</dt>
+<dd><code>uint32_t u; memcpy(&amp;u, &amp;f, sizeof u);</code>. The union trick is common but not strictly portable in C++ and has ISO-C caveats.</dd>
+<dt>Can you compare two structs with <code>==</code>?</dt>
+<dd>No, there's no <code>==</code> for structs in C. And <code>memcmp</code> is unreliable because of padding. Compare member by member.</dd>
+<dt>What is a flexible array member good for?</dt>
+<dd>Allocating a variable-length record (header + payload) in a single <code>malloc</code>, improving locality and simplifying <code>free</code>.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What is structure padding and why does the compiler add it?</summary><div class="answer-box">
+Unused bytes inserted between (and after) members so each member meets its alignment requirement and so array elements stay aligned. It trades a little space for correct, fast aligned access.
+</div></details>
+<details class="answer-reveal"><summary>What is <code>sizeof</code> a union with an <code>int</code> and a <code>double</code> member?</summary><div class="answer-box">
+At least <code>sizeof(double)</code> (8), possibly rounded to the union's alignment &mdash; the members share storage, so it's sized for the largest.
+</div></details>
+<details class="answer-reveal"><summary>Can you store a value in one union member and read it from another?</summary><div class="answer-box">
+Mechanically yes, but semantically it's type punning: only reading as bytes / <code>unsigned char</code>, or via a common initial sequence, is clearly defined. For a real reinterpret, use <code>memcpy</code>. Track which member is active with a tag.
+</div></details>
+<details class="answer-reveal"><summary>How do you get the byte offset of a struct member?</summary><div class="answer-box">
+<code>offsetof(struct T, member)</code> from <code>&lt;stddef.h&gt;</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Reorder <code>struct { char a; double b; char c; int d; }</code> to minimise size. Show both sizes.</summary><div class="answer-box">
+Original: <code>char a</code>(1)+7 pad+<code>double b</code>(8)+<code>char c</code>(1)+3 pad+<code>int d</code>(4)+4 tail pad = <strong>24</strong>. Reordered <code>{ double b; int d; char a; char c; }</code>: 8+4+1+1+2 tail pad = <strong>16</strong>.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>__attribute__((packed))</code> / <code>#pragma pack(1)</code> do and what's the danger?</summary><div class="answer-box">
+It removes all padding so the layout matches a wire/hardware format exactly. Danger: members may now be misaligned, so accessing them can be slow (extra loads on x86) or fault (SIGBUS on ARM/SPARC and in some strict modes). Access packed fields through helpers/<code>memcpy</code>, not by taking pointers to them.
+</div></details>
+<details class="answer-reveal"><summary>Why is <code>memcmp(&amp;s1, &amp;s2, sizeof s1)</code> a fragile equality test?</summary><div class="answer-box">
+The padding bytes between members hold unspecified values &mdash; two structs with equal members can have different padding (e.g. from stack garbage before assignment), so <code>memcmp</code> reports them unequal. It only works if every such struct was <code>memset</code> to a known value first and only assigned whole.
+</div></details>
+<details class="answer-reveal"><summary>Design a type that can hold either an integer or a string, safely.</summary><div class="answer-box">
+A tagged union: <code>struct { enum {INT, STR} tag; union { long i; char *s; } u; };</code>. Every read switches on <code>tag</code>; every write sets <code>tag</code> and the matching member. This makes the &ldquo;which member is live&rdquo; question explicit and checkable.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is the &ldquo;common initial sequence&rdquo; rule for unions?</summary><div class="answer-box">
+If a union contains several structs that share a common initial run of members with compatible types, and the union object's completed type is visible, you may inspect that shared prefix through <em>any</em> of those struct members regardless of which was last written. It's what lets you read a discriminant/tag placed as the first field of every variant. Beyond that shared prefix, behaviour is not guaranteed.
+</div></details>
+<details class="answer-reveal"><summary>Bit-fields in a network packet struct broke when compiled on a different platform. Why, and what's the fix?</summary><div class="answer-box">
+The C standard leaves it implementation-defined whether bit-fields are allocated low-to-high or high-to-low within a unit, whether they can straddle storage units, the addressable unit size, and whether plain <code>int</code> bit-fields are signed. Change compiler or endianness and the bits land elsewhere. Fix: don't use bit-fields for wire formats &mdash; read/write whole bytes and do explicit shift-and-mask, or use fixed serialization code.
+</div></details>
+<details class="answer-reveal"><summary>How does the strict aliasing rule interact with reading memory as two different struct types?</summary><div class="answer-box">
+The compiler assumes pointers to unrelated types don't refer to the same storage, so it may cache/reorder loads and stores across them. Casting a <code>struct A *</code> to a <code>struct B *</code> and dereferencing (when the object's real type is <code>A</code>) is UB and can be miscompiled. The sanctioned escapes: access through <code>char *</code>/<code>unsigned char *</code>, use a <code>union</code> containing both types, or <code>memcpy</code> into a fresh object of the target type. <code>-fno-strict-aliasing</code> disables the optimisation as a blunt fix.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:structs-unions -->
+
+<!-- TOPIC:c:function-pointers -->
+<section class="view topic" id="v-c-function-pointers" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Function Pointers &amp; Callbacks</h1>
+<p class="subtitle">How C does polymorphism, plugins, and <code>qsort</code>.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Declaration &amp; use</h3>
+<pre><code><span class="k">int</span> (*fp)(<span class="k">int</span>, <span class="k">int</span>);        <span class="c">// fp: pointer to fn taking (int,int) returning int</span>
+<span class="k">int</span> add(<span class="k">int</span> a, <span class="k">int</span> b){ <span class="k">return</span> a+b; }
+fp = add;    <span class="c">// or &amp;add -- function name decays to a pointer</span>
+fp(<span class="n">2</span>,<span class="n">3</span>);      <span class="c">// or (*fp)(2,3) -- both call it</span></code></pre>
+<p>The parentheses around <code>*fp</code> matter: <code>int *f(int,int)</code> is a <em>function returning
+<code>int*</code></em>, whereas <code>int (*f)(int,int)</code> is a <em>pointer to function</em>. Use a
+<code>typedef</code> to stay sane: <code>typedef int (*BinOp)(int,int);</code>.</p>
+
+<h3>Callbacks</h3>
+<p>Pass behaviour into a generic routine. <code>qsort</code> is the canonical example:</p>
+<pre><code><span class="k">int</span> cmp(<span class="k">const void</span> *a, <span class="k">const void</span> *b) {
+    <span class="k">int</span> x = *(<span class="k">const int</span> *)a, y = *(<span class="k">const int</span> *)b;
+    <span class="k">return</span> (x &gt; y) - (x &lt; y);   <span class="c">// avoids overflow of x - y</span>
+}
+qsort(arr, n, <span class="k">sizeof</span> arr[<span class="n">0</span>], cmp);</code></pre>
+<p>A well-designed callback API also takes a <code>void *user</code> context pointer so the callback can
+reach caller state without globals (<code>qsort_r</code>/<code>qsort_s</code> add this; plain <code>qsort</code> lacks it).</p>
+
+<h3>Dispatch tables</h3>
+<p>An array (or struct) of function pointers replaces a big <code>switch</code> and enables run-time
+extensibility: opcode interpreters, state machines, driver <code>struct file_operations</code>-style
+vtables, plugin registration.</p>
+<pre><code><span class="k">typedef void</span> (*Handler)(Event *);
+<span class="k">static</span> Handler table[EVENT_MAX] = { [EV_OPEN]=on_open, [EV_TICK]=on_tick };
+<span class="k">if</span> (e-&gt;type &lt; EVENT_MAX &amp;&amp; table[e-&gt;type]) table[e-&gt;type](e);</code></pre>
+
+<h3>Rules &amp; pitfalls</h3>
+<ul>
+<li>Calling through a pointer whose type doesn't match the actual function is UB.</li>
+<li>A <code>void *</code> is not guaranteed to hold a function pointer &mdash; use a function-pointer type (POSIX <code>dlsym</code> works in practice via a documented cast).</li>
+<li>Comparisons: two function pointers are equal iff they name the same function.</li>
+<li>No arithmetic on function pointers.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>ret (*name)(params)</code> &mdash; parens around <code>*name</code> are mandatory.</li>
+<li><code>typedef ret (*Name)(params);</code> then use <code>Name</code> everywhere.</li>
+<li>Function name decays to <code>&amp;function</code>; call as <code>fp(...)</code> or <code>(*fp)(...)</code>.</li>
+<li>Comparator returns sign, not difference: <code>(x&gt;y)-(x&lt;y)</code>.</li>
+<li>Good callback API = function pointer <em>plus</em> <code>void *ctx</code>.</li>
+<li>Dispatch table = <code>Handler t[N]</code>; guard index and null before calling.</li>
+<li>No pointer arithmetic; equality = same function.</li>
+<li>Signature mismatch on call = UB (even if it &ldquo;works&rdquo;).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why <code>int (*f)(void)</code> and not <code>int *f(void)</code>?</dt>
+<dd>Without the parentheses, <code>*</code> binds to the return type: <code>int *f(void)</code> is a function returning <code>int*</code>. The parentheses make <code>f</code> a pointer to a function.</dd>
+<dt>Do you need <code>&amp;</code> to take a function's address?</dt>
+<dd>No &mdash; a function name decays to its address automatically. <code>fp = f;</code> and <code>fp = &amp;f;</code> are equivalent, as are <code>fp()</code> and <code>(*fp)()</code>.</dd>
+<dt>How does <code>qsort</code> stay type-generic?</dt>
+<dd>It works in terms of byte counts (<code>size</code>, <code>nmemb</code>) and delegates ordering to a caller-supplied comparator taking <code>const void *</code> arguments.</dd>
+<dt>Why pass a <code>void *user</code> to a callback?</dt>
+<dd>So the callback can access caller-specific state (config, accumulators, an object <code>this</code>) without resorting to global variables, keeping it reentrant.</dd>
+<dt>Can you put function pointers in a struct?</dt>
+<dd>Yes &mdash; that's how C builds vtable-like interfaces (e.g. the Linux kernel's <code>file_operations</code>).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Declare a pointer to a function taking two <code>double</code>s and returning <code>double</code>.</summary><div class="answer-box">
+<code>double (*fp)(double, double);</code> &mdash; or with a typedef: <code>typedef double (*DFn)(double,double); DFn fp;</code>.
+</div></details>
+<details class="answer-reveal"><summary>What is a callback?</summary><div class="answer-box">
+A function passed (as a pointer) into another function so the callee can invoke caller-supplied behaviour at the right moment &mdash; e.g. a comparator for sorting, an event handler, an iteration visitor.
+</div></details>
+<details class="answer-reveal"><summary>Two ways to call through <code>fp</code>?</summary><div class="answer-box">
+<code>fp(args)</code> and <code>(*fp)(args)</code> &mdash; identical in effect.
+</div></details>
+<details class="answer-reveal"><summary>What must a <code>qsort</code> comparator return?</summary><div class="answer-box">
+A negative value if the first element sorts before the second, zero if equal, positive if after. Not necessarily <code>-1/0/1</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why is <code>return a - b;</code> a buggy comparator for <code>int</code>?</summary><div class="answer-box">
+<code>a - b</code> can overflow (e.g. <code>INT_MIN</code> vs a large positive), which is undefined behaviour and can invert the ordering. Use <code>(a &gt; b) - (a &lt; b)</code> or explicit <code>if</code>s.
+</div></details>
+<details class="answer-reveal"><summary>Implement a tiny event dispatcher using a table of handlers.</summary><div class="answer-box">
+<pre><code><span class="k">typedef void</span> (*Handler)(<span class="k">void</span> *ev, <span class="k">void</span> *ctx);
+Handler table[N];
+<span class="k">void</span> dispatch(<span class="k">int</span> type, <span class="k">void</span> *ev, <span class="k">void</span> *ctx) {
+    <span class="k">if</span> ((<span class="k">unsigned</span>)type &lt; N &amp;&amp; table[type])
+        table[type](ev, ctx);
+}</code></pre>
+Registration is just <code>table[type] = fn;</code>. This replaces a growing <code>switch</code> and lets modules self-register.
+</div></details>
+<details class="answer-reveal"><summary>How do you emulate a virtual method / interface in C?</summary><div class="answer-box">
+Put function pointers in a struct (&ldquo;ops&rdquo; / vtable). Each &ldquo;object&rdquo; carries a pointer to its ops table plus its own data: <code>struct shape { const struct shape_ops *ops; ... }; s-&gt;ops-&gt;area(s);</code>. Different concrete types supply different ops tables.
+</div></details>
+<details class="answer-reveal"><summary>What breaks if you cast a <code>void(*)(int)</code> to <code>void(*)(void)</code> and call it?</summary><div class="answer-box">
+Calling a function through a pointer of incompatible type is undefined behaviour. It may happen to work with a compatible calling convention on one ABI and crash or pass garbage on another. Keep the pointer type matching the function.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>POSIX <code>dlsym</code> returns <code>void *</code> but you need a function pointer. Is the cast legal?</summary><div class="answer-box">
+ISO C says object and function pointers need not be interconvertible, so strictly it's implementation-defined. POSIX explicitly requires the conversion to work and documents the idiom; the portable-looking workaround is <code>*(void **)&amp;fn = dlsym(...)</code> to dodge a compiler warning, but on any real POSIX platform a direct cast is fine and defined by POSIX itself.
+</div></details>
+<details class="answer-reveal"><summary>How does a function-pointer dispatch table compare to a <code>switch</code> for a bytecode interpreter, performance-wise?</summary><div class="answer-box">
+A dense <code>switch</code> often compiles to a jump table already, so raw dispatch cost is similar. The interpreter-specific win is <em>computed goto</em> / &ldquo;threaded code&rdquo; (a GCC label-pointer table), where each opcode handler ends by jumping directly to the next opcode's handler. That spreads the indirect branch across many sites, improving branch-predictor accuracy versus one hot switch dispatch point. A struct-of-pointers table is also more extensible at run time; a switch is faster to write and lets the optimiser see all cases.
+</div></details>
+<details class="answer-reveal"><summary>Can you store a pointer to a function with C linkage in a variable typed for C++ linkage (or vice versa)?</summary><div class="answer-box">
+Language linkage is part of a function type in C++. A pointer to an <code>extern "C"</code> function has a different type from a pointer to an ordinary C++ function, and mixing them is technically ill-formed (many compilers allow it). When registering C++ callbacks with a C API, declare the callback <code>extern "C"</code> so its type matches what the C library expects.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:function-pointers -->
+
+<!-- TOPIC:c:preprocessor -->
+<section class="view topic" id="v-c-preprocessor" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>The Preprocessor &amp; Macros</h1>
+<p class="subtitle">A text-substitution pass that runs before the compiler &mdash; powerful, and full of foot-guns.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What it does</h3>
+<p>The preprocessor handles <code>#include</code> (paste a file), <code>#define</code> (object- and
+function-like macros), conditional compilation (<code>#if / #ifdef / #ifndef / #elif / #else / #endif</code>),
+<code>#pragma</code>, <code>#error</code>, and line control. It works purely on tokens &mdash; it knows nothing
+about types, scopes, or C syntax.</p>
+
+<h3>Macro pitfalls</h3>
+<pre><code><span class="c">// 1. missing parentheses</span>
+<span class="k">#define</span> SQ(x) x*x
+SQ(a+b)        <span class="c">// -&gt; a+b*b   ... wrong</span>
+<span class="k">#define</span> SQ(x) ((x)*(x))   <span class="c">// fix: parens around params AND whole body</span>
+
+<span class="c">// 2. double evaluation of arguments with side effects</span>
+<span class="k">#define</span> MAX(a,b) ((a)&gt;(b)?(a):(b))
+MAX(i++, j)    <span class="c">// i incremented once or twice depending on branch</span>
+
+<span class="c">// 3. dangling-else / multi-statement macros</span>
+<span class="k">#define</span> DBG(x) printf("%d\n",x); log(x)   <span class="c">// breaks after an if without braces</span>
+<span class="k">#define</span> DBG(x) do { printf("%d\n",x); log(x); } while (0)  <span class="c">// fix</span></code></pre>
+
+<h3><code>#</code> stringize and <code>##</code> token paste</h3>
+<pre><code><span class="k">#define</span> STR(x)  #x            <span class="c">// STR(foo)  -&gt; "foo"</span>
+<span class="k">#define</span> XSTR(x) STR(x)         <span class="c">// expands x first: XSTR(__LINE__) -&gt; "42"</span>
+<span class="k">#define</span> CAT(a,b) a##b          <span class="c">// CAT(var,3) -&gt; var3</span></code></pre>
+<p>You need the extra indirection layer (<code>XSTR</code>) because <code>#</code> and <code>##</code>
+<em>suppress</em> expansion of their operands.</p>
+
+<h3>Include guards vs <code>#pragma once</code></h3>
+<pre><code><span class="k">#ifndef</span> MYLIB_FOO_H
+<span class="k">#define</span> MYLIB_FOO_H
+<span class="c">/* declarations */</span>
+<span class="k">#endif</span></code></pre>
+<p>Standard, portable, and works even if the same file is reachable by two paths. <code>#pragma once</code>
+is shorter and widely supported but not in the standard.</p>
+
+<h3>Useful predefined macros</h3>
+<p><code>__FILE__</code>, <code>__LINE__</code>, <code>__func__</code> (actually a variable, C99), <code>__DATE__</code>,
+<code>__STDC_VERSION__</code>, and compiler-specific ones like <code>__GNUC__</code>. <code>assert</code> is a
+macro that expands to nothing when <code>NDEBUG</code> is defined.</p>
+
+<h3>X-macros</h3>
+<p>A single list macro drives multiple generated tables (enum + names + handlers) so they can't drift
+out of sync:</p>
+<pre><code><span class="k">#define</span> COLORS  X(RED) X(GREEN) X(BLUE)
+<span class="k">enum</span> Color { <span class="k">#define</span> X(c) c, COLORS <span class="k">#undef</span> X };
+<span class="k">const char</span> *name[] = { <span class="k">#define</span> X(c) #c, COLORS <span class="k">#undef</span> X };</code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Wrap every macro parameter and the whole body in parentheses.</li>
+<li>Multi-statement macro &rarr; <code>do { ... } while (0)</code>.</li>
+<li>Never pass side-effecting expressions to a macro that may use the arg twice.</li>
+<li>Prefer <code>static inline</code> functions, <code>const</code>, and <code>enum</code> over macros where possible &mdash; they have types and scope.</li>
+<li><code>#x</code> stringizes; <code>a##b</code> pastes; both need a helper layer to expand args first.</li>
+<li>Header guard: <code>#ifndef UNIQUE / #define UNIQUE / ... / #endif</code>.</li>
+<li><code>#if defined(X) &amp;&amp; X &gt; 2</code> for version checks; undefined names in <code>#if</code> count as 0.</li>
+<li><code>assert()</code> vanishes under <code>-DNDEBUG</code> &mdash; never put required side effects inside it.</li>
+<li><code>-E</code> (gcc/clang) dumps preprocessed output for debugging expansions.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why parenthesise macro bodies and parameters?</dt>
+<dd>Because expansion is textual: without parentheses the surrounding operators bind differently than intended (<code>SQ(a+b)</code> &rarr; <code>a+b*b</code>).</dd>
+<dt>Why <code>do { } while(0)</code> around a multi-statement macro?</dt>
+<dd>It makes the macro a single statement that still needs a terminating semicolon and behaves correctly after an <code>if</code> without braces.</dd>
+<dt>Difference between <code>#include &lt;x&gt;</code> and <code>#include "x"</code>?</dt>
+<dd><code>" "</code> searches the current file's directory (and user paths) first, then the system paths; <code>&lt; &gt;</code> searches only the system/include paths. Use quotes for your project headers.</dd>
+<dt>What does <code>#</code> do in a function-like macro?</dt>
+<dd>Stringizes the argument &mdash; turns the token(s) into a string literal, with special handling of embedded quotes/backslashes.</dd>
+<dt>Macro vs <code>inline</code> function &mdash; which to prefer?</dt>
+<dd><code>inline</code> (or <code>static inline</code>): it's type-checked, scoped, debuggable, and evaluates arguments once. Reach for a macro only when you need textual tricks (stringize, paste, generic-over-type without <code>_Generic</code>, compile-time constants).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What phase does the preprocessor run in, and does it understand C types?</summary><div class="answer-box">
+It runs before compilation proper, operating on the token stream. It has no knowledge of types, scope, or expressions &mdash; it only does inclusion, macro substitution, and conditional compilation.
+</div></details>
+<details class="answer-reveal"><summary>Write a safe <code>MIN(a,b)</code> macro.</summary><div class="answer-box">
+<code>#define MIN(a,b) ((a) &lt; (b) ? (a) : (b))</code> &mdash; parens around each parameter and the whole expression. (Still evaluates one argument twice; document that or use a GCC statement-expression / an inline function.)
+</div></details>
+<details class="answer-reveal"><summary>What's a header include guard?</summary><div class="answer-box">
+An <code>#ifndef NAME / #define NAME / ... / #endif</code> wrapper that prevents the header's contents being processed more than once per translation unit.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>#undef</code> do?</summary><div class="answer-box">
+Removes a current macro definition, so the name reverts to being an ordinary identifier (or can be redefined differently).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why does <code>STR(__LINE__)</code> give <code>"__LINE__"</code> and how do you fix it?</summary><div class="answer-box">
+The <code>#</code> operator stringizes its argument <em>without</em> expanding it first. Add an indirection: <code>#define STR(x) #x</code> and <code>#define XSTR(x) STR(x)</code>, then <code>XSTR(__LINE__)</code> expands <code>__LINE__</code> to the number, which <code>STR</code> then stringizes.
+</div></details>
+<details class="answer-reveal"><summary>Give a concrete bug from passing <code>arr[i++]</code> to <code>MAX(a,b)</code>.</summary><div class="answer-box">
+<code>MAX(arr[i++], x)</code> expands to <code>((arr[i++]) &gt; (x) ? (arr[i++]) : (x))</code>. If the first branch is taken, <code>i</code> is incremented twice and a different element is returned than the one compared &mdash; and the double modification of <code>i</code> without a sequence point is itself UB.
+</div></details>
+<details class="answer-reveal"><summary>What is an X-macro and what problem does it solve?</summary><div class="answer-box">
+A macro that lists items once (<code>#define LIST X(a) X(b) X(c)</code>); you then <code>#define X</code> differently and re-expand <code>LIST</code> to generate several parallel constructs (an enum, a name array, a jump table). It keeps those tables in sync because they're all generated from one source list.
+</div></details>
+<details class="answer-reveal"><summary>How do you conditionally compile code only on GCC &ge; 7?</summary><div class="answer-box">
+<code>#if defined(__GNUC__) &amp;&amp; (__GNUC__ &gt; 7 || (__GNUC__ == 7 &amp;&amp; __GNUC_MINOR__ &gt;= 0))</code>. Undefined identifiers evaluate to 0 in <code>#if</code>, so the <code>defined()</code> guard prevents a false match on other compilers.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain the preprocessor's argument prescan and when it does <em>not</em> happen.</summary><div class="answer-box">
+When a function-like macro is invoked, each argument is fully macro-expanded (&ldquo;prescanned&rdquo;) <em>before</em> being substituted into the body &mdash; unless that parameter is an operand of <code>#</code> or <code>##</code> in the body, in which case it's used raw. That's the whole reason two-level <code>STR</code>/<code>XSTR</code> and <code>CAT</code>/<code>XCAT</code> wrappers exist: the outer macro expands the argument, the inner one applies <code>#</code>/<code>##</code>.
+</div></details>
+<details class="answer-reveal"><summary>How can you build a variadic macro that forwards <code>__VA_ARGS__</code> and handles the zero-argument case?</summary><div class="answer-box">
+<code>#define LOG(fmt, ...) fprintf(stderr, fmt, __VA_ARGS__)</code> breaks when called with just a format. C99 workaround: GCC's <code>, ##__VA_ARGS__</code> deletes the comma when empty; C++20 / C23 provide <code>__VA_OPT__(,)</code> for a portable version: <code>#define LOG(fmt, ...) fprintf(stderr, fmt __VA_OPT__(,) __VA_ARGS__)</code>.
+</div></details>
+<details class="answer-reveal"><summary>Why can't the preprocessor implement true recursion, and how do libraries fake counting/iteration?</summary><div class="answer-box">
+A macro is &ldquo;painted blue&rdquo; (marked non-replaceable) while its own expansion is being rescanned, so it cannot call itself. Metaprogramming libraries (Boost.Preprocessor) simulate recursion by pre-defining a finite ladder of differently-named macros (<code>REPEAT_1</code>, <code>REPEAT_2</code>, ... up to a fixed limit) and deferring expansion with <code>EMPTY()</code>/<code>DEFER</code> tricks so an outer rescan pass performs the next step.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:preprocessor -->
+
+<!-- TOPIC:c:qualifiers-linkage -->
+<section class="view topic" id="v-c-qualifiers-linkage" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>const, volatile, static, extern &amp; Linkage</h1>
+<p class="subtitle">How names, definitions, and translation units fit together &mdash; and how headers should be written.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Translation units and the one-definition idea</h3>
+<p>Each <code>.c</code> file plus everything it <code>#include</code>s is a <strong>translation unit</strong>,
+compiled to an object file; the linker joins them. A symbol with external linkage may be
+<em>declared</em> many times but must be <em>defined</em> exactly once across the whole program.</p>
+
+<h3>Linkage</h3>
+<table>
+<tr><th>Linkage</th><th>Meaning</th><th>How to get it</th></tr>
+<tr><td>External</td><td>One entity shared across all translation units.</td><td>File-scope function/variable with no <code>static</code>.</td></tr>
+<tr><td>Internal</td><td>One entity private to this translation unit.</td><td><code>static</code> at file scope.</td></tr>
+<tr><td>None</td><td>A fresh entity each time the declaration is seen.</td><td>Locals, function parameters, <code>typedef</code>, most block-scope names.</td></tr>
+</table>
+
+<h3><code>extern</code> and the header pattern</h3>
+<pre><code><span class="c">// config.h</span>
+<span class="k">extern int</span> g_verbosity;          <span class="c">// declaration -- promise it exists</span>
+<span class="k">void</span> set_verbosity(<span class="k">int</span>);
+
+<span class="c">// config.c</span>
+<span class="k">#include</span> "config.h"
+<span class="k">int</span> g_verbosity = <span class="n">0</span>;             <span class="c">// the single definition</span></code></pre>
+<p>Put declarations (not definitions) in headers. A bare <code>int g;</code> in a header included by
+several <code>.c</code> files gives multiple definitions &mdash; a link error under modern
+<code>-fno-common</code> defaults.</p>
+
+<h3><code>const</code> and linkage</h3>
+<p>In C, a file-scope <code>const</code> still has external linkage by default (unlike C++, where it's
+internal). So <code>const int K = 10;</code> in a header included twice is a redefinition; use
+<code>static const</code> or (better) put the definition in one <code>.c</code> and <code>extern const</code> in the header, or use an <code>enum</code>/<code>#define</code> for true compile-time constants.</p>
+
+<h3><code>inline</code> in C (differs from C++)</h3>
+<p>C99 <code>inline</code> without <code>static</code> or <code>extern</code> provides an <em>inline definition</em> that
+does <strong>not</strong> emit an external symbol; you must supply one <code>extern inline</code> (or normal)
+definition in exactly one <code>.c</code> for the address/non-inlined calls. The simple, portable choice
+for header helpers is <code>static inline</code>.</p>
+
+<h3>Tentative definitions</h3>
+<p><code>int x;</code> at file scope is a <em>tentative definition</em>. Multiple tentative definitions of the
+same variable in one translation unit collapse into one, initialised to zero. Across translation
+units they're still multiple definitions.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Translation unit = one <code>.c</code> + its includes &rarr; one <code>.o</code>.</li>
+<li>Declare in headers, define in exactly one <code>.c</code>.</li>
+<li><code>static</code> @ file scope &rarr; internal linkage (file-private).</li>
+<li><code>extern</code> &rarr; &ldquo;defined elsewhere&rdquo;; needed to <em>share</em> a global via a header.</li>
+<li>C <code>const</code> at file scope has <em>external</em> linkage (unlike C++).</li>
+<li>Header constants: <code>enum</code>, <code>#define</code>, or <code>static const</code> / <code>extern const</code> + one definition.</li>
+<li>Header helpers: <code>static inline</code> (simplest correct choice).</li>
+<li><code>-fno-common</code> (modern default) turns duplicate globals into link errors &mdash; good.</li>
+<li>Function default linkage is external; add <code>static</code> for internal helpers.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Declaration vs definition?</dt>
+<dd>A declaration introduces a name and its type; a definition also allocates storage (variables) or provides the body (functions). You can declare many times, define once.</dd>
+<dt>What does <code>static</code> do to a global?</dt>
+<dd>Gives it internal linkage &mdash; other translation units cannot see or link to it, avoiding name clashes.</dd>
+<dt>How do two <code>.c</code> files share one global correctly?</dt>
+<dd>Define it once (<code>int g = 0;</code>) in one <code>.c</code>; declare it (<code>extern int g;</code>) in a header both include.</dd>
+<dt>Why did <code>const int MAX = 100;</code> in a shared header cause a link error in C but not C++?</dt>
+<dd>C keeps file-scope <code>const</code> at external linkage, so each including <code>.c</code> defines the same symbol. C++ makes it internal by default, so each unit gets its own private copy.</dd>
+<dt>Safest way to put a small helper in a header?</dt>
+<dd><code>static inline</code> &mdash; each including file gets its own inlinable copy with no duplicate-symbol risk.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What is a translation unit?</summary><div class="answer-box">
+A single source file after preprocessing &mdash; the <code>.c</code> file with all its <code>#include</code>s pasted in and macros expanded. It's the unit the compiler turns into one object file.
+</div></details>
+<details class="answer-reveal"><summary>Where should function <em>declarations</em> live, and where their <em>definitions</em>?</summary><div class="answer-box">
+Declarations (prototypes) go in a header shared by callers and the implementer. The definition (body) goes in exactly one <code>.c</code> file.
+</div></details>
+<details class="answer-reveal"><summary>What linkage does a local variable have?</summary><div class="answer-box">
+None &mdash; each entry into its scope creates a distinct object; the name isn't visible to the linker at all.
+</div></details>
+<details class="answer-reveal"><summary>How do you make a helper function invisible to other files?</summary><div class="answer-box">
+Mark it <code>static</code> at file scope &mdash; internal linkage.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You get &ldquo;multiple definition of `g`&rdquo; at link time. Likely cause and fix?</summary><div class="answer-box">
+A real definition (<code>int g;</code> or <code>int g = ...;</code>) sits in a header that's included by more than one <code>.c</code>, so every unit defines <code>g</code>. Fix: header gets <code>extern int g;</code> only; put <code>int g = 0;</code> in exactly one <code>.c</code>. (Historically the &ldquo;common&rdquo; model hid this; modern compilers default to <code>-fno-common</code>.)
+</div></details>
+<details class="answer-reveal"><summary>What's a tentative definition?</summary><div class="answer-box">
+A file-scope declaration like <code>int x;</code> with no initialiser and no <code>extern</code>. If no other definition of <code>x</code> with an initialiser appears in the translation unit, the compiler emits one zero-initialised definition. Several tentative definitions of the same name in one unit are fine and merge.
+</div></details>
+<details class="answer-reveal"><summary>Explain C99 <code>inline</code> and why <code>static inline</code> is usually recommended.</summary><div class="answer-box">
+A plain <code>inline</code> function definition in a header is an &ldquo;inline definition&rdquo; that emits no standalone symbol; you must place exactly one <code>extern</code> (or ordinary) definition in some <code>.c</code> to satisfy address-of and non-inlined calls &mdash; easy to forget and get a link error. <code>static inline</code> sidesteps that: every translation unit gets its own internal copy, inlinable, no external symbol, no coordination needed.
+</div></details>
+<details class="answer-reveal"><summary>Does <code>const</code> on a global let the compiler put it in read-only memory?</summary><div class="answer-box">
+Yes, a <code>const</code> object with static storage duration and no <code>volatile</code> can be placed in <code>.rodata</code>. Attempting to cast away <code>const</code> and write it is undefined behaviour and typically faults.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does <code>-fno-common</code> change behaviour, and why is it now the default?</summary><div class="answer-box">
+With the old &ldquo;common&rdquo; model, an uninitialised file-scope variable became a <em>common symbol</em>; the linker merged same-named commons from different objects into one, silently. That hid bugs (accidental global name collisions) and interacted badly with link-time optimisation and shared libraries. <code>-fno-common</code> makes each such variable a normal definition, so duplicates become multiple-definition errors, forcing the correct <code>extern</code>-in-header pattern. GCC 10 / modern Clang made it the default.
+</div></details>
+<details class="answer-reveal"><summary>What is the difference between visibility (<code>__attribute__((visibility("hidden"))</code>) and linkage?</summary><div class="answer-box">
+Linkage is a C-language concept about name sharing between translation units at <em>static link</em> time. Symbol <em>visibility</em> is an ELF/shared-library concept controlling whether an external-linkage symbol is exported from a <code>.so</code> for <em>dynamic</em> linking. A function can have external linkage (visible to other <code>.o</code>s in the same library) yet hidden visibility (not part of the library's public ABI), which shrinks the dynamic symbol table and speeds load time.
+</div></details>
+<details class="answer-reveal"><summary>Two libraries both define a <code>static</code> function <code>helper()</code>. Any conflict?</summary><div class="answer-box">
+No. <code>static</code> gives internal linkage, so each <code>helper</code> is private to its own translation unit; the linker never compares them. The symbols may not even appear in the global symbol table. This is exactly why library-internal helpers should be <code>static</code>.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:qualifiers-linkage -->
+
+<!-- TOPIC:c:bit-manipulation -->
+<section class="view topic" id="v-c-bit-manipulation" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Bit Manipulation Tricks</h1>
+<p class="subtitle">Masks, shifts, and the handful of idioms that come up in almost every low-level interview.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The four fundamental operations</h3>
+<pre><code>x |  (<span class="n">1u</span> &lt;&lt; n)     <span class="c">// set bit n</span>
+x &amp; ~(<span class="n">1u</span> &lt;&lt; n)     <span class="c">// clear bit n</span>
+x ^  (<span class="n">1u</span> &lt;&lt; n)     <span class="c">// toggle bit n</span>
+(x &gt;&gt; n) &amp; <span class="n">1u</span>       <span class="c">// test bit n  (0 or 1)</span></code></pre>
+<p>Use <em>unsigned</em> types and <code>1u</code>/<code>1UL</code> so the shift can't hit signed overflow or
+shift into the sign bit (both UB). Shifting by &ge; the type width is also UB.</p>
+
+<h3>Common idioms</h3>
+<table>
+<tr><th>Goal</th><th>Expression</th></tr>
+<tr><td>Is power of two (x&gt;0)</td><td><code>(x &amp; (x - 1)) == 0</code></td></tr>
+<tr><td>Clear lowest set bit</td><td><code>x &amp; (x - 1)</code></td></tr>
+<tr><td>Isolate lowest set bit</td><td><code>x &amp; (-x)</code></td></tr>
+<tr><td>Set lowest clear bit</td><td><code>x | (x + 1)</code></td></tr>
+<tr><td>Round up to next power of two</td><td>fill bits down then <code>+1</code></td></tr>
+<tr><td>Count set bits (popcount)</td><td>Kernighan: loop <code>x &amp;= x - 1</code></td></tr>
+<tr><td>Swap without temp</td><td><code>a ^= b; b ^= a; a ^= b;</code> (a &ne; b)</td></tr>
+<tr><td>Absolute value (branchless)</td><td><code>(x ^ (x&gt;&gt;31)) - (x&gt;&gt;31)</code> (32-bit)</td></tr>
+</table>
+<pre><code><span class="c">// Kernighan popcount: loops once per set bit</span>
+<span class="k">int</span> popcount(<span class="k">unsigned</span> x){ <span class="k">int</span> c=<span class="n">0</span>; <span class="k">while</span>(x){ x &amp;= x-<span class="n">1</span>; c++; } <span class="k">return</span> c; }</code></pre>
+<p>In practice, prefer compiler intrinsics: <code>__builtin_popcount</code>, <code>__builtin_clz</code>
+(count leading zeros), <code>__builtin_ctz</code> (trailing), or C23 <code>&lt;stdbit.h&gt;</code>. They map to
+single instructions.</p>
+
+<h3>Masks &amp; fields</h3>
+<pre><code><span class="c">// extract bits [hi:lo] of x</span>
+(x &gt;&gt; lo) &amp; ((<span class="n">1u</span> &lt;&lt; (hi - lo + <span class="n">1</span>)) - <span class="n">1</span>)
+<span class="c">// insert value v into field [hi:lo]</span>
+x = (x &amp; ~(mask &lt;&lt; lo)) | ((v &amp; mask) &lt;&lt; lo);</code></pre>
+
+<h3>Shift gotchas</h3>
+<ul>
+<li>Right shift of a <em>negative signed</em> value is implementation-defined (usually arithmetic / sign-extending).</li>
+<li><code>1 &lt;&lt; 31</code> on 32-bit <code>int</code> is UB (overflows <code>INT_MAX</code>); use <code>1u &lt;&lt; 31</code>.</li>
+<li>Shift count must be <code>0 &le; n &lt; width</code>. <code>x &lt;&lt; 32</code> for 32-bit <code>x</code> is UB, not 0.</li>
+<li>Operands narrower than <code>int</code> are promoted first, so <code>(uint8_t)0xFF &lt;&lt; 8</code> is computed in <code>int</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>set <code>x|=1u&lt;&lt;n</code> &middot; clear <code>x&amp;=~(1u&lt;&lt;n)</code> &middot; toggle <code>x^=1u&lt;&lt;n</code> &middot; test <code>(x&gt;&gt;n)&amp;1u</code></li>
+<li>power of two: <code>x &amp;&amp; !(x &amp; (x-1))</code></li>
+<li><code>x &amp; (x-1)</code> drops lowest set bit; <code>x &amp; -x</code> isolates it.</li>
+<li>popcount / clz / ctz &rarr; use <code>__builtin_*</code> or C23 <code>&lt;stdbit.h&gt;</code>.</li>
+<li>Always shift <em>unsigned</em>; suffix the literal (<code>1u</code>, <code>1ull</code>).</li>
+<li>Shift by &ge; width or into/of the sign bit &rarr; UB.</li>
+<li>XOR swap is a party trick &mdash; fails when the two operands alias; just use a temp.</li>
+<li>Field insert: <code>x = (x &amp; ~(m&lt;&lt;lo)) | ((v &amp; m) &lt;&lt; lo);</code></li>
+<li><code>a ^ b ^ b == a</code> &mdash; basis of XOR checksums, the &ldquo;single number&rdquo; trick, and XOR linked lists.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How to check if an integer is a power of two?</dt>
+<dd><code>x &gt; 0 &amp;&amp; (x &amp; (x - 1)) == 0</code>. A power of two has exactly one set bit; subtracting 1 flips that bit and sets all lower ones, so the AND is zero.</dd>
+<dt>What does <code>x &amp; -x</code> give?</dt>
+<dd>The lowest set bit of <code>x</code> as a value (two's complement negation flips all bits above the lowest set bit and leaves it). Useful in Fenwick trees.</dd>
+<dt>Why use <code>1u</code> instead of <code>1</code> when shifting?</dt>
+<dd><code>1</code> is a signed <code>int</code>; shifting into the sign bit or past it is undefined. <code>1u</code> (or wider) makes the operation well-defined modulo the width.</dd>
+<dt>Fastest way to count set bits?</dt>
+<dd>A hardware <code>POPCNT</code> via <code>__builtin_popcount</code> / <code>std::popcount</code> / C23 <code>stdc_count_ones</code>. Kernighan's loop is the portable fallback; table lookup is another.</dd>
+<dt>Is right-shifting a negative number safe?</dt>
+<dd>It's implementation-defined (nearly always arithmetic shift, preserving sign). For portable, predictable behaviour, shift unsigned values.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How do you set, clear, and toggle bit <code>n</code> of <code>x</code>?</summary><div class="answer-box">
+Set: <code>x |= 1u &lt;&lt; n;</code>. Clear: <code>x &amp;= ~(1u &lt;&lt; n);</code>. Toggle: <code>x ^= 1u &lt;&lt; n;</code>.
+</div></details>
+<details class="answer-reveal"><summary>How do you test whether bit <code>n</code> is set?</summary><div class="answer-box">
+<code>(x &gt;&gt; n) &amp; 1u</code> (yields 0 or 1), or <code>(x &amp; (1u &lt;&lt; n)) != 0</code>.
+</div></details>
+<details class="answer-reveal"><summary>What is <code>x &lt;&lt; 3</code> equivalent to arithmetically?</summary><div class="answer-box">
+Multiplying by 8 (<code>2^3</code>), for unsigned or non-overflowing values. <code>x &gt;&gt; 3</code> is integer division by 8 for non-negative values.
+</div></details>
+<details class="answer-reveal"><summary>Swap two integers without a temporary.</summary><div class="answer-box">
+<code>a ^= b; b ^= a; a ^= b;</code> &mdash; but only if <code>a</code> and <code>b</code> are different objects. If they alias, this zeroes the value. A temp variable is clearer and just as fast.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Given an array where every value appears twice except one, find the single value in O(n)/O(1).</summary><div class="answer-box">
+XOR all elements together. Pairs cancel (<code>v ^ v == 0</code>), leaving the unique value. <code>long r = 0; for (i) r ^= a[i]; return r;</code>.
+</div></details>
+<details class="answer-reveal"><summary>Round <code>x</code> up to the next power of two (32-bit).</summary><div class="answer-box">
+<pre><code>x--; x|=x&gt;&gt;<span class="n">1</span>; x|=x&gt;&gt;<span class="n">2</span>; x|=x&gt;&gt;<span class="n">4</span>;
+x|=x&gt;&gt;<span class="n">8</span>; x|=x&gt;&gt;<span class="n">16</span>; x++;</code></pre>
+This smears the highest set bit down through all lower positions, then <code>+1</code> carries to the next power of two. Handle <code>x == 0</code> and overflow separately.
+</div></details>
+<details class="answer-reveal"><summary>Extract bits [12:4] of a 32-bit register value <code>r</code>.</summary><div class="answer-box">
+Width is <code>12 - 4 + 1 = 9</code> bits: <code>(r &gt;&gt; 4) &amp; ((1u &lt;&lt; 9) - 1)</code>, i.e. <code>(r &gt;&gt; 4) &amp; 0x1FF</code>.
+</div></details>
+<details class="answer-reveal"><summary>Why is <code>uint16_t a = 0xFFFF; uint32_t b = a &lt;&lt; 16;</code> a trap on some code, and safe here?</summary><div class="answer-box">
+<code>a</code> is promoted to <code>int</code> before the shift. If <code>int</code> is 32-bit, <code>0xFFFF &lt;&lt; 16</code> sets bit 31 of a <em>signed</em> <code>int</code> &mdash; that's signed overflow / UB. It's only safe if you cast first: <code>(uint32_t)a &lt;&lt; 16</code>. So the given line is actually the trap; the fix is the cast.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Implement branchless <code>abs(int x)</code> and explain why it works.</summary><div class="answer-box">
+<code>int mask = x &gt;&gt; (sizeof(int)*8 - 1); return (x ^ mask) - mask;</code>. For <code>x &ge; 0</code>, <code>mask</code> is 0: result is <code>x</code>. For <code>x &lt; 0</code>, arithmetic right shift makes <code>mask</code> all-ones (<code>-1</code>): <code>x ^ -1</code> is <code>~x</code>, then <code>- (-1)</code> adds 1, giving <code>~x + 1 == -x</code>. Caveat: relies on arithmetic right shift (implementation-defined) and still overflows for <code>INT_MIN</code>.
+</div></details>
+<details class="answer-reveal"><summary>How would you reverse the bits of a 32-bit word efficiently?</summary><div class="answer-box">
+Divide-and-conquer swaps: exchange adjacent 1-bit groups, then 2-bit, 4-bit, 8-bit, 16-bit, each with a mask and shifts &mdash; 5 steps, O(1):
+<pre><code>x = ((x&amp;<span class="n">0x55555555</span>)&lt;&lt;<span class="n">1</span>)|((x&gt;&gt;<span class="n">1</span>)&amp;<span class="n">0x55555555</span>);
+x = ((x&amp;<span class="n">0x33333333</span>)&lt;&lt;<span class="n">2</span>)|((x&gt;&gt;<span class="n">2</span>)&amp;<span class="n">0x33333333</span>);
+x = ((x&amp;<span class="n">0x0F0F0F0F</span>)&lt;&lt;<span class="n">4</span>)|((x&gt;&gt;<span class="n">4</span>)&amp;<span class="n">0x0F0F0F0F</span>);
+x = (x&lt;&lt;<span class="n">24</span>)|((x&amp;<span class="n">0xFF00</span>)&lt;&lt;<span class="n">8</span>)|((x&gt;&gt;<span class="n">8</span>)&amp;<span class="n">0xFF00</span>)|(x&gt;&gt;<span class="n">24</span>);</code></pre>
+Or use a byte lookup table, or <code>__builtin</code>/ARM <code>RBIT</code>.
+</div></details>
+<details class="answer-reveal"><summary>What's the trick behind a Fenwick (binary indexed) tree's <code>i &amp; -i</code>?</summary><div class="answer-box">
+<code>i &amp; -i</code> isolates the least-significant set bit, which equals the size of the range that node <code>i</code> is responsible for. To move to the parent in an update you add it (<code>i += i &amp; -i</code>); to move to the previous responsible node in a prefix query you subtract it (<code>i -= i &amp; -i</code>). This gives O(log n) update and query with O(n) space and almost no constant factor.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:bit-manipulation -->
+
+<!-- TOPIC:c:undefined-behaviour -->
+<section class="view topic" id="v-c-undefined-behaviour" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Undefined Behaviour &amp; Classic Pitfalls</h1>
+<p class="subtitle">The interviewer isn't testing trivia &mdash; they want to know you won't ship a time bomb.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The three flavours</h3>
+<ul>
+<li><strong>Undefined behaviour (UB)</strong> &mdash; the standard imposes <em>no</em> requirements. The compiler may do anything: crash, corrupt data, or (worse) optimise your code away assuming UB can't happen.</li>
+<li><strong>Unspecified behaviour</strong> &mdash; several outcomes are allowed, no choice documented (e.g. order of evaluation of function arguments).</li>
+<li><strong>Implementation-defined</strong> &mdash; allowed to vary, but the implementation must document its choice (e.g. <code>sizeof(int)</code>, right shift of negatives, <code>char</code> signedness).</li>
+</ul>
+
+<h3>The greatest hits</h3>
+<table>
+<tr><th>UB</th><th>Example</th></tr>
+<tr><td>Signed integer overflow</td><td><code>INT_MAX + 1</code>; also <code>-INT_MIN</code>, <code>INT_MIN / -1</code></td></tr>
+<tr><td>Out-of-bounds access</td><td><code>a[n]</code> on <code>a[n]</code>; even forming <code>a + n + 1</code></td></tr>
+<tr><td>Use after free / dangling</td><td>reading a freed block or a returned local's address</td></tr>
+<tr><td>Null / wild dereference</td><td>unchecked <code>malloc</code>, uninitialised pointer</td></tr>
+<tr><td>Strict aliasing violation</td><td>reading an <code>int</code> object through a <code>float *</code></td></tr>
+<tr><td>Data race</td><td>two threads, one writes, no synchronisation</td></tr>
+<tr><td>Modifying an object twice with no sequence point</td><td><code>i = i++;</code>, <code>a[i] = i++;</code></td></tr>
+<tr><td>Shift out of range / into sign bit</td><td><code>1 &lt;&lt; 31</code>, <code>x &lt;&lt; 32</code>, <code>x &lt;&lt; -1</code></td></tr>
+<tr><td>Reading uninitialised automatic storage</td><td><code>int x; printf("%d", x);</code></td></tr>
+<tr><td>Bad <code>printf</code> format/arg mismatch</td><td><code>printf("%d", 3.0)</code>, <code>%s</code> with an <code>int</code></td></tr>
+<tr><td>Calling a function through a wrong-type pointer</td><td>see Function Pointers topic</td></tr>
+</table>
+
+<h3>Why &ldquo;it works on my machine&rdquo; is not a defence</h3>
+<p>Modern optimisers actively assume the absence of UB. If <code>p</code> is dereferenced, later code
+may drop a <code>if (p == NULL)</code> check as &ldquo;dead&rdquo;. Signed-overflow assumptions turn
+<code>x + 1 &gt; x</code> into <code>true</code>. So UB can delete security checks or loops entirely, and the
+symptom can appear far from the cause and only at <code>-O2</code>.</p>
+
+<h3>Sequence points / sequencing (C11 model)</h3>
+<p>Between two <em>sequence points</em> (the <code>;</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>?:</code>, comma
+operator, end of a full expression), an object may be modified at most once, and a value read only
+to compute the new value. <code>i = i++</code> violates this; <code>i = i + 1</code> is fine.</p>
+
+<h3>Defences</h3>
+<ul>
+<li>Compile with <code>-Wall -Wextra -Wpedantic</code>, treat warnings as errors.</li>
+<li>Run tests under <code>-fsanitize=address,undefined</code> (ASan + UBSan) and Valgrind.</li>
+<li>Use <code>-fno-strict-aliasing</code> only as a stopgap; fix the aliasing.</li>
+<li>Static analysis (clang-tidy, Coverity, <code>cppcheck</code>).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>UB</strong> = anything allowed, retroactively. <strong>Unspecified</strong> = pick from a set. <strong>Impl-defined</strong> = documented choice.</li>
+<li>Signed overflow is UB; unsigned overflow <em>wraps</em> (well-defined mod 2^N).</li>
+<li>No modifying an object twice between sequence points (<code>i = i++;</code>).</li>
+<li>Argument evaluation order is unspecified &mdash; don't rely on it.</li>
+<li>OOB, use-after-free, null deref, uninitialised read = classic UB.</li>
+<li>Type-pun via <code>memcpy</code> or <code>union</code>, never a raw incompatible pointer cast.</li>
+<li>UB can make the optimiser delete checks &mdash; bugs appear only at <code>-O2</code>, far from the cause.</li>
+<li>Tooling: <code>-Wall -Wextra</code>, ASan, UBSan, Valgrind, static analysers.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Signed vs unsigned overflow?</dt>
+<dd>Unsigned arithmetic wraps modulo 2^N &mdash; fully defined. Signed overflow is undefined behaviour; the compiler may assume it never happens.</dd>
+<dt>Is <code>a[i] = i++;</code> defined?</dt>
+<dd>No. The read of <code>i</code> to index and the modification of <code>i</code> are unsequenced &mdash; UB. Split it into two statements.</dd>
+<dt>What's wrong with <code>printf(user_string)</code>?</dt>
+<dd>If the string contains <code>%</code> specifiers, <code>printf</code> reads non-existent arguments &mdash; a crash or an info-leak / write (<code>%n</code>) vulnerability. Use <code>printf("%s", user_string)</code>.</dd>
+<dt>Does UB only affect the offending statement?</dt>
+<dd>No. The standard puts no bound on the effects; optimisers propagate the &ldquo;can't happen&rdquo; assumption backward and forward, so earlier or later code can be transformed or removed.</dd>
+<dt>How do you catch UB you can't see?</dt>
+<dd>Run the test suite under UBSan/ASan, use Valgrind, enable all warnings, and add static analysis in CI.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Define &ldquo;undefined behaviour&rdquo;.</summary><div class="answer-box">
+A construct for which the C standard imposes no requirements at all. A conforming compiler may produce any result, including one that looks correct, and is entitled to optimise on the assumption that it never occurs.
+</div></details>
+<details class="answer-reveal"><summary>Give three everyday examples of UB.</summary><div class="answer-box">
+Reading an uninitialised local, indexing an array out of bounds, dereferencing a pointer after <code>free</code>, signed integer overflow, dividing by zero, dereferencing <code>NULL</code> &mdash; any three.
+</div></details>
+<details class="answer-reveal"><summary>Is unsigned integer overflow undefined?</summary><div class="answer-box">
+No. Unsigned arithmetic is defined to wrap modulo 2^N. Only <em>signed</em> overflow is UB.
+</div></details>
+<details class="answer-reveal"><summary>What flag turns on the runtime UB checker in GCC/Clang?</summary><div class="answer-box">
+<code>-fsanitize=undefined</code> (UBSan), usually paired with <code>-fsanitize=address</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why might the compiler remove <code>if (ptr == NULL) return;</code> that appears <em>after</em> <code>*ptr = 0;</code>?</summary><div class="answer-box">
+Dereferencing <code>ptr</code> is UB if it's null, so the compiler is allowed to assume <code>ptr</code> is non-null from that point on. The later null check is therefore &ldquo;provably false&rdquo; and gets deleted as dead code. The fix is to check <em>before</em> dereferencing.
+</div></details>
+<details class="answer-reveal"><summary>Explain the strict aliasing rule with an example that breaks.</summary><div class="answer-box">
+<pre><code><span class="k">float</span> f = <span class="n">1.0f</span>;
+<span class="k">unsigned</span> bits = *(<span class="k">unsigned</span> *)&amp;f;   <span class="c">// UB: reading a float object as unsigned</span></code></pre>
+The compiler assumes an <code>unsigned *</code> and a <code>float *</code> never alias, so it may reorder or cache across the access and produce a wrong <code>bits</code>. Use <code>memcpy(&amp;bits, &amp;f, sizeof bits)</code>.
+</div></details>
+<details class="answer-reveal"><summary>What is unspecified (not undefined) about <code>f(g(), h())</code>?</summary><div class="answer-box">
+The order in which <code>g()</code> and <code>h()</code> are called is unspecified &mdash; the compiler picks, and may differ between calls/builds. It's not UB (nothing catastrophic), but code that depends on the order is non-portable and fragile.
+</div></details>
+<details class="answer-reveal"><summary>Is <code>INT_MIN % -1</code> safe?</summary><div class="answer-box">
+No &mdash; like <code>INT_MIN / -1</code>, the mathematical result (or the division it implies) overflows <code>int</code>, which is UB. Guard division/modulo when the divisor could be <code>-1</code> and the dividend could be the minimum value.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How can signed-overflow UB cause a loop to become infinite under optimisation?</summary><div class="answer-box">
+<code>for (int i = 0; i &lt;= n; i++)</code> where <code>n == INT_MAX</code>: the compiler may assume <code>i + 1</code> never overflows (signed), conclude <code>i &lt;= n</code> is always true, and turn the exit test into a constant &ldquo;true&rdquo;. It's entitled to because reaching the overflow would be UB. Using an <code>unsigned</code> or <code>size_t</code> counter (defined wraparound) or a <code>&lt;</code> bound avoids it.
+</div></details>
+<details class="answer-reveal"><summary>What does the &ldquo;as-if&rdquo; rule permit, and how does UB interact with it?</summary><div class="answer-box">
+The compiler may transform the program however it likes as long as the <em>observable behaviour</em> (I/O, <code>volatile</code> accesses, program termination) of a conforming program is preserved. If the program has UB it is <em>not</em> a conforming program for that input, so the as-if constraint is void &mdash; the compiler owes you nothing, which is why UB-based optimisations are legal even when they change what you expected.
+</div></details>
+<details class="answer-reveal"><summary>You must reinterpret a buffer of bytes as a struct received off the wire. How do you do it without aliasing UB?</summary><div class="answer-box">
+Don't cast the buffer pointer to <code>struct T *</code> and dereference. Instead <code>memcpy</code> the bytes into a real <code>struct T</code> object (the compiler treats <code>memcpy</code> as changing the effective type), and account for endianness and padding explicitly &mdash; ideally parse field by field from the byte array rather than relying on struct layout at all. Access as <code>unsigned char *</code> is also always allowed.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:undefined-behaviour -->
+
+<!-- TOPIC:c:stdlib-fileio -->
+<section class="view topic" id="v-c-stdlib-fileio" data-skill="c">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>File I/O &amp; Standard Library Essentials</h1>
+<p class="subtitle"><code>FILE*</code> vs file descriptors, buffering, and the <code>str*</code> / <code>mem*</code> functions you'll be asked to reimplement.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Two layers of I/O</h3>
+<table>
+<tr><th></th><th>C stdio (<code>&lt;stdio.h&gt;</code>)</th><th>POSIX (<code>&lt;unistd.h&gt;</code>)</th></tr>
+<tr><td>Handle</td><td><code>FILE *</code></td><td><code>int</code> file descriptor</td></tr>
+<tr><td>Open</td><td><code>fopen</code></td><td><code>open</code></td></tr>
+<tr><td>Read/write</td><td><code>fread/fwrite</code>, <code>fgets</code>, <code>fprintf</code></td><td><code>read/write</code></td></tr>
+<tr><td>Buffering</td><td>Yes &mdash; in user space</td><td>No &mdash; each call is a syscall</td></tr>
+<tr><td>Portable</td><td>ISO C, everywhere</td><td>POSIX only</td></tr>
+</table>
+<p>stdio wraps a descriptor with a user-space buffer to cut syscall count. Get the underlying fd with
+<code>fileno(fp)</code>; wrap an fd with <code>fdopen</code>.</p>
+
+<h3>Buffering modes</h3>
+<ul>
+<li><strong>Fully buffered</strong> &mdash; flushed when the buffer fills. Default for files and non-tty pipes.</li>
+<li><strong>Line buffered</strong> &mdash; flushed on <code>'\n'</code>. Default for <code>stdout</code> when it's a terminal.</li>
+<li><strong>Unbuffered</strong> &mdash; each write goes straight out. Default for <code>stderr</code>.</li>
+</ul>
+<p>This is why interleaved <code>printf</code>/<code>fprintf(stderr,...)</code> can print out of order, and why a
+crash can &ldquo;lose&rdquo; the last <code>printf</code> &mdash; the buffer wasn't flushed. Force it with
+<code>fflush(stdout)</code>, <code>setvbuf</code>, or a trailing <code>'\n'</code> on a tty. Streams are flushed
+on normal <code>exit()</code> / <code>return</code> from <code>main</code>, but <em>not</em> on <code>_exit</code>,
+<code>abort</code>, or a signal.</p>
+
+<h3>Reading lines safely</h3>
+<pre><code><span class="k">char</span> buf[<span class="n">256</span>];
+<span class="k">while</span> (fgets(buf, <span class="k">sizeof</span> buf, fp)) {
+    buf[strcspn(buf, <span class="s">"\n"</span>)] = <span class="s">'\0'</span>;   <span class="c">// strip newline if present</span>
+    ...
+}
+<span class="c">// POSIX getline() handles arbitrary length via realloc</span></code></pre>
+
+<h3>Return values &amp; errors</h3>
+<ul>
+<li><code>fopen</code> returns <code>NULL</code> on failure and sets <code>errno</code>; print with <code>perror</code> / <code>strerror</code>.</li>
+<li><code>fread</code>/<code>fwrite</code> return the count of <em>elements</em> transferred; a short count means EOF or error &mdash; disambiguate with <code>feof</code>/<code>ferror</code>.</li>
+<li><code>fgetc</code>/<code>getchar</code> return <code>int</code> (so <code>EOF</code>, which is negative, is distinguishable from any <code>unsigned char</code>). Storing the result in a <code>char</code> is a classic bug.</li>
+</ul>
+
+<h3>The string/memory functions</h3>
+<table>
+<tr><th>Function</th><th>Note</th></tr>
+<tr><td><code>strlen</code></td><td>O(n) scan for <code>\0</code>.</td></tr>
+<tr><td><code>strcpy</code> / <code>strcat</code></td><td>No bounds check &mdash; caller guarantees room.</td></tr>
+<tr><td><code>strncpy</code></td><td>Pads with <code>\0</code>; may not terminate. Not a &ldquo;safe strcpy&rdquo;.</td></tr>
+<tr><td><code>snprintf</code></td><td>Bounded, always terminates; returns needed length.</td></tr>
+<tr><td><code>memcpy</code></td><td>UB if regions overlap &mdash; use <code>memmove</code> then.</td></tr>
+<tr><td><code>memset</code></td><td>Fills bytes; can't portably zero a pointer/float to a valid value on exotic targets (fine on mainstream).</td></tr>
+<tr><td><code>strtok</code></td><td>Mutates its input, keeps hidden state, not reentrant &mdash; prefer <code>strtok_r</code>/<code>strsep</code>.</td></tr>
+<tr><td><code>atoi</code></td><td>No error reporting; use <code>strtol</code> and check <code>endptr</code>/<code>errno</code>.</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>FILE*</code> = buffered ISO C; fd = raw POSIX syscalls. Bridge with <code>fileno</code>/<code>fdopen</code>.</li>
+<li><code>stdout</code>: line-buffered on a tty, fully buffered to a pipe/file. <code>stderr</code>: unbuffered.</li>
+<li>A crash before <code>fflush</code> loses buffered output. <code>exit()</code> flushes; <code>_exit</code>/<code>abort</code>/signal don't.</li>
+<li><code>getchar()</code> returns <code>int</code> &mdash; store in <code>int</code>, compare to <code>EOF</code>.</li>
+<li><code>fread</code>/<code>fwrite</code> return element counts; check with <code>feof</code>/<code>ferror</code>.</li>
+<li>Reading lines: <code>fgets</code> + strip <code>\n</code>, or POSIX <code>getline</code> for unbounded.</li>
+<li><code>snprintf</code> over <code>sprintf</code>; <code>memmove</code> when ranges overlap.</li>
+<li><code>strtol</code>/<code>strtod</code> (check <code>endptr</code> + <code>errno</code>) over <code>atoi</code>/<code>atof</code>.</li>
+<li><code>strtok</code> is stateful &amp; destructive &mdash; use <code>strtok_r</code>.</li>
+<li>Always <code>fclose</code> (it flushes); check its return for write errors.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between <code>FILE *</code> and a file descriptor?</dt>
+<dd>A file descriptor is a small integer index into the kernel's open-file table; each <code>read</code>/<code>write</code> is a syscall. <code>FILE *</code> is a stdio structure that adds a user-space buffer and formatting on top of a descriptor, reducing syscalls.</dd>
+<dt>Why did my <code>printf</code> output not appear before the crash?</dt>
+<dd><code>stdout</code> was fully or line buffered and the buffer wasn't flushed before the abnormal termination. Add <code>\n</code> (on a tty), call <code>fflush(stdout)</code>, or set unbuffered with <code>setvbuf</code>.</dd>
+<dt>Why must <code>getchar()</code>'s result be stored in an <code>int</code>?</dt>
+<dd>It returns every possible <code>unsigned char</code> value plus a distinct negative <code>EOF</code>. In a <code>char</code>, either <code>EOF</code> is indistinguishable from a valid byte (<code>0xFF</code>) or the comparison never matches.</dd>
+<dt><code>memcpy</code> vs <code>memmove</code>?</dt>
+<dd><code>memcpy</code> is undefined if source and destination overlap; <code>memmove</code> handles overlap correctly (as if via a temporary). Use <code>memmove</code> for <code>arr</code>-shifting.</dd>
+<dt>Why prefer <code>strtol</code> to <code>atoi</code>?</dt>
+<dd><code>atoi</code> has no way to report overflow or &ldquo;not a number&rdquo; &mdash; it returns 0 for garbage. <code>strtol</code> reports the first unparsed character via <code>endptr</code> and range errors via <code>errno == ERANGE</code>.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>fopen</code> return on failure?</summary><div class="answer-box">
+<code>NULL</code>, with <code>errno</code> set. Always check before using the stream; report with <code>perror("open failed")</code>.
+</div></details>
+<details class="answer-reveal"><summary>Which stream is unbuffered by default?</summary><div class="answer-box">
+<code>stderr</code>, so error messages appear immediately even if the program crashes. <code>stdout</code> is line-buffered to a terminal, fully buffered otherwise.
+</div></details>
+<details class="answer-reveal"><summary>How do you read a line of unknown length portably-ish?</summary><div class="answer-box">
+<code>fgets</code> into a fixed buffer in a loop (detect the missing <code>\n</code> to know it was truncated), or POSIX <code>getline()</code>, which <code>realloc</code>s the buffer to fit.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>fclose</code> do besides releasing the handle?</summary><div class="answer-box">
+Flushes any buffered output first. Its return value can report a deferred write error, so it's worth checking for files you wrote.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A program's <code>stdout</code> looks fine on the terminal but is reordered when redirected to a file. Why?</summary><div class="answer-box">
+On a terminal <code>stdout</code> is line-buffered, so lines appear promptly and roughly in order with <code>stderr</code> (unbuffered). Redirected to a file it becomes fully buffered &mdash; large chunks flush at once, so its output can land after <code>stderr</code> text that was actually produced later. Fix with <code>setvbuf</code>, explicit <code>fflush</code>, or <code>stdbuf</code>.
+</div></details>
+<details class="answer-reveal"><summary>Implement <code>strlen</code>.</summary><div class="answer-box">
+<pre><code>size_t my_strlen(<span class="k">const char</span> *s) {
+    <span class="k">const char</span> *p = s;
+    <span class="k">while</span> (*p) p++;
+    <span class="k">return</span> (size_t)(p - s);
+}</code></pre>
+O(n), no bounds check (matches the standard). Real libc versions read word-at-a-time with bit tricks.
+</div></details>
+<details class="answer-reveal"><summary>Why is <code>char buf[64]; fread(buf, 1, 64, fp); printf("%s", buf);</code> risky?</summary><div class="answer-box">
+<code>fread</code> doesn't null-terminate. If it read 64 bytes with no <code>\0</code>, <code>printf("%s")</code> runs off the end of <code>buf</code>. Read into <code>buf[65]</code>, capture the return count <code>n</code>, and set <code>buf[n] = '\0'</code>.
+</div></details>
+<details class="answer-reveal"><summary>How do you distinguish EOF from a read error after <code>fgets</code> returns <code>NULL</code>?</summary><div class="answer-box">
+Call <code>feof(fp)</code> (true &rarr; clean end of input) versus <code>ferror(fp)</code> (true &rarr; an I/O error occurred, check <code>errno</code>). <code>fgets</code> alone can't tell you which.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>You <code>fork()</code> a process that has buffered but unflushed <code>stdout</code>. What can go wrong?</summary><div class="answer-box">
+The child inherits a copy of the not-yet-flushed buffer. If both parent and child later flush (e.g. at <code>exit</code>), the buffered text is written <em>twice</em>. Standard practice: <code>fflush(NULL)</code> before <code>fork</code>, and have the child use <code>_exit</code> (which skips stdio cleanup) after an <code>exec</code> failure so it doesn't double-flush.
+</div></details>
+<details class="answer-reveal"><summary>When is raw <code>read()</code>/<code>write()</code> preferable to stdio, and what must you handle that stdio hid?</summary><div class="answer-box">
+For large bulk transfers, non-blocking/async I/O, sockets with <code>poll</code>, or when you need exact syscall control (<code>O_DIRECT</code>, <code>sendfile</code>, precise <code>lseek</code>). You must then handle <em>short reads/writes</em> (loop until the full count is done), <code>EINTR</code> retries, and your own buffering &mdash; all of which stdio did for you.
+</div></details>
+<details class="answer-reveal"><summary>Why can zeroing a struct with <code>memset(&amp;s, 0, sizeof s)</code> not be assumed to make its pointer members <code>NULL</code> or its floats <code>0.0</code> &mdash; and why is it fine in practice?</summary><div class="answer-box">
+The C standard only guarantees that all-bits-zero is a valid representation for integer types. A null pointer or <code>0.0</code> need not be all-bits-zero on exotic architectures, so strictly you should assign <code>NULL</code>/<code>0.0</code> explicitly (or use <code>{0}</code> initialisation, which does the right thing). In practice every mainstream platform (x86, ARM, IEEE-754, null == 0) makes <code>memset</code>-to-zero produce null pointers and zero floats, so it's a portability pedantry point rather than a real bug on normal targets.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:stdlib-fileio -->
+
+</main>
+
+<footer class="site-footer">
+  Leo Interview Preparation Notebook &middot; personal study reference &middot; content from standard references (K&amp;R, ISO C, comp.lang.c FAQ) &amp; common interview material
+</footer>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- skill + topic registry (order defines sidebar / topic-list order) ----
+  var SKILLS = {
+    c:     { name: "C Concepts",       ready: true },
+    shell: { name: "Shell Scripting",  ready: false },
+    cpp:   { name: "C++",              ready: false },
+    oops:  { name: "OOPS",             ready: false },
+    ds:    { name: "Data Structures",  ready: false }
+  };
+
+  var TOPICS = {
+    c: [
+      ["types-storage",       "Data Types, Storage Classes & Type Qualifiers", "int vs int32_t, static/extern, const vs volatile, integer promotion."],
+      ["pointers",            "Pointers & Pointer Arithmetic",                 "Dereferencing, pointer maths, void*, pointer-to-pointer, null vs wild."],
+      ["arrays-strings",      "Arrays, Strings & Multidimensional Arrays",     "Array/pointer decay, C strings, char arr[][], array of pointers."],
+      ["dynamic-memory",      "Dynamic Memory Management",                     "malloc/calloc/realloc/free, leaks, dangling, double free, fragmentation."],
+      ["memory-layout",       "Program Memory Layout & Stack vs Heap",         "text/data/bss/heap/stack, lifetime, stack frames, stack vs heap trade-offs."],
+      ["structs-unions",      "Structures, Unions, Bit-fields, Padding",       "Alignment & padding, flexible array member, union type-punning, bit-fields."],
+      ["function-pointers",   "Function Pointers & Callbacks",                 "Syntax, callback tables, qsort comparator, dispatch tables."],
+      ["preprocessor",        "The Preprocessor & Macros",                     "#define pitfalls, include guards, #, ##, X-macros, conditional compilation."],
+      ["qualifiers-linkage",  "const, volatile, static, extern & Linkage",     "Translation units, ODR in C, internal vs external linkage, header hygiene."],
+      ["bit-manipulation",    "Bit Manipulation Tricks",                       "Masks, set/clear/toggle/test, shifts, count bits, power-of-two checks."],
+      ["undefined-behaviour", "Undefined Behaviour & Classic Pitfalls",        "Signed overflow, strict aliasing, sequence points, OOB, use-after-free."],
+      ["stdlib-fileio",       "File I/O & Standard Library Essentials",        "FILE* vs fd, buffering, fread/fwrite, str* funcs, errno, format strings."]
+    ],
+    shell: [], cpp: [], oops: [], ds: []
+  };
+
+  // ---- helpers ----
+  function $(sel, root) { return (root || document).querySelector(sel); }
+  function $all(sel, root) { return Array.prototype.slice.call((root || document).querySelectorAll(sel)); }
+
+  function topicMeta(skill, slug) {
+    var list = TOPICS[skill] || [];
+    for (var i = 0; i < list.length; i++) if (list[i][0] === slug) {
+      return { index: i, slug: slug, title: list[i][1], blurb: list[i][2] };
+    }
+    return null;
+  }
+
+  // ---- build the topic list on each skill page ----
+  function buildTopicList(skill) {
+    var ol = document.getElementById("list-" + skill);
+    if (!ol || ol.dataset.built) return;
+    var list = TOPICS[skill] || [];
+    var html = "";
+    for (var i = 0; i < list.length; i++) {
+      html += '<li><span class="num">' + (i + 1) + '</span><div>' +
+              '<a href="#/' + skill + '/' + list[i][0] + '">' + list[i][1] + '</a>' +
+              '<p>' + list[i][2] + '</p></div></li>';
+    }
+    ol.innerHTML = html;
+    ol.dataset.built = "1";
+  }
+
+  // ---- fill a topic page's sidebar ----
+  function buildSidebar(nav, skill, activeSlug) {
+    var list = TOPICS[skill] || [];
+    var html = '<a class="back" href="#/' + skill + '">&larr; ' + SKILLS[skill].name + '</a>' +
+               '<h3>Topics</h3><ol>';
+    for (var i = 0; i < list.length; i++) {
+      var cls = list[i][0] === activeSlug ? ' class="active"' : '';
+      html += '<li' + cls + '><a href="#/' + skill + '/' + list[i][0] + '">' + list[i][1] + '</a></li>';
+    }
+    html += '</ol>';
+    nav.innerHTML = html;
+  }
+
+  // ---- routing ----
+  function parseHash() {
+    var h = location.hash.replace(/^#\/?/, "");        // "", "c", "c/pointers"
+    var parts = h.split("/").filter(Boolean);
+    return { skill: parts[0] || null, topic: parts[1] || null };
+  }
+
+  function setCrumbs(parts) {
+    var c = document.getElementById("crumbs");
+    var bits = ['<a href="#/">Home</a>'];
+    if (parts.skill && SKILLS[parts.skill]) {
+      bits.push('<span>&rsaquo;</span> <a href="#/' + parts.skill + '">' + SKILLS[parts.skill].name + '</a>');
+      if (parts.topic) {
+        var m = topicMeta(parts.skill, parts.topic);
+        if (m) bits.push('<span>&rsaquo;</span> <span>' + m.title + '</span>');
+      }
+    }
+    c.innerHTML = parts.skill ? bits.join(" ") : "";
+  }
+
+  function show(viewId, themeClass) {
+    $all(".view").forEach(function (v) { v.classList.remove("active"); });
+    var el = document.getElementById(viewId);
+    if (el) el.classList.add("active");
+    document.body.className = themeClass;
+    return el;
+  }
+
+  function router() {
+    var p = parseHash();
+
+    // home
+    if (!p.skill || !SKILLS[p.skill]) {
+      show("v-home", "theme-home");
+      setCrumbs({});
+      window.scrollTo(0, 0);
+      return;
+    }
+
+    // topic page
+    if (p.topic) {
+      var view = document.getElementById("v-" + p.skill + "-" + p.topic);
+      if (view) {
+        show("v-" + p.skill + "-" + p.topic, "theme-" + p.skill);
+        var nav = $('[data-sidebar]', view);
+        if (nav) buildSidebar(nav, p.skill, p.topic);
+        setCrumbs(p);
+        window.scrollTo(0, 0);
+        return;
+      }
+      // unknown topic -> fall back to skill page
+      location.hash = "#/" + p.skill;
+      return;
+    }
+
+    // skill landing page
+    buildTopicList(p.skill);
+    show("v-skill-" + p.skill, "theme-" + p.skill);
+    setCrumbs(p);
+    window.scrollTo(0, 0);
+  }
+
+  window.addEventListener("hashchange", router);
+  router();
+
+  // ---- service worker (no-op on file://) ----
+  if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    });
+  }
+})();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+  "name": "Leo Interview Preparation Notebook",
+  "short_name": "Leo Interview",
+  "description": "Personal quick-reference notebook for technical interview preparation and skill refresh — C, Shell Scripting, C++, OOPS, and Data Structures. Notes, cheat sheets, Q&A, and levelled interview questions with click-to-reveal answers.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f4f5f8",
+  "theme_color": "#2f3457",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
