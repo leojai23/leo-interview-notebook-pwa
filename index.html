@@ -16796,21 +16796,50 @@ with no synchronisation and no defined ordering &mdash; undefined behaviour in C
 <li><strong>Data race</strong> &mdash; the concrete "unsynchronised concurrent access" defect above. Tools (TSan) detect these.</li>
 <li><strong>Race condition</strong> &mdash; a broader logic bug where correctness depends on timing/ordering, even with each individual operation synchronised (e.g. check-then-act on shared state).</li>
 </ul>
+<pre><code><span class="c">// DATA RACE (TSan flags it): two threads, no sync, one writes</span>
+<span class="k">int</span> total;
+<span class="k">void</span> *w(<span class="k">void</span>*_) { total += <span class="n">1</span>; <span class="k">return</span> <span class="k">NULL</span>; }   <span class="c">// $ clang -fsanitize=thread</span>
+
+<span class="c">// RACE CONDITION with NO data race: each op is atomic, the SEQUENCE is wrong</span>
+<span class="k">if</span> (map.contains_key(k))          <span class="c">// thread A passes...</span>
+    v = map.get(k);               <span class="c">// ...thread B removes k here -> A gets null / throws</span>
+<span class="c">// fix: map.get_or_default(k), or hold the lock across check+use</span></code></pre>
 
 <h3>Critical section</h3>
 <p>A region of code that accesses shared state and must run <strong>atomically with respect to other
 threads</strong> &mdash; only one thread inside at a time. Protect it with a lock (or make the operation
 a single atomic instruction, or avoid sharing).</p>
+<pre><code><span class="k">void</span> deposit(Account *a, <span class="k">long</span> amt) {
+    pthread_mutex_lock(&amp;a-&gt;m);        <span class="c">// enter -- only one thread past this point</span>
+    a-&gt;balance += amt;                <span class="c">// CRITICAL SECTION: keep it SHORT</span>
+    a-&gt;txn_count += <span class="n">1</span>;
+    pthread_mutex_unlock(&amp;a-&gt;m);      <span class="c">// leave</span>
+}
+<span class="c">// don't do network / disk / malloc inside the lock -- widens contention</span></code></pre>
 
 <h3>TOCTOU</h3>
 <p>Time-of-check to time-of-use: <code>if (!exists(f)) create(f);</code> &mdash; another thread/process
 can create <code>f</code> in the gap. Fix with an atomic operation (<code>open(O_CREAT|O_EXCL)</code>,
 <code>putIfAbsent</code>, <code>CAS</code>) that checks and acts as one step.</p>
+<pre><code><span class="c">// RACY: gap between the check and the create</span>
+<span class="k">if</span> (access(<span class="s">"/tmp/lock"</span>, F_OK) != <span class="n">0</span>)      <span class="c">// "doesn't exist"...</span>
+    fd = open(<span class="s">"/tmp/lock"</span>, O_CREAT | O_WRONLY, <span class="n">0600</span>);  <span class="c">// ...someone else created it here</span>
+
+<span class="c">// ATOMIC check-and-act: O_EXCL fails if the file already exists</span>
+fd = open(<span class="s">"/tmp/lock"</span>, O_CREAT | O_EXCL | O_WRONLY, <span class="n">0600</span>);
+<span class="k">if</span> (fd &lt; <span class="n">0</span> &amp;&amp; errno == EEXIST) { <span class="c">/* someone else holds it */</span> }</code></pre>
 
 <h3>Invariants</h3>
 <p>A critical section usually exists to keep an invariant true (a doubly-linked list's forward and
 backward pointers agree; an account's debits and credits balance). Mid-update the invariant is
 temporarily broken &mdash; which is exactly why no other thread may observe that state.</p>
+<pre><code><span class="c">// invariant: node-&gt;next-&gt;prev == node   for every node</span>
+lock(&amp;list-&gt;m);
+n-&gt;next = cur-&gt;next;
+cur-&gt;next = n;                <span class="c">// &lt;-- HERE the invariant is broken: n-&gt;next-&gt;prev still points past n</span>
+n-&gt;next-&gt;prev = n;
+n-&gt;prev = cur;               <span class="c">// invariant restored</span>
+unlock(&amp;list-&gt;m);            <span class="c">// no other thread could see the half-updated state</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -16892,6 +16921,19 @@ Sequential consistency (Lamport): the result of any execution is <em>as if</em> 
 <li>Use RAII / scope guards (<code>std::lock_guard</code>, <code>synchronized</code>, <code>with lock:</code>) so the lock is released on every exit path, including exceptions.</li>
 <li>Hold it for as short a time as possible; never do I/O or call unknown callbacks while holding it (deadlock / latency risk).</li>
 </ul>
+<pre><code><span class="k">class</span> Counter {
+    std::mutex m_;
+    <span class="k">long</span> n_ = <span class="n">0</span>;
+<span class="k">public</span>:
+    <span class="k">void</span> incr() {
+        std::lock_guard&lt;std::mutex&gt; lk(m_);   <span class="c">// RAII: unlocks on return OR exception</span>
+        n_++;                                <span class="c">// nothing slow in here</span>
+    }
+    <span class="k">long</span> get() {
+        std::lock_guard&lt;std::mutex&gt; lk(m_);   <span class="c">// READS need the same lock too</span>
+        <span class="k">return</span> n_;
+    }
+};</code></pre>
 
 <h3>Lock granularity</h3>
 <table>
@@ -16901,6 +16943,14 @@ Sequential consistency (Lamport): the result of any execution is <em>as if</em> 
 <tr><td>Cons</td><td>contention bottleneck</td><td>deadlock risk, overhead, complexity</td></tr>
 </table>
 <p>Start coarse; refine only where profiling shows lock contention.</p>
+<pre><code><span class="c">// COARSE: one lock for the whole map -> every op serialises</span>
+std::mutex big; std::unordered_map&lt;K,V&gt; m;
+
+<span class="c">// FINE: shard into N stripes -> N threads can write concurrently to different keys</span>
+<span class="k">struct</span> Shard { std::mutex m; std::unordered_map&lt;K,V&gt; m2; };
+Shard shards[<span class="n">16</span>];
+Shard&amp; s = shards[hash(k) % <span class="n">16</span>];
+{ std::lock_guard lk(s.m); s.m2[k] = v; }   <span class="c">// only contends with same-shard writers</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 118" role="img" aria-labelledby="d-ccmx-t">
@@ -16938,6 +16988,13 @@ unlock(m);</code></pre>
 <h3>Reentrancy</h3>
 <p>A plain mutex deadlocks if the same thread locks it twice. Recursive mutexes allow it but
 usually signal a design smell &mdash; restructure so the lock is taken once at the top.</p>
+<pre><code><span class="c">// SELF-DEADLOCK: public method locks, then calls another public method that locks again</span>
+<span class="k">void</span> add(<span class="k">int</span> x)      { lock(m); total += x; addAll_(x); unlock(m); }
+<span class="k">void</span> addAll(<span class="k">int</span> x)   { lock(m); <span class="c">/* ... */</span> unlock(m); }   <span class="c">// add() -> addAll() -> lock(m) HANGS</span>
+
+<span class="c">// FIX: split into a locked public shell + an unlocked private core</span>
+<span class="k">void</span> add(<span class="k">int</span> x)      { lock(m); add_(x); unlock(m); }
+<span class="k">void</span> add_(<span class="k">int</span> x)     { total += x; addAll_(x); }   <span class="c">// assumes caller holds m</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -17021,6 +17078,16 @@ would go negative) and <code>release</code>/<code>signal</code>/<code>V</code> (
 <li><strong>Counting semaphore(N)</strong> &mdash; up to N threads may proceed; models "N units of a resource" (a connection pool, N parking spots).</li>
 <li><strong>Binary semaphore(1)</strong> &mdash; acts like a lock, but with <em>no owner</em>: any thread can <code>release</code>, which enables using it for signalling between threads.</li>
 </ul>
+<pre><code>sem_t slots;
+sem_init(&amp;slots, <span class="n">0</span>, <span class="n">3</span>);          <span class="c">// counting(3): at most 3 concurrent downloads</span>
+
+<span class="k">void</span> *worker(<span class="k">void</span> *_) {
+    sem_wait(&amp;slots);              <span class="c">// P: take a permit (blocks if 0 left)</span>
+    download();
+    sem_post(&amp;slots);             <span class="c">// V: return a permit -- ANY thread may do this</span>
+    <span class="k">return</span> <span class="k">NULL</span>;
+}
+<span class="c">// binary(0) as a one-shot signal: thread A sem_wait()s, thread B sem_post()s when ready</span></code></pre>
 
 <h3>Producer&ndash;consumer (bounded buffer)</h3>
 <pre><code>sem empty = N;   sem full = 0;   mutex m;
@@ -17034,11 +17101,37 @@ Acquire the counting semaphore <em>before</em> the mutex to avoid holding the mu
 "writer-preference" starves readers; a fair version bounds waiting for both. Usually solved with
 an RW lock or by a "turnstile" semaphore that new readers must pass, which a waiting writer can
 hold.</p>
+<pre><code>mutex rc_lock; <span class="k">int</span> readers = <span class="n">0</span>; sem resource(<span class="n">1</span>);
+
+read():
+    lock(rc_lock)
+    <span class="k">if</span> (++readers == <span class="n">1</span>) resource.acquire()   <span class="c">// first reader locks out writers</span>
+    unlock(rc_lock)
+    ... read ...
+    lock(rc_lock)
+    <span class="k">if</span> (--readers == <span class="n">0</span>) resource.release()   <span class="c">// last reader lets a writer in</span>
+    unlock(rc_lock)
+
+write():
+    resource.acquire(); ... write ...; resource.release()   <span class="c">// exclusive</span>
+<span class="c">// this is READER-preference: a steady reader stream starves writers -> add a turnstile</span></code></pre>
 
 <h3>Dining philosophers</h3>
 <p>5 philosophers, 5 forks, each needs both neighbouring forks to eat. Grab-left-then-right by all
 &rarr; deadlock. Fixes: limit to 4 seated at once (a counting semaphore); asymmetric order (odd grabs
 left first, even grabs right first); pick up both forks atomically under a mutex; or a waiter/arbitrator.</p>
+<pre><code><span class="c">// deadlock: everyone grabs left, then waits forever for right</span>
+philosopher(i):
+    fork[i].acquire()
+    fork[(i+<span class="n">1</span>)%<span class="n">5</span>].acquire()      <span class="c">// all 5 stuck here</span>
+
+<span class="c">// FIX 1: asymmetric order -- the last philosopher grabs right first, breaking the cycle</span>
+<span class="k">if</span> (i == <span class="n">4</span>) { right.acquire(); left.acquire(); }
+<span class="k">else</span>        { left.acquire();  right.acquire(); }
+
+<span class="c">// FIX 2: cap concurrent diners at 4 with a counting semaphore</span>
+sem seats(<span class="n">4</span>);
+seats.acquire(); left.acquire(); right.acquire(); /* eat */ ; right.release(); left.release(); seats.release();</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -17124,23 +17217,55 @@ Deadlock topic). Practical prevention in application code:</p>
 <li><strong>Coarser locking</strong> &mdash; one lock can't deadlock with itself.</li>
 <li><strong>Timeouts</strong> &mdash; <code>tryLock(timeout)</code> converts a deadlock into a detectable, recoverable failure.</li>
 </ul>
+<pre><code><span class="c">// C++17: lock BOTH atomically -- scoped_lock uses a deadlock-avoiding algorithm</span>
+std::scoped_lock lk(a.m, b.m);        <span class="c">// no matter the order callers pass a, b</span>
+
+<span class="c">// or tryLock + timeout turns a hang into a handled error</span>
+<span class="k">if</span> (!mtx.try_lock_for(std::chrono::milliseconds(<span class="n">500</span>))) {
+    metrics.inc(<span class="s">"lock_timeout"</span>);
+    <span class="k">return</span> ERR_BUSY;                  <span class="c">// recoverable, not a permanent freeze</span>
+}</code></pre>
 
 <h3>Livelock</h3>
 <p>Threads are running and changing state but making no progress &mdash; e.g. two threads that each
 detect contention, release everything, and retry in lockstep forever. Fix: <strong>randomised
 exponential back-off</strong> so the retry timing desynchronises, or a priority/tie-breaker so one
 thread wins.</p>
+<pre><code><span class="k">int</span> attempt = <span class="n">0</span>;
+<span class="k">while</span> (!try_acquire_both()) {
+    release_all();
+    <span class="k">int</span> backoff = (<span class="n">1</span> &lt;&lt; std::min(attempt++, <span class="n">6</span>)) * <span class="n">10</span>;   <span class="c">// 10,20,40,...,640 ms</span>
+    std::this_thread::sleep_for(std::chrono::milliseconds(backoff + rand() % backoff));
+    <span class="c">// the RANDOM jitter is the point -- it desynchronises the two threads</span>
+}</code></pre>
 
 <h3>Starvation</h3>
 <p>A thread is perpetually denied progress though the system as a whole advances: always lower
 priority, always loses the lock race, or a stream of readers blocks a writer. Fixes: <strong>fair
 locks</strong> (FIFO), <strong>ageing</strong> (raise priority with wait time), bounded-waiting guarantees.</p>
+<pre><code><span class="c">// unfair: whoever the scheduler wakes wins -> an unlucky thread may never get in</span>
+std::mutex m;                         <span class="c">// no ordering guarantee</span>
+
+<span class="c">// fair: FIFO ticket lock -- served strictly in arrival order</span>
+std::atomic&lt;<span class="k">int</span>&gt; next{<span class="n">0</span>}, serving{<span class="n">0</span>};
+<span class="k">int</span> my = next.fetch_add(<span class="n">1</span>);         <span class="c">// take a ticket</span>
+<span class="k">while</span> (serving.load() != my) cpu_relax();  <span class="c">// wait my turn</span>
+<span class="c">/* critical section */</span>
+serving.fetch_add(<span class="n">1</span>);               <span class="c">// call the next ticket</span></code></pre>
 
 <h3>Priority inversion</h3>
 <p>A high-priority thread waits on a lock held by a low-priority thread that a medium-priority
 thread keeps preempting &mdash; the high thread is effectively blocked by the medium one. Fix:
 <strong>priority inheritance</strong> (the lock holder temporarily runs at the waiter's priority) or a
 <strong>priority ceiling</strong>.</p>
+<pre><code><span class="c">// the Mars Pathfinder bug: low-prio task holds a lock a high-prio task needs,</span>
+<span class="c">// medium-prio tasks keep preempting the low one -> high task misses its deadline -> watchdog reboot</span>
+
+<span class="c">// FIX: enable priority inheritance on the mutex</span>
+pthread_mutexattr_t a;
+pthread_mutexattr_init(&amp;a);
+pthread_mutexattr_setprotocol(&amp;a, PTHREAD_PRIO_INHERIT);  <span class="c">// holder inherits waiter's priority</span>
+pthread_mutex_init(&amp;m, &amp;a);</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -17252,6 +17377,16 @@ contention threads retry (which can livelock-ish &mdash; add back-off).</p>
 <li>No blocking &rarr; no deadlock, no priority inversion, resilient to a thread being descheduled mid-operation.</li>
 <li><em>But</em>: multi-word invariants, complex data structures, and anything needing several coordinated updates still want a lock (or a carefully-designed lock-free algorithm).</li>
 </ul>
+<pre><code><span class="c">// hot counter: atomic beats a mutex (no context switch, no contention on a lock word)</span>
+std::atomic&lt;<span class="k">long</span>&gt; requests{<span class="n">0</span>};
+requests.fetch_add(<span class="n">1</span>, std::memory_order_relaxed);   <span class="c">// stats: ordering doesn't matter</span>
+
+<span class="c">// lock-free stack push via CAS on the head</span>
+<span class="k">void</span> push(Node *n) {
+    n-&gt;next = head.load();
+    <span class="k">while</span> (!head.compare_exchange_weak(n-&gt;next, n)) { }   <span class="c">// retry if head moved</span>
+}
+<span class="c">// but a lock-free MAP with resize? -> use a real library, this is expert territory</span></code></pre>
 
 <h3>The ABA problem</h3>
 <p>A CAS on a pointer sees the value is still <code>A</code> and succeeds &mdash; but between your read and
@@ -17260,6 +17395,13 @@ Your CAS wrongly thinks nothing happened. Fixes: a <strong>tagged pointer</stron
 counter, CAS the whole double-word), <strong>hazard pointers</strong> / epoch-based reclamation to
 prevent premature reuse, or <code>LL/SC</code> (load-linked/store-conditional) which fails if the
 location was written at all.</p>
+<pre><code><span class="c">// T1: reads head -> A, plans head = A-&gt;next  (call it X)</span>
+<span class="c">// T2: pop A ; pop X ; free both ; push a NEW node that malloc reuses A's address</span>
+<span class="c">// T1: CAS(head, A, X)  -> SUCCEEDS (address matches!) but X is freed memory -> corruption</span>
+
+<span class="c">// FIX: version-tagged head, CAS the whole {ptr, counter} pair</span>
+<span class="k">struct</span> Tagged { Node *ptr; uint64_t tag; };
+std::atomic&lt;Tagged&gt; head;   <span class="c">// every push/pop bumps tag -> A@tag5 != A@tag9, CAS fails correctly</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -17343,6 +17485,13 @@ The core problem: in a lock-free pop, thread T1 reads pointer <code>p</code> to 
 buffers and out-of-order execution. Within one thread this is invisible (program order is
 preserved for that thread's own view). Across threads, another thread can observe the writes in
 a different order &mdash; unless you add synchronisation.</p>
+<pre><code><span class="c">// famous: BOTH threads can print 0 on x86, and freely on ARM -- store buffers</span>
+<span class="k">int</span> x = <span class="n">0</span>, y = <span class="n">0</span>, r1, r2;
+<span class="c">// thread 1              thread 2</span>
+x = <span class="n">1</span>;          <span class="c">//      y = 1;</span>
+r1 = y;         <span class="c">//      r2 = x;</span>
+<span class="c">// r1 == 0 &amp;&amp; r2 == 0 is a legal outcome: each store sits in a buffer, not yet visible</span>
+<span class="c">// fix: make x,y std::atomic (seq_cst) OR add a full fence between the store and the load</span></code></pre>
 
 <h3>Happens-before</h3>
 <p>The formal ordering guarantee: if action A <em>happens-before</em> B, then A's effects are visible
@@ -17350,6 +17499,16 @@ to B. It's established by program order within a thread, and across threads by m
 synchronisation: unlock&rarr;lock of the same mutex, a release store&rarr;an acquire load of the same
 atomic, thread start/join, etc. No happens-before edge between two accesses to the same
 data &rarr; data race &rarr; UB.</p>
+<pre><code>Payload data;
+std::atomic&lt;<span class="k">bool</span>&gt; ready{<span class="k">false</span>};
+
+<span class="c">// producer</span>
+data = compute();                          <span class="c">// (1)</span>
+ready.store(<span class="k">true</span>, std::memory_order_release);  <span class="c">// (2) publishes (1)</span>
+
+<span class="c">// consumer</span>
+<span class="k">if</span> (ready.load(std::memory_order_acquire)) <span class="c">// (3) if this sees true...</span>
+    use(data);                             <span class="c">// (4) ...(1) happens-before (4): data is fully visible</span></code></pre>
 
 <h3>The memory orders (C++ / similar)</h3>
 <table>
@@ -17363,16 +17522,45 @@ data &rarr; data race &rarr; UB.</p>
 <p>The <strong>release/acquire pair</strong> is the workhorse: thread A writes data then does a
 <em>release</em> store to a flag; thread B does an <em>acquire</em> load of the flag and, if it sees
 the new value, is guaranteed to see all of A's prior writes.</p>
+<pre><code>counter.fetch_add(<span class="n">1</span>, std::memory_order_relaxed);  <span class="c">// stats: atomic, but ordering is nobody's concern</span>
+
+<span class="c">// spinlock built from acquire/release:</span>
+<span class="k">void</span> lock()   { <span class="k">while</span> (flag.exchange(<span class="k">true</span>, std::memory_order_acquire)) cpu_relax(); }
+<span class="k">void</span> unlock() { flag.store(<span class="k">false</span>, std::memory_order_release); }  <span class="c">// publishes the critical section</span>
+
+<span class="c">// seq_cst (the default): needed when multiple atomics must share ONE global order</span>
+x.store(<span class="n">1</span>);  <span class="c">// plain x.store(1) == x.store(1, memory_order_seq_cst)</span></code></pre>
 
 <h3><code>volatile</code> is not atomic</h3>
 <p>In C/C++, <code>volatile</code> prevents the compiler eliding/reordering accesses to <em>that</em>
 variable (for memory-mapped I/O, signal handlers) but gives <strong>no atomicity, no cross-thread
 ordering, no CPU barrier</strong>. It is not a threading tool. (Java's <code>volatile</code> is different &mdash;
 it <em>does</em> provide acquire/release semantics.)</p>
+<pre><code><span class="c">// WRONG: volatile gives no atomicity and no cross-thread visibility guarantee</span>
+<span class="k">volatile</span> <span class="k">bool</span> stop = <span class="k">false</span>;
+<span class="k">volatile</span> <span class="k">int</span> count = <span class="n">0</span>;
+count++;                       <span class="c">// still load/add/store -- races just like a plain int</span>
+
+<span class="c">// RIGHT: std::atomic gives both</span>
+std::atomic&lt;<span class="k">bool</span>&gt; stop{<span class="k">false</span>};
+std::atomic&lt;<span class="k">int</span>&gt; count{<span class="n">0</span>};
+count.fetch_add(<span class="n">1</span>);
+<span class="c">// volatile's real job: MMIO -> volatile uint32_t *reg = (uint32_t*)0x40000000;</span></code></pre>
 
 <h3>Fences</h3>
 <p><code>atomic_thread_fence(memory_order)</code> imposes ordering without being tied to a specific
 variable &mdash; used to separate groups of relaxed atomics, or in lock-free algorithms.</p>
+<pre><code><span class="c">// publish several relaxed writes with ONE fence instead of a release on each</span>
+a.store(<span class="n">1</span>, std::memory_order_relaxed);
+b.store(<span class="n">2</span>, std::memory_order_relaxed);
+std::atomic_thread_fence(std::memory_order_release);  <span class="c">// nothing above moves below</span>
+ready.store(<span class="k">true</span>, std::memory_order_relaxed);
+
+<span class="c">// consumer side:</span>
+<span class="k">if</span> (ready.load(std::memory_order_relaxed)) {
+    std::atomic_thread_fence(std::memory_order_acquire);  <span class="c">// nothing below moves above</span>
+    use(a, b);                                             <span class="c">// a==1, b==2 guaranteed</span>
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -17456,6 +17644,14 @@ Four threads: T1 does <code>x = 1</code>; T2 does <code>y = 1</code>; T3 reads <
 <tr><td>Lock-free</td><td><em>Some</em> thread always makes progress system-wide; individual threads may starve.</td></tr>
 <tr><td>Wait-free</td><td><em>Every</em> thread finishes in a bounded number of its own steps. No starvation. Hardest to build.</td></tr>
 </table>
+<pre><code><span class="c">// BLOCKING: if this thread is preempted right here, everyone waiting on m stalls</span>
+lock(m); x += <span class="n">1</span>; unlock(m);
+
+<span class="c">// LOCK-FREE: a preempted thread just makes its peers retry once -- the SYSTEM progresses</span>
+<span class="k">do</span> { old = x.load(); } <span class="k">while</span> (!x.compare_exchange_weak(old, old + <span class="n">1</span>));
+
+<span class="c">// WAIT-FREE: fetch_add ALWAYS completes in O(1) of THIS thread's steps -- no loop, no starvation</span>
+x.fetch_add(<span class="n">1</span>);</code></pre>
 
 <h3>Lock-free stack (Treiber)</h3>
 <pre><code>push(n): <span class="k">do</span> { n-&gt;next = head; } <span class="k">while</span> (!CAS(&amp;head, n-&gt;next, n));
@@ -17474,6 +17670,14 @@ lock-free is much easier in Java/C#/Go).</p>
 </ul>
 <p>Prefer proven library structures (<code>ConcurrentLinkedQueue</code>, <code>folly::MPMCQueue</code>, Go
 channels) over rolling your own.</p>
+<pre><code><span class="c">// signal handler: CANNOT take a lock (handler may run while main thread holds it -> deadlock)</span>
+<span class="k">volatile</span> sig_atomic_t got_sigint = <span class="n">0</span>;
+<span class="k">void</span> handler(<span class="k">int</span>) { got_sigint = <span class="n">1</span>; }        <span class="c">// lock-free flag, the one safe pattern here</span>
+
+<span class="c">// everything else: reach for the library, not a hand-rolled Treiber stack</span>
+<span class="c">//   Java:  new ConcurrentLinkedQueue&lt;&gt;()</span>
+<span class="c">//   C++:   moodycamel::ConcurrentQueue  /  folly::MPMCQueue</span>
+<span class="c">//   Go:    ch := make(chan T, 1024)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -17571,6 +17775,14 @@ Herlihy's consensus hierarchy ranks synchronisation primitives by the maximum nu
 <p>Creating a thread per task is expensive (stack allocation, kernel setup) and unbounded (a spike
 of tasks spawns thousands of threads &rarr; memory blow-up, scheduler thrash). A pool caps
 concurrency, amortises thread creation, and gives a place to apply backpressure.</p>
+<pre><code><span class="c">// ANTI-PATTERN: a thread per request -> 50k requests = 50k threads = OOM</span>
+<span class="k">for</span> (Request r : incoming) <span class="k">new</span> Thread(() -&gt; handle(r)).start();
+
+<span class="c">// pool: reuse N threads, cap concurrency, apply backpressure when saturated</span>
+ThreadPoolExecutor pool = <span class="k">new</span> ThreadPoolExecutor(
+    <span class="n">8</span>, <span class="n">8</span>, <span class="n">0L</span>, MILLISECONDS,
+    <span class="k">new</span> ArrayBlockingQueue&lt;&gt;(<span class="n">1000</span>),                 <span class="c">// BOUNDED queue</span>
+    <span class="k">new</span> ThreadPoolExecutor.CallerRunsPolicy());     <span class="c">// full -> submitter runs it -> natural throttle</span></code></pre>
 
 <h3>Anatomy</h3>
 <ul>
@@ -17578,6 +17790,14 @@ concurrency, amortises thread creation, and gives a place to apply backpressure.
 <li>A <strong>bounded</strong> task queue (blocking or with a rejection policy) so a producer flood can't OOM you.</li>
 <li>A <strong>rejection / backpressure</strong> policy when full: block the submitter, drop, run on the caller's thread, or fail fast.</li>
 </ul>
+<pre><code><span class="c">// the worker loop, conceptually:</span>
+<span class="k">void</span> worker() {
+    <span class="k">while</span> (running) {
+        Task t = queue.take();          <span class="c">// blocks until a task is available</span>
+        <span class="k">try</span> { t.run(); }
+        <span class="k">catch</span> (Throwable e) { log(e); }   <span class="c">// one bad task must not kill the worker</span>
+    }
+}</code></pre>
 
 <h3>Sizing</h3>
 <table>
@@ -17586,17 +17806,37 @@ concurrency, amortises thread creation, and gives a place to apply backpressure.
 <tr><td>I/O-bound</td><td>higher &mdash; roughly <code>cores &times; (1 + wait_time / compute_time)</code>; often set empirically</td></tr>
 <tr><td>Mixed</td><td>separate pools per workload class so slow I/O tasks don't starve CPU tasks</td></tr>
 </table>
+<pre><code><span class="k">int</span> cores = Runtime.getRuntime().availableProcessors();   <span class="c">// e.g. 8</span>
+ExecutorService cpu = Executors.newFixedThreadPool(cores);          <span class="c">// hashing, compression</span>
+<span class="c">// I/O-bound: each task waits ~90 ms, computes ~10 ms -> factor (1 + 90/10) = 10</span>
+ExecutorService io  = Executors.newFixedThreadPool(cores * <span class="n">10</span>);     <span class="c">// remote calls</span>
+<span class="c">// keep them SEPARATE: a burst of slow HTTP calls must not block the CPU pool</span></code></pre>
 
 <h3>Work stealing</h3>
 <p>Each worker has its own deque; it pushes/pops its own tasks from one end (cache-friendly, no
 contention), and when idle <strong>steals</strong> from the other end of a random busy worker's deque.
 Great for recursive divide-and-conquer (fork/join) where task counts are uneven. Used by Java's
 <code>ForkJoinPool</code>, Go's scheduler, Rust's Rayon, .NET TPL.</p>
+<pre><code><span class="c">// fork/join: each recursive split becomes a task; idle workers steal the subtasks</span>
+<span class="k">class</span> SumTask <span class="k">extends</span> RecursiveTask&lt;Long&gt; {
+    <span class="k">protected</span> Long compute() {
+        <span class="k">if</span> (hi - lo &lt;= <span class="n">1000</span>) <span class="k">return</span> serialSum();
+        <span class="k">int</span> mid = (lo + hi) / <span class="n">2</span>;
+        SumTask l = <span class="k">new</span> SumTask(lo, mid);  l.fork();   <span class="c">// push to THIS worker's deque</span>
+        SumTask r = <span class="k">new</span> SumTask(mid, hi);
+        <span class="k">return</span> r.compute() + l.join();          <span class="c">// idle worker may have stolen l</span>
+    }
+}
+<span class="k">new</span> ForkJoinPool().invoke(<span class="k">new</span> SumTask(<span class="n">0</span>, n));</code></pre>
 
 <h3>Shutdown</h3>
 <p>Graceful: stop accepting new tasks, let in-flight and queued tasks drain, then join workers
 (with a timeout &rarr; force). Never just kill worker threads &mdash; tasks may hold locks or leave
 state half-updated.</p>
+<pre><code>pool.shutdown();                                   <span class="c">// stop accepting new tasks; keep draining the queue</span>
+<span class="k">if</span> (!pool.awaitTermination(<span class="n">30</span>, SECONDS))         <span class="c">// wait for in-flight + queued to finish</span>
+    pool.shutdownNow();                            <span class="c">// timed out -> interrupt workers (last resort)</span>
+<span class="c">// shutdownNow() just interrupts -- tasks must actually check Thread.interrupted()</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -17678,6 +17918,17 @@ If task A, running on a pool thread, submits subtasks B and C to the <em>same</e
 <li>You can <code>get()</code> (block until ready), poll <code>isDone()</code>, or &mdash; better &mdash; attach a <strong>continuation</strong> (<code>then</code>/<code>thenApply</code>/<code>.then()</code>) that runs when the value arrives, so no thread blocks waiting.</li>
 <li>Composition: <code>thenCompose</code>/<code>flatMap</code> (chain a dependent async step), <code>thenCombine</code> (join two), <code>allOf</code>/<code>anyOf</code> (fan-in / race).</li>
 </ul>
+<pre><code><span class="c">// producer holds the promise (write), consumer holds the future (read)</span>
+CompletableFuture&lt;<span class="k">int</span>&gt; f = <span class="k">new</span> CompletableFuture&lt;&gt;();
+executor.submit(() -&gt; f.complete(slowComputation()));   <span class="c">// fulfil later</span>
+
+<span class="c">// DON'T: f.get() blocks this thread. DO: attach a continuation</span>
+f.thenApply(x -&gt; x * <span class="n">2</span>)
+ .thenCompose(x -&gt; fetchAsync(x))     <span class="c">// dependent async step</span>
+ .thenAccept(System.out::println)
+ .exceptionally(e -&gt; { log(e); <span class="k">return</span> <span class="k">null</span>; });   <span class="c">// always handle the failure path</span>
+
+CompletableFuture.allOf(a, b, c).join();   <span class="c">// fan-in: wait for all three</span></code></pre>
 
 <h3>async / await &amp; the event loop</h3>
 <p><code>async</code> functions return a future; <code>await</code> suspends the function until the awaited
@@ -17685,18 +17936,40 @@ future completes, <em>without blocking the underlying thread</em> &mdash; the ru
 continuation and runs other ready work on the <strong>event loop</strong>. When the awaited operation
 finishes (an I/O completion, a timer), the continuation is scheduled and the function resumes.
 One or a few OS threads can drive thousands of concurrent async operations.</p>
+<pre><code><span class="k">async def</span> fetch(url):
+    <span class="k">async with</span> session.get(url) <span class="k">as</span> r:   <span class="c"># suspends HERE -- the loop runs other tasks</span>
+        <span class="k">return</span> <span class="k">await</span> r.text()
+
+<span class="k">async def</span> main():
+    <span class="c"># 1000 concurrent fetches on ONE thread</span>
+    results = <span class="k">await</span> asyncio.gather(*[fetch(u) <span class="k">for</span> u <span class="k">in</span> urls])
+asyncio.run(main())</code></pre>
 
 <h3>The cardinal sin: blocking in async code</h3>
 <p>Calling a synchronous blocking operation (a blocking socket read, <code>Thread.sleep</code>, a lock
 wait, CPU-heavy work) inside an <code>async</code> function <em>ties up the event-loop thread</em>, so
 every other task on that loop stalls. Offload blocking/CPU work to a dedicated thread pool
 (<code>run_in_executor</code>, <code>Task.Run</code>, <code>tokio::spawn_blocking</code>).</p>
+<pre><code><span class="k">async def</span> handler():
+    time.sleep(<span class="n">2</span>)                    <span class="c"># BUG: freezes the loop -> ALL requests stall 2s</span>
+    hash = bcrypt(password)          <span class="c"># BUG: 100ms of CPU also blocks the loop</span>
+
+<span class="k">async def</span> handler_ok():
+    <span class="k">await</span> asyncio.sleep(<span class="n">2</span>)             <span class="c"># yields to the loop</span>
+    loop = asyncio.get_running_loop()
+    hash = <span class="k">await</span> loop.run_in_executor(pool, bcrypt, password)   <span class="c"># CPU work off-loop</span></code></pre>
 
 <h3>Structured concurrency</h3>
 <p>Child tasks are scoped to a block: the scope doesn't exit until all children complete, an error
 in one cancels the siblings, and cancellation propagates down. Prevents "fire and forget" leaks
 and orphaned tasks. Kotlin coroutine scopes, Java's <code>StructuredTaskScope</code>, Python's
 <code>TaskGroup</code>, Trio's nurseries, Swift task groups.</p>
+<pre><code><span class="k">async with</span> asyncio.TaskGroup() <span class="k">as</span> tg:   <span class="c"># Python 3.11+</span>
+    t1 = tg.create_task(fetch(a))
+    t2 = tg.create_task(fetch(b))
+<span class="c"># the `with` block does not exit until BOTH finish.</span>
+<span class="c"># if fetch(a) raises -> fetch(b) is CANCELLED, the error propagates out. No orphans.</span>
+print(t1.result(), t2.result())</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -17785,6 +18058,15 @@ Cancellation is a <em>request</em>, not a forced stop: the runtime marks the tas
 <tr><td>Broken double-checked locking</td><td>publishing a partially-constructed object (needs a memory barrier / <code>volatile</code>)</td></tr>
 <tr><td>Non-thread-safe library used concurrently</td><td>e.g. a shared <code>SimpleDateFormat</code>, <code>Random</code>, non-reentrant lib</td></tr>
 </table>
+<pre><code><span class="c">// ATOMICITY VIOLATION -- each call is thread-safe, the pair isn't</span>
+<span class="k">if</span> (!set.contains(x))     <span class="c">// thread A checks: absent</span>
+    set.add(x);           <span class="c">// thread B added x in between -> maybe added twice / logic wrong</span>
+<span class="c">// fix: set.putIfAbsent(x)  (one atomic op)  or hold a lock across both</span>
+
+<span class="c">// NON-THREAD-SAFE LIBRARY shared across threads</span>
+<span class="k">static</span> SimpleDateFormat FMT = <span class="k">new</span> SimpleDateFormat(<span class="s">"yyyy-MM-dd"</span>);   <span class="c">// mutable internal state!</span>
+FMT.format(d);            <span class="c">// concurrent calls -> garbage output / exceptions</span>
+<span class="c">// fix: DateTimeFormatter (immutable), or a ThreadLocal&lt;SimpleDateFormat&gt;</span></code></pre>
 
 <h3>Double-checked locking, done right</h3>
 <pre><code><span class="c">// BROKEN in old Java / naive C++: another thread can see 'instance' non-null</span>
@@ -17800,11 +18082,29 @@ Cancellation is a <em>request</em>, not a forced stop: the runtime marks the tas
 <li><strong>Stress testing</strong> &mdash; run the concurrent code with many threads, randomised delays / <code>yield</code>s / thread counts, for a long time, on varied hardware (weak-memory ARM surfaces bugs x86 hides).</li>
 <li><strong>Model checkers</strong> &mdash; CHESS, Loom (Rust), TLA+/PlusCal for the design &mdash; exhaustively explore interleavings for small models.</li>
 </ul>
+<pre><code>$ clang -fsanitize=thread -g race.c -o race &amp;&amp; ./race
+==================
+WARNING: ThreadSanitizer: data race (pid=4123)
+  Write of size 4 at 0x0000... by thread T2:
+    #0 worker race.c:8
+  Previous read of size 4 at 0x0000... by thread T1:
+    #0 worker race.c:8            <span class="c"># exact lines + both stacks</span>
+
+$ go test -race ./...            <span class="c"># Go: race detector built in</span>
+$ jstack &lt;pid&gt; | grep -A5 deadlock   <span class="c"># Java: thread dump names the lock cycle</span></code></pre>
 
 <h3>Prevention beats detection</h3>
 <p>Minimise shared mutable state; prefer immutability, confinement, and message passing; use
 high-level concurrent collections and structured concurrency; keep critical sections tiny; write
 down the locking discipline and enforce it in review / with a checker.</p>
+<pre><code><span class="c">// SHARE by communicating, don't communicate by sharing (Go)</span>
+results := make(chan int)
+<span class="k">for</span> _, job := range jobs {
+    go func(j Job) { results &lt;- process(j) }(job)   <span class="c">// no shared mutable state</span>
+}
+<span class="k">for</span> range jobs { total += &lt;-results }               <span class="c">// only this goroutine touches `total`</span>
+
+<span class="c">// or confine: give each worker its OWN accumulator, merge at the end (map-reduce)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
