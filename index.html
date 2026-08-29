@@ -7912,22 +7912,62 @@ You can write the object parameter explicitly: <code>template&lt;class Self&gt; 
 essentials and ignore the rest. A <code>List</code> interface (<code>add</code>, <code>get</code>, <code>size</code>) is an
 abstraction; whether it's an array or linked nodes is an implementation detail. Achieved with
 interfaces, abstract classes, and well-named public methods.</p>
+<pre><code><span class="c">// The abstraction: callers depend on WHAT, never on HOW</span>
+<span class="k">interface</span> PaymentGateway {
+    Receipt charge(Money amount);      <span class="c">// no mention of HTTP, retries, API keys</span>
+}
+<span class="c">// Two implementations satisfy the same contract:</span>
+<span class="k">class</span> StripeGateway  <span class="k">implements</span> PaymentGateway { <span class="c">/* REST calls */</span> }
+<span class="k">class</span> FakeGateway    <span class="k">implements</span> PaymentGateway { <span class="c">/* in-memory, for tests */</span> }
+
+<span class="k">void</span> checkout(PaymentGateway g) { g.charge(total); }  <span class="c">// unaware which one it got</span></code></pre>
 
 <h3>Encapsulation</h3>
 <p>Bundling data with the methods that operate on it, and <em>restricting direct access</em> to the
 data so the object controls its own invariants. Private fields + public methods, validated
 setters, no leaking internal references. Abstraction is about the <em>design view</em>;
 encapsulation is the <em>enforcement mechanism</em> (access control) that protects it.</p>
+<pre><code><span class="k">class</span> Account {
+    <span class="k">private</span> <span class="k">long</span> balance;                 <span class="c">// no outside code can touch this directly</span>
+
+    <span class="k">void</span> withdraw(<span class="k">long</span> amt) {
+        <span class="k">if</span> (amt &lt;= <span class="n">0</span> || amt &gt; balance)     <span class="c">// the invariant lives HERE, in one place</span>
+            <span class="k">throw new</span> IllegalArgumentException();
+        balance -= amt;
+    }
+    <span class="k">long</span> getBalance() { <span class="k">return</span> balance; } <span class="c">// read-only view; no setBalance()</span>
+}
+<span class="c">// acct.balance = -50;   // won't compile -> the object can't be corrupted</span></code></pre>
 
 <h3>Inheritance</h3>
 <p>A new class reuses and extends an existing one (an <strong>is-a</strong> relationship):
 <code>Manager is-a Employee</code>. Gives code reuse and a subtype for polymorphism &mdash; but tight
 coupling to the base, so use it only for genuine subtype relationships; otherwise compose.</p>
+<pre><code><span class="k">class</span> Employee {
+    <span class="k">protected</span> String name;
+    <span class="k">double</span> pay() { <span class="k">return</span> <span class="n">5000</span>; }
+}
+<span class="k">class</span> Manager <span class="k">extends</span> Employee {      <span class="c">// Manager IS-A Employee</span>
+    <span class="k">private</span> <span class="k">double</span> bonus = <span class="n">2000</span>;
+    <span class="k">@Override</span> <span class="k">double</span> pay() {          <span class="c">// reuse + extend the base behaviour</span>
+        <span class="k">return</span> <span class="k">super</span>.pay() + bonus;
+    }
+}
+Employee e = <span class="k">new</span> Manager();          <span class="c">// a Manager is usable anywhere an Employee is</span></code></pre>
 
 <h3>Polymorphism</h3>
 <p>"Many forms" &mdash; one interface, many implementations. <strong>Runtime</strong> (a base reference calls
 a method, the derived override runs) and <strong>compile-time</strong> (overloading, generics/templates).
 Lets you write code against the abstraction and drop in new types without changing callers.</p>
+<pre><code><span class="k">abstract class</span> Shape { <span class="k">abstract</span> <span class="k">double</span> area(); }
+<span class="k">class</span> Circle <span class="k">extends</span> Shape { <span class="k">double</span> r; <span class="k">double</span> area(){ <span class="k">return</span> Math.PI*r*r; } }
+<span class="k">class</span> Square <span class="k">extends</span> Shape { <span class="k">double</span> s; <span class="k">double</span> area(){ <span class="k">return</span> s*s; } }
+
+<span class="k">double</span> total(List&lt;Shape&gt; shapes) {
+    <span class="k">double</span> sum = <span class="n">0</span>;
+    <span class="k">for</span> (Shape sh : shapes) sum += sh.area(); <span class="c">// RUNTIME: the real subclass's area() runs</span>
+    <span class="k">return</span> sum;                              <span class="c">// add a new Shape -> this code never changes</span>
+}</code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 168" role="img" aria-labelledby="d-oop4-t">
@@ -7959,6 +7999,18 @@ Lets you write code against the abstraction and drop in new types without changi
 <tr><td>Inheritance vs Composition</td><td>is-a vs has-a. Inheritance couples to a base; composition delegates to a member.</td></tr>
 <tr><td>Overloading vs Overriding</td><td>Same name different params, resolved at compile time; vs same signature in a subclass, resolved at runtime.</td></tr>
 </table>
+<pre><code><span class="c">// is-a (inheritance) vs has-a (composition)</span>
+<span class="k">class</span> Car <span class="k">extends</span> Vehicle { }        <span class="c">// Car IS-A Vehicle</span>
+<span class="k">class</span> Car { <span class="k">private</span> Engine engine; }   <span class="c">// Car HAS-A Engine  (usually the better choice)</span>
+
+<span class="c">// overloading (compile-time) vs overriding (runtime)</span>
+<span class="k">class</span> Printer {
+    <span class="k">void</span> print(String s) { }          <span class="c">// overload: same name...</span>
+    <span class="k">void</span> print(<span class="k">int</span> n)    { }          <span class="c">// ...different params, picked by the compiler</span>
+}
+<span class="k">class</span> ColorPrinter <span class="k">extends</span> Printer {
+    <span class="k">@Override</span> <span class="k">void</span> print(String s) { } <span class="c">// override: same signature, picked at runtime</span>
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -8038,12 +8090,31 @@ Inheritance creates subtypes; polymorphism relies on being able to use a subtype
 An <strong>object</strong> (instance) is a concrete value of that type occupying memory, with its own copy
 of the instance fields. <code>Car</code> is a class; <code>myCar</code> and <code>yourCar</code> are objects. <code>this</code>
 (or <code>self</code>) inside a method refers to the instance it was called on.</p>
+<pre><code><span class="k">class</span> Car {                     <span class="c">// the class: one blueprint</span>
+    String plate;
+    <span class="k">void</span> honk() { System.out.println(<span class="k">this</span>.plate + <span class="s">" beep"</span>); } <span class="c">// `this` = the receiver</span>
+}
+Car myCar   = <span class="k">new</span> Car();       <span class="c">// object 1 -- its own `plate`</span>
+Car yourCar = <span class="k">new</span> Car();       <span class="c">// object 2 -- independent state</span>
+myCar.plate = <span class="s">"ABC-1"</span>;
+myCar.honk();                   <span class="c">// "ABC-1 beep"   (this == myCar)</span></code></pre>
 
 <h3>Instance vs static members</h3>
 <ul>
 <li><strong>Instance</strong> members belong to each object; accessed via a reference.</li>
 <li><strong>Static</strong> (class) members belong to the class itself &mdash; one shared copy, accessed via the class name. Used for constants, counters, factory methods, utility functions. Static methods can't use <code>this</code> or instance members directly.</li>
 </ul>
+<pre><code><span class="k">class</span> User {
+    <span class="k">static</span> <span class="k">int</span> count = <span class="n">0</span>;         <span class="c">// ONE copy, shared by the whole class</span>
+    <span class="k">final</span> <span class="k">int</span> id;                  <span class="c">// per-object</span>
+    User() { id = ++count; }        <span class="c">// each new object bumps the shared counter</span>
+
+    <span class="k">static</span> User anonymous() {        <span class="c">// factory: no `this`, can't read `id`</span>
+        <span class="k">return</span> <span class="k">new</span> User();
+    }
+}
+<span class="k">new</span> User(); <span class="k">new</span> User();
+System.out.println(User.count); <span class="c">// 2  -- accessed via the class name, not an instance</span></code></pre>
 
 <h3>Access specifiers</h3>
 <table>
@@ -8055,11 +8126,32 @@ of the instance fields. <code>Car</code> is a class; <code>myCar</code> and <cod
 </table>
 <p>Default to <code>private</code>; widen only when needed. <code>protected</code> is a real coupling point &mdash;
 it becomes part of your subclassing contract.</p>
+<pre><code><span class="k">class</span> BankAccount {
+    <span class="k">private</span>   <span class="k">long</span> balance;      <span class="c">// only BankAccount code</span>
+    <span class="k">protected</span> String owner;      <span class="c">// BankAccount + subclasses (part of the subclass contract)</span>
+    <span class="k">public</span>    String id;         <span class="c">// anyone</span>
+
+    <span class="k">private</span> <span class="k">void</span> audit() { }         <span class="c">// internal helper, safe to change any time</span>
+}
+<span class="k">class</span> SavingsAccount <span class="k">extends</span> BankAccount {
+    <span class="k">void</span> rename(String n) { owner = n; }  <span class="c">// OK: protected is visible to subclasses</span>
+    <span class="c">// void hack() { balance = 0; }        // ERROR: private is not</span>
+}</code></pre>
 
 <h3><code>friend</code> (C++) / internal access</h3>
 <p>C++ <code>friend</code> grants one specific external function or class access to private members &mdash;
 used sparingly for tightly-coupled pairs (e.g. an iterator and its container, <code>operator&lt;&lt;</code>).
 It's a deliberate, named exception to encapsulation, not a loophole to overuse.</p>
+<pre><code><span class="k">class</span> Matrix {
+    <span class="k">double</span>* data_;
+    <span class="k">int</span> rows_, cols_;
+    <span class="c">// grant ONE external function access to the private guts:</span>
+    <span class="k">friend</span> std::ostream&amp; <span class="k">operator</span>&lt;&lt;(std::ostream&amp;, <span class="k">const</span> Matrix&amp;);
+};
+std::ostream&amp; <span class="k">operator</span>&lt;&lt;(std::ostream&amp; os, <span class="k">const</span> Matrix&amp; m) {
+    <span class="k">return</span> os &lt;&lt; m.rows_ &lt;&lt; <span class="s">"x"</span> &lt;&lt; m.cols_;   <span class="c">// reads private members -- allowed by `friend`</span>
+}
+<span class="c">// friendship is NOT inherited and NOT transitive -- it's a targeted, named exception.</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -8143,11 +8235,29 @@ Nested/inner classes (Java, C++, C#) can access the enclosing class's private me
 <li><strong>Move</strong> (C++11) &mdash; build from an rvalue by stealing its resources.</li>
 <li><strong>Delegating</strong> &mdash; one constructor calls another to avoid duplication (<code>this(...)</code> / <code>: T(...)</code>).</li>
 </ul>
+<pre><code><span class="k">class</span> Point {
+    <span class="k">final</span> <span class="k">int</span> x, y;
+    Point()            { <span class="k">this</span>(<span class="n">0</span>, <span class="n">0</span>); }        <span class="c">// DELEGATING -> calls the (int,int) ctor</span>
+    Point(<span class="k">int</span> x, <span class="k">int</span> y) { <span class="k">this</span>.x = x; <span class="k">this</span>.y = y; } <span class="c">// PARAMETERISED</span>
+    Point(Point o)     { <span class="k">this</span>(o.x, o.y); }     <span class="c">// COPY (Java has no built-in copy ctor)</span>
+}
+Point a = <span class="k">new</span> Point();        <span class="c">// (0,0)</span>
+Point b = <span class="k">new</span> Point(a);       <span class="c">// (0,0) copied</span>
+<span class="c">// declaring these ctors REMOVED the implicit no-arg default -- we re-added it explicitly</span></code></pre>
 
 <h3>Initialisation order</h3>
 <p>Base class &rarr; members (in declaration order) &rarr; the constructor body. Destruction is the exact
 reverse. Assigning members in the body instead of an initialiser list means default-construct-then-
 overwrite, and can't initialise <code>const</code>/reference members at all.</p>
+<pre><code><span class="k">struct</span> Base   { Base()   { puts(<span class="s">"1 Base"</span>); } };
+<span class="k">struct</span> Member { Member() { puts(<span class="s">"2 Member"</span>); } };
+
+<span class="k">struct</span> Derived : Base {
+    Member m;                 <span class="c">// declared here...</span>
+    Derived() : Base(), m() { puts(<span class="s">"3 Derived body"</span>); } <span class="c">// ...built 2nd regardless of list order</span>
+};
+<span class="c">// Derived d;  prints:  1 Base  /  2 Member  /  3 Derived body</span>
+<span class="c">// destruction order is the exact reverse: ~Derived, ~Member, ~Base</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-ooplc-t">
@@ -8171,6 +8281,17 @@ overwrite, and can't initialise <code>const</code>/reference members at all.</p>
 <li><strong>Java/C#</strong>: no deterministic destructor. <code>finalize()</code> (deprecated) / GC is non-deterministic; use <code>try-with-resources</code> / <code>using</code> + <code>AutoCloseable</code>/<code>IDisposable</code> for cleanup.</li>
 <li><strong>Python</strong>: <code>__del__</code> runs when the refcount hits zero (usually prompt) but not guaranteed on interpreter exit or in cycles; prefer context managers (<code>with</code>).</li>
 </ul>
+<pre><code><span class="c">// C++: deterministic -- runs the instant `f` leaves scope</span>
+{ std::ofstream f(<span class="s">"out.txt"</span>); f &lt;&lt; data; }   <span class="c">// ~ofstream closes the file here</span>
+
+<span class="c">// Java: NOT deterministic -- use try-with-resources instead of relying on GC</span>
+<span class="k">try</span> (BufferedReader r = Files.newBufferedReader(path)) {
+    r.readLine();
+}                                     <span class="c">// r.close() called automatically, now</span>
+
+<span class="c"># Python: use a context manager, not __del__</span>
+<span class="k">with</span> open(<span class="s">"out.txt"</span>) <span class="k">as</span> f:
+    f.write(data)                     <span class="c"># f closed on block exit, even on exception</span></code></pre>
 
 <h3>The lifecycle</h3>
 <pre><code>allocate memory  -&gt;  run base + member init  -&gt;  run constructor body
@@ -8261,6 +8382,13 @@ Allocation and initialisation are separate calls, so between them there's a vali
 <tr><td>Multiple</td><td><code>C : A, B</code> (C++, Python; not Java/C# for classes)</td></tr>
 <tr><td>Hybrid / diamond</td><td><code>D : B, C</code> where <code>B : A</code> and <code>C : A</code></td></tr>
 </table>
+<pre><code><span class="k">class</span> Animal        { <span class="k">void</span> breathe(){} }
+<span class="k">class</span> Dog    : Animal { <span class="k">void</span> bark(){} }        <span class="c">// single</span>
+<span class="k">class</span> Puppy  : Dog    { <span class="k">void</span> whine(){} }       <span class="c">// multilevel  (Puppy -> Dog -> Animal)</span>
+<span class="k">class</span> Cat    : Animal { <span class="k">void</span> meow(){} }        <span class="c">// hierarchical: Dog and Cat both : Animal</span>
+
+<span class="c">// multiple (C++ / Python): one class, two direct bases</span>
+<span class="k">class</span> Amphibious : <span class="k">public</span> Car, <span class="k">public</span> Boat {};</code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 168" role="img" aria-labelledby="d-oopdia-t">
@@ -8300,6 +8428,15 @@ which <code>A::x</code> does <code>d.x</code> mean? Ambiguous.</p>
 <h3>Guidance</h3>
 <p>Prefer single inheritance + interfaces + composition. Use multiple inheritance only for mixins
 that add behaviour without state, or well-understood interface combinations.</p>
+<pre><code><span class="c">// PREFER: single base + interfaces (mixins add behaviour, not state)</span>
+<span class="k">interface</span> Serializable { String toJson(); }
+<span class="k">interface</span> Comparable&lt;T&gt; { <span class="k">int</span> compareTo(T o); }
+
+<span class="k">class</span> Invoice <span class="k">extends</span> Document
+        <span class="k">implements</span> Serializable, Comparable&lt;Invoice&gt; {   <span class="c">// one is-a, many can-do</span>
+    <span class="k">public</span> String toJson()              { <span class="k">return</span> <span class="s">"{...}"</span>; }
+    <span class="k">public</span> <span class="k">int</span> compareTo(Invoice o)      { <span class="k">return</span> Long.compare(total, o.total); }
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -8381,6 +8518,13 @@ Each object with a virtual base stores a hidden pointer (or offset in the vtable
 <li><strong>Generics / templates</strong> &mdash; one source, many concrete types generated at compile time.</li>
 <li>Resolved before the program runs &rarr; no runtime cost, fully inlinable.</li>
 </ul>
+<pre><code><span class="k">int</span>    area(<span class="k">int</span> side)            { <span class="k">return</span> side * side; }      <span class="c">// overload 1</span>
+<span class="k">double</span> area(<span class="k">double</span> r)             { <span class="k">return</span> <span class="n">3.14159</span> * r * r; }  <span class="c">// overload 2</span>
+area(<span class="n">5</span>);       <span class="c">// compiler picks overload 1 from the literal's type -- decided NOW</span>
+
+<span class="k">template</span>&lt;<span class="k">class</span> T&gt; T maxOf(T a, T b) { <span class="k">return</span> a &gt; b ? a : b; } <span class="c">// one source...</span>
+maxOf(<span class="n">3</span>, <span class="n">9</span>);        <span class="c">// ...T=int instantiated at compile time</span>
+maxOf(<span class="n">1.5</span>, <span class="n">2.5</span>);    <span class="c">// ...T=double, a separate concrete function</span></code></pre>
 
 <h3>Runtime (dynamic) polymorphism</h3>
 <ul>
@@ -8388,6 +8532,13 @@ Each object with a virtual base stores a hidden pointer (or offset in the vtable
 <li>Implemented via a per-class table of method pointers (vtable) + a per-object pointer to it.</li>
 <li>Cost: one indirection, not inlinable across the boundary. Benefit: open extension &mdash; new subtypes work with existing code.</li>
 </ul>
+<pre><code><span class="k">class</span> Notifier        { <span class="k">void</span> send(String m) { } }        <span class="c">// base</span>
+<span class="k">class</span> EmailNotifier : Notifier { <span class="k">override</span> <span class="k">void</span> send(String m){ smtp(m); } }
+<span class="k">class</span> SmsNotifier   : Notifier { <span class="k">override</span> <span class="k">void</span> send(String m){ gateway(m); } }
+
+<span class="k">void</span> alert(Notifier n, String m) { n.send(m); } <span class="c">// resolved at RUNTIME from n's real type</span>
+alert(<span class="k">new</span> EmailNotifier(), <span class="s">"hi"</span>);  <span class="c">// -> smtp</span>
+alert(<span class="k">new</span> SmsNotifier(),   <span class="s">"hi"</span>);  <span class="c">// -> gateway   (alert() never changes)</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-ooppoly-t">
@@ -8422,6 +8573,15 @@ methods, and non-virtual methods bind early (by reference type). This is the sou
 <tr><td>Parametric</td><td>Generics/templates &mdash; same code, any type.</td></tr>
 <tr><td>Subtype</td><td>Overriding &mdash; a subtype substituted for its supertype.</td></tr>
 </table>
+<pre><code><span class="c">// ad hoc: a distinct implementation is selected per type</span>
+String show(<span class="k">int</span> x)  { <span class="k">return</span> <span class="s">"int "</span> + x; }
+String show(Date x) { <span class="k">return</span> x.toISO(); }
+
+<span class="c">// parametric: ONE implementation, works for every T</span>
+&lt;T&gt; T first(List&lt;T&gt; xs) { <span class="k">return</span> xs.get(<span class="n">0</span>); }
+
+<span class="c">// subtype: pass a Circle where a Shape is expected; Shape's API is enough</span>
+<span class="k">double</span> describe(Shape s) { <span class="k">return</span> s.area(); }</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -8500,12 +8660,28 @@ Most OO languages dispatch on one receiver only. When behaviour depends on <em>t
 <p>Same method name, <strong>different parameter list</strong> (count or types), in the <em>same</em> scope.
 Chosen at <strong>compile time</strong> by the static types of the arguments. Return type alone can't
 distinguish overloads.</p>
+<pre><code><span class="k">class</span> Logger {
+    <span class="k">void</span> log(String msg)            { }   <span class="c">// 3 overloads, same name...</span>
+    <span class="k">void</span> log(String msg, Throwable t) { }   <span class="c">// ...different parameter lists</span>
+    <span class="k">void</span> log(<span class="k">int</span> code)               { }
+    <span class="c">// int log(String msg) { }             // ERROR: return type alone can't overload</span>
+}
+Logger l = <span class="k">new</span> Logger();
+l.log(<span class="s">"hi"</span>);        <span class="c">// compiler picks log(String) from the argument type -- at COMPILE time</span>
+l.log(<span class="n">404</span>);         <span class="c">// picks log(int)</span></code></pre>
 
 <h3>Overriding</h3>
 <p>A subclass provides a new body for an inherited <strong>virtual method with the same signature</strong>.
 Chosen at <strong>runtime</strong> by the object's actual type. Rules: same name and parameters;
 return type must be the same or <em>covariant</em> (a subtype); access can't be narrower; can't throw
 broader checked exceptions (Java); mark with <code>override</code> / <code>@Override</code>.</p>
+<pre><code><span class="k">class</span> Animal { String speak() { <span class="k">return</span> <span class="s">"..."</span>; } }
+<span class="k">class</span> Dog <span class="k">extends</span> Animal {
+    <span class="k">@Override</span> String speak() { <span class="k">return</span> <span class="s">"woof"</span>; }  <span class="c">// same signature, new body</span>
+}
+Animal a = <span class="k">new</span> Dog();
+a.speak();          <span class="c">// "woof" -- picked from a's ACTUAL type at RUNTIME</span>
+<span class="c">// @Override makes the compiler reject a typo like speaks() or speak(int)</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 132" role="img" aria-labelledby="d-oopoo-t">
@@ -8542,6 +8718,17 @@ b.f();   <span class="c">// "B"</span></code></pre>
 <tr><td>Signature</td><td>differs</td><td>identical</td><td>identical name, base not virtual</td></tr>
 <tr><td>Bound</td><td>compile time</td><td>runtime</td><td>compile time (ref type)</td></tr>
 </table>
+<pre><code><span class="k">class</span> Base {
+    <span class="k">void</span> draw()        { }   <span class="c">// non-virtual</span>
+    <span class="k">virtual</span> <span class="k">void</span> tick() { }
+}
+<span class="k">class</span> Sub : Base {
+    <span class="k">void</span> draw(<span class="k">int</span> layer)      { }   <span class="c">// OVERLOAD of a name? no -- new signature in a subclass = HIDES Base::draw</span>
+    <span class="k">override</span> <span class="k">void</span> tick()      { }   <span class="c">// OVERRIDE: same signature, base is virtual -> runtime dispatch</span>
+}
+Base b = <span class="k">new</span> Sub();
+b.draw();   <span class="c">// Base::draw -- hidden method resolved by the reference type</span>
+b.tick();   <span class="c">// Sub::tick  -- overridden method resolved by the object type</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -8623,6 +8810,18 @@ In C++ (and similarly Java for a different reason), declaring <em>any</em> membe
 <li>Expresses an <strong>is-a</strong> with shared implementation. A subclass gets one abstract base.</li>
 <li>Use for a partial implementation / template-method skeleton where subclasses fill in specifics.</li>
 </ul>
+<pre><code><span class="k">abstract class</span> Report {
+    <span class="k">private</span> String title;               <span class="c">// state -- interfaces can't have this</span>
+    Report(String t) { title = t; }      <span class="c">// constructor -- interfaces can't either</span>
+
+    <span class="k">final</span> String render() {              <span class="c">// TEMPLATE METHOD: shared skeleton</span>
+        <span class="k">return</span> header() + body() + footer();
+    }
+    String header() { <span class="k">return</span> <span class="s">"# "</span> + title; } <span class="c">// concrete, reused by all subclasses</span>
+    <span class="k">abstract</span> String body();               <span class="c">// each subclass MUST supply this</span>
+    String footer() { <span class="k">return</span> <span class="s">"--end--"</span>; }
+}
+<span class="c">// new Report(...);            // ERROR: abstract, cannot instantiate</span></code></pre>
 
 <h3>Interface</h3>
 <ul>
@@ -8630,6 +8829,16 @@ In C++ (and similarly Java for a different reason), declaring <em>any</em> membe
 <li>A class can implement <strong>many</strong> interfaces &mdash; the way to get multiple supertypes without MI of state.</li>
 <li>Modern languages blur the line: Java 8+ <code>default</code> methods, C# 8+ default interface members, so interfaces can carry behaviour &mdash; but still no instance fields.</li>
 </ul>
+<pre><code><span class="k">interface</span> Closeable            { <span class="k">void</span> close(); }
+<span class="k">interface</span> Flushable            { <span class="k">void</span> flush(); }
+<span class="k">interface</span> Resource <span class="k">extends</span> Closeable, Flushable {
+    <span class="k">default</span> <span class="k">void</span> closeQuietly() {  <span class="c">// default method: behaviour, but still NO fields</span>
+        <span class="k">try</span> { flush(); close(); } <span class="k">catch</span> (Exception ignored) { }
+    }
+}
+<span class="k">class</span> FileBuffer <span class="k">implements</span> Resource {   <span class="c">// one class, several capability contracts</span>
+    <span class="k">public</span> <span class="k">void</span> close() { } <span class="k">public</span> <span class="k">void</span> flush() { }
+}</code></pre>
 <figure class="diagram">
 <svg viewBox="0 0 520 148" role="img" aria-labelledby="d-oopai-t">
 <title id="d-oopai-t">A class extends at most one abstract class but implements many interfaces</title>
@@ -8659,10 +8868,28 @@ In C++ (and similarly Java for a different reason), declaring <em>any</em> membe
 </table>
 <p>Rule of thumb: <strong>program to interfaces</strong> for the public API; use an abstract base internally
 if there's real shared implementation.</p>
+<pre><code><span class="c">// capability that unrelated types can have -> interface</span>
+<span class="k">interface</span> Auditable { AuditRecord audit(); }
+<span class="k">class</span> Invoice  <span class="k">implements</span> Auditable { <span class="c">/* ... */</span> }
+<span class="k">class</span> LoginEvent <span class="k">implements</span> Auditable { <span class="c">/* ... */</span> }   <span class="c">// nothing else in common</span>
+
+<span class="c">// related types sharing code + fields -> abstract class</span>
+<span class="k">abstract class</span> HttpHandler { <span class="k">protected</span> Logger log; <span class="k">abstract</span> Response handle(Request r); }</code></pre>
 
 <h3>C++ note</h3>
 <p>C++ has no <code>interface</code> keyword &mdash; an interface is just an abstract class with only pure
 virtual functions and no data members (<code>= 0</code> on every method, <code>virtual</code> destructor).</p>
+<pre><code><span class="k">struct</span> IShape {                       <span class="c">// C++ "interface" = pure abstract class</span>
+    <span class="k">virtual</span> <span class="k">double</span> area() <span class="k">const</span> = <span class="n">0</span>;      <span class="c">// = 0 -> pure virtual, no body</span>
+    <span class="k">virtual</span> <span class="k">void</span>   draw() <span class="k">const</span> = <span class="n">0</span>;
+    <span class="k">virtual</span> ~IShape() = <span class="k">default</span>;           <span class="c">// virtual dtor is mandatory</span>
+    <span class="c">// no data members</span>
+};
+<span class="k">struct</span> Circle : IShape {
+    <span class="k">double</span> r;
+    <span class="k">double</span> area() <span class="k">const</span> <span class="k">override</span> { <span class="k">return</span> <span class="n">3.14159</span> * r * r; }
+    <span class="k">void</span>   draw() <span class="k">const</span> <span class="k">override</span> { }
+};</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -8776,6 +9003,17 @@ A fat abstract class (or interface) forces every subclass to deal with methods i
 <li>Composition delegates to a member; you expose only what you choose, can swap the member (even at runtime via an interface), and stay decoupled.</li>
 <li>Use inheritance only for genuine, stable <strong>is-a</strong> subtype relationships you'll use polymorphically. Otherwise hold the other object and delegate.</li>
 </ul>
+<pre><code><span class="c">// INHERITANCE: behaviour is fixed at compile time, can't change per instance</span>
+<span class="k">class</span> CompressingLogger <span class="k">extends</span> FileLogger { <span class="c">/* ...and now also EncryptingFileLogger? */</span> }
+
+<span class="c">// COMPOSITION: wire behaviour in; swap it at runtime</span>
+<span class="k">interface</span> Sink { <span class="k">void</span> write(<span class="k">byte</span>[] b); }
+<span class="k">class</span> Logger {
+    <span class="k">private</span> <span class="k">final</span> Sink sink;                  <span class="c">// hold a collaborator...</span>
+    Logger(Sink s) { <span class="k">this</span>.sink = s; }
+    <span class="k">void</span> log(String m) { sink.write(m.getBytes()); } <span class="c">// ...and delegate</span>
+}
+<span class="k">new</span> Logger(<span class="k">new</span> GzipSink(<span class="k">new</span> FileSink(<span class="s">"app.log"</span>))); <span class="c">// mix &amp; match, no new subclass</span></code></pre>
 
 <h3>Delegation</h3>
 <pre><code><span class="k">class</span> Stack {
@@ -8889,21 +9127,64 @@ A mixin/trait bundles behaviour (and sometimes requires certain abstract members
 </svg>
 <figcaption>The arrow that used to point at a concrete class now points at an interface the high-level module owns &mdash; the low-level module implements it. That inverted arrow is the whole idea.</figcaption>
 </figure>
+<pre><code><span class="c">// S: one reason to change -- split the responsibilities</span>
+<span class="k">class</span> Invoice        { <span class="c">/* data + totals only */</span> }
+<span class="k">class</span> InvoiceRenderer { String toPdf(Invoice i){ <span class="c">...</span> } }   <span class="c">// formatting elsewhere</span>
+<span class="k">class</span> InvoiceRepo     { <span class="k">void</span> save(Invoice i){ <span class="c">...</span> } }         <span class="c">// persistence elsewhere</span>
+
+<span class="c">// O: add a type, don't edit tested code</span>
+<span class="k">interface</span> Discount { <span class="k">long</span> apply(<span class="k">long</span> cents); }
+<span class="k">long</span> checkout(<span class="k">long</span> cents, List&lt;Discount&gt; ds) {
+    <span class="k">for</span> (Discount d : ds) cents = d.apply(cents);   <span class="c">// new Discount class = no change here</span>
+    <span class="k">return</span> cents;
+}
+
+<span class="c">// D: depend on the interface, inject the concrete</span>
+<span class="k">class</span> OrderService {
+    <span class="k">private</span> <span class="k">final</span> OrderRepo repo;                     <span class="c">// interface, not MySqlOrderRepo</span>
+    OrderService(OrderRepo r) { <span class="k">this</span>.repo = r; }     <span class="c">// pass a fake in tests</span>
+}</code></pre>
+
 <h3>Coupling &amp; cohesion</h3>
 <ul>
 <li><strong>Coupling</strong> &mdash; how much one module depends on another's internals. <em>Low</em> is good: change one thing without a ripple. Reduce it with interfaces, DI, events, small APIs.</li>
 <li><strong>Cohesion</strong> &mdash; how focused a module is on one job. <em>High</em> is good: everything in the class relates to its single purpose. Low cohesion = "utils grab-bag".</li>
 <li>Goal: <strong>high cohesion, low coupling</strong>.</li>
 </ul>
+<pre><code><span class="c">// HIGH coupling: reaches into another object's guts</span>
+<span class="k">class</span> Report {
+    <span class="k">void</span> print(Db db) {
+        Connection c = db.internalPool().take();   <span class="c">// knows about pools, connections...</span>
+        c.raw(<span class="s">"SELECT ..."</span>);                          <span class="c">// ...breaks when Db changes internals</span>
+    }
+}
+<span class="c">// LOW coupling: depends only on a small interface</span>
+<span class="k">class</span> Report {
+    <span class="k">void</span> print(RowSource rows) {                    <span class="c">// one method, swappable, mockable</span>
+        <span class="k">for</span> (Row r : rows.fetch(<span class="s">"orders"</span>)) render(r);
+    }
+}
+<span class="c">// LOW cohesion smell: class Utils { parseDate(); sendEmail(); zipFolder(); }  -- unrelated jobs</span></code></pre>
 
 <h3>Law of Demeter</h3>
 <p>"Only talk to your immediate friends." Avoid <code>a.getB().getC().doThing()</code> (train wrecks) &mdash;
 it couples you to <code>a</code>'s whole object graph. Ask <code>a</code> to do the thing, or pass <code>C</code> in.</p>
+<pre><code><span class="c">// train wreck: coupled to Order -> Customer -> Address</span>
+String city = order.getCustomer().getAddress().getCity();
+
+<span class="c">// tell, don't ask: Order exposes what the caller actually needs</span>
+String city = order.shippingCity();          <span class="c">// Order delegates internally</span></code></pre>
 
 <h3>DRY / KISS / YAGNI</h3>
 <p>Don't Repeat Yourself (one source of truth per piece of knowledge &mdash; but don't over-abstract
 coincidental duplication); Keep It Simple; You Aren't Gonna Need It (don't build for speculative
 requirements).</p>
+<pre><code><span class="c">// DRY: one source of truth for the rule</span>
+<span class="k">static</span> <span class="k">boolean</span> isAdult(<span class="k">int</span> age) { <span class="k">return</span> age &gt;= <span class="n">18</span>; }  <span class="c">// used everywhere, not re-typed</span>
+
+<span class="c">// YAGNI: build the case you have, not the 5 you imagine</span>
+<span class="k">double</span> convert(<span class="k">double</span> usd) { <span class="k">return</span> usd * <span class="n">0.92</span>; }        <span class="c">// need USD->EUR today</span>
+<span class="c">// NOT: a plugin-based multi-currency engine with a rules DSL nobody asked for</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -8986,6 +9267,16 @@ Each principle is a response to a real pain (ripple changes, edit-to-extend, bro
 <tr><td><strong>Factory Method / Abstract Factory</strong></td><td>Create objects without naming concrete classes; pick the type at runtime.</td><td>Over-applied &mdash; a plain constructor is fine when there's no variation.</td></tr>
 <tr><td><strong>Builder</strong></td><td>Construct a complex object step by step; avoid telescoping constructors.</td><td>Overkill for 2&ndash;3 fields; named args / a config struct may do.</td></tr>
 </table>
+<pre><code><span class="c">// Factory Method: caller asks for the abstraction, not `new CsvParser()`</span>
+<span class="k">interface</span> Parser { Doc parse(String s); }
+<span class="k">static</span> Parser forType(String t) {          <span class="c">// pick the concrete type at runtime</span>
+    <span class="k">return</span> <span class="k">switch</span> (t) { <span class="k">case</span> <span class="s">"csv"</span> -&gt; <span class="k">new</span> CsvParser(); <span class="k">case</span> <span class="s">"json"</span> -&gt; <span class="k">new</span> JsonParser(); };
+}
+
+<span class="c">// Builder: many optional fields, validate once, immutable result</span>
+HttpRequest r = HttpRequest.builder()
+    .url(<span class="s">"/api"</span>).method(<span class="s">"POST"</span>).header(<span class="s">"Accept"</span>, <span class="s">"json"</span>).timeout(<span class="n">5</span>)
+    .build();                              <span class="c">// build() checks required fields</span></code></pre>
 
 <h3>Structural</h3>
 <table>
@@ -8996,6 +9287,16 @@ Each principle is a response to a real pain (ripple changes, edit-to-extend, bro
 <tr><td><strong>Proxy</strong></td><td>Stand-in that controls access &mdash; lazy loading, caching, remote, access checks.</td></tr>
 <tr><td><strong>Composite</strong></td><td>Treat individual objects and trees of objects uniformly (files/folders, UI widgets).</td></tr>
 </table>
+<pre><code><span class="c">// Adapter: make a 3rd-party class fit the interface our code expects</span>
+<span class="k">interface</span> Logger { <span class="k">void</span> info(String m); }
+<span class="k">class</span> Slf4jAdapter <span class="k">implements</span> Logger {          <span class="c">// wraps an incompatible API</span>
+    <span class="k">private</span> org.slf4j.Logger delegate;
+    <span class="k">public</span> <span class="k">void</span> info(String m) { delegate.info(m); } <span class="c">// translate the call</span>
+}
+
+<span class="c">// Decorator: same interface, layered behaviour</span>
+Logger l = <span class="k">new</span> TimestampLogger(<span class="k">new</span> AsyncLogger(<span class="k">new</span> ConsoleLogger()));
+l.info(<span class="s">"hi"</span>);   <span class="c">// timestamp -> queue -> print, all via Logger.info</span></code></pre>
 
 <h3>Behavioural</h3>
 <table>
@@ -9007,6 +9308,17 @@ Each principle is a response to a real pain (ripple changes, edit-to-extend, bro
 <tr><td><strong>Iterator</strong></td><td>Traverse a collection without exposing its structure.</td></tr>
 <tr><td><strong>State</strong></td><td>Object changes behaviour when its internal state changes (state machine without giant switches).</td></tr>
 </table>
+<pre><code><span class="c">// Strategy: inject the varying algorithm</span>
+<span class="k">interface</span> SortOrder { <span class="k">int</span> compare(Item a, Item b); }
+List&lt;Item&gt; sorted(List&lt;Item&gt; xs, SortOrder how) { xs.sort(how::compare); <span class="k">return</span> xs; }
+sorted(items, (a, b) -&gt; a.price - b.price);   <span class="c">// with lambdas, Strategy = pass a function</span>
+
+<span class="c">// Observer: one-to-many notification</span>
+<span class="k">class</span> Stock {
+    <span class="k">private</span> List&lt;Runnable&gt; listeners = <span class="k">new</span> ArrayList&lt;&gt;();
+    <span class="k">void</span> onChange(Runnable r) { listeners.add(r); }
+    <span class="k">void</span> setPrice(<span class="k">double</span> p) { price = p; listeners.forEach(Runnable::run); } <span class="c">// notify all</span>
+}</code></pre>
 <p>Many "patterns" are just idioms in languages with first-class functions (Strategy = pass a
 lambda; Command = a closure; Observer = a list of callbacks). Reach for the full class-based
 version only when you need the extra structure (naming, serialization, multiple methods).</p>
