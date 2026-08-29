@@ -12583,6 +12583,1075 @@ Developers often reason "this race is harmless &mdash; worst case a thread reads
 </section>
 <!-- /TOPIC:concurrency:concurrency-bugs -->
 
+<!-- ============================== LINUX TOPICS ============================== -->
+<!-- TOPIC:linux:fd-model -->
+<section class="view topic" id="v-linux-fd-model" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>The File Descriptor Model</h1>
+<p class="subtitle">Three tables between an <code>int</code> and a file &mdash; and why that structure explains <code>dup</code>, <code>fork</code>, and pipes.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The three levels</h3>
+<pre><code>process fd table          system open-file table          inode table
+[0] -----------------&gt; [ offset, flags, ref ] ----&gt; [ inode: size, perms, data ]
+[1] -----------------&gt; [ offset, flags, ref ] ----&gt; [ same or other inode ]
+[3] --------------------------^ (dup: 2 fds -&gt; 1 description)</code></pre>
+<ul>
+<li><strong>fd</strong> &mdash; a small non-negative <code>int</code>, an index into the per-process fd table.</li>
+<li><strong>Open file description</strong> &mdash; system-wide, holds the current <em>file offset</em> and the open flags (<code>O_APPEND</code>, <code>O_NONBLOCK</code>). Shared when you <code>dup()</code> or inherit across <code>fork()</code>.</li>
+<li><strong>inode</strong> &mdash; the file itself (metadata + data location). Multiple descriptions can point to one inode.</li>
+</ul>
+
+<h3>Consequences</h3>
+<ul>
+<li><code>dup(fd)</code> / <code>dup2</code> make a second fd sharing the <em>same</em> description &mdash; same offset. That's how shell redirection wires <code>1</code> to a file.</li>
+<li>After <code>fork()</code>, parent and child fds share descriptions: a <code>read</code> in one advances the offset the other sees. (A fresh <code>open()</code> gets its own description &mdash; independent offset.)</li>
+<li><code>close-on-exec</code> (<code>O_CLOEXEC</code> / <code>FD_CLOEXEC</code>): the fd is auto-closed when the process <code>exec</code>s a new program &mdash; prevents fd leaks into children. Set it by default on everything you open.</li>
+</ul>
+
+<h3>fd 0, 1, 2 and "everything is a file"</h3>
+<p>0 stdin, 1 stdout, 2 stderr by convention. The same <code>read</code>/<code>write</code>/<code>close</code> API
+works on regular files, pipes, sockets, terminals, devices (<code>/dev/null</code>), <code>eventfd</code>,
+<code>timerfd</code>, <code>signalfd</code>, <code>epoll</code> fds &mdash; uniform interface, different backends.</p>
+
+<h3>Limits</h3>
+<p>Per-process fd limit (<code>RLIMIT_NOFILE</code>, <code>ulimit -n</code>) and a system-wide max. Servers
+raise the soft limit; "too many open files" (<code>EMFILE</code>) means a leak or an under-set limit.
+The lowest free fd is always returned, which enables the <code>close(1); open(...)</code> redirection trick.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>fd (int, per-process) &rarr; open file description (system-wide: offset + flags) &rarr; inode (the file).</li>
+<li><code>dup</code>/<code>dup2</code> and <code>fork</code> share the <em>description</em> &rarr; shared offset. A new <code>open</code> gets its own.</li>
+<li>Set <code>O_CLOEXEC</code> on everything &mdash; fds otherwise leak across <code>exec</code>.</li>
+<li>0/1/2 = stdin/stdout/stderr; <code>open</code> returns the lowest free fd.</li>
+<li>Same read/write/close API for files, pipes, sockets, ttys, devices, eventfd/timerfd/signalfd/epoll.</li>
+<li><code>RLIMIT_NOFILE</code> caps open fds; <code>EMFILE</code> = leak or limit too low; raise with <code>ulimit -n</code> / <code>setrlimit</code>.</li>
+<li>Redirection: <code>dup2(file_fd, 1)</code> makes writes to fd 1 go to the file.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What are the three levels between an fd number and file data?</dt>
+<dd>The per-process file descriptor table (fd &rarr; description), the system-wide open file description table (holds the offset and status flags), and the inode table (the file's metadata and data blocks).</dd>
+<dt>Why does reading from an fd in a forked child advance the parent's file position?</dt>
+<dd>After <code>fork()</code>, the child's fd entries point to the <em>same</em> open file descriptions as the parent's, and the offset lives in the description &mdash; so a <code>read</code> in either process moves the shared offset.</dd>
+<dt>What does <code>dup2(fd, 1)</code> accomplish?</dt>
+<dd>It makes fd number 1 (stdout) refer to the same open file description as <code>fd</code>. Anything the process writes to stdout now goes wherever <code>fd</code> points &mdash; the mechanism behind <code>&gt; file</code> redirection.</dd>
+<dt>What is <code>O_CLOEXEC</code> and why use it?</dt>
+<dd>A flag marking an fd to be closed automatically when the process calls <code>exec()</code>. Without it, fds leak into every child program you spawn &mdash; a resource leak and a security issue (the child can read/write files it shouldn't know about). Set it on every <code>open</code>/<code>socket</code>/<code>pipe2</code>.</dd>
+<dt>You get <code>EMFILE</code> ("too many open files") under load. Causes?</dt>
+<dd>Either a file-descriptor leak (opening without closing, e.g. per-request connections never released) or <code>RLIMIT_NOFILE</code> set too low for the workload. Check <code>ls /proc/PID/fd | wc -l</code> over time; raise the limit with <code>ulimit -n</code> / <code>LimitNOFILE=</code>, and fix the leak.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What number does <code>open()</code> return on success?</summary><div class="answer-box">
+The lowest-numbered file descriptor not currently in use by the process.
+</div></details>
+<details class="answer-reveal"><summary>Where is a file's current read/write offset stored?</summary><div class="answer-box">
+In the open file description (system-wide table), not in the fd or the inode.
+</div></details>
+<details class="answer-reveal"><summary>What API do sockets, pipes, and regular files share?</summary><div class="answer-box">
+<code>read()</code>, <code>write()</code>, <code>close()</code> (and <code>fcntl</code>, <code>dup</code>, poll) &mdash; "everything is a file".
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two processes both <code>open("log", O_WRONLY|O_APPEND)</code> and write concurrently. Do writes interleave/corrupt?</summary><div class="answer-box">
+Each has its own open file description, but <code>O_APPEND</code> makes each <code>write()</code> atomically seek-to-end-then-write in the kernel, so records don't overwrite each other &mdash; provided each write is a single <code>write()</code> call and within <code>PIPE_BUF</code>/filesystem limits. Without <code>O_APPEND</code>, both would use stale offsets and clobber each other. (This is also why shell <code>&gt;&gt;</code> from parallel processes is safe for line-sized appends.)
+</div></details>
+<details class="answer-reveal"><summary>How does the shell implement <code>cmd &gt; out.txt</code>?</summary><div class="answer-box">
+<code>fork()</code>; in the child: <code>fd = open("out.txt", O_WRONLY|O_CREAT|O_TRUNC, 0644)</code>, then <code>dup2(fd, 1)</code> (fd 1 now points at the file), <code>close(fd)</code>, then <code>exec(cmd)</code>. The exec'd program writes to fd 1 as usual, unaware it's a file.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain the difference between <code>dup()</code>ing an fd and independently <code>open()</code>ing the same file, in terms of the three tables.</summary><div class="answer-box">
+<code>dup(fd)</code> adds a new entry to the <em>fd table</em> pointing at the <em>same</em> open file description &mdash; so the two fds share the file offset and the status flags (setting <code>O_NONBLOCK</code> via one affects both), and closing one leaves the description alive (refcount &gt; 0) until the other closes. A second <code>open()</code> of the same path creates a <em>new</em> open file description (new offset starting at 0 or end, its own copy of the flags) that happens to reference the same <em>inode</em>. So: same inode both ways, but shared vs independent offset/flags. This is why a library that <code>dup</code>s stdin to save it can restore it exactly (same position), whereas re-opening <code>/dev/stdin</code> would reset the position.
+</div></details>
+<details class="answer-reveal"><summary>What is the "lowest free fd" guarantee's role in fd-passing and privilege separation designs?</summary><div class="answer-box">
+Because <code>open</code>/<code>dup</code>/<code>accept</code> always return the lowest available fd, a program can deterministically place an fd at a known number by closing that number first (<code>close(3); dup2(sock, 3)</code>), which is how systemd socket activation and inetd hand a listening socket to a service at fd 3 (<code>SD_LISTEN_FDS_START</code>). Privilege-separation designs exploit the same determinism: a privileged parent opens exactly the fds a sandboxed child is allowed (a config file, a log, a socket), places them at agreed numbers, sets everything else <code>CLOEXEC</code>, then <code>exec</code>s the unprivileged child &mdash; which inherits precisely that fd set and can't name any other file (especially after a <code>chroot</code>/namespace/seccomp that blocks new <code>open</code>s). The fd becomes an unforgeable capability: possession of fd 3 <em>is</em> the permission to use that resource, nothing more.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:fd-model -->
+
+<!-- TOPIC:linux:file-io -->
+<section class="view topic" id="v-linux-file-io" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>File I/O, Short Reads &amp; Locking</h1>
+<p class="subtitle">The raw syscalls, the loops you must write around them, and how (not) to lock a file.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The syscalls</h3>
+<ul>
+<li><code>open(path, flags, mode)</code> &mdash; flags: <code>O_RDONLY</code>/<code>O_WRONLY</code>/<code>O_RDWR</code>, plus <code>O_CREAT</code>, <code>O_EXCL</code> (fail if exists &mdash; atomic create), <code>O_TRUNC</code>, <code>O_APPEND</code>, <code>O_NONBLOCK</code>, <code>O_CLOEXEC</code>, <code>O_DIRECT</code>, <code>O_SYNC</code>.</li>
+<li><code>read(fd, buf, n)</code> &rarr; bytes read (0 = EOF, &minus;1 = error). <strong>May return fewer than <code>n</code></strong> (signal, pipe, socket, EOF near end).</li>
+<li><code>write(fd, buf, n)</code> &rarr; bytes written. <strong>May be short</strong> (full pipe/socket buffer, signal).</li>
+<li><code>pread</code>/<code>pwrite</code> &mdash; read/write at an explicit offset without moving the file position (thread-safe for concurrent I/O on one fd).</li>
+<li><code>lseek</code>, <code>ftruncate</code>, <code>fstat</code>, <code>close</code>.</li>
+</ul>
+
+<h3>The loops you must write</h3>
+<pre><code><span class="c">// full read</span>
+size_t done = 0;
+<span class="k">while</span> (done &lt; n) {
+    ssize_t r = read(fd, buf + done, n - done);
+    <span class="k">if</span> (r &lt; 0) { <span class="k">if</span> (errno == EINTR) <span class="k">continue</span>; <span class="k">return</span> -1; }
+    <span class="k">if</span> (r == 0) <span class="k">break</span>;   <span class="c">// EOF</span>
+    done += r;
+}</code></pre>
+<p>Same pattern for <code>write</code>. Never assume one call transfers everything.</p>
+
+<h3>Durability</h3>
+<ul>
+<li><code>write()</code> returning doesn't mean "on disk" &mdash; it's in the kernel page cache. <code>fsync(fd)</code> forces data + metadata to stable storage; <code>fdatasync</code> skips non-essential metadata.</li>
+<li>The <strong>atomic rename</strong> pattern for crash-safe file updates: write to <code>file.tmp</code>, <code>fsync</code> it, <code>rename("file.tmp", "file")</code> (atomic on the same filesystem), then <code>fsync</code> the directory.</li>
+</ul>
+
+<h3>File locking</h3>
+<ul>
+<li><code>flock(fd, LOCK_EX)</code> &mdash; whole-file advisory lock, associated with the open file description. Simple; not great over NFS.</li>
+<li><code>fcntl(F_SETLK)</code> &mdash; POSIX byte-range advisory locks. Powerful but has a notorious flaw: locks are dropped when <em>any</em> fd to the file in the process is closed.</li>
+<li><code>F_OFD_SETLK</code> (Linux) &mdash; open-file-description locks: like POSIX ranges but tied to the description (survive unrelated closes, work across threads). Prefer these.</li>
+<li>All of the above are <strong>advisory</strong> &mdash; only processes that also check the lock are constrained.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>read</code>/<code>write</code> can be <strong>short</strong> &mdash; always loop until done or EOF; retry on <code>EINTR</code>.</li>
+<li><code>O_CREAT|O_EXCL</code> = atomic "create only if absent". <code>O_APPEND</code> = atomic seek-to-end per write.</li>
+<li><code>pread</code>/<code>pwrite</code> for offset-explicit, position-independent, thread-safe I/O on one fd.</li>
+<li><code>write()</code> success &ne; durable. <code>fsync</code>/<code>fdatasync</code> to force to disk.</li>
+<li>Crash-safe update: write tmp &rarr; <code>fsync</code> tmp &rarr; <code>rename</code> over the target &rarr; <code>fsync</code> the dir.</li>
+<li>Locks are <strong>advisory</strong>: <code>flock</code> (whole file, per-description), <code>fcntl F_SETLK</code> (byte ranges, buggy close semantics), <code>F_OFD_SETLK</code> (ranges, sane &mdash; prefer).</li>
+<li><code>O_DIRECT</code> bypasses the page cache (DB engines); <code>O_SYNC</code> makes every write durable (slow).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why must you loop around <code>read()</code>?</dt>
+<dd>It can legitimately return fewer bytes than requested &mdash; interrupted by a signal, reading from a pipe/socket with only some data available, or hitting EOF partway. Your code must accumulate until it has what it needs or sees EOF (return 0).</dd>
+<dt>Does a successful <code>write()</code> mean the data is safely on disk?</dt>
+<dd>No &mdash; it's in the kernel's page cache and will be flushed later. A crash before flush loses it. Call <code>fsync(fd)</code> (or <code>fdatasync</code>) when you need durability, and <code>fsync</code> the containing directory after creating/renaming files.</dd>
+<dt>How do you atomically replace a config file so a reader never sees a partial write?</dt>
+<dd>Write the new content to a temporary file in the same directory, <code>fsync</code> it, then <code>rename()</code> it over the original. <code>rename</code> is atomic within a filesystem, so a concurrent reader opens either the entire old file or the entire new file.</dd>
+<dt>What's the classic bug with POSIX <code>fcntl</code> locks?</dt>
+<dd>The lock is released as soon as the process closes <em>any</em> file descriptor referring to that file &mdash; not just the one it locked with. A library that opens the file, checks something, and closes its fd can silently drop your lock. Linux's <code>F_OFD_SETLK</code> (open-file-description locks) fixes this.</dd>
+<dt>Are file locks enforced by the kernel?</dt>
+<dd>The common ones (<code>flock</code>, <code>fcntl F_SETLK</code>, OFD locks) are <em>advisory</em>: they only coordinate processes that voluntarily check for the lock. Mandatory locking exists on Linux but is deprecated, unreliable, and rarely used.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>read()</code> return at end of file?</summary><div class="answer-box">
+0.
+</div></details>
+<details class="answer-reveal"><summary>Which flag makes <code>open()</code> fail if the file already exists?</summary><div class="answer-box">
+<code>O_EXCL</code> (combined with <code>O_CREAT</code>) &mdash; an atomic "create new".
+</div></details>
+<details class="answer-reveal"><summary>Which call forces buffered file data to disk?</summary><div class="answer-box">
+<code>fsync()</code> (or <code>fdatasync()</code> for just the data).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A program copies a file with one <code>read</code> and one <code>write</code> and occasionally produces a truncated copy. Bug?</summary><div class="answer-box">
+It assumes <code>read</code> fills the buffer and <code>write</code> flushes it in one call. Both can be short. Fix: loop &mdash; <code>read</code> in a loop until 0, and for each chunk <code>write</code> in a loop until the whole chunk is written, retrying on <code>EINTR</code>. Or use <code>sendfile</code>/<code>copy_file_range</code> which handle it in-kernel.
+</div></details>
+<details class="answer-reveal"><summary>Two threads write to the same fd with <code>write()</code> after <code>lseek()</code>. Race?</summary><div class="answer-box">
+Yes &mdash; the <code>lseek</code> and <code>write</code> aren't atomic together, so thread B can seek between A's seek and write, and both write to the wrong place. Use <code>pwrite(fd, buf, n, offset)</code>, which takes the offset as an argument and doesn't touch the shared file position &mdash; atomic and thread-safe.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain why "write tmp, rename over target" still needs a directory <code>fsync</code>, and the full crash-safe recipe.</summary><div class="answer-box">
+<code>rename()</code> guarantees a reader sees either the old or new file &mdash; but only if both the new file's <em>data</em> and the <em>directory entry</em> change survive a crash. The recipe: (1) <code>open</code> <code>target.tmp</code> with <code>O_CREAT|O_EXCL</code> in the same directory (same filesystem, so rename is atomic); (2) <code>write</code> the full contents; (3) <code>fsync(tmp_fd)</code> &mdash; forces the data blocks and the file's own metadata to disk, so after a crash <code>target.tmp</code> isn't a zero-length or partially-written file; (4) <code>rename("target.tmp", "target")</code> &mdash; atomically swaps the directory entry; (5) <code>fsync</code> the <em>directory</em> fd &mdash; forces the directory entry change itself to disk, otherwise a crash right after rename can leave the directory still pointing at the old inode (or, worse with some filesystems/mount options, at a not-yet-durable new one). Skipping step 3 risks a valid directory entry pointing at garbage data; skipping step 5 risks losing the rename. Some filesystems (ext4 with <code>auto_da_alloc</code>) heuristically fsync data on rename-over-existing to protect naive apps, but you can't rely on it portably. <code>fdatasync</code> can replace <code>fsync</code> in step 3 if the file size is already correct.
+</div></details>
+<details class="answer-reveal"><summary>When and why would a database engine use <code>O_DIRECT</code>, and what does it then have to implement itself?</summary><div class="answer-box">
+<code>O_DIRECT</code> bypasses the kernel page cache: reads/writes DMA straight between the device and user buffers. A database (PostgreSQL optionally, MySQL/InnoDB and Oracle commonly) wants this because it maintains its <em>own</em> buffer pool tuned to its access patterns and doesn't want the data cached twice (double buffering wastes RAM) or the kernel's readahead/writeback heuristics fighting its own. What it must then do itself: (1) <strong>alignment</strong> &mdash; buffer address, file offset, and length must all be multiples of the device block size (typically 512 or 4096); unaligned I/O fails with <code>EINVAL</code>. (2) Its own <strong>caching / buffer pool</strong> with eviction policy. (3) Its own <strong>readahead / prefetching</strong> for scans. (4) <strong>Write ordering and durability</strong> &mdash; <code>O_DIRECT</code> doesn't imply <code>O_SYNC</code>; the write can still sit in the drive's cache, so you still need <code>fsync</code>/FUA or the drive's cache disabled for the WAL. (5) Often <strong>async I/O</strong> (io_uring / libaio) since direct I/O blocks the calling thread on the device. The payoff is predictable latency and no page-cache pressure; the cost is a lot of infrastructure and portability caveats.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:file-io -->
+
+<!-- TOPIC:linux:fork-exec-wait -->
+<section class="view topic" id="v-linux-fork-exec-wait" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>fork, exec, wait &amp; Daemons</h1>
+<p class="subtitle">Spawning processes the Unix way, reaping them, and detaching one from the terminal.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>fork / exec / wait</h3>
+<ul>
+<li><code>fork()</code> &rarr; COW copy of the process. Returns child PID to parent, 0 to child, &minus;1 on error.</li>
+<li><code>execve(path, argv, envp)</code> (and wrappers <code>execl</code>, <code>execvp</code>&hellip;) &rarr; replaces the image; keeps PID and non-CLOEXEC fds. Only returns on failure.</li>
+<li><code>wait(&amp;status)</code> / <code>waitpid(pid, &amp;status, opts)</code> &rarr; reap a child, get its exit status. <code>WIFEXITED</code>/<code>WEXITSTATUS</code>, <code>WIFSIGNALED</code>/<code>WTERMSIG</code>. <code>WNOHANG</code> = non-blocking poll.</li>
+<li><code>posix_spawn()</code> &mdash; fork+exec in one safe call (preferred in threaded programs).</li>
+</ul>
+
+<h3>Process groups &amp; sessions</h3>
+<ul>
+<li><strong>Process group</strong> &mdash; a set of related processes (a shell pipeline); a signal to <code>-pgid</code> hits all of them. Ctrl-C sends SIGINT to the foreground group.</li>
+<li><strong>Session</strong> &mdash; a collection of process groups with one controlling terminal and a session leader. <code>setsid()</code> starts a new session with no controlling tty.</li>
+</ul>
+
+<h3>Daemonising (the classic double-fork)</h3>
+<ol>
+<li><code>fork()</code>, parent exits &rarr; child is orphaned, not a group leader.</li>
+<li><code>setsid()</code> &rarr; new session, no controlling terminal.</li>
+<li><code>fork()</code> again, first child exits &rarr; the daemon can never reacquire a tty.</li>
+<li><code>chdir("/")</code>, reset <code>umask</code>, close/redirect 0/1/2 to <code>/dev/null</code>, optionally write a PID file.</li>
+</ol>
+<p>Modern practice: <strong>don't</strong> hand-roll this. Let <code>systemd</code> (<code>Type=simple</code>),
+<code>supervisord</code>, or a container runtime run your process in the foreground and manage
+lifecycle, logging, and restart.</p>
+
+<h3>PID 1 duties</h3>
+<p>In a container, your process is often PID 1 and inherits init's job: reap orphaned zombies and
+forward signals. If it doesn't, use a tiny init (<code>tini</code>, <code>docker --init</code>).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>fork</code> &rarr; child (PID 0 in child, &gt;0 in parent). <code>exec*</code> &rarr; replace image (returns only on failure). <code>wait</code>/<code>waitpid</code> &rarr; reap + status.</li>
+<li>Decode status: <code>WIFEXITED</code>/<code>WEXITSTATUS</code>, <code>WIFSIGNALED</code>/<code>WTERMSIG</code>. <code>WNOHANG</code> to poll.</li>
+<li>Prefer <code>posix_spawn</code> to fork+exec in multithreaded code.</li>
+<li>Process group: signal <code>-pgid</code> hits the whole group (Ctrl-C &rarr; foreground group SIGINT).</li>
+<li>Session: <code>setsid()</code> &rarr; new session, drops the controlling terminal.</li>
+<li>Daemonise = fork/setsid/fork/chdir("/")/umask/redirect 0,1,2 &mdash; but really just run in foreground under systemd/supervisor/container.</li>
+<li>Container PID 1 must reap zombies + forward signals &rarr; use <code>tini</code> / <code>--init</code> if your app doesn't.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does <code>exec()</code> return on success?</dt>
+<dd>It doesn't return &mdash; the calling process's memory image is replaced. Any code after a successful <code>exec</code> never runs; code after it handles the failure case (and should <code>_exit</code>).</dd>
+<dt>Why the double fork when daemonising?</dt>
+<dd>The first fork + <code>setsid</code> detaches from the controlling terminal and makes a new session (the process becomes session leader). The second fork ensures the daemon is <em>not</em> a session leader, so it can never accidentally acquire a controlling terminal by opening a tty device.</dd>
+<dt>How do you check whether a child exited normally or was killed?</dt>
+<dd>From <code>wait</code>'s status: <code>WIFEXITED(status)</code> true &rarr; use <code>WEXITSTATUS</code>; <code>WIFSIGNALED(status)</code> true &rarr; use <code>WTERMSIG</code> for the signal number.</dd>
+<dt>What is a process group used for?</dt>
+<dd>Delivering a signal to a set of related processes at once &mdash; e.g. the shell puts a pipeline in one group so Ctrl-C (SIGINT) or a <code>kill -TERM -<pgid></code> terminates every command in it.</dd>
+<dt>Why does a containerised app sometimes accumulate zombies?</dt>
+<dd>The app is PID 1 but doesn't <code>wait()</code> for children it didn't directly spawn (grandchildren re-parented to it). PID 1 is supposed to reap all orphans. Fix: run a proper init as PID 1 (<code>tini</code>, <code>docker run --init</code>) or make the app reap in a SIGCHLD handler.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>fork()</code> return to the child?</summary><div class="answer-box">
+0.
+</div></details>
+<details class="answer-reveal"><summary>Which call reaps a terminated child and retrieves its exit code?</summary><div class="answer-box">
+<code>wait()</code> / <code>waitpid()</code>.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>setsid()</code> do?</summary><div class="answer-box">
+Creates a new session with the calling process as leader, with no controlling terminal &mdash; a step in daemonising.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Write the skeleton to run <code>/bin/ls -l</code> and print its exit code.</summary><div class="answer-box">
+<pre><code>pid_t p = fork();
+<span class="k">if</span> (p == 0) { execl(<span class="s">"/bin/ls"</span>, <span class="s">"ls"</span>, <span class="s">"-l"</span>, (char*)NULL); _exit(127); }
+<span class="k">int</span> st; waitpid(p, &amp;st, 0);
+<span class="k">if</span> (WIFEXITED(st)) printf(<span class="s">"exit %d\n"</span>, WEXITSTATUS(st));
+<span class="k">else if</span> (WIFSIGNALED(st)) printf(<span class="s">"killed by %d\n"</span>, WTERMSIG(st));</code></pre>
+</div></details>
+<details class="answer-reveal"><summary>Why is <code>fork()</code> then non-trivial work (before <code>exec</code>) dangerous in a multithreaded process?</summary><div class="answer-box">
+Only the calling thread survives in the child; other threads vanish mid-operation, so any lock they held (including inside <code>malloc</code>, <code>printf</code>, the allocator) stays locked forever in the child. Between <code>fork</code> and <code>exec</code> you may only call async-signal-safe functions. Use <code>posix_spawn</code> (or <code>vfork</code>+<code>exec</code>), which avoids the window, or fork before creating threads.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is "run in the foreground under a supervisor" now preferred over the double-fork daemon, point by point?</summary><div class="answer-box">
+(1) <strong>Lifecycle</strong>: the supervisor knows the exact PID (it started the process) &mdash; no fragile PID files that go stale or get reused; it can reliably stop, restart with backoff, and enforce a stop timeout then SIGKILL. (2) <strong>Readiness</strong>: <code>Type=notify</code> / health checks let the supervisor know when the service is actually ready, vs "the parent exited so it must be up". (3) <strong>Logging</strong>: stdout/stderr are captured to the journal/log system with metadata; the daemon doesn't need to reimplement log rotation or syslog. (4) <strong>Resource control</strong>: the supervisor puts the process in a cgroup with memory/CPU/IO limits and can kill the whole process tree cleanly (no escaped grandchildren). (5) <strong>Reaping &amp; signals</strong>: systemd as PID 1 (or a container init) reaps zombies and forwards signals correctly. (6) <strong>Security</strong>: <code>User=</code>, <code>NoNewPrivileges=</code>, seccomp, namespace isolation, read-only filesystem &mdash; declaratively, without the app dropping privileges by hand. (7) <strong>Simplicity/correctness</strong>: the double-fork dance has many easy-to-get-wrong steps (fd handling, umask, session leadership, signal masks inherited across exec). Foreground + supervisor moves all of that to well-tested infrastructure.
+</div></details>
+<details class="answer-reveal"><summary>Explain the "self-pipe" / signal-forwarding pattern a container entrypoint needs.</summary><div class="answer-box">
+An entrypoint script or wrapper that <code>exec</code>s the real app is fine (the app becomes PID 1 directly). But if the wrapper must <em>stay</em> as PID 1 (to set up something, or run several processes), it has to: (a) install handlers for SIGTERM/SIGINT that forward the signal to the child's process group, so <code>docker stop</code> actually reaches the app instead of being ignored (PID 1 has no default signal dispositions &mdash; unhandled SIGTERM to PID 1 does nothing); (b) reap zombies via a SIGCHLD handler or a <code>waitpid(-1, ..., WNOHANG)</code> loop, since re-parented orphans land on PID 1; (c) exit with the child's status so the container's exit code is meaningful. The robust move is to not write this yourself &mdash; use <code>tini</code> as the entrypoint (or <code>docker run --init</code>, which injects <code>tini</code>), which does exactly signal-forwarding + reaping in ~200 lines of audited C, and <code>exec</code> your app so it's a direct child.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:fork-exec-wait -->
+
+<!-- TOPIC:linux:signals -->
+<section class="view topic" id="v-linux-signals" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>Signals &amp; Signal Handlers</h1>
+<p class="subtitle">Asynchronous notifications with a tiny, treacherous execution environment.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What a signal is</h3>
+<p>An asynchronous notification delivered to a process (or thread). Each has a default action:
+terminate (<code>SIGTERM</code>, <code>SIGINT</code>), terminate + core dump (<code>SIGSEGV</code>, <code>SIGABRT</code>),
+ignore (<code>SIGCHLD</code> by default action is ignore-ish), stop (<code>SIGSTOP</code>), continue
+(<code>SIGCONT</code>). You can install a handler for most; <code>SIGKILL</code> and <code>SIGSTOP</code> can't be
+caught, blocked, or ignored.</p>
+
+<h3>Handlers run in a hostile environment</h3>
+<ul>
+<li>A handler can interrupt the program <em>anywhere</em> &mdash; mid-<code>malloc</code>, mid-<code>printf</code>.</li>
+<li>You may only call <strong>async-signal-safe</strong> functions from a handler (a short whitelist: <code>write</code>, <code>_exit</code>, <code>sig_atomic_t</code> assignments, most raw syscalls). <strong>Not</strong> <code>malloc</code>, <code>printf</code>, most of libc, or anything that takes a lock &mdash; risk of deadlock/corruption.</li>
+<li>Shared state: only touch a <code>volatile sig_atomic_t</code> flag (or a lock-free atomic). The main loop checks the flag.</li>
+</ul>
+
+<h3>The safe patterns</h3>
+<ul>
+<li><strong>Flag + main loop</strong>: handler sets <code>volatile sig_atomic_t stop = 1;</code>; the event loop notices and shuts down cleanly.</li>
+<li><strong>Self-pipe</strong>: handler <code>write(1 byte)</code> to a pipe; the pipe's read end is in your <code>select</code>/<code>epoll</code> set, so signal delivery becomes a normal readable-fd event.</li>
+<li><strong><code>signalfd</code></strong> (Linux): read signals as bytes from an fd &mdash; no handler at all, integrates with epoll.</li>
+</ul>
+
+<h3>Interrupted syscalls</h3>
+<p>A blocking syscall interrupted by a signal returns <code>-1</code> / <code>EINTR</code>. Either install the
+handler with <code>SA_RESTART</code> (kernel auto-restarts many syscalls) or wrap every blocking call
+in a retry loop. Note <code>SA_RESTART</code> doesn't cover everything (<code>select</code>, <code>poll</code>,
+certain timeouts).</p>
+
+<h3><code>SIGCHLD</code></h3>
+<p>Sent when a child stops or exits. Install a handler that <code>waitpid(-1, &amp;st, WNOHANG)</code> in a
+loop to reap all available children (signals coalesce &mdash; two children exiting may deliver one
+<code>SIGCHLD</code>).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Signals: async notifications; default = terminate / core / ignore / stop / cont. <code>SIGKILL</code>/<code>SIGSTOP</code> uncatchable.</li>
+<li>In a handler: only <strong>async-signal-safe</strong> calls (<code>write</code>, <code>_exit</code>, raw syscalls, <code>sig_atomic_t</code>). No <code>malloc</code>/<code>printf</code>/locks.</li>
+<li>Communicate to main code via <code>volatile sig_atomic_t</code> flag, or a self-pipe, or <code>signalfd</code>.</li>
+<li>Blocking syscall + signal &rarr; <code>EINTR</code>: use <code>SA_RESTART</code> or retry loops (SA_RESTART doesn't cover <code>select</code>/<code>poll</code>).</li>
+<li>Use <code>sigaction</code>, not <code>signal()</code> (portable, defined semantics, <code>SA_RESTART</code>/<code>SA_SIGINFO</code>).</li>
+<li>Block signals with <code>sigprocmask</code>/<code>pthread_sigmask</code> around critical regions; deliver to one dedicated thread.</li>
+<li><code>SIGCHLD</code> handler: <code>while (waitpid(-1,&amp;st,WNOHANG) &gt; 0);</code> &mdash; signals coalesce.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Which two signals cannot be caught or ignored?</dt>
+<dd><code>SIGKILL</code> (9) and <code>SIGSTOP</code>.</dd>
+<dt>Why can't you call <code>printf</code> from a signal handler?</dt>
+<dd>The handler may have interrupted the main program <em>inside</em> <code>printf</code> (or <code>malloc</code>), which holds an internal lock. Re-entering it deadlocks or corrupts state. Only async-signal-safe functions (like <code>write</code>) are guaranteed re-entrant.</dd>
+<dt>What's the safe way to shut down a server on SIGTERM?</dt>
+<dd>The handler sets a <code>volatile sig_atomic_t</code> flag (or writes a byte to a self-pipe). The main loop sees it, stops accepting new work, drains in-flight requests, and exits &mdash; all the real logic runs in normal code, not the handler.</dd>
+<dt>What is <code>EINTR</code> and how do you deal with it?</dt>
+<dd>A blocking syscall was interrupted by a signal before completing, so it returns &minus;1 with <code>errno == EINTR</code>. Either register handlers with <code>SA_RESTART</code> (the kernel restarts many such calls automatically) or wrap the call in <code>do { r = call(); } while (r &lt; 0 &amp;&amp; errno == EINTR);</code>.</dd>
+<dt>Why loop <code>waitpid</code> with <code>WNOHANG</code> in a SIGCHLD handler?</dt>
+<dd>Signals don't queue &mdash; if three children exit close together you may get only one <code>SIGCHLD</code>. Looping <code>waitpid(-1, ..., WNOHANG)</code> until it returns 0 or &minus;1 reaps all of them.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What signal does Ctrl-C send?</summary><div class="answer-box">
+SIGINT (2), to the terminal's foreground process group.
+</div></details>
+<details class="answer-reveal"><summary>Which function should you use to install handlers, <code>signal()</code> or <code>sigaction()</code>?</summary><div class="answer-box">
+<code>sigaction()</code> &mdash; portable, well-defined semantics, and lets you set <code>SA_RESTART</code>, <code>SA_SIGINFO</code>, and a mask.
+</div></details>
+<details class="answer-reveal"><summary>What type must a variable shared between a handler and main code be?</summary><div class="answer-box">
+<code>volatile sig_atomic_t</code> (or a proper lock-free atomic).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Describe the self-pipe trick and why it exists.</summary><div class="answer-box">
+Create a pipe, set both ends non-blocking, add the read end to your <code>select</code>/<code>epoll</code> set. The signal handler does nothing but <code>write(pipe_wr, "x", 1)</code> (async-signal-safe). Now a signal shows up as a readable fd in your event loop, which you handle in normal code alongside sockets &mdash; no race between "check flag" and "block in select" (the classic <code>pselect</code>/<code>ppoll</code> problem), and no unsafe work in the handler. <code>signalfd</code> is the modern Linux replacement.
+</div></details>
+<details class="answer-reveal"><summary>In a multithreaded program, which thread runs a signal handler, and how do you control it?</summary><div class="answer-box">
+For a process-directed signal, the kernel picks an arbitrary thread that doesn't have it blocked. To make it deterministic: block the signal in <em>all</em> threads (<code>pthread_sigmask</code> at startup, before creating threads so they inherit the mask), then have one dedicated thread call <code>sigwait()</code>/<code>sigwaitinfo()</code> (or read a <code>signalfd</code>) to handle signals synchronously in normal code. This avoids the async-signal-safety minefield entirely.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is <code>pselect</code>/<code>ppoll</code>'s atomic signal-mask argument necessary, and what race does it close?</summary><div class="answer-box">
+The naive pattern is: block SIGTERM, check <code>if (!got_signal)</code>, then <code>select()</code> (unblocking SIGTERM so it can interrupt the wait). The race: a signal delivered <em>after</em> the check but <em>before</em> <code>select</code> blocks sets the flag and returns from its handler, but <code>select</code> then blocks forever &mdash; the wakeup was lost. <code>pselect(..., &amp;sigmask)</code> takes a signal mask and <em>atomically</em>: replaces the mask (unblocking SIGTERM), waits, and restores the mask on return &mdash; as a single uninterruptible operation. So there's no window: if the signal arrives at any point, either it's still blocked (pending, and <code>pselect</code> returns immediately once unblocked) or <code>pselect</code> is already waiting and gets interrupted. The self-pipe / <code>signalfd</code> approaches sidestep the whole problem by turning the signal into a pipe write that the ordinary (already-blocking-on-a-fd) event loop notices &mdash; which is why they're now preferred over <code>pselect</code> gymnastics.
+</div></details>
+<details class="answer-reveal"><summary>What exactly makes a function "async-signal-safe", and why is <code>malloc</code> not one despite "just bumping a pointer" sometimes?</summary><div class="answer-box">
+Async-signal-safe means the function is either fully reentrant or the signal can't interrupt it in a state that a second concurrent invocation would corrupt &mdash; formally, POSIX publishes an explicit list, and the property must hold for <em>every</em> code path. <code>malloc</code> fails because its fast path still manipulates shared allocator data structures (free lists, arena bins, size-class caches) protected by a lock; if a signal arrives while the main thread holds that lock and the handler calls <code>malloc</code>, the handler's <code>malloc</code> either deadlocks waiting for a lock its own thread holds, or (in a lock-free arena) observes a half-updated free list and corrupts the heap. The occasional "just bump a pointer" case (allocating from a thread cache that happens to have a free chunk) doesn't help &mdash; safety must be guaranteed unconditionally, and you can't know which path you'll hit. The same reasoning rules out <code>printf</code> (stdio buffer + lock), <code>syslog</code>, <code>getenv</code> after <code>setenv</code>, and anything using <code>errno</code> without saving/restoring it. The safe set is basically raw syscalls plus a handful of string/`str`-free helpers.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:signals -->
+
+<!-- TOPIC:linux:pipes-fifos -->
+<section class="view topic" id="v-linux-pipes-fifos" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>Pipes, FIFOs &amp; socketpairs</h1>
+<p class="subtitle">Kernel byte channels between processes &mdash; and the SIGPIPE that catches everyone once.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Anonymous pipe</h3>
+<ul>
+<li><code>pipe(fds)</code> &rarr; <code>fds[0]</code> read end, <code>fds[1]</code> write end. Unidirectional byte stream, in-kernel buffer (default 64&thinsp;KB, tunable via <code>fcntl(F_SETPIPE_SZ)</code>).</li>
+<li>Only useful between processes that share the fds &mdash; i.e. related via <code>fork()</code>. The shell's <code>|</code>.</li>
+<li>Each process should close the ends it doesn't use, or EOF/SIGPIPE semantics break (see below).</li>
+</ul>
+
+<h3>The two end-of-stream behaviours</h3>
+<ul>
+<li><strong>Reader sees EOF</strong> (<code>read</code> returns 0) only when <em>all</em> write ends are closed. If the writing process forgot to close its copy of <code>fds[1]</code>, the reader blocks forever.</li>
+<li><strong>Writer on a pipe with no readers</strong> gets <code>SIGPIPE</code> (default: terminate). If you ignore/handle SIGPIPE, <code>write</code> returns <code>-1</code>/<code>EPIPE</code>. Network servers routinely <code>signal(SIGPIPE, SIG_IGN)</code> and check <code>EPIPE</code>.</li>
+</ul>
+
+<h3>Atomicity</h3>
+<p>Writes of up to <code>PIPE_BUF</code> (&ge; 512, usually 4096) bytes are atomic &mdash; they won't
+interleave with other writers' data. Larger writes can be split and interleaved.</p>
+
+<h3>FIFO (named pipe)</h3>
+<p><code>mkfifo(path)</code> creates a pipe with a filesystem name, so <em>unrelated</em> processes can
+connect by opening the path. <code>open</code> for read blocks until a writer opens it (and vice
+versa) &mdash; a rendezvous. Same byte-stream, SIGPIPE, and atomicity rules as anonymous pipes.</p>
+
+<h3>socketpair</h3>
+<p><code>socketpair(AF_UNIX, SOCK_STREAM, 0, fds)</code> &rarr; a <strong>bidirectional</strong> connected pair
+(both ends read <em>and</em> write). Also supports datagram mode (message boundaries) and, uniquely,
+<strong>passing file descriptors and credentials</strong> via <code>sendmsg</code>/<code>SCM_RIGHTS</code>. The
+go-to for a parent&harr;child two-way channel.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>pipe()</code>: <code>[0]</code> read, <code>[1]</code> write, unidirectional, ~64&thinsp;KB buffer, related processes only.</li>
+<li>Reader gets EOF only when <strong>all</strong> write ends are closed &rarr; close unused ends religiously.</li>
+<li>Writing to a pipe with no readers &rarr; <code>SIGPIPE</code> (kills you) or <code>EPIPE</code> if ignored. Servers <code>SIG_IGN</code> it.</li>
+<li>Writes &le; <code>PIPE_BUF</code> (~4&thinsp;KB) are atomic; larger can interleave/split.</li>
+<li><code>mkfifo</code>: named pipe for unrelated processes; <code>open</code> blocks for a rendezvous.</li>
+<li><code>socketpair(AF_UNIX)</code>: bidirectional, stream or datagram, can pass fds (<code>SCM_RIGHTS</code>) &amp; peer creds.</li>
+<li>Full pipe &rarr; writer blocks (backpressure); empty pipe &rarr; reader blocks. Set <code>O_NONBLOCK</code> for <code>EAGAIN</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>When does a pipe reader see EOF?</dt>
+<dd>Only after every write-end file descriptor is closed &mdash; across all processes. A common bug: a child inherits the parent's copy of the write end and doesn't close it, so the reader never gets EOF.</dd>
+<dt>What happens when you write to a pipe whose read end is closed?</dt>
+<dd>The kernel sends <code>SIGPIPE</code>, which by default terminates the process. If you ignore or handle SIGPIPE, the <code>write</code> instead returns &minus;1 with <code>errno == EPIPE</code>.</dd>
+<dt>Anonymous pipe vs FIFO?</dt>
+<dd>An anonymous pipe has no name; it's shared by passing the fds (so only related processes). A FIFO (<code>mkfifo</code>) has a pathname, so any process that can open that path can connect &mdash; related or not.</dd>
+<dt>Why choose a <code>socketpair</code> over a pair of pipes for a two-way channel?</dt>
+<dd>One <code>socketpair</code> gives you a full-duplex connection (each fd is read/write), versus needing two pipes for bidirectional communication. It also supports datagram framing and can carry file descriptors and credentials between the two ends.</dd>
+<dt>Is a large <code>write()</code> to a pipe guaranteed not to interleave with another writer?</dt>
+<dd>Only up to <code>PIPE_BUF</code> bytes (at least 512, typically 4096). Beyond that the kernel may split the write and another process's data can appear in between. Keep messages small or add your own framing/locking.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which index of <code>pipe(fds)</code> is the read end?</summary><div class="answer-box">
+<code>fds[0]</code>. <code>fds[1]</code> is the write end.
+</div></details>
+<details class="answer-reveal"><summary>What creates a named pipe?</summary><div class="answer-box">
+<code>mkfifo(path, mode)</code> (or the <code>mkfifo</code> shell command).
+</div></details>
+<details class="answer-reveal"><summary>How do most network servers avoid dying from SIGPIPE?</summary><div class="answer-box">
+<code>signal(SIGPIPE, SIG_IGN)</code> (or <code>MSG_NOSIGNAL</code> on <code>send</code>), then handle <code>EPIPE</code> from <code>write</code>/<code>send</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A parent creates a pipe, forks, the child <code>exec</code>s a filter, and the parent's <code>read</code> from the pipe hangs forever. Likely cause?</summary><div class="answer-box">
+The parent didn't close <em>its own</em> copy of the pipe's write end after forking. As long as any write-end fd is open anywhere (including in the parent itself), the reader never sees EOF. Both sides must close the ends they don't use immediately after <code>fork</code> (and mark them <code>O_CLOEXEC</code> so they don't survive the child's <code>exec</code> either).
+</div></details>
+<details class="answer-reveal"><summary>Set up a bidirectional parent&ndash;child channel and explain the fd bookkeeping.</summary><div class="answer-box">
+<code>socketpair(AF_UNIX, SOCK_STREAM, 0, sv)</code> gives <code>sv[0]</code>, <code>sv[1]</code>. <code>fork()</code>. Parent: <code>close(sv[1])</code>, use <code>sv[0]</code> for both reading and writing. Child: <code>close(sv[0])</code>, use <code>sv[1]</code>. Each end is full-duplex, so no second channel is needed. When one side closes its fd, the other's <code>read</code> returns 0 (EOF) and its <code>write</code> gets EPIPE &mdash; clean teardown.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does <code>splice()</code> / <code>vmsplice()</code> achieve zero-copy pipe I/O, and what's the constraint?</summary><div class="answer-box">
+A Linux pipe is internally a ring of page references, not a byte array copied twice. <code>splice(fd_in, fd_out, len)</code> moves data between a file/socket and a pipe by <em>transferring page ownership</em> &mdash; the kernel attaches the source's pages to the pipe buffer (or vice versa) without copying the bytes through userspace. So <code>splice(socket &rarr; pipe)</code> then <code>splice(pipe &rarr; file)</code> streams a socket to disk with no user buffer and no copy. <code>vmsplice</code> "gifts" user pages into a pipe similarly. Constraints/caveats: one end of a <code>splice</code> must be a pipe (it's the page-container); true zero-copy only happens when pages can be moved rather than copied (source must be page-cache-backed and aligned; sockets support it); with <code>vmsplice(SPLICE_F_GIFT)</code> you must not touch the gifted user pages again until they've been consumed, or you get a data race with the kernel (a known footgun). <code>sendfile</code> is the simpler file&rarr;socket special case built on the same machinery. <code>io_uring</code> now offers registered-buffer zero-copy sends that avoid the pipe intermediary entirely.
+</div></details>
+<details class="answer-reveal"><summary>Explain the deadlock in a naive "write request, read response" over a single pipe pair, and the fix.</summary><div class="answer-box">
+Two processes each write a large message to the other then read the reply, over pipes with finite (~64&thinsp;KB) buffers. If both messages exceed the buffer: process A's <code>write</code> fills the pipe and blocks waiting for B to read; B's <code>write</code> fills <em>its</em> pipe and blocks waiting for A to read &mdash; but neither ever gets to its <code>read</code>. Classic buffer deadlock. Fixes: (1) bound message size below <code>PIPE_BUF</code> or the buffer size; (2) use non-blocking fds and an event loop (<code>poll</code> both directions, drain readable ends while writing writable ends); (3) dedicated reader/writer threads per direction; (4) a protocol where one side fully sends before the other replies (strict request/response with a size prefix so the reader knows when it's done). The same hazard appears with <code>popen</code>-style two-way filters and is why <code>popen</code> is one-directional and libraries like Python's <code>subprocess.communicate()</code> use threads/select internally.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:pipes-fifos -->
+
+<!-- TOPIC:linux:io-multiplexing -->
+<section class="view topic" id="v-linux-io-multiplexing" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>I/O Multiplexing: select / poll / epoll</h1>
+<p class="subtitle">Watching thousands of file descriptors from one thread &mdash; the heart of every async server.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The problem</h3>
+<p>You have N sockets and want to act on whichever becomes readable/writable, without a thread
+per socket. You need the kernel to tell you "which of these fds are ready".</p>
+
+<h3>The three APIs</h3>
+<table>
+<tr><th></th><th>select</th><th>poll</th><th>epoll (Linux)</th></tr>
+<tr><td>fd limit</td><td><code>FD_SETSIZE</code> (~1024)</td><td>none</td><td>none</td></tr>
+<tr><td>Per-call cost</td><td>O(n) &mdash; copy + scan the whole set every call</td><td>O(n) &mdash; pass the whole array every call</td><td>O(1) to wait; O(active) results. Interest set kept in the kernel.</td></tr>
+<tr><td>Portable</td><td>everywhere</td><td>POSIX</td><td>Linux only (BSD/macOS: <code>kqueue</code>; Windows: IOCP)</td></tr>
+</table>
+<p><code>epoll</code>: <code>epoll_create1()</code>, <code>epoll_ctl(ADD/MOD/DEL)</code> to manage the interest set once,
+then <code>epoll_wait()</code> returns only the ready fds. This is why it scales to 100k+ connections.</p>
+
+<h3>Readiness vs completion</h3>
+<p>select/poll/epoll are <strong>readiness</strong> models: "the fd won't block if you act now" &mdash; you
+still do the <code>read</code>/<code>write</code>. Windows IOCP and Linux <code>io_uring</code> are
+<strong>completion</strong> models: "your read already finished, here's the data". Completion models
+avoid the extra syscall and suit true async disk I/O (which has no "readiness").</p>
+
+<h3>Level- vs edge-triggered</h3>
+<ul>
+<li><strong>Level-triggered</strong> (default): reports an fd as ready <em>while</em> there's data. You can read part of it and be told again. Forgiving.</li>
+<li><strong>Edge-triggered</strong> (<code>EPOLLET</code>): reports only on the <em>transition</em> to ready. You <strong>must</strong> drain the fd (loop <code>read</code>/<code>write</code> until <code>EAGAIN</code>) or you'll never be notified again for that data. Fewer syscalls; easy to get wrong.</li>
+</ul>
+
+<h3>Also useful</h3>
+<p><code>EPOLLONESHOT</code> (re-arm explicitly &mdash; good for thread pools), <code>eventfd</code>/<code>timerfd</code>/<code>signalfd</code>
+to fold timers and signals into the same loop, <code>EPOLLEXCLUSIVE</code> to avoid thundering herd
+on a shared listener.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>select</code>: portable, <code>FD_SETSIZE</code> cap (~1024), O(n) rebuild+scan every call.</li>
+<li><code>poll</code>: no fd cap, still O(n) array passed each call.</li>
+<li><code>epoll</code>: kernel keeps the interest set; <code>epoll_wait</code> returns only ready fds; scales to 100k+. Linux (macOS/BSD = <code>kqueue</code>, Windows = IOCP).</li>
+<li>All three are <strong>readiness</strong> models (you still call read/write). <code>io_uring</code>/IOCP are <strong>completion</strong> models.</li>
+<li>Level-triggered: notified while data remains (safe). Edge-triggered (<code>EPOLLET</code>): notified on transition only &rarr; must loop read/write to <code>EAGAIN</code>.</li>
+<li>Non-blocking fds are mandatory with edge-triggered; recommended everywhere.</li>
+<li>Fold signals/timers into the loop with <code>signalfd</code>/<code>timerfd</code>/<code>eventfd</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does <code>epoll</code> scale better than <code>select</code>/<code>poll</code>?</dt>
+<dd><code>select</code>/<code>poll</code> pass the entire fd set to the kernel on every call and the kernel scans all of them &mdash; O(n) per wait. <code>epoll</code> registers the interest set once with <code>epoll_ctl</code>; <code>epoll_wait</code> then just returns the fds that became ready, so the per-call cost is proportional to the number of <em>active</em> connections, not total.</dd>
+<dt>Readiness vs completion notification?</dt>
+<dd>Readiness (select/poll/epoll/kqueue): the kernel tells you an fd can be operated on without blocking, and you then do the <code>read</code>/<code>write</code>. Completion (IOCP, <code>io_uring</code>): you submit the operation and the kernel notifies you when it's <em>done</em>, with the result &mdash; no second syscall, and it works for disk I/O which has no meaningful "ready" state.</dd>
+<dt>Level-triggered vs edge-triggered epoll?</dt>
+<dd>Level-triggered keeps reporting an fd as ready as long as unread data exists. Edge-triggered reports only when the state <em>changes</em> to ready, so you must consume all available data (loop until <code>EAGAIN</code>) or you'll miss the rest until new data arrives.</dd>
+<dt>Why must fds be non-blocking with edge-triggered epoll?</dt>
+<dd>Because you must loop <code>read</code>/<code>write</code> until it returns <code>EAGAIN</code> to fully drain the fd. With a blocking fd, the loop's final call (when no data is left) would block the whole event-loop thread.</dd>
+<dt>What's the portable alternative to epoll on macOS and Windows?</dt>
+<dd><code>kqueue</code> on macOS/BSD (similar readiness model, also handles timers/signals/file events), and I/O Completion Ports (IOCP) on Windows (a completion model). Cross-platform libraries (libuv, libevent, Boost.Asio) abstract over all of them.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Roughly what fd count does <code>select</code> break down at?</summary><div class="answer-box">
+Around 1024 (<code>FD_SETSIZE</code>), and it degrades well before that due to the O(n) rescans.
+</div></details>
+<details class="answer-reveal"><summary>Which call registers an fd with an epoll instance?</summary><div class="answer-box">
+<code>epoll_ctl(epfd, EPOLL_CTL_ADD, fd, &amp;event)</code>.
+</div></details>
+<details class="answer-reveal"><summary>Is epoll a readiness or completion API?</summary><div class="answer-box">
+Readiness &mdash; it tells you an fd is ready; you still perform the read/write.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>An edge-triggered epoll server occasionally "loses" data on a busy connection. Bug?</summary><div class="answer-box">
+The handler does a single <code>read()</code> per <code>EPOLLIN</code> event and returns. With edge-triggered mode, if more data was already in the socket buffer, no new event fires until <em>additional</em> data arrives (or never, if the peer is done sending) &mdash; the tail sits unread. Fix: loop <code>read()</code> until it returns <code>EAGAIN</code>/<code>EWOULDBLOCK</code> (and do the same for <code>write()</code> on <code>EPOLLOUT</code>). The fd must be non-blocking.
+</div></details>
+<details class="answer-reveal"><summary>Multiple worker threads share one epoll fd watching a listening socket; on each connection they all wake. Fix?</summary><div class="answer-box">
+Classic thundering herd. Options: add <code>EPOLLEXCLUSIVE</code> when registering the listener so the kernel wakes only one waiter per event; or use <code>EPOLLONESHOT</code> and re-arm from the thread that handled it; or give each worker its own epoll instance and use <code>SO_REUSEPORT</code> so the kernel load-balances incoming connections across per-worker listeners (no shared epoll at all).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is <code>io_uring</code> a step beyond epoll, and what classes of work does it unlock?</summary><div class="answer-box">
+epoll still requires one syscall to wait and then one or more syscalls (<code>read</code>/<code>write</code>/<code>accept</code>) per ready fd &mdash; syscall overhead grows with connection activity, worsened by Spectre/Meltdown mitigations. <code>io_uring</code> uses two shared ring buffers (submission + completion) mapped between user and kernel: the app writes many operation descriptors into the SQ and reads many results from the CQ, so a batch of I/O costs <em>one</em> <code>io_uring_enter</code> syscall &mdash; or zero with <code>SQPOLL</code> (a kernel thread polls the SQ). Crucially it's a true <em>completion</em> model that covers operations epoll never could: buffered and <code>O_DIRECT</code> <strong>disk reads/writes</strong> (which have no "readiness"), <code>fsync</code>, <code>openat</code>, <code>statx</code>, <code>accept</code>, <code>connect</code>, <code>send</code>/<code>recv</code> with registered buffers for zero-copy, and <em>linked</em> operations (do B only if A succeeds) and timeouts as SQEs. So a single loop can drive network + disk + filesystem-metadata work with minimal syscalls. Costs: newer/complex API (use liburing), a history of security CVEs (some hardened environments disable it), and completion-model programming is a bigger mental shift than readiness.
+</div></details>
+<details class="answer-reveal"><summary>Explain the epoll "stale fd after close" hazard in a multithreaded reactor.</summary><div class="answer-box">
+epoll registers an fd by number, but internally associates the interest with the underlying <em>open file description</em>. If thread A closes fd 7 and thread B (or the same thread later) opens a new socket that also gets fd number 7, a pending <code>epoll_wait</code> result or a not-yet-processed event for "fd 7" now refers to the wrong object &mdash; you read/write the new connection thinking it's the old one, or you <code>epoll_ctl(DEL)</code> the wrong registration. It gets subtler: if the fd was <code>dup</code>'d, <code>close</code>ing one copy does <em>not</em> remove it from epoll (the description is still open), so events keep firing for a "closed" fd. Mitigations: never close an fd that another thread might still be handling for this epoll loop &mdash; use a per-connection state object with a refcount / generation number, mark it "closing", let the loop drain outstanding events, then <code>epoll_ctl(DEL)</code> and close; or serialise all epoll_ctl + close operations onto the loop thread; or use <code>EPOLLONESHOT</code> so an fd can't have concurrent events in flight. libuv/libevent encapsulate exactly this bookkeeping.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:io-multiplexing -->
+
+<!-- TOPIC:linux:mmap-shm -->
+<section class="view topic" id="v-linux-mmap-shm" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>mmap &amp; Shared Memory</h1>
+<p class="subtitle">Mapping files and memory into the address space &mdash; for speed, sharing, and zero-copy.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3><code>mmap</code> flavours</h3>
+<pre><code>mmap(addr, len, prot, flags, fd, offset)</code></pre>
+<table>
+<tr><th>flags</th><th>Effect</th></tr>
+<tr><td><code>MAP_PRIVATE</code> + fd</td><td>Copy-on-write view of a file. Writes stay in your process, never hit disk. Used for executables, shared libraries.</td></tr>
+<tr><td><code>MAP_SHARED</code> + fd</td><td>Writes go through the page cache to the file and are visible to other mappers. File-backed shared memory.</td></tr>
+<tr><td><code>MAP_ANONYMOUS</code> + <code>MAP_PRIVATE</code></td><td>Zero-filled memory not backed by a file &mdash; what <code>malloc</code> uses for big allocations.</td></tr>
+<tr><td><code>MAP_ANONYMOUS</code> + <code>MAP_SHARED</code></td><td>Anonymous shared memory &mdash; inherited across <code>fork</code>, for parent/child sharing.</td></tr>
+</table>
+<p><code>prot</code>: <code>PROT_READ</code>/<code>WRITE</code>/<code>EXEC</code>. <code>mprotect</code> changes it later (guard pages,
+W^X). <code>munmap</code> to release; <code>msync</code> to flush a <code>MAP_SHARED</code> mapping to disk.</p>
+
+<h3>File I/O via mmap</h3>
+<ul>
+<li>Reading a file becomes dereferencing pointers; the kernel faults pages in on demand and caches them &mdash; no <code>read</code> syscall per chunk, no double-buffering.</li>
+<li>Great for random access over a large file, or sharing a read-only dataset between processes (one copy in RAM).</li>
+<li>Downsides: a fault on a network filesystem or a truncated file &rarr; <code>SIGBUS</code>; page-fault latency is unpredictable; not faster than a big sequential <code>read</code> for a linear scan.</li>
+</ul>
+
+<h3>POSIX shared memory between unrelated processes</h3>
+<pre><code>fd = shm_open("/myseg", O_CREAT|O_RDWR, 0600);
+ftruncate(fd, SIZE);
+p = mmap(NULL, SIZE, PROT_READ|PROT_WRITE, MAP_SHARED, fd, 0);
+<span class="c">// ... use *p ...   synchronise with a process-shared mutex/semaphore IN the segment</span>
+shm_unlink("/myseg");</code></pre>
+<p>(Older SysV: <code>shmget</code>/<code>shmat</code>. Linux also has <code>memfd_create</code> for an anonymous
+file you can pass by fd.)</p>
+
+<h3>Huge pages</h3>
+<p><code>MAP_HUGETLB</code> or transparent huge pages back the mapping with 2&thinsp;MB pages &mdash; fewer TLB
+entries per GB, big win for large in-memory data (databases, JVM heaps).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>MAP_PRIVATE</code>+fd = COW file view (exe/libs). <code>MAP_SHARED</code>+fd = writes go to the file + other mappers.</li>
+<li><code>MAP_ANONYMOUS|MAP_PRIVATE</code> = zeroed memory (big <code>malloc</code>). <code>MAP_ANONYMOUS|MAP_SHARED</code> = share across <code>fork</code>.</li>
+<li><code>mmap</code> a file &rarr; access as memory, demand-paged, page-cache-backed, no per-chunk syscall.</li>
+<li>Fault on truncated/short file or NFS error &rarr; <code>SIGBUS</code>. Linear scans: plain <code>read</code> is as fast.</li>
+<li>Unrelated processes: <code>shm_open</code> + <code>ftruncate</code> + <code>mmap(MAP_SHARED)</code>; sync with a process-shared mutex/sem placed inside the segment; <code>shm_unlink</code> to remove.</li>
+<li><code>msync</code> to flush <code>MAP_SHARED</code>; <code>munmap</code> to release; <code>mprotect</code> to change perms / guard pages.</li>
+<li><code>memfd_create</code> for an anonymous fd-passable buffer; <code>MAP_HUGETLB</code> for 2&thinsp;MB pages.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt><code>MAP_PRIVATE</code> vs <code>MAP_SHARED</code> for a file mapping?</dt>
+<dd><code>MAP_PRIVATE</code> is copy-on-write: your writes create private copies and never reach the file or other processes. <code>MAP_SHARED</code>: writes go through the page cache to the file and are visible to everyone else mapping it.</dd>
+<dt>How does two processes sharing an <code>mmap</code>'d region synchronise access?</dt>
+<dd>They must place a synchronisation primitive <em>inside</em> the shared region &mdash; a mutex created with <code>PTHREAD_PROCESS_SHARED</code>, or a POSIX unnamed semaphore &mdash; or use a named semaphore. Plain mutexes in each process's private memory don't coordinate anything.</dd>
+<dt>When is <code>mmap</code>'ing a file <em>not</em> a win over <code>read</code>?</dt>
+<dd>For a single linear pass: a large sequential <code>read</code> with readahead is just as fast and has predictable latency, while mmap adds per-page fault overhead and TLB pressure. mmap wins for random access, repeated access, or sharing the data between processes.</dd>
+<dt>What causes <code>SIGBUS</code> on an mmap'd file?</dt>
+<dd>Accessing a page that maps beyond the file's current length (the file was truncated after mapping, or you mapped past EOF), or an I/O error faulting the page in (e.g. a network filesystem going away).</dd>
+<dt>How do two <em>unrelated</em> processes get shared memory?</dt>
+<dd><code>shm_open("/name")</code> to get an fd to a POSIX shared-memory object, <code>ftruncate</code> to size it, then both <code>mmap</code> it with <code>MAP_SHARED</code>. (Or SysV <code>shmget</code>/<code>shmat</code>, or pass a <code>memfd_create</code> fd over a Unix socket.)</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>malloc</code> use <code>mmap</code> for?</summary><div class="answer-box">
+Large allocations &mdash; an anonymous, zero-filled <code>MAP_PRIVATE</code> mapping returned to the program (and unmapped on free).
+</div></details>
+<details class="answer-reveal"><summary>Which flag flushes an <code>mmap</code>'d file's dirty pages to disk?</summary><div class="answer-box">
+Call <code>msync(addr, len, MS_SYNC)</code>.
+</div></details>
+<details class="answer-reveal"><summary>How is a shared library mapped into a process?</summary><div class="answer-box">
+<code>MAP_PRIVATE</code> file mapping &mdash; code pages are shared read-only across processes; any writable data is copy-on-write.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two processes need a lock-free ring buffer in shared memory. Outline the setup.</summary><div class="answer-box">
+Create a POSIX shm object (<code>shm_open</code> + <code>ftruncate</code> to <code>sizeof(header) + N*slotsize</code>), <code>mmap(MAP_SHARED)</code> in both. The header holds atomic <code>head</code>/<code>tail</code> indices (use C11 atomics / <code>__atomic</code> &mdash; they work across the shared mapping since it's the same physical memory). Producer does a release-store to advance <code>tail</code> after writing a slot; consumer does an acquire-load of <code>tail</code> before reading. No mutex needed for SPSC. Pad <code>head</code> and <code>tail</code> to separate cache lines. For MPSC/MPMC add CAS loops or an in-segment <code>PTHREAD_PROCESS_SHARED</code> mutex.
+</div></details>
+<details class="answer-reveal"><summary>Why must a <code>pthread_mutex</code> shared between processes be initialised specially?</summary><div class="answer-box">
+By default a mutex only works within one address space (it may store thread ids or point to per-process data). You must <code>pthread_mutexattr_setpshared(&amp;attr, PTHREAD_PROCESS_SHARED)</code> and place the mutex object itself in the shared memory segment (not a copy in each process). Also consider <code>PTHREAD_MUTEX_ROBUST</code> so that if the process holding it crashes, the next acquirer gets <code>EOWNERDEAD</code> and can recover rather than deadlocking forever.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how <code>mmap(MAP_SHARED)</code> + the page cache gives "free" IPC and persistence, and the coherence guarantees.</summary><div class="answer-box">
+When multiple processes <code>mmap</code> the same file region <code>MAP_SHARED</code>, the kernel maps the <em>same</em> page-cache pages into every process's page tables. A write by one process dirties that shared page; every other mapper sees the change immediately (same physical memory, subject to CPU cache coherence, which x86/ARM provide within a machine). The kernel's writeback thread later flushes dirty pages to the file, so the data also persists across process exits and (with <code>msync</code>/on clean shutdown) across reboots. So one mechanism gives you: shared memory IPC (no copy, no syscall per access), a persistent backing store, and crash-consistency you can tighten with <code>msync</code>. Guarantees/limits: coherence is guaranteed <em>between processes on the same host</em>; it is <em>not</em> coherent with concurrent <code>write()</code> calls to the same file on some systems and definitely not across NFS. Ordering between the shared write and the file being on disk is only what <code>msync</code>/<code>fsync</code> enforce &mdash; a crash can lose or reorder unflushed pages. And there's no notification: readers must poll or you must add a separate signal/eventfd. This pattern underlies LMDB, some message queues, and shared read-only datasets (one RAM copy for N workers).
+</div></details>
+<details class="answer-reveal"><summary>Compare <code>mmap</code>-based file access with <code>read</code>/<code>write</code> for a database storage engine, including the failure modes that pushed some engines away from mmap.</summary><div class="answer-box">
+<strong>Pro-mmap</strong> (LMDB, older MongoDB/MMAPv1, SQLite optional): no user-space buffer pool to build, the OS page cache is the cache, reads are pointer dereferences, and the same pages are shared with other processes for free. <strong>The problems</strong> (documented in "Are You Sure You Want to Use MMAP in Your Database?"): (1) <em>No control over eviction</em> &mdash; the OS may evict a page you're about to need, or keep cold pages, and you can't pin the hot working set; page-fault stalls are unpredictable and invisible to your latency accounting. (2) <em>I/O errors become <code>SIGBUS</code></em> mid-instruction instead of a checkable return value &mdash; hard to handle gracefully; a bad sector can crash the process. (3) <em>No async</em> &mdash; a fault blocks the faulting thread; you can't overlap I/O with compute the way <code>io_uring</code> + a buffer pool can. (4) <em>Dirty-page writeback</em> is on the OS's schedule, not yours, so you lose control over write ordering needed for crash consistency (you end up calling <code>msync</code> constantly, negating the simplicity). (5) <em>Transactional safety</em>: single-copy pages make it hard to do copy-on-write MVCC without your own shadow paging. (6) TLB pressure and, historically, address-space limits on 32-bit. Modern engines (RocksDB, WiredTiger, Postgres) run their own buffer pool over <code>pread</code>/<code>pwrite</code> (or direct I/O + <code>io_uring</code>) precisely to get eviction control, error handling, async, and write scheduling &mdash; accepting the extra code. mmap remains great for read-mostly, single-writer, "let the OS handle it" designs like LMDB.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:mmap-shm -->
+
+<!-- TOPIC:linux:proc-sys -->
+<section class="view topic" id="v-linux-proc-sys" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>/proc, /sys, Environment &amp; Limits</h1>
+<p class="subtitle">The kernel's introspection filesystems, plus the per-process knobs every program inherits.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>procfs</h3>
+<p>A virtual filesystem exposing kernel + process state as files.</p>
+<table>
+<tr><th>Path</th><th>Shows</th></tr>
+<tr><td><code>/proc/PID/status</code>, <code>stat</code></td><td>state, memory (VmRSS), threads, UIDs, signal masks</td></tr>
+<tr><td><code>/proc/PID/fd/</code></td><td>symlinks for every open fd (count them to find leaks)</td></tr>
+<tr><td><code>/proc/PID/maps</code>, <code>smaps</code></td><td>the address-space layout (segments, libs, permissions)</td></tr>
+<tr><td><code>/proc/PID/cmdline</code>, <code>environ</code></td><td>NUL-separated argv / env</td></tr>
+<tr><td><code>/proc/PID/limits</code></td><td>effective rlimits</td></tr>
+<tr><td><code>/proc/meminfo</code>, <code>loadavg</code>, <code>stat</code>, <code>net/*</code></td><td>system-wide stats (what <code>top</code>, <code>free</code>, <code>ss</code> parse)</td></tr>
+<tr><td><code>/proc/sys/*</code></td><td>tunable kernel parameters (same as <code>sysctl</code>)</td></tr>
+</table>
+
+<h3>sysfs</h3>
+<p><code>/sys</code> exposes the device model: buses, drivers, block devices (<code>/sys/block</code>), CPU
+topology and frequency, cgroup controllers (v2 under <code>/sys/fs/cgroup</code>), thermal, power.
+Writable attributes tune drivers/hardware.</p>
+
+<h3>Resource limits</h3>
+<p><code>getrlimit</code>/<code>setrlimit</code> (shell: <code>ulimit</code>) cap per-process resources, each with a
+soft (current) and hard (ceiling) value:</p>
+<ul>
+<li><code>RLIMIT_NOFILE</code> &mdash; open fds (raise for servers).</li>
+<li><code>RLIMIT_NPROC</code> &mdash; processes/threads per user (fork-bomb guard).</li>
+<li><code>RLIMIT_AS</code> / <code>RLIMIT_DATA</code> &mdash; virtual memory.</li>
+<li><code>RLIMIT_CORE</code> &mdash; core-dump size (0 disables dumps).</li>
+<li><code>RLIMIT_STACK</code>, <code>RLIMIT_CPU</code>, <code>RLIMIT_FSIZE</code>.</li>
+</ul>
+<p>cgroups (v2) are the modern, hierarchical way to limit CPU/memory/IO for a group of processes;
+systemd units set them declaratively.</p>
+
+<h3>Environment &amp; argv</h3>
+<p><code>environ</code> / <code>getenv</code>/<code>setenv</code>; inherited across <code>fork</code>, replaced or kept across
+<code>exec</code>. <code>getopt</code>/<code>getopt_long</code> for option parsing. Exit codes: <code>0</code> success,
+1&ndash;125 app-defined, <code>126</code> not executable, <code>127</code> not found, <code>128+n</code> killed by signal <code>n</code>.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>/proc/PID/</code>: <code>status</code>/<code>stat</code> (state, RSS), <code>fd/</code> (open fds &mdash; leak hunting), <code>maps</code>/<code>smaps</code> (address space), <code>cmdline</code>/<code>environ</code>, <code>limits</code>.</li>
+<li><code>/proc/sys/*</code> == <code>sysctl</code> tunables; <code>/proc/meminfo</code>, <code>loadavg</code>, <code>net/*</code> feed <code>top</code>/<code>free</code>/<code>ss</code>.</li>
+<li><code>/sys</code>: device model, block devices, CPU freq/topology, cgroup v2 (<code>/sys/fs/cgroup</code>).</li>
+<li>rlimits (soft/hard) via <code>ulimit</code>/<code>setrlimit</code>: <code>NOFILE</code> (fds), <code>NPROC</code>, <code>AS</code>, <code>CORE</code>, <code>STACK</code>, <code>CPU</code>.</li>
+<li>cgroups v2 for grouped CPU/mem/IO limits (systemd sets them).</li>
+<li>Exit codes: 0 ok, 126 not executable, 127 not found, 128+n signal n.</li>
+<li>Env inherited across <code>fork</code>; kept/replaced across <code>exec</code> (via <code>envp</code>).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How do you see all the file descriptors a running process has open?</dt>
+<dd><code>ls -l /proc/PID/fd</code> (each entry is a symlink to the file/socket/pipe). <code>lsof -p PID</code> is the friendlier front-end. Watch the count over time to spot leaks.</dd>
+<dt>What's the difference between soft and hard resource limits?</dt>
+<dd>The soft limit is the value currently enforced; a process can raise its own soft limit up to the hard limit. Only a privileged process can raise the hard limit. <code>ulimit -Sn</code> / <code>-Hn</code> show them.</dd>
+<dt>How do you change a kernel tunable like <code>net.core.somaxconn</code> at runtime?</dt>
+<dd><code>sysctl -w net.core.somaxconn=1024</code> or <code>echo 1024 &gt; /proc/sys/net/core/somaxconn</code>; persist it in <code>/etc/sysctl.d/</code>.</dd>
+<dt>Where do you read a process's resident memory size?</dt>
+<dd><code>/proc/PID/status</code> (the <code>VmRSS</code> line) or <code>/proc/PID/statm</code> (field 2 &times; page size). <code>/proc/PID/smaps_rollup</code> gives a finer breakdown (PSS, shared/private).</dd>
+<dt>What does exit code 127 from a shell command mean?</dt>
+<dd>"Command not found" &mdash; the shell couldn't locate the executable on <code>$PATH</code>. 126 means it was found but not executable; 128+n means it was killed by signal n.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What kind of filesystem is <code>/proc</code>?</summary><div class="answer-box">
+A virtual (in-memory, kernel-generated) filesystem &mdash; the files don't exist on disk; reading them queries kernel state.
+</div></details>
+<details class="answer-reveal"><summary>Shell command to raise the open-file limit for the current session?</summary><div class="answer-box">
+<code>ulimit -n 65536</code> (up to the hard limit).
+</div></details>
+<details class="answer-reveal"><summary>Where does <code>free</code> get its numbers?</summary><div class="answer-box">
+<code>/proc/meminfo</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A service crashes but produces no core dump. Checklist?</summary><div class="answer-box">
+Check <code>ulimit -c</code> (must be non-zero; systemd units default <code>LimitCORE=</code> and the crash handler to <code>systemd-coredump</code> &mdash; use <code>coredumpctl</code>). Check <code>/proc/sys/kernel/core_pattern</code> (where dumps go / which handler). Ensure the working directory is writable (for the classic <code>core</code> file) and the filesystem has space. <code>RLIMIT_CORE</code> can be raised at runtime with <code>prctl</code>/<code>setrlimit</code> before the crash. Containers often need <code>--ulimit core=-1</code> and a host <code>core_pattern</code> that isn't a pipe to a handler unavailable in the container's mount namespace.
+</div></details>
+<details class="answer-reveal"><summary>How do you find which process is holding a deleted file that's still consuming disk space?</summary><div class="answer-box">
+<code>lsof +L1</code> (files with link count 0 &mdash; unlinked but still open) or <code>lsof | grep deleted</code>. The space is only freed when the last fd closes. Cross-check with <code>ls -l /proc/PID/fd</code> where the symlink target ends in " (deleted)". Restart or signal that process to release the space, or truncate via <code>/proc/PID/fd/N</code> if safe.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how reading <code>/proc/PID/maps</code> plus <code>/proc/PID/smaps</code> lets you diagnose a memory bloat that <code>RSS</code> alone can't.</summary><div class="answer-box">
+<code>RSS</code> double-counts shared pages (a library mapped by 100 processes shows its full size in each), so summing RSS across processes overstates real usage, and a single process's RSS doesn't tell you <em>what</em> the memory is. <code>/proc/PID/maps</code> lists every mapping: address range, permissions, offset, and the backing file or <code>[heap]</code>/<code>[stack]</code>/<code>[anon]</code>. <code>/proc/PID/smaps</code> breaks each mapping down further: <code>Rss</code>, <code>Pss</code> (proportional set size &mdash; shared pages divided by sharer count, so PSS sums correctly across processes), <code>Private_Dirty</code> (pages only this process has modified &mdash; the true incremental cost, and what survives if others exit), <code>Shared_Clean</code>, <code>Swap</code>, and whether the region is THP-backed or locked. Diagnosis workflow: if <code>Private_Dirty</code> on <code>[heap]</code> or anon mappings is growing, it's a real leak/growth in your allocator; if it's large <code>Shared_Clean</code> in file mappings, it's just cache and cheap; huge <code>[stack]</code> per thread &times; many threads is a thread-count problem; a mapping with <code>rw-p</code> and a filename plus large <code>Private_Dirty</code> is copy-on-write pages from a big <code>fork</code>. <code>smaps_rollup</code> gives the whole-process totals (PSS, Private_Dirty) in one read for monitoring.
+</div></details>
+<details class="answer-reveal"><summary>How do cgroup v2 memory limits interact with the page cache and the OOM killer, differently from an <code>RLIMIT_AS</code>?</summary><div class="answer-box">
+<code>RLIMIT_AS</code> caps a single process's <em>virtual</em> address space at allocation time &mdash; it fails <code>mmap</code>/<code>brk</code> with <code>ENOMEM</code>, is per-process, doesn't understand shared memory or the page cache, and is a blunt instrument (a program that maps a lot but touches little still hits it). <strong>cgroup v2 <code>memory.max</code></strong> limits the <em>resident</em> memory charged to a group of processes, and crucially it charges the <em>page cache</em> pages that group faults in, plus anonymous memory, kernel memory, socket buffers, and tmpfs. When the group approaches the limit the kernel first reclaims that cgroup's own page cache and does per-cgroup swap; only if it still can't stay under the limit does it invoke the <strong>cgroup OOM killer</strong>, which picks a victim <em>within that cgroup</em> (so a memory-hungry job kills itself, not an innocent system process). <code>memory.high</code> is a softer throttle (reclaim + slow the group down rather than kill), and <code>memory.low</code>/<code>memory.min</code> protect a group's working set from reclaim. PSI (<code>memory.pressure</code>) exposes stall time so you can react before the kill. This is why containers/systemd services use cgroup limits: they contain blast radius, account shared/cache memory correctly, and give graceful backpressure instead of a hard allocation failure that most code handles badly.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:proc-sys -->
+
+<!-- TOPIC:linux:gdb-strace -->
+<section class="view topic" id="v-linux-gdb-strace" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>Debugging: gdb, strace, ltrace</h1>
+<p class="subtitle">Three lenses: source-level state, the kernel boundary, and library calls.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>gdb &mdash; source-level debugging</h3>
+<pre><code>gdb ./prog          gdb -p PID           gdb ./prog core
+(gdb) break main / break file.c:42 / break func if x==0
+(gdb) run &lt;args&gt;  |  continue  |  next  |  step  |  finish
+(gdb) bt / bt full          <span class="c"># backtrace (+ locals)</span>
+(gdb) frame 3 / info locals / print expr / p *ptr@10
+(gdb) watch var             <span class="c"># stop when it changes</span>
+(gdb) thread apply all bt   <span class="c"># all threads' stacks</span></code></pre>
+<ul>
+<li>Compile with <code>-g</code> (and ideally <code>-O0</code>); with optimisation, variables may be "optimized out".</li>
+<li><strong>Core dumps</strong>: enable (<code>ulimit -c unlimited</code> / <code>coredumpctl</code>), then <code>gdb prog core</code> and <code>bt</code> to see where it crashed.</li>
+<li><code>rr</code> (record &amp; replay) for deterministic reverse debugging of nondeterministic bugs.</li>
+</ul>
+
+<h3>strace &mdash; system calls</h3>
+<pre><code>strace ./prog                    <span class="c"># every syscall + args + return</span>
+strace -f -p PID                 <span class="c"># attach, follow forks</span>
+strace -e trace=openat,read,write -T -tt ./prog   <span class="c"># filter, timing, timestamps</span>
+strace -c ./prog                 <span class="c"># summary: count + time per syscall</span></code></pre>
+<p>Answers "what is it asking the kernel to do?" &mdash; which files it opens (and fails to,
+<code>ENOENT</code>), where it hangs (a blocking <code>read</code>/<code>futex</code>/<code>poll</code>), what it
+connects to, why permission is denied (<code>EACCES</code>). Big overhead &mdash; not for production hot
+paths.</p>
+
+<h3>ltrace &mdash; library calls</h3>
+<p>Traces calls into shared libraries (<code>malloc</code>, <code>strcpy</code>, <code>getenv</code>,
+your-lib functions) and optionally syscalls too. Useful for "which <code>malloc</code> size",
+"what did it pass to <code>fopen</code>", API misuse.</p>
+
+<h3>Picking a tool</h3>
+<table>
+<tr><th>Symptom</th><th>Reach for</th></tr>
+<tr><td>Segfault / wrong value / logic bug</td><td>gdb (+ core dump)</td></tr>
+<tr><td>"can't find file" / hangs / permission denied / slow syscalls</td><td>strace</td></tr>
+<tr><td>Wrong arguments to a library function</td><td>ltrace</td></tr>
+<tr><td>Deadlock in prod</td><td><code>gdb -p</code> + <code>thread apply all bt</code>, or <code>/proc/PID/stack</code></td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Build with <code>-g</code>; keep <code>-O0</code> while debugging (else "optimized out").</li>
+<li>gdb: <code>break</code>/<code>run</code>/<code>bt</code>/<code>next</code>/<code>step</code>/<code>finish</code>/<code>print</code>/<code>watch</code>; <code>thread apply all bt</code> for hangs; <code>-p PID</code> to attach; <code>prog core</code> post-mortem.</li>
+<li>Enable core dumps: <code>ulimit -c unlimited</code>, check <code>kernel.core_pattern</code>, use <code>coredumpctl gdb</code>.</li>
+<li><code>strace</code>: what it asks the kernel &mdash; <code>-f</code> follow forks, <code>-e trace=</code> filter, <code>-T</code>/<code>-tt</code> timing, <code>-c</code> summary, <code>-p</code> attach.</li>
+<li><code>ltrace</code>: library/API calls and their arguments.</li>
+<li>strace/ltrace slow the target a lot &mdash; diagnostic, not production monitoring.</li>
+<li>Nondeterministic bug &rarr; <code>rr</code> record/replay for time-travel debugging.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>gdb vs strace &mdash; when each?</dt>
+<dd>gdb for source-level state: where did it crash, what's in this variable, why did this branch run. strace for the process/kernel interface: which files/sockets it touches, which syscall it's blocked in, why an operation returns an error.</dd>
+<dt>How do you get a backtrace from a program that already crashed?</dt>
+<dd>Ensure core dumps are enabled, reproduce the crash, then <code>gdb ./prog core</code> and run <code>bt</code> (<code>bt full</code> for locals). With systemd, <code>coredumpctl gdb &lt;PID or exe&gt;</code> does it in one step.</dd>
+<dt>Your program prints "No such file or directory" but you can't tell which file. Tool?</dt>
+<dd><code>strace -e trace=openat,stat ./prog</code> &mdash; you'll see the exact path it tried and the <code>ENOENT</code> return, plus whether it was searching a wrong directory.</dd>
+<dt>How do you diagnose a hung process without restarting it?</dt>
+<dd>Attach: <code>gdb -p PID</code> then <code>thread apply all bt</code> to see every thread's stack (spot the lock cycle or the blocking call). Or <code>strace -p PID</code> to see if it's stuck in a syscall (<code>futex</code>, <code>read</code>, <code>poll</code>). Or <code>cat /proc/PID/stack</code> for the kernel stack.</dd>
+<dt>Why does gdb say a variable is "&lt;optimized out&gt;"?</dt>
+<dd>The compiler (at <code>-O1</code>+) kept it only in a register that's since been reused, or eliminated it entirely, so there's no memory location to read. Rebuild the relevant file with <code>-O0 -g</code>, or use <code>-Og</code> which optimises but preserves debuggability.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What compiler flag adds debug symbols?</summary><div class="answer-box">
+<code>-g</code>.
+</div></details>
+<details class="answer-reveal"><summary>gdb command to print the call stack?</summary><div class="answer-box">
+<code>bt</code> (backtrace); <code>bt full</code> also shows local variables.
+</div></details>
+<details class="answer-reveal"><summary>Which tool shows every system call a process makes?</summary><div class="answer-box">
+<code>strace</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A service is slow. <code>strace -c -p PID</code> shows 80% of time in <code>futex</code>. What does that suggest?</summary><div class="answer-box">
+Heavy lock contention: threads are repeatedly blocking/waking on a mutex (<code>futex</code> is the syscall behind a contended pthread mutex/condvar). Follow up with <code>perf lock</code> / a profiler to find which lock, then reduce critical-section size, shard the lock, or switch to a lock-free / read-mostly structure. (Lots of <code>futex</code> with <code>ETIMEDOUT</code> can also just be idle condvar waits &mdash; check the args.)
+</div></details>
+<details class="answer-reveal"><summary>Set a gdb breakpoint that only fires on the 500th call or when a condition holds.</summary><div class="answer-box">
+Conditional: <code>break process_item if item->id == target</code>. Ignore count: <code>break func</code> then <code>ignore 1 499</code> (skip 499 hits, stop on the 500th). Also useful: <code>commands</code> to auto-run gdb commands at a breakpoint (e.g. <code>bt 3; continue</code>) for logging without stopping.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does <code>rr</code> achieve deterministic replay of a nondeterministic bug, and what are its limits?</summary><div class="answer-box">
+<code>rr</code> records a program's execution by intercepting every source of nondeterminism at the syscall boundary: it serialises threads onto a single core (so there's one deterministic interleaving), logs the results and any injected data of every syscall, records signal delivery points (by instruction count via hardware performance counters), and captures scheduling decisions. Replay re-runs the exact same instruction stream, feeding back the recorded syscall results instead of really executing them, and delivering signals at the identical points &mdash; so a heisenbug that reproduces 1-in-1000 becomes 100% reproducible, and you can run gdb <em>backwards</em> (<code>reverse-continue</code>, <code>reverse-step</code>, hardware watchpoints going back in time) to walk from the crash to the corruption. Limits: single-core recording means it can't reproduce true-parallel data races that only manifest on multiple cores (it finds the ones that occur under some interleaving, which is most but not all); ~1.2&ndash;2&times; slowdown while recording; needs specific CPU perf-counter support (works best on Intel, limited on some AMD/ARM/VMs); can't record programs that use certain hardware features (RDTSC without patching, some GPU/DMA paths), CPUID-dependent code paths, or extremely large memory footprints efficiently. For the bugs it does cover, it collapses days of "add a print, rebuild, wait for it to recur" into minutes.
+</div></details>
+<details class="answer-reveal"><summary>Compare <code>strace</code>'s ptrace-based tracing with <code>perf trace</code> / eBPF-based syscall tracing for production use.</summary><div class="answer-box">
+<code>strace</code> uses <code>ptrace</code>: the tracer is stopped-and-resumed around <em>every</em> syscall of the tracee (two context switches per syscall, plus data copies to format arguments). Overhead is often 10&ndash;100&times; for syscall-heavy programs, and it serialises the tracee &mdash; enough to change timing, mask races, and cause user-visible latency. Fine for a dev box or a quick look; dangerous on a hot production service. <strong>eBPF-based tools</strong> (<code>perf trace</code>, <code>bpftrace</code>, <code>execsnoop</code>/<code>opensnoop</code> from bcc) attach small verified programs to syscall tracepoints in the kernel; they aggregate or filter <em>in kernel space</em> and only copy out what you asked for, with per-event overhead in the tens-to-hundreds of nanoseconds. You can run "show me every <code>openat</code> that returns ENOENT, system-wide" or "histogram of read latency for PID X" on a live server with negligible impact, and detach cleanly. Trade-offs: eBPF needs a recent kernel and (often) root/CAP_BPF, the tooling is less turnkey for "just show me this one process's exact syscall sequence with decoded structs", and the verifier constrains what you can express. Rule: reach for <code>strace</code> to understand one process in dev; reach for eBPF to observe production without perturbing it.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:gdb-strace -->
+
+<!-- TOPIC:linux:perf-valgrind -->
+<section class="view topic" id="v-linux-perf-valgrind" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>Profiling: perf, valgrind &amp; friends</h1>
+<p class="subtitle">Finding where the time and the memory actually go &mdash; sampling vs instrumentation.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Two philosophies</h3>
+<ul>
+<li><strong>Sampling</strong> (<code>perf</code>): interrupt the program N times/sec, record the stack. Low overhead (~1&ndash;5%), safe on production, statistical &mdash; shows where time is spent proportionally.</li>
+<li><strong>Instrumentation</strong> (Valgrind, gprof): rewrite/observe every operation. Exact counts, but 10&ndash;50&times; slower &mdash; dev only, and it changes timing.</li>
+</ul>
+
+<h3><code>perf</code></h3>
+<pre><code>perf stat ./prog                 <span class="c"># cycles, instructions, IPC, cache misses, branch misses</span>
+perf record -g ./prog            <span class="c"># sample with call graphs</span>
+perf report                      <span class="c"># interactive hot-function view</span>
+perf top                         <span class="c"># live system-wide hotspots</span>
+perf record -e cache-misses ...  <span class="c"># sample on a specific hardware event</span></code></pre>
+<p>Pipe <code>perf script</code> into Brendan Gregg's <strong>FlameGraph</strong> for the classic
+width-is-time visualisation. Key metrics: low <strong>IPC</strong> (&lt;1) &rarr; stalled on memory/branches;
+high <strong>cache-miss rate</strong> &rarr; poor locality; high <strong>branch-miss rate</strong> &rarr;
+unpredictable branches.</p>
+
+<h3>Valgrind</h3>
+<table>
+<tr><th>Tool</th><th>Finds</th></tr>
+<tr><td>Memcheck (default)</td><td>invalid reads/writes, use-after-free, leaks, uninitialised values, bad <code>free</code></td></tr>
+<tr><td>Cachegrind / Callgrind</td><td>cache miss + branch simulation, per-line/function; call graph (view in KCachegrind)</td></tr>
+<tr><td>Massif</td><td>heap profiler over time (what's allocating, when peak is)</td></tr>
+<tr><td>Helgrind / DRD</td><td>data races and lock-order errors</td></tr>
+</table>
+
+<h3>Sanitizers (compile-time, faster than Valgrind)</h3>
+<p><code>-fsanitize=address</code> (ASan &mdash; memory errors + leaks, ~2&times;), <code>=undefined</code> (UBSan),
+<code>=thread</code> (TSan &mdash; races), <code>=memory</code> (MSan &mdash; uninitialised reads). Run your test
+suite under them in CI.</p>
+
+<h3>Method</h3>
+<p>Measure first (<code>perf stat</code>) &rarr; find the hot spot (<code>perf record</code>/flame graph) &rarr;
+understand <em>why</em> it's hot (IPC, cache misses, a bad algorithm) &rarr; fix &rarr; re-measure.
+Don't optimise by guessing.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Sampling (<code>perf</code>): low overhead, production-safe, statistical. Instrumentation (Valgrind): exact, 10&ndash;50&times; slower, dev-only.</li>
+<li><code>perf stat</code> for the summary (IPC, cache/branch misses); <code>perf record -g</code> + <code>perf report</code> / flame graph for hotspots; <code>perf top</code> live.</li>
+<li>IPC &lt; 1 &rarr; memory/branch stalls. High cache-miss % &rarr; locality problem. High branch-miss % &rarr; unpredictable branches.</li>
+<li>Valgrind Memcheck: leaks + invalid memory access. Massif: heap over time. Callgrind: call graph. Helgrind: races.</li>
+<li>Sanitizers (<code>-fsanitize=address/undefined/thread/memory</code>): faster than Valgrind, run in CI.</li>
+<li>Always: measure &rarr; locate &rarr; explain &rarr; fix &rarr; re-measure. No guessing.</li>
+<li>Frame pointers or DWARF unwinding needed for good <code>perf</code> call graphs (<code>-fno-omit-frame-pointer</code>).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Sampling profiler vs instrumenting profiler?</dt>
+<dd>A sampling profiler (perf) periodically snapshots the call stack &mdash; low overhead, statistical, safe in production. An instrumenting profiler (Valgrind/Callgrind, gprof) observes every call/instruction &mdash; exact counts but 10&ndash;50&times; slowdown and altered timing, so dev-only.</dd>
+<dt>What does a low IPC (instructions per cycle) in <code>perf stat</code> tell you?</dt>
+<dd>The CPU is stalling rather than retiring instructions &mdash; usually waiting on memory (cache misses, TLB misses) or mispredicted branches. It points you toward data-locality or branch-prediction fixes rather than "do less work".</dd>
+<dt>Which Valgrind tool finds memory leaks, and what does it cost?</dt>
+<dd>Memcheck (the default). It also catches invalid reads/writes, use-after-free, and uninitialised-value use. Cost: roughly 10&ndash;30&times; slower and higher memory use.</dd>
+<dt>What's a flame graph and how do you read it?</dt>
+<dd>A stacked visualisation of sampled stacks: the x-axis is proportion of samples (not time order), the y-axis is stack depth. Wide frames = where the CPU spends its time; you look for the widest boxes and their callers. Generated from <code>perf script</code> output.</dd>
+<dt>ASan vs Valgrind Memcheck?</dt>
+<dd>Both find memory errors. ASan is a compile-time instrumentation, ~2&times; slowdown, catches out-of-bounds and use-after-free with precise reports, and integrates into CI easily. Memcheck needs no recompile, also catches uninitialised-value reads (which ASan doesn't &mdash; that's MSan), but is much slower. Use ASan routinely, Valgrind for the cases ASan misses or when you can't rebuild.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which is production-safe: <code>perf record</code> or <code>valgrind</code>?</summary><div class="answer-box">
+<code>perf record</code> &mdash; sampling, ~1&ndash;5% overhead. Valgrind is 10&ndash;50&times; slower.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>perf stat</code> give you?</summary><div class="answer-box">
+Aggregate hardware counters for the run: cycles, instructions, IPC, cache misses, branch misses, context switches, etc.
+</div></details>
+<details class="answer-reveal"><summary>Compiler flag for the AddressSanitizer?</summary><div class="answer-box">
+<code>-fsanitize=address</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A loop over a large 2-D array is slow. <code>perf stat</code> shows a very high cache-miss rate. Likely fix?</summary><div class="answer-box">
+You're probably iterating column-major over a row-major array (<code>a[j][i]</code> in the inner loop), so each access jumps a whole row and misses cache. Swap the loop order to march contiguously (<code>a[i][j]</code>), or block/tile the loops so a working set fits in L1/L2. Confirm with a re-run of <code>perf stat</code> &mdash; cache-miss rate should drop and IPC rise.
+</div></details>
+<details class="answer-reveal"><summary>Your flame graph is a flat forest of tiny frames with no obvious wide box. What does that mean?</summary><div class="answer-box">
+No single hotspot &mdash; the cost is spread across many functions ("death by a thousand cuts"). Possibilities: an inefficiency in something called everywhere (allocation, logging, a lock, string formatting) &mdash; look at inverted/"hot leaf" views; or the profile is dominated by framework/runtime overhead; or you're missing symbols (frames collapsed as <code>[unknown]</code>). Also check whether it's actually CPU-bound at all &mdash; if wall-time &gt;&gt; CPU-time, profile off-CPU (blocking) with <code>perf sched</code> / off-CPU flame graphs instead.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain "off-CPU" profiling and why on-CPU flame graphs can be misleading for a slow service.</summary><div class="answer-box">
+An on-CPU sampling profiler only records what's running <em>on a CPU</em> when the timer fires. If your service's latency comes from <em>waiting</em> &mdash; blocked on a lock, a disk read, a downstream RPC, a condition variable, being descheduled &mdash; those threads are off-CPU and invisible to <code>perf record</code>; the flame graph shows only the small fraction of time spent computing, so you "optimise" a function that isn't the bottleneck. <strong>Off-CPU profiling</strong> instead measures where threads <em>block</em>: it hooks the scheduler (kernel <code>sched:sched_switch</code> tracepoint via eBPF, or <code>perf sched</code>) to record, for each thread that goes off-CPU, the stack at the moment it blocked and how long it stayed blocked, then aggregates into an off-CPU flame graph (width = time blocked). Combined ("wall-clock") flame graphs merge both. Workflow for a latency problem: first compare CPU-time to wall-time; if wall &gt;&gt; CPU, the answer is in off-CPU analysis &mdash; which lock, which syscall, which RPC &mdash; not in tightening a hot loop. Brendan Gregg's bcc <code>offcputime</code> / <code>wakeuptime</code> are the standard tools; the catch is that very short, frequent blocking events generate huge trace volume, so you filter by minimum block duration.
+</div></details>
+<details class="answer-reveal"><summary>What is the "skid" problem in hardware-event sampling and how do PEBS / precise events address it?</summary><div class="answer-box">
+When a performance counter overflows (e.g. every 100,000 cache misses) it raises an interrupt, but by the time the CPU takes the interrupt and the kernel reads the instruction pointer, the pipeline has moved on &mdash; several to dozens of instructions past the one that actually caused the event. This "skid" means <code>perf</code> attributes the cache miss / branch miss to the <em>wrong</em> instruction (and sometimes the wrong basic block or function), which is maddening when you're trying to pin down exactly which load is missing. <strong>PEBS</strong> (Precise Event-Based Sampling, Intel; <strong>IBS</strong> on AMD, SPE on ARM) fixes this: the CPU hardware itself captures a record &mdash; the precise instruction pointer, registers, and for memory events the <em>data address</em> and which cache level was hit &mdash; into a buffer <em>at the moment the event retires</em>, and only interrupts when the buffer fills. So <code>perf record -e mem_load_retired.l3_miss:pp</code> (the <code>:pp</code>/<code>:ppp</code> suffix requests precise) gives you the actual missing load and even the address, enabling data-oriented analysis (<code>perf c2c</code> for false-sharing detection, <code>perf mem</code> for per-address miss breakdown). Limitations: only a subset of events support precise mode, PEBS records add some overhead and buffer management, and virtualised environments often don't expose it.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:perf-valgrind -->
+
 </main>
 
 <footer class="site-footer">
@@ -12750,26 +13819,23 @@ Developers often reason "this race is harmless &mdash; worst case a thread reads
       ["thread-pools",      "Thread Pools & Work Queues",           "Pool sizing, task queue, work stealing, backpressure, graceful shutdown."],
       ["futures-async",     "Futures, Promises & async/await",      "Future/promise, composition, event loop, blocking in async, structured concurrency."],
       ["concurrency-bugs",  "Common Concurrency Bugs & Tools",      "Data races, deadlocks, double-checked locking, sanitizers, stress testing, model checking."]
+    ],
+    linux: [
+      ["fd-model",        "The File Descriptor Model",           "fd table &rarr; open file description &rarr; inode; dup, close-on-exec, everything-is-a-file."],
+      ["file-io",         "File I/O, Short Reads & Locking",     "open flags, read/write loops, O_APPEND atomicity, fsync, fcntl locks, buffering."],
+      ["fork-exec-wait",  "fork, exec, wait & Daemons",          "COW fork, exec, wait/waitpid, process groups, sessions, setsid, daemonising."],
+      ["signals",         "Signals & Signal Handlers",           "Delivery, async-signal-safety, SA_RESTART, self-pipe/signalfd, blocking, SIGCHLD."],
+      ["pipes-fifos",     "Pipes, FIFOs & socketpairs",          "Pipe semantics, SIGPIPE, capacity, FIFO rendezvous, full-duplex socketpair, fd passing."],
+      ["io-multiplexing", "I/O Multiplexing: select/poll/epoll", "Readiness vs completion, O(n) vs O(1), level vs edge triggered, epoll edge-case bugs."],
+      ["mmap-shm",        "mmap & Shared Memory",                "File-backed vs anonymous, MAP_SHARED/PRIVATE, msync, shm_open, huge pages, zero-copy."],
+      ["proc-sys",        "/proc, /sys, Environment & Limits",   "procfs/sysfs, /proc/PID, rlimits, ulimit, environ, getopt, exit codes."],
+      ["gdb-strace",      "Debugging: gdb, strace, ltrace",      "Breakpoints/backtrace/core dumps, syscall tracing, attaching, common recipes."],
+      ["perf-valgrind",   "Profiling: perf, valgrind & friends", "perf stat/record/top, flame graphs, cache misses, valgrind memcheck/cachegrind."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    linux: [
-      "The file descriptor model",
-      "open/read/write/close & short reads",
-      "fork, exec & wait",
-      "Process groups, sessions & daemons",
-      "Signals & signal handlers",
-      "Pipes, FIFOs & socketpairs",
-      "I/O multiplexing (select/poll/epoll)",
-      "mmap & shared memory",
-      "File locking & fcntl",
-      "/proc & /sys",
-      "Environment, getopt & exit codes",
-      "Debugging with gdb, strace, ltrace",
-      "Profiling with perf & valgrind"
-    ],
     arch: [
       "Number representation & endianness",
       "The memory hierarchy & caches",
