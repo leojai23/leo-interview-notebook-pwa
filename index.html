@@ -31532,6 +31532,18 @@ An owner, a due date, and a priority &mdash; and it must be tracked to completio
 <li>Every work item &mdash; story, bug, task, epic, sub-task, incident, change &mdash; is an <strong>issue</strong> with a key (<code>PROJ-123</code>), a type, a status, and a set of fields.</li>
 <li>An issue belongs to exactly one <strong>project</strong>; its behaviour is governed by that project's schemes.</li>
 </ul>
+<pre># the issue is the unit the REST API works in
+GET /rest/api/3/issue/PROJ-123
+{
+  "key": "PROJ-123",
+  "fields": {
+    "project":   { "key": "PROJ" },        // exactly one
+    "issuetype": { "name": "Story" },
+    "status":    { "name": "In Progress" },
+    "summary":   "Add fuzzy search",
+    "customfield_10016": 5                  // Story Points (custom field id)
+  }
+}</pre>
 
 <h3>Issue types</h3>
 <ul>
@@ -31539,6 +31551,17 @@ An owner, a due date, and a priority &mdash; and it must be tracked to completio
 <li>The <strong>issue type scheme</strong> defines which types a project can use; the <strong>issue type screen scheme</strong> maps each type to the screens it shows.</li>
 <li>Hierarchy levels (base): Sub-task &lt; Standard (Story/Task/Bug) &lt; Epic. Higher levels (Initiative&hellip;) need Advanced Roadmaps / Jira Premium.</li>
 </ul>
+<pre># create a Story...
+POST /rest/api/3/issue
+{ "fields": { "project": {"key":"PROJ"}, "issuetype": {"name":"Story"},
+              "summary": "Checkout revamp" } }
+# -> { "key": "PROJ-140" }
+
+# ...then a Sub-task MUST reference a parent
+POST /rest/api/3/issue
+{ "fields": { "project": {"key":"PROJ"}, "issuetype": {"name":"Sub-task"},
+              "parent": {"key":"PROJ-140"}, "summary": "Wire the API" } }
+# no parent -> 400 "parent is required"</pre>
 
 <h3>Fields</h3>
 <table>
@@ -31551,6 +31574,15 @@ An owner, a due date, and a priority &mdash; and it must be tracked to completio
 <li><strong>Versions</strong> &mdash; project-scoped release markers; <em>Fix Version</em> = "shipped/planned in", <em>Affects Version</em> = "bug found in".</li>
 <li>Custom fields are <strong>global objects</strong> &mdash; adding many, especially with unrestricted contexts, slows indexing and clutters every project. Reuse and scope with <strong>field contexts</strong> (per project / issue type).</li>
 </ul>
+<pre># custom fields are referenced by id, not name
+GET /rest/api/3/field
+[ { "id": "customfield_10016", "name": "Story Points", "schema": {"type":"number"} },
+  { "id": "customfield_10020", "name": "Sprint",       "schema": {"type":"array"} } ]
+
+# scope one field to just two projects + issue type (a "context")
+PUT /rest/api/3/field/customfield_10050/context/10001
+{ "projectIds": ["10000","10004"], "issueTypeIds": ["10002"] }
+# Fix Version vs Affects Version:  "fixVersions" = ships in,  "versions" = found in</pre>
 
 <h3>Screens</h3>
 <ul>
@@ -31558,12 +31590,29 @@ An owner, a due date, and a priority &mdash; and it must be tracked to completio
 <li>A field that isn't on any screen for an issue type is effectively hidden (still exists, still settable via API/automation).</li>
 <li><strong>Field configuration</strong> (scheme) controls per-field: required/optional, hidden/visible, description, default value, and renderer (wiki vs plain).</li>
 </ul>
+<pre># the wiring: type -> screen scheme -> screen(s)
+Issue Type Screen Scheme "PROJ"
+  Bug   -> Screen Scheme "Bug SS"   -> Create: "Bug Create Screen"
+                                       Edit/View: "Bug Screen"
+  Story -> Screen Scheme "Default"  -> "Default Screen"
+Workflow transition "Resolve Issue" -> Screen "Resolution Screen" (Resolution + comment)
+
+# a field not on ANY screen for that type is still settable by API/automation,
+# just invisible in the UI:
+POST /rest/api/3/issue/PROJ-123  { "fields": { "customfield_10099": "set anyway" } }</pre>
 
 <h3>Company- vs team-managed</h3>
 <ul>
 <li><strong>Company-managed</strong> (classic): schemes are shared across projects, changed by Jira admins &mdash; consistency and scale, more governance.</li>
 <li><strong>Team-managed</strong> (next-gen): each project owns its own types/fields/workflow, configured by the project admin &mdash; fast and independent, but no cross-project scheme reuse and some features differ.</li>
 </ul>
+<pre>GET /rest/api/3/project/PROJ
+{ "style": "classic" }     // company-managed: shares schemes, Jira-admin governed
+{ "style": "next-gen" }    // team-managed:   own workflow/fields, project-admin owned
+
+# consequence: a company-managed workflow edit propagates to every project on that
+# scheme; a team-managed one changes only that project. Custom fields in team-managed
+# projects are project-locked and don't appear in other projects' JQL/fields.</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -31649,6 +31698,16 @@ An ordered list of fields shown for a particular operation (Create, Edit, View, 
 <li>Statuses are <strong>global objects</strong> shared across workflows, each mapped to a <strong>status category</strong>: <em>To Do</em> (grey), <em>In Progress</em> (blue), <em>Done</em> (green). Boards and reports use the category, not the name.</li>
 <li>The <strong>workflow scheme</strong> maps issue types &rarr; workflows for a project. Editing a workflow that's in use requires a <em>draft</em> &rarr; publish; changing which statuses exist may force a migration mapping for existing issues.</li>
 </ul>
+<pre># the transitions available FROM the issue's current status
+GET /rest/api/3/issue/PROJ-123/transitions
+{ "transitions": [
+    { "id": "31", "name": "Start work",  "to": { "name": "In Progress" } },
+    { "id": "41", "name": "Ready for review", "to": { "name": "In Review" } }
+] }
+# execute one (by id, not by target status name)
+POST /rest/api/3/issue/PROJ-123/transitions
+{ "transition": { "id": "31" } }
+# status category (To Do / In Progress / Done), not the name, drives boards + reports</pre>
 
 <h3>Transitions have four hook points</h3>
 <table>
@@ -31660,6 +31719,14 @@ An ordered list of fields shown for a particular operation (Create, Edit, View, 
 </table>
 <p>A special transition from <strong>"Any status"</strong> (the <code>All</code> node) lets you go to a
 status from anywhere (e.g. a global "Close").</p>
+<pre># one transition's hooks, in execution order
+transition "Resolve Issue"  (-> Done)
+  conditions:     user is assignee  AND  all sub-tasks are Done   # else button hidden
+  validators:     "Resolution" field is required                  # else submit blocked
+  post-functions: set Resolution = (from screen)
+                  assign to Reporter
+                  fire "Issue Resolved" event                     # -> notifications
+  triggers:       (dev): "pull request merged" auto-fires this transition</pre>
 
 <h3>Status vs Resolution &mdash; the classic trap</h3>
 <ul>
@@ -31668,6 +31735,15 @@ status from anywhere (e.g. a global "Close").</p>
 <li><strong>Rule</strong>: a <em>Set Resolution</em> post-function (or a resolution screen) on every transition <em>into</em> a done status; a <em>Clear Resolution</em> post-function on every transition <em>back out</em> (Reopen). Forget the clear step and reopened issues stay "resolved" &mdash; they vanish from "open issues" filters, burndown, and notifications while sitting in an active status.</li>
 <li>Never make Resolution a normal field on the Create/Edit screen &mdash; only set it via transitions.</li>
 </ul>
+<pre># the bug: reopened issue still has a Resolution -> treated as closed
+{ "status": { "name": "In Progress" }, "resolution": { "name": "Done" } }   # WRONG
+
+# "Reopen" transition MUST carry a post-function:
+post-function:  set Resolution = None      # or "Clear field value: Resolution"
+
+# how it hides: these all filter on resolution, not status
+JQL:  resolution = EMPTY          # "open issues" -> reopened-but-not-cleared vanish
+burndown / "Complete sprint"  count issues by resolution, not status</pre>
 
 <h3>Design guidance</h3>
 <ul>
@@ -31677,6 +31753,13 @@ status from anywhere (e.g. a global "Close").</p>
 <li>Prefer <strong>automation rules</strong> over heavy post-functions/scripted conditions for maintainability, unless you need the guarantee that it runs <em>as part of</em> the transition.</li>
 <li>Avoid too many conditions that hide transitions &mdash; users get confused when the button they expect isn't there.</li>
 </ul>
+<pre># GOOD: small, category-mapped
+To Do(todo) -> In Progress(inprogress) -> In Review(inprogress) -> Done(done)
+  + global "Any status -> Done"  (post-fn: set Resolution)
+  + "Done -> In Progress"        (post-fn: clear Resolution)
+
+# BAD: 11 statuses, 3 "blocked" variants, conditions hiding half the buttons
+#   every extra status = a board column where work piles up + a reporting bucket</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -31764,6 +31847,16 @@ To Do, In Progress, Done.
 <li>Issues aren't "on" a board &mdash; they match the board's filter. One issue can appear on many boards; a board can span multiple projects if its filter does.</li>
 <li><strong>Columns</strong> map to one or more <strong>statuses</strong>. Moving a card between columns transitions the issue (if a valid transition exists). Statuses not mapped to any column are "hidden" from the board.</li>
 </ul>
+<pre># a board's saved filter IS just a JQL query
+GET /rest/agile/1.0/board/42/configuration
+{ "filter": { "id": "10200" },
+  "columnConfig": { "columns": [
+    { "name": "To Do",       "statuses": [{ "id": "10000" }] },
+    { "name": "In Progress", "statuses": [{ "id": "3" }, { "id": "10001" }] },   # 2 statuses -> 1 column
+    { "name": "Done",        "statuses": [{ "id": "10002" }] } ] } }
+
+# the filter behind it:
+project = PROJ AND type != Sub-task ORDER BY Rank ASC   # missing "ORDER BY Rank" breaks drag-rank</pre>
 
 <h3>Scrum vs Kanban board</h3>
 <table>
@@ -31776,6 +31869,14 @@ To Do, In Progress, Done.
 </table>
 <p>Both use the same underlying issues/workflow; the board type just changes planning UI and
 reports. You can switch, or run a "Scrumban" hybrid.</p>
+<pre># SCRUM board shows only the active sprint
+GET /rest/agile/1.0/board/42/sprint?state=active   -> { "values": [{ "id": 88 }] }
+GET /rest/agile/1.0/sprint/88/issue                 # the board's cards
+
+# KANBAN board shows the whole filter minus old done issues
+# (config: "Kanban board sub-filter" e.g.  fixVersion in unreleasedVersions() OR
+#          resolved &gt;= -14d )
+# and enforces flow via column WIP limits, not sprint scope</pre>
 
 <h3>Board configuration knobs</h3>
 <ul>
@@ -31787,6 +31888,16 @@ reports. You can switch, or run a "Scrumban" hybrid.</p>
 <li><strong>Working days</strong>: for burndown day calculations.</li>
 <li><strong>Sub-task handling</strong>: whether the board shows parent+sub-tasks or rolls up.</li>
 </ul>
+<pre># query swimlane: pull expedited work to the top, ordered
+Swimlanes (type: Query):
+  1. "Expedite"   ->  priority = Highest OR labels = expedite
+  2. "Blocked"    ->  status = Blocked OR labels = blocked
+  3. "Everything else"  ->  (auto)
+
+# quick filters = one-click JQL toggles
+"Only my issues"  ->  assignee = currentUser()
+"No sub-tasks"    ->  type != Sub-task
+# column WIP limit: In Progress max = 3  -> column turns red at 4</pre>
 
 <h3>Common pitfalls</h3>
 <ul>
@@ -31795,6 +31906,12 @@ reports. You can switch, or run a "Scrumban" hybrid.</p>
 <li>Editing the board's filter affects everyone using that board; boards sharing a filter move together.</li>
 <li><strong>Only board admins</strong> (and the filter owner) can change config; a departed owner can orphan a board's filter.</li>
 </ul>
+<pre># "my card vanished" &mdash; check in this order:
+1. does it match the filter?   -> paste the board filter into Issue Search, add: AND key = PROJ-123
+2. is its status mapped?       -> board config > Columns: is "In Review" under a column?
+3. sprint board?              -> is the issue in the ACTIVE sprint?  (sprint field set?)
+4. done-issue aging (Kanban) -> resolved &gt; 14d ago drops off by default
+# ownership: filter owner leaves -> reassign the filter, or the board silently breaks</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -31869,6 +31986,12 @@ Jira runs the workflow transition to the status that column maps to (if a valid 
 <li><strong>Grooming / refinement</strong>: keep the top of the backlog small, clear, estimated, and dependency-free enough to pull into a sprint. Lower items can stay vague.</li>
 <li>Bulk actions, inline create, and "send to top/bottom of sprint" speed planning.</li>
 </ul>
+<pre># backlog = matches the board filter AND not in an active/future sprint, ordered by Rank
+GET /rest/agile/1.0/board/42/backlog
+
+# re-rank one issue (writes the global Rank field)
+PUT /rest/agile/1.0/issue/rank
+{ "issues": ["PROJ-140"], "rankBeforeIssue": "PROJ-118" }   # place it above PROJ-118</pre>
 
 <h3>Sprints</h3>
 <ul>
@@ -31876,6 +31999,16 @@ Jira runs the workflow transition to the status that column maps to (if a valid 
 <li><strong>Complete sprint</strong>: incomplete issues go back to the backlog or a future sprint; the Sprint Report snapshots what was committed vs added vs completed.</li>
 <li>Scope changes mid-sprint are recorded (scope creep line on the burndown).</li>
 </ul>
+<pre>POST /rest/agile/1.0/sprint
+{ "name": "Sprint 24", "originBoardId": 42, "goal": "Ship checkout revamp" }
+# -> { "id": 88, "state": "future" }
+
+POST /rest/agile/1.0/backlog/issue           # pull issues in
+{ "issues": ["PROJ-140","PROJ-141"] }        # (or /sprint/88/issue)
+
+POST /rest/agile/1.0/sprint/88               # start it
+{ "state": "active", "startDate": "...", "endDate": "..." }
+# ...later: { "state": "closed" }  -> incomplete issues roll to backlog/next sprint</pre>
 
 <h3>Estimation</h3>
 <table>
@@ -31890,6 +32023,13 @@ Jira runs the workflow transition to the status that column maps to (if a valid 
 <li><strong>Planning poker</strong> to estimate collaboratively and surface hidden assumptions.</li>
 <li>Estimate <strong>stories</strong>, not sub-tasks (sub-tasks are execution breakdown; some teams put remaining <em>time</em> on sub-tasks for a separate task burndown).</li>
 </ul>
+<pre># story points live in a custom field; the board's Estimation setting names it
+POST /rest/api/3/issue/PROJ-140
+{ "fields": { "customfield_10016": 5 } }        # 5 points  (Fibonacci-ish: 1,2,3,5,8,13)
+
+# NOT hours: 5 points != 5 days. Relative size, team-local.
+# sub-tasks: leave points empty; some teams put "remaining estimate" (time) here instead
+{ "fields": { "timetracking": { "remainingEstimate": "4h" } } }</pre>
 
 <h3>Velocity &amp; capacity</h3>
 <ul>
@@ -31897,6 +32037,14 @@ Jira runs the workflow transition to the status that column maps to (if a valid 
 <li><strong>Capacity</strong> planning: account for holidays, on-call, support rotation, meetings; commit below raw velocity when the sprint is short-staffed.</li>
 <li>Only <strong>fully completed</strong> issues count toward velocity &mdash; a nearly-done 8-pointer scores 0 that sprint (don't split points on carry-over; re-estimate the remainder if needed).</li>
 </ul>
+<pre># velocity = points COMPLETED per sprint (rolling avg, not a target)
+Sprint 19: committed 34  completed 28
+Sprint 20: committed 30  completed 31
+Sprint 21: committed 32  completed 27
+forecast = avg(28,31,27) = ~28.7 pts/sprint
+
+# capacity this sprint: 5 devs x 8 days - (2 holidays + 5 on-call days) = 33 dev-days
+#   -> commit ~24 pts (below velocity), not 34</pre>
 
 <h3>Anti-patterns</h3>
 <ul>
@@ -31906,6 +32054,13 @@ Jira runs the workflow transition to the status that column maps to (if a valid 
 <li>Carrying the same story for 4 sprints &mdash; it's too big or blocked; split it.</li>
 <li>Adding lots of scope mid-sprint without acknowledging the goal is at risk.</li>
 </ul>
+<pre># the carry-over that should have been split
+PROJ-155  "Payments overhaul"  13 pts
+  Sprint 20: not done   Sprint 21: not done   Sprint 22: not done
+# -> too big or blocked. Split into 3-5 pt slices, each independently shippable:
+PROJ-155a  "Payments: read path"      5
+PROJ-155b  "Payments: write path"     5
+PROJ-155c  "Payments: reconciliation" 3</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -31988,6 +32143,14 @@ It always returns issues.</p>
 <tr><td><code>WAS</code> / <code>WAS IN</code> / <code>WAS NOT</code></td><td>historical value of <code>status</code>/<code>assignee</code>/etc. (with <code>AFTER</code>, <code>BEFORE</code>, <code>DURING</code>, <code>ON</code>, <code>BY</code>)</td></tr>
 <tr><td><code>CHANGED</code></td><td>field changed (<code>FROM</code>, <code>TO</code>, <code>AFTER</code>, <code>BY</code>, <code>DURING</code>)</td></tr>
 </table>
+<pre>priority &gt;= High                      # ordered field: High and Highest
+component IN ("API", "Billing")
+summary ~ "timeout"                   # indexed WORD match, not substring
+fixVersion IS EMPTY
+assignee WAS currentUser() DURING (-30d, now())      # historical value
+status CHANGED TO Done AFTER startOfWeek()           # transition happened this week
+labels != flaky                       # gotcha: this EXCLUDES issues with no labels at all
+labels IS EMPTY OR labels != flaky    # ...include the unlabelled ones explicitly</pre>
 
 <h3>Functions (value generators)</h3>
 <ul>
@@ -31998,6 +32161,13 @@ It always returns issues.</p>
 <li>Links/hierarchy (varies by version/app): <code>issuesInEpics()</code>, <code>parentEpic()</code>, <code>issueLinkType</code>, <code>linkedIssues("KEY", "blocks")</code>, <code>portfolioChildrenOf()</code>.</li>
 <li><code>issueHistory()</code> (recently viewed), <code>votedIssues()</code>, <code>watchedIssues()</code>.</li>
 </ul>
+<pre># functions produce values on the right-hand side
+assignee = currentUser() AND sprint IN openSprints()
+created &gt;= startOfMonth(-1) AND created &lt; startOfMonth()      # all of last month
+reporter IN membersOf("support-team")
+fixVersion = earliestUnreleasedVersion(WEB)
+parent IN (PROJ-140) OR "Epic Link" = PROJ-140              # children of an epic
+due &lt;= endOfWeek() AND statusCategory != Done                # due this week, not done</pre>
 
 <h3>Common recipes</h3>
 <pre>project = PLAT AND statusCategory != Done AND assignee = currentUser() ORDER BY priority DESC, due ASC
@@ -32016,6 +32186,14 @@ filter = "Team Orion Base" AND due &lt; now() AND statusCategory != Done        
 <li><strong>Permissions gotcha</strong>: a viewer only sees issues they have Browse permission on, and only sees the filter if it's shared with them. A board backed by a filter the team can't see shows empty.</li>
 <li>An orphaned filter (owner deactivated) needs an admin to change the owner; boards/gadgets break meanwhile.</li>
 </ul>
+<pre># save a query as a shared filter, then compose it elsewhere
+POST /rest/api/3/filter
+{ "name": "Team Orion Open", "jql": "project in (WEB,API) AND labels = team-orion AND resolution = EMPTY",
+  "sharePermissions": [ { "type": "group", "group": { "name": "team-orion" } } ] }
+
+# reference it by name from another query, a board, or a dashboard gadget
+filter = "Team Orion Open" AND priority = Highest
+# subscription: email results on a cron  ->  POST /rest/api/3/filter/{id}/... (or the UI)</pre>
 
 <h3>Notes</h3>
 <ul>
@@ -32024,6 +32202,11 @@ filter = "Team Orion Base" AND due &lt; now() AND statusCategory != Done        
 <li><code>ORDER BY Rank</code> is required on a board's filter for manual ranking.</li>
 <li>JQL is also the language for automation conditions/branches and bulk-change selection.</li>
 </ul>
+<pre>summary ~ "custom*"      # OK: trailing wildcard on a text field
+summary ~ "*tom"         # NO: leading wildcard not supported
+"Story Points" &gt;= 8      # quote field names with spaces...
+cf[10016] &gt;= 8           # ...or use cf[ID] (also disambiguates duplicate names)
+... ORDER BY Rank        # required on a board filter for drag-to-rank to work</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -32098,6 +32281,12 @@ filter = "Team Orion Base" AND due &lt; now() AND statusCategory != Done        
 <tr><td>Standard (level 0)</td><td>Story / Task / Bug</td><td>A sprint-sized deliverable; the unit of estimation and board flow.</td></tr>
 <tr><td>Sub-task (level &minus;1)</td><td>Sub-task</td><td>Execution breakdown of one story; can't stand alone.</td></tr>
 </table>
+<pre>Initiative  PROJ-10   "Unified checkout"          (Premium only)
+  Epic      PROJ-20   "Payments revamp"           parent = PROJ-10
+    Story   PROJ-140  "Card read path"    5 pts   parent = PROJ-20
+      Sub-task PROJ-141 "Wire the API"            parent = PROJ-140
+    Story   PROJ-142  "Reconciliation"   3 pts   parent = PROJ-20
+# GET /rest/api/3/issue/PROJ-20?fields=subtasks  ->  its stories (Cloud unified 'parent')</pre>
 
 <h3>How the links work</h3>
 <ul>
@@ -32105,12 +32294,26 @@ filter = "Team Orion Base" AND due &lt; now() AND statusCategory != Done        
 <li><strong>Story &rarr; Epic</strong>: historically the <strong>"Epic Link"</strong> custom field (company-managed classic); newer Jira (and team-managed, and the unified data model) uses <strong>"Parent"</strong> for this too. Cloud has largely unified on <code>parent</code> for both story&rarr;epic and sub-task&rarr;story.</li>
 <li><strong>Issue links</strong> (<em>blocks</em>, <em>is blocked by</em>, <em>relates to</em>, <em>duplicates</em>, <em>clones</em>) are <strong>peer relationships</strong>, not hierarchy &mdash; they don't roll up progress and can cross projects.</li>
 </ul>
+<pre># HIERARCHY: parent -> rolls up, drags children on move
+POST /rest/api/3/issue/PROJ-141  { "fields": { "parent": { "key": "PROJ-140" } } }
+
+# PEER LINK: no rollup, can cross projects, purely informational
+POST /rest/api/3/issueLink
+{ "type": { "name": "Blocks" },
+  "inwardIssue":  { "key": "WEB-9" },
+  "outwardIssue": { "key": "API-3" } }        # WEB-9 "is blocked by" API-3</pre>
 
 <h3>Above the epic</h3>
 <ul>
 <li>Base Jira stops at Epic. <strong>Advanced Roadmaps</strong> (Premium) adds configurable higher levels &mdash; commonly <strong>Initiative</strong> above Epic, and you can add more (e.g. Theme). These use <code>parent</code> links up the chain.</li>
 <li>Without Premium, people fake higher levels with issue links or labels &mdash; which don't roll up and are fragile.</li>
 </ul>
+<pre># Premium: extra levels are real hierarchy, queryable
+issuetype = Initiative AND statusCategory != Done
+issueFunction in portfolioChildrenOf("issuetype = Initiative")   # (Structure/plugin flavour)
+
+# Free workaround (fragile): a label per initiative
+labels = "init-unified-checkout"     # no rollup, no timeline, breaks on typos</pre>
 
 <h3>Rollup &amp; progress</h3>
 <ul>
@@ -32118,6 +32321,15 @@ filter = "Team Orion Base" AND due &lt; now() AND statusCategory != Done        
 <li><strong>Estimation lives at the story level.</strong> Epics aren't usually pointed (their size is the sum of their stories); sub-tasks aren't pointed (they'd double-count).</li>
 <li>Cross-project epics: a story in project B can belong to an epic in project A (Cloud), but reporting and boards get messier &mdash; keep an epic's stories in one project where practical.</li>
 </ul>
+<pre># epic progress = children grouped by status category (count OR estimate sum)
+children of PROJ-20:
+  Done        : 3 stories, 13 pts
+  In Progress : 1 story,    5 pts
+  To Do       : 2 stories,  8 pts
+progress = 13 / (13+5+8) = 50% by points        # NOT: point the epic itself (double counts)
+
+# JQL for the epic burn-up
+"Epic Link" = PROJ-20 OR parent = PROJ-20</pre>
 
 <h3>Practical guidance</h3>
 <ul>
@@ -32127,6 +32339,15 @@ filter = "Team Orion Base" AND due &lt; now() AND statusCategory != Done        
 <li>Don't use sub-tasks to model separate deliverables (they can't be sprinted, ranked, or reported on independently, and moving the parent drags them along).</li>
 <li>Keep hierarchy shallow: Initiative &rarr; Epic &rarr; Story &rarr; (maybe) Sub-task. Deeper "trees" via links become unmaintainable.</li>
 </ul>
+<pre># EPIC: finishable outcome, one sentence
+PROJ-20  "Let guests check out without an account"    ~5 weeks   -> good epic
+PROJ-99  "Tech debt"                                  never ends -> should be a label
+
+# STORY (INVEST): Independent, Negotiable, Valuable, Estimable, Small, Testable
+"As a guest I can pay with a saved card"   3 pts, fits a sprint, has acceptance criteria
+
+# SUB-TASK = "how", within one story; many teams skip them entirely
+PROJ-140 sub-tasks: [design, backend, frontend, e2e-tests]   # not separate deliverables</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -32202,6 +32423,14 @@ Jira Premium / Advanced Roadmaps (adds Initiative and configurable levels).
 <tr><td><strong>Velocity Chart</strong></td><td>Committed vs completed points per sprint (last ~7)</td><td>Forecasting (rolling average); consistency of estimation</td></tr>
 <tr><td><strong>Epic Burndown / Burnup</strong> &amp; <strong>Release Burndown</strong></td><td>Progress toward an epic or version over sprints, incl. scope added</td><td>Will this epic/release land? How much is scope growth vs delivery?</td></tr>
 </table>
+<pre># healthy burndown: steady descent toward the guideline
+pts | 34 *
+    | 27  *. .          . = ideal guideline
+    | 20    *   .        * = actual remaining
+    |  8      *----+     +--+ = scope added mid-sprint (the scope-change line)
+    |  0        *  +--*
+    +--------------------- day 1 ........ 10
+# late cliff (actual flat, then drops to 0 on day 10) = stories only closed at the end</pre>
 
 <h3>Kanban / flow reports</h3>
 <table>
@@ -32210,6 +32439,15 @@ Jira Premium / Advanced Roadmaps (adds Initiative and configurable levels).
 <tr><td><strong>Control Chart</strong></td><td>Cycle time (or lead time) per completed issue, with a rolling average and standard-deviation band. Outliers = investigate. Trend down = flow improving.</td></tr>
 <tr><td><strong>Cycle time report</strong> (newer boards)</td><td>Distribution / scatter of cycle times, often with percentiles (e.g. "85% of issues finish within 6 days").</td></tr>
 </table>
+<pre># CFD read: a WIDENING band = the bottleneck stage
+count
+  |            ____ Done
+  |         __/
+  |     ___/______  In Review   <- this band keeps widening = review is the bottleneck
+  |  __/__________  In Progress
+  | /_____________  To Do
+  +----------------------- time
+# vertical gap (To Do top .. Done bottom) = total WIP;  horizontal gap ~ lead time</pre>
 
 <h3>Definitions</h3>
 <ul>
@@ -32218,6 +32456,13 @@ Jira Premium / Advanced Roadmaps (adds Initiative and configurable levels).
 <li><strong>Throughput</strong>: issues completed per unit time.</li>
 <li><strong>WIP</strong>: items in progress at once. Little's Law: <em>avg cycle time &asymp; WIP / throughput</em> &mdash; lower WIP &rarr; shorter cycle time.</li>
 </ul>
+<pre># Little's Law, worked
+WIP = 18 issues in progress
+throughput = 6 issues/week
+avg cycle time = 18 / 6 = 3 weeks
+
+# cut WIP to 9 (same team, same throughput):
+avg cycle time = 9 / 6 = 1.5 weeks     # nothing else changed - just stop starting</pre>
 
 <h3>Gotchas / how these mislead</h3>
 <ul>
@@ -32228,11 +32473,27 @@ Jira Premium / Advanced Roadmaps (adds Initiative and configurable levels).
 <li>All of these break if the team games statuses (bulk-moving to Done at sprint end, skipping "In Review").</li>
 <li>Comparing any of these <strong>across teams</strong> is invalid &mdash; different point scales, workflows, and DoD.</li>
 </ul>
+<pre># the "0 velocity" that isn't zero work
+Sprint 21: 6 stories, all 90% done, none CLOSED  ->  Velocity chart shows 0
+# reality: ~25 pts of work happened; it all carried over
+
+# cycle time skew: an issue reopened mid-flow
+PROJ-88: In Progress (2d) -> Done -> reopened -> In Progress (3d) -> Done
+# Control Chart may show ~5d or ~8d depending on start/end status choice + weekend span</pre>
 
 <h3>What to actually watch</h3>
 <p>Trend, not absolute: is cycle time stable or drifting? Is WIP creeping up? Is scope-change on
 the burndown consistently large? Is velocity predictable (variance low) rather than "high"?
 Predictability beats magnitude.</p>
+<pre># predictability &gt; magnitude
+Team A: velocity 40, 12, 55, 20, 48   avg 35, stdev ~17   -> can't plan
+Team B: velocity 24, 26, 23, 25, 27   avg 25, stdev ~1.4  -> commit ~24, hit it
+
+# the four trend questions, as things to chart over ~8 sprints:
+cycle_time_p85   (flat or down = good)
+avg_WIP          (creeping up = warning)
+scope_change_pts (consistently &gt;20% of commit = planning problem)
+velocity_stdev   (low = predictable)</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -32316,6 +32577,15 @@ In Progress (work actually started).
 <li><strong>Incoming webhook</strong>: external system calls a rule URL (with a payload &amp; optional issue list).</li>
 <li><strong>Manual</strong>: a button on the issue ("Run rule"), <strong>SLA</strong> threshold (JSM), <strong>form submitted</strong>, on a schedule.</li>
 </ul>
+<pre># scheduled trigger with a JQL (acts on each matched issue every run)
+Trigger: Scheduled
+  cron:  0 9 * * 1-5                       # weekdays 09:00
+  JQL:   resolution = EMPTY AND updated &lt;= -5d AND status = "In Progress"
+
+# dev trigger
+Trigger: Pull request merged
+  -> Condition: {{pullRequest.destinationBranch}} equals "main"
+  -> Action: Transition issue to "In Review"</pre>
 
 <h3>Conditions &amp; branches</h3>
 <ul>
@@ -32323,12 +32593,26 @@ In Progress (work actually started).
 <li><strong>Branches</strong>: re-scope the rest of the rule to <em>related</em> issues &mdash; sub-tasks, parent, epic, stories in epic, linked issues (by link type), or a JQL. Actions inside the branch run once per matched issue.</li>
 <li>The <strong>"For current issue" vs branch</strong> distinction is the #1 source of bugs &mdash; forgetting a branch means you edit the trigger issue instead of the parent/children.</li>
 </ul>
+<pre>Trigger: Issue transitioned  (a sub-task -> Done)
+  Branch: Parent                              # re-scope to the parent story
+    Condition: {{issue.subtasks.size}} equals {{issue.subtasks.Done.size}}  # all done?
+    Action:  Transition parent to "Done"
+# WITHOUT the branch, "Transition to Done" would fire on the SUB-TASK (already Done) - no-op,
+# and the parent never moves. The branch is the whole point.</pre>
 
 <h3>Actions</h3>
 <p>Edit issue / transition / assign / comment / add or remove label / create issue / create
 sub-tasks / clone / link issues / send email / send Slack or Teams message / send web request
 (outbound REST) / log action / set entity property / re-fetch issue data / lookup issues
 (<code>{{lookupIssues}}</code>) / create variable.</p>
+<pre># Action: Send web request (outbound REST) &mdash; e.g. ping an external system
+POST https://hooks.corp/jira
+headers:  Content-Type: application/json
+body:     { "key": "{{issue.key}}", "status": "{{issue.status.name}}",
+            "assignee": "{{issue.assignee.emailAddress}}" }
+
+# Action: Edit issue
+fields:   { "labels": ["auto-triaged"], "priority": { "name": "Highest" } }</pre>
 
 <h3>Smart values</h3>
 <pre>{{issue.key}}  {{issue.summary}}  {{issue.assignee.displayName}}
@@ -32351,6 +32635,13 @@ conditionals, and date math &mdash; a small templating language.</p>
 <li>Sync a field from parent to all children on change (branch: children; edit issue).</li>
 <li>Auto-triage: on create, if <code>summary ~ "outage"</code> set priority Highest, assign to on-call, notify Slack.</li>
 </ul>
+<pre># auto-triage rule, end to end
+Trigger:   Issue created
+Condition: {{issue.summary}} matches "(?i)outage|down|sev1"
+Action:    Edit issue -> priority = Highest, labels += incident
+Action:    Assign issue -> user from lookup: on-call schedule
+Action:    Send Slack message -> #incidents
+             "{{issue.key}} {{issue.summary}} — assigned {{issue.assignee.displayName}}"</pre>
 
 <h3>Scope, limits &amp; gotchas</h3>
 <ul>
@@ -32360,6 +32651,13 @@ conditionals, and date math &mdash; a small templating language.</p>
 <li><strong>Actor</strong>: actions run as the "Automation for Jira" app user (or a chosen actor) &mdash; needs permission on the target project; shows as that user in history and notifications.</li>
 <li>Prefer automation over workflow post-functions/scripts for maintainability &mdash; <em>unless</em> you need the change to be atomic with a transition.</li>
 </ul>
+<pre># the loop: an "Edit issue" action with "Allow rule trigger" ON, on an "Issue updated" rule
+Trigger: Issue updated  ->  Action: Edit issue (set field)  [Allow rule trigger: ON]
+#   edit fires "updated" -> rule runs -> edits -> "updated" -> ...  quota burned in minutes
+
+# safe default: rule's own edits do NOT re-trigger it. Check the audit log:
+Automation > Audit log  ->  status: SUCCESS | NO ACTIONS PERFORMED | SOME ERRORS
+# actor = "Automation for Jira" (or chosen) must have Browse+Edit on the target project</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -32435,6 +32733,13 @@ The rule's audit log.
 <tr><td>Consistency</td><td>High &mdash; many projects share one workflow/field/permission scheme</td><td>Low &mdash; each project is its own island</td></tr>
 <tr><td>Best for</td><td>Large orgs needing governance &amp; cross-project reporting</td><td>Autonomous teams wanting speed</td></tr>
 </table>
+<pre>GET /rest/api/3/project/PROJ?expand=permissions
+{ "style": "classic",                       // company-managed
+  "permissionScheme": { "id": 10000, "name": "Default software scheme" } }
+
+# team-managed instead:
+{ "style": "next-gen" }
+# -> no shared schemes; PUT /rest/api/3/project/PROJ/role/{roleId}  edits ONLY this project</pre>
 
 <h3>The scheme stack (company-managed)</h3>
 <p>Each project is associated with one of each:</p>
@@ -32448,6 +32753,15 @@ The rule's audit log.
 <li><strong>Issue security scheme</strong> (optional) &mdash; per-issue visibility levels.</li>
 <li><strong>Priority / component / version</strong> &mdash; some project-scoped, some via scheme.</li>
 </ul>
+<pre># one project's scheme bindings (all point to SHARED objects)
+PROJ ->
+  permissionScheme        = "Default software scheme"
+  notificationScheme      = "Default notifications"
+  workflowScheme          = "SW: Simplified Workflow Scheme"
+  issueTypeScreenScheme   = "SW screen scheme"
+  fieldConfigurationScheme = "Default"
+  issueSecurityScheme     = (none)
+# edit "Default software scheme" -> changes every project bound to it</pre>
 
 <h3>Roles vs groups</h3>
 <ul>
@@ -32455,6 +32769,15 @@ The rule's audit log.
 <li><strong>Project role</strong> = a named slot (Administrators, Developers, Users) whose <em>members are set per project</em>. Permission schemes grant to roles; each project decides who's in each role &mdash; so one shared permission scheme works for hundreds of projects.</li>
 <li><strong>Best practice</strong>: schemes grant to <strong>roles</strong>, not groups or users. Then onboarding a project = fill its role memberships; no scheme edits.</li>
 </ul>
+<pre># permission scheme grants to a ROLE (reused by 100s of projects)
+Permission "Assignable User"   -> role "Developers"
+Permission "Administer Projects" -> role "Administrators"
+
+# each project fills that role independently, no scheme edit
+POST /rest/api/3/project/PROJ/role/10001      # 10001 = Developers
+{ "group": ["team-orion-devs"] }
+POST /rest/api/3/project/WEB/role/10001
+{ "user": ["accountId:557058:abc"] }</pre>
 
 <h3>Global permissions &amp; application access</h3>
 <ul>
@@ -32462,12 +32785,27 @@ The rule's audit log.
 <li><strong>Global permissions</strong>: Administer Jira, Browse Users, Create Shared Objects, Manage Group Filter Subscriptions, Bulk Change.</li>
 <li><strong>Project permissions</strong> (from the permission scheme) are per project; <strong>Project admin</strong> can manage roles, components, versions, and (limited) some config, but not global schemes.</li>
 </ul>
+<pre># three tiers, widest to narrowest
+Application access:  group "jira-software-users" -> a license seat (can log in at all)
+Global permission:   "Administer Jira" -> group "site-admins"
+                     "Browse Users"    -> group "jira-software-users"
+Project permission:  "Browse Projects" (scheme) -> role "Users" (per project)
+# a user can hold a seat + Browse Users globally, yet see zero issues in a project
+# whose permission scheme doesn't grant them Browse Projects</pre>
 
 <h3>Issue-level security</h3>
 <ul>
 <li>An <strong>issue security scheme</strong> defines <em>security levels</em> (e.g. "Reporter &amp; Devs only", "Managers"). Setting a level on an issue hides it from everyone not in that level, even if they have Browse Project.</li>
 <li>Used for sensitive work (HR, security incidents, embargoed features). Default level can be set per project.</li>
 </ul>
+<pre># issue security scheme
+Level "Restricted"  members: role "Administrators", "Reporter", group "security-team"
+Level "Normal"      members: role "Users"
+
+# set the level on an issue -> anyone NOT in that level cannot see it, even with Browse Project
+POST /rest/api/3/issue/HR-42  { "fields": { "security": { "id": "10100" } } }  # "Restricted"
+
+# JQL respects it silently: "level = Restricted" returns nothing for outsiders</pre>
 
 <h3>Gotchas</h3>
 <ul>
@@ -32476,6 +32814,14 @@ The rule's audit log.
 <li>Team-managed projects have their <em>own</em> simplified permission model (roles + "who can access") &mdash; not the scheme stack; migrating between styles remaps everything.</li>
 <li>Granting via <em>group</em> in a scheme is a common source of "why does this contractor have edit rights everywhere".</li>
 </ul>
+<pre># "why can this contractor edit everything?"
+Permission scheme "Default" -> "Edit Issues" granted to GROUP "jira-software-users"
+# every licensed user is in that group -> edit rights on every project on this scheme
+# fix: grant to role "Developers" instead, and manage role membership per project
+
+# before editing a shared scheme, check the blast radius:
+GET /rest/api/3/permissionscheme/10000   # then Settings > Issues > Permission Schemes
+                                          # -> "Projects using this scheme" (often dozens)</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -32549,6 +32895,12 @@ An issue security level.
 <li>The link is made by putting the <strong>issue key</strong> in the branch name, commit message, or PR title (<code>PROJ-123 fix null check</code>). Jira scans for keys and associates them.</li>
 <li>Powers <strong>workflow triggers</strong> ("branch created" &rarr; In Progress), automation dev triggers, and the "Releases" / deployment views.</li>
 </ul>
+<pre># the issue key in the branch / commit / PR is the ENTIRE linkage mechanism
+$ git switch -c PROJ-140-card-read-path
+$ git commit -m "PROJ-140 add trigram index"
+$ gh pr create --title "PROJ-140: card read path"
+# Jira scans for /[A-Z]+-\d+/ -> shows branch + commits + PR on PROJ-140's Development panel
+# no key in the branch name -> nothing links, dev triggers never fire</pre>
 
 <h3>Smart commits</h3>
 <p>Commands in a commit message act on the referenced issue (if the author maps to a Jira user
@@ -32569,6 +32921,17 @@ PROJ-123 PROJ-124 #close #comment batched fix     (multiple issues, multiple com
 <li><strong>Release Burndown</strong> report forecasts which sprint a version completes in, accounting for scope added.</li>
 <li>With the dev integration, a version can show associated <strong>commits, PRs, and deployments</strong>, and you can gate/track "is everything for 2.4 merged and deployed".</li>
 </ul>
+<pre>POST /rest/api/3/version
+{ "projectId": 10000, "name": "2.4.0", "startDate": "2026-08-01" }   # state: unreleased
+
+# tag issues for the release
+POST /rest/api/3/issue/PROJ-140  { "fields": { "fixVersions": [ { "name": "2.4.0" } ] } }
+
+# what's left before release?
+fixVersion = "2.4.0" AND statusCategory != Done
+
+PUT /rest/api/3/version/10010  { "released": true, "releaseDate": "2026-09-01" }
+#   -> open issues can be bumped to "2.4.1"</pre>
 
 <h3>APIs &amp; extensibility</h3>
 <ul>
@@ -32577,6 +32940,15 @@ PROJ-123 PROJ-124 #close #comment batched fix     (multiple issues, multiple com
 <li><strong>Apps</strong>: Connect / Forge (Cloud) and P2 plugins (Data Center) extend the UI, add panels, workflow extensions (ScriptRunner), and integrations. The Marketplace is large; each app is a dependency, a cost, and a security review.</li>
 <li>Built-in native integrations: Confluence (linked pages, requirements), Bitbucket/GitHub, Opsgenie, Slack/Teams, Jira Service Management, Assets/Insight.</li>
 </ul>
+<pre># REST v3: search by JQL, then transition
+curl -u user@corp:$API_TOKEN \
+  "https://corp.atlassian.net/rest/api/3/search?jql=fixVersion=2.4.0+AND+statusCategory!=Done"
+
+# webhook registration (events filtered by JQL)
+POST /rest/api/3/webhook
+{ "url": "https://hooks.corp/jira",
+  "webhooks": [ { "events": ["jira:issue_updated"], "jqlFilter": "project = PROJ" } ] }
+# auth: OAuth 2.0 (3LO) or email + API token (Basic) on Cloud; PAT on Data Center</pre>
 
 <h3>Good practice</h3>
 <ul>
@@ -32586,6 +32958,15 @@ PROJ-123 PROJ-124 #close #comment batched fix     (multiple issues, multiple com
 <li>Vet Marketplace apps for data residency, permissions requested, and vendor support before install; minimize the count.</li>
 <li>For high-volume or bidirectional sync, use middleware/an integration platform, not raw automation web requests (delivery guarantees, mapping, reconciliation).</li>
 </ul>
+<pre># enforce the key in the branch name at the source (CI check / git hook)
+BR=$(git rev-parse --abbrev-ref HEAD)
+echo "$BR" | grep -qE '^[A-Z]+-[0-9]+' || { echo "branch needs a JIRA key"; exit 1; }
+
+# prefer automation over asking devs to remember smart-commit transitions:
+#   Trigger: PR merged  ->  Transition to "In Review"    (deterministic, no human step)
+
+# integration credentials = a service account, least privilege, rotated:
+#   "automation-svc"  roles: Developers only on the projects it touches</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
