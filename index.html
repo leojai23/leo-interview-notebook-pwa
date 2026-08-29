@@ -15737,6 +15737,1042 @@ Tier by cost vs signal. <strong>Per-commit / PR (fast, blocking, &lt;10 min)</st
 </section>
 <!-- /TOPIC:build:sanitizers-ci -->
 
+<!-- ============================== LOW-LEVEL DESIGN TOPICS ============================== -->
+<!-- TOPIC:lld:requirements -->
+<section class="view topic" id="v-lld-requirements" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Requirements &rarr; Classes &rarr; Responsibilities</h1>
+<p class="subtitle">The first 10 minutes of any LLD interview: turn a vague prompt into a bounded object model.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Step 1 &mdash; clarify &amp; bound the scope</h3>
+<ul>
+<li>Ask about the core use cases, scale, and what's explicitly <em>out</em> of scope. "Design a parking lot" &mdash; do we handle payment? multiple floors? reservations? EVs?</li>
+<li>State assumptions out loud and get agreement. A crisp, small scope beats a sprawling one.</li>
+<li>List <strong>functional</strong> requirements (what it does) and a few <strong>non-functional</strong> ones (concurrency, latency, extensibility) that will shape the design.</li>
+</ul>
+
+<h3>Step 2 &mdash; find the entities</h3>
+<p>A quick heuristic (Abbott's technique): <strong>nouns &rarr; candidate classes / attributes</strong>,
+<strong>verbs &rarr; methods / interactions</strong>. Filter: keep nouns that have state and behaviour;
+drop synonyms, vague terms, and things that are really attributes of another class.</p>
+
+<h3>Step 3 &mdash; assign responsibilities (CRC cards)</h3>
+<p>For each class write a <strong>C</strong>lass&ndash;<strong>R</strong>esponsibility&ndash;<strong>C</strong>ollaborator card:
+what it knows and does, and which other classes it needs. This surfaces:</p>
+<ul>
+<li>Classes with too many unrelated responsibilities (split &mdash; SRP).</li>
+<li>Missing classes (a responsibility with no owner).</li>
+<li>Coupling (a class collaborating with everything &mdash; a "god object").</li>
+</ul>
+
+<h3>Step 4 &mdash; relationships &amp; invariants</h3>
+<ul>
+<li>Decide association / aggregation / composition and multiplicity between classes.</li>
+<li>Name the <strong>invariants</strong> each class must maintain (a <code>ParkingFloor</code> never reports more free spots than it has; an <code>Account</code> balance never goes negative) &mdash; these justify encapsulation and drive method design.</li>
+<li>Only then think about patterns &mdash; and only where a real axis of change exists.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>1. Clarify scope: core use cases, scale, explicit non-goals. State assumptions, get buy-in.</li>
+<li>2. Functional + a few non-functional requirements (concurrency, extensibility) that shape structure.</li>
+<li>3. Nouns &rarr; classes/attributes; verbs &rarr; methods. Drop synonyms and pure attributes.</li>
+<li>4. CRC cards: Class / Responsibilities / Collaborators &mdash; exposes god objects, missing classes, coupling.</li>
+<li>5. Relationships (assoc/agg/comp) + multiplicity; write down each class's invariants.</li>
+<li>6. Patterns last, only where there's a genuine axis of change.</li>
+<li>Deliver iteratively: minimal correct model first, then extend under interviewer's prompts.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What's the first thing to do when given an LLD prompt?</dt>
+<dd>Clarify and bound the scope &mdash; ask which use cases matter, what scale, and what's out of scope &mdash; then state your assumptions explicitly. A well-scoped small design is far better than an ambitious vague one.</dd>
+<dt>How do you derive candidate classes from a description?</dt>
+<dd>Extract the nouns as candidate classes/attributes and the verbs as candidate methods/interactions, then filter: keep nouns that carry both state and behaviour, discard synonyms and things that are really fields of another class.</dd>
+<dt>What is a CRC card and what does it reveal?</dt>
+<dd>A note listing a Class's Responsibilities and its Collaborators. Doing this per class quickly reveals classes doing too much (violating SRP), responsibilities with no home (a missing class), and classes that talk to everything (excessive coupling / a god object).</dd>
+<dt>Why write down invariants early?</dt>
+<dd>They define what "valid" means for each object, which justifies making state private (only the class can maintain them) and drives the method set (each mutating method must preserve them). They also become your test assertions.</dd>
+<dt>When should you introduce a design pattern?</dt>
+<dd>Only after the core model is clear, and only where there's a real, identified axis of variation (multiple payment methods &rarr; Strategy; a family of related objects to create &rarr; Factory). Adding patterns pre-emptively is over-engineering.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Nouns in a requirement map to what?</summary><div class="answer-box">
+Candidate classes or attributes.
+</div></details>
+<details class="answer-reveal"><summary>What does CRC stand for?</summary><div class="answer-box">
+Class, Responsibilities, Collaborators.
+</div></details>
+<details class="answer-reveal"><summary>Should you start coding the full design immediately?</summary><div class="answer-box">
+No &mdash; clarify scope and assumptions first, then build the minimal model and iterate.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>The interviewer says "design a library management system". List the clarifying questions you'd ask.</summary><div class="answer-box">
+Which actors (members, librarians, admins)? Physical books only or e-books/audio? Multiple copies of a title? Reservations/holds and a queue? Fines for late returns &mdash; and payment, or just tracking? Search requirements (by title/author/ISBN/subject)? Branches/multiple locations? Membership limits (max books, loan period by member type)? Scale (books, members, transactions/day)? Concurrency (two members reserving the last copy)? Notifications? Which of these are in scope for this session?
+</div></details>
+<details class="answer-reveal"><summary>You've listed 15 candidate classes and it feels sprawling. How do you cut it down?</summary><div class="answer-box">
+Merge synonyms and near-duplicates; demote nouns that are just attributes (a "barcode" is a field of <code>BookCopy</code>, not a class) or transient values (a "search result" is a return type, not an entity); defer anything outside the agreed scope (payment gateway integration, analytics); and group by responsibility &mdash; if two classes always change together and have no independent behaviour, consider one class. Aim for the smallest set that expresses the core use cases; you can add classes when the interviewer pushes on an extension.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How do you decide the boundary between "domain model" classes and "service/coordinator" classes?</summary><div class="answer-box">
+Domain classes (entities, value objects) own <em>state + the invariants over that state</em> and the behaviour that's intrinsic to them: a <code>Loan</code> knows its due date and whether it's overdue; a <code>BookCopy</code> knows if it's available. Push behaviour <em>onto</em> these where it only needs their own data ("tell, don't ask") &mdash; a rich domain model. Service/coordinator classes own <em>use-case orchestration</em> that spans multiple entities and touches infrastructure: <code>CheckoutService.checkout(member, copy)</code> validates member limits, checks copy availability, creates a <code>Loan</code>, updates the copy, schedules a due-date notification, and commits a transaction. The test: if a method needs data or collaborators from several aggregates, or does I/O (persistence, messaging, external calls), it belongs in a service; if it operates on one object's own state and enforces that object's rules, it belongs on the entity. Anti-patterns at the extremes: an <em>anemic</em> model (entities are just getters/setters, all logic in fat services &mdash; procedural code wearing OO clothes) and a <em>god entity</em> (one class does orchestration + persistence + rules for the whole system). A good split keeps entities testable in isolation with no mocks, and services thin (mostly sequencing calls to entities and repositories).
+</div></details>
+<details class="answer-reveal"><summary>What is the aggregate/aggregate-root concept and why does it matter for LLD consistency?</summary><div class="answer-box">
+An <strong>aggregate</strong> (from Domain-Driven Design) is a cluster of objects treated as a single unit for data changes, with one entity designated the <strong>aggregate root</strong> &mdash; the only member outside code is allowed to hold a reference to. All mutations go through the root's methods, which enforce the invariants that span the cluster. Example: an <code>Order</code> root with <code>OrderLine</code> children &mdash; you never modify an <code>OrderLine</code> directly; you call <code>order.addLine(...)</code> / <code>order.changeQuantity(...)</code>, and the <code>Order</code> re-checks "total &le; credit limit" and "no duplicate SKU" atomically. Why it matters for LLD: (1) it gives a clear <strong>transactional/consistency boundary</strong> &mdash; one aggregate is saved atomically, and cross-aggregate consistency is eventual (via domain events), which prevents huge lock scopes and tangled object graphs; (2) it stops the "action at a distance" bug where code mutates a child object and the parent's invariant silently breaks; (3) it bounds what you load and lock &mdash; you fetch the whole <code>Order</code> aggregate, not a lazy-loaded graph of the entire database; (4) references between aggregates are by <em>id</em>, not object pointer, keeping the model loosely coupled and serializable. In an interview, identifying "what's the aggregate root here, and what's inside vs referenced by id" is a strong signal &mdash; e.g. for a parking lot, is <code>ParkingSpot</code> its own root or part of a <code>ParkingFloor</code> aggregate? The answer shapes locking, allocation, and how you'd shard/persist it.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:requirements -->
+
+<!-- TOPIC:lld:solid-applied -->
+<section class="view topic" id="v-lld-solid-applied" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>SOLID Applied to a Real Design</h1>
+<p class="subtitle">Turning the five principles into concrete class splits and interfaces.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Worked example: an order-processing module</h3>
+<p>Start with a fat <code>OrderService.placeOrder()</code> that validates, prices, charges a card,
+writes to the DB, and emails a receipt. Apply SOLID:</p>
+<table>
+<tr><th>Principle</th><th>Concrete move</th></tr>
+<tr><td><strong>SRP</strong></td><td>Split into <code>OrderValidator</code>, <code>PricingEngine</code>, <code>PaymentProcessor</code>, <code>OrderRepository</code>, <code>Notifier</code> &mdash; each with one reason to change.</td></tr>
+<tr><td><strong>OCP</strong></td><td>New payment type = a new <code>PaymentMethod</code> implementation + registry entry; no edit to <code>OrderService</code>.</td></tr>
+<tr><td><strong>LSP</strong></td><td>Every <code>PaymentMethod</code> honours the same contract (charge returns success/failure, never silently no-ops). A <code>FreeOrderPayment</code> that ignores the amount but still reports success is fine; one that throws "not supported" is a violation.</td></tr>
+<tr><td><strong>ISP</strong></td><td>Split a fat <code>Repository</code> into <code>OrderReader</code> + <code>OrderWriter</code> so a read-only reporting path doesn't depend on write methods.</td></tr>
+<tr><td><strong>DIP</strong></td><td><code>OrderService</code> depends on the <em>interfaces</em> (<code>PaymentProcessor</code>, <code>OrderRepository</code>, <code>Notifier</code>), which are injected. The concrete Stripe/Postgres/SES classes are wired at the composition root.</td></tr>
+</table>
+
+<h3>The payoff</h3>
+<ul>
+<li>Unit-testable: inject fakes for payment/repo/notifier; test <code>OrderService</code> logic in isolation.</li>
+<li>Swappable infra: change DB or payment provider without touching business logic.</li>
+<li>Parallel work: teams own different collaborators behind stable interfaces.</li>
+</ul>
+
+<h3>The caution</h3>
+<p>Every interface with one implementation "for testing" is a smell &mdash; introduce a seam only
+where change or testing genuinely needs it. Five collaborator interfaces for a stable 30-line
+class is over-engineering. Apply SOLID <em>where the pain is</em>, guided by the rule of three.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>SRP: one class per reason-to-change &mdash; split validate / price / charge / persist / notify.</li>
+<li>OCP: extend via new implementations + registration, not by editing the coordinator.</li>
+<li>LSP: every implementation fully honours the interface contract (no "not supported" throws, no strengthened preconditions).</li>
+<li>ISP: split fat interfaces into role interfaces (<code>Reader</code>/<code>Writer</code>) so clients depend only on what they use.</li>
+<li>DIP: high-level code depends on injected interfaces; concretes wired at the composition root.</li>
+<li>Payoff: isolation-testable, swappable infra, parallel team work.</li>
+<li>Caution: no speculative seams; apply where change/testing actually demands it (rule of three).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How does DIP make a service testable?</dt>
+<dd>The service depends on interfaces (<code>PaymentProcessor</code>, <code>Repository</code>) rather than concrete classes, and receives them via constructor injection. Tests pass in fakes/mocks, so the service's logic is exercised with no database, network, or real payment calls.</dd>
+<dt>Give a concrete OCP-compliant way to add a discount type.</dt>
+<dd>Define a <code>DiscountRule</code> interface with <code>apply(cart) -&gt; adjustment</code>. Each discount (percentage-off, buy-one-get-one, loyalty) is a class implementing it. The pricing engine iterates a list of rules it was given. Adding a discount is a new class + adding it to the configured list &mdash; no change to the engine.</dd>
+<dt>What does an LSP violation look like in a payment hierarchy?</dt>
+<dd>A subtype that doesn't honour the base contract: a <code>GiftCardPayment</code> whose <code>charge()</code> throws <code>UnsupportedOperationException</code> for amounts over the balance instead of returning a failure result, or one that requires an extra setup call the base doesn't. Client code written against <code>PaymentMethod</code> breaks on that subtype.</dd>
+<dt>When is splitting a class per SRP <em>not</em> worth it?</dt>
+<dd>When the "responsibilities" always change together and for the same reason, when the class is small and stable, or when the split would just create anemic data holders plus a procedural coordinator. SRP is about reasons to change, not line count.</dd>
+<dt>Why is "one interface per class, always" an anti-pattern?</dt>
+<dd>It adds indirection and files without decoupling anything real &mdash; if there's only ever one implementation and no test seam need, the interface is ceremony. Introduce interfaces at genuine variation points and module boundaries.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which principle says "depend on abstractions, not concretions"?</summary><div class="answer-box">
+Dependency Inversion (the D in SOLID).
+</div></details>
+<details class="answer-reveal"><summary>A class that validates input <em>and</em> writes to the DB violates which principle?</summary><div class="answer-box">
+Single Responsibility &mdash; two reasons to change.
+</div></details>
+<details class="answer-reveal"><summary>What pattern typically implements OCP for "swappable behaviour"?</summary><div class="answer-box">
+Strategy (an interface + interchangeable implementations, injected).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Refactor a <code>ReportGenerator</code> that queries the DB, computes stats, and renders HTML.</summary><div class="answer-box">
+Three responsibilities &rarr; <code>ReportRepository</code> (data access, one reason to change: schema/query), <code>ReportCalculator</code> (business rules), <code>ReportRenderer</code> (presentation, interface with <code>HtmlRenderer</code>/<code>PdfRenderer</code>/<code>CsvRenderer</code> implementations &mdash; OCP). A thin <code>ReportService</code> orchestrates: <code>renderer.render(calculator.compute(repository.fetch(params)))</code>. Now a layout change can't break the query; you can unit-test the calculator with in-memory data; adding a format is a new renderer class.
+</div></details>
+<details class="answer-reveal"><summary>Your team keeps editing one <code>NotificationService</code> switch statement to add channels (email, SMS, push, Slack). Fix.</summary><div class="answer-box">
+OCP + Strategy: a <code>NotificationChannel</code> interface (<code>send(recipient, message)</code>), one class per channel, registered in a map keyed by channel type (or discovered via DI). <code>NotificationService</code> looks up the channel(s) for a user's preferences and delegates. Adding Slack = a new <code>SlackChannel</code> class + registration; the service and existing channels are untouched, and each channel is independently testable.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>SOLID can produce a maze of tiny classes and interfaces. How do you keep a design SOLID <em>and</em> readable?</summary><div class="answer-box">
+Treat SOLID as a set of forces to balance, not rules to maximise. Practical guardrails: (1) <strong>Introduce seams reactively</strong> &mdash; when a second reason to change actually appears (rule of three), not in anticipation; a stable class doesn't need five injected collaborators. (2) <strong>Keep interfaces at module boundaries and true variation points</strong> (payment providers, storage backends, notification channels) &mdash; not around every collaboration. (3) <strong>Prefer a rich domain model</strong> so behaviour lives with data; don't shred everything into anemic structs + services. (4) <strong>Package by feature, not by layer</strong> &mdash; a "checkout" package containing its entities, service, and adapters reads better than parallel <code>controllers/</code>, <code>services/</code>, <code>repositories/</code> trees where one feature is scattered across all of them. (5) <strong>Use language features</strong> instead of pattern scaffolding &mdash; a lambda/function type for a one-method Strategy, a sealed hierarchy + pattern matching where a Visitor would be overkill. (6) <strong>Name things by role</strong> so the design documents itself. (7) Measure with the actual goal: can a newcomer find where to make a given change, and can that change be made without touching unrelated code? If yes, the abstraction level is right regardless of class count. Over-applied SOLID and under-applied SOLID are both maintenance costs; the target is "no more indirection than the observed rate of change justifies".
+</div></details>
+<details class="answer-reveal"><summary>How do you apply DIP without a heavyweight DI container, and what does the "composition root" actually contain?</summary><div class="answer-box">
+DIP is just "depend on interfaces, inject implementations" &mdash; you don't need a framework. <strong>Manual (poor-man's) DI</strong>: every class takes its dependencies as constructor parameters and stores them; nothing news up its own collaborators (no <code>new PostgresRepository()</code> inside <code>OrderService</code>). The <strong>composition root</strong> is the single place &mdash; <code>main()</code>, or a small <code>Bootstrap</code>/<code>AppFactory</code> &mdash; where you construct the concrete graph: create the config, the DB connection pool, <code>new PostgresOrderRepository(pool)</code>, <code>new StripePaymentProcessor(apiKey)</code>, <code>new SesNotifier(...)</code>, then <code>new OrderService(repo, payment, notifier)</code>, and hand the top-level object to the framework/entry point. It's the <em>only</em> place that references concrete infrastructure classes; everything below sees only interfaces. Benefits over a container: the wiring is explicit, compile-checked, greppable, and debuggable (a stack trace shows real constructors, not reflection magic); no runtime "binding not found" surprises; startup is deterministic. A DI container earns its keep only when the graph is large (hundreds of services), you need lifecycle scoping (per-request objects), or the framework mandates one &mdash; and even then, keep the container config <em>in</em> the composition root and don't let <code>@Inject</code>/attributes leak framework knowledge into domain classes. For most LLD-interview-sized designs, constructor injection + a hand-written composition root is the right answer and shows you understand what a container would be doing.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:solid-applied -->
+
+<!-- TOPIC:lld:uml -->
+<section class="view topic" id="v-lld-uml" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>UML Class &amp; Sequence Diagrams</h1>
+<p class="subtitle">The minimal notation you need to communicate a design on a whiteboard.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Class diagram</h3>
+<p>A box per class: name, attributes, operations. Visibility: <code>+</code> public, <code>-</code> private,
+<code>#</code> protected. Relationships between boxes:</p>
+<table>
+<tr><th>Line</th><th>Means</th></tr>
+<tr><td>solid line</td><td><strong>association</strong> &mdash; "knows about / uses"</td></tr>
+<tr><td>hollow diamond</td><td><strong>aggregation</strong> &mdash; "has-a", shared, independent lifetime</td></tr>
+<tr><td>filled diamond</td><td><strong>composition</strong> &mdash; "owns-a", part dies with the whole</td></tr>
+<tr><td>hollow triangle, solid line</td><td><strong>inheritance</strong> &mdash; "is-a"</td></tr>
+<tr><td>hollow triangle, dashed line</td><td><strong>realization</strong> &mdash; "implements interface"</td></tr>
+<tr><td>dashed arrow</td><td><strong>dependency</strong> &mdash; transient use (a parameter/return type)</td></tr>
+</table>
+<p><strong>Multiplicity</strong> on the ends: <code>1</code>, <code>0..1</code>, <code>*</code>, <code>1..*</code> &mdash; e.g. a
+<code>ParkingLot 1 &rarr;&rarr; * ParkingFloor</code>.</p>
+
+<h3>Sequence diagram</h3>
+<p>Shows an interaction over time: participants across the top, vertical lifelines, horizontal
+arrows for messages (solid = call, dashed = return), activation bars for "is executing". Great
+for walking through one use case ("checkout flow") and spotting who talks to whom, chatty
+round-trips, and missing error paths.</p>
+
+<h3>State diagram</h3>
+<p>States as rounded boxes, transitions as labelled arrows (<code>event [guard] / action</code>).
+Essential for anything with a lifecycle: an <code>Order</code> (created &rarr; paid &rarr; shipped &rarr;
+delivered / cancelled), an elevator car, a TCP connection.</p>
+
+<h3>In an interview</h3>
+<ul>
+<li>You don't need perfect UML &mdash; boxes, lines, and multiplicity communicate 90% of it.</li>
+<li>Draw the class diagram to show structure, one sequence diagram for the main flow, a state diagram if there's a non-trivial lifecycle.</li>
+<li>Keep it legible; don't cram 20 classes &mdash; show the core, mention the rest.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Class box: name / attributes / operations. Visibility <code>+ - #</code>.</li>
+<li>Relations: association (line), aggregation (hollow diamond), composition (filled diamond), inheritance (hollow triangle solid), realization (hollow triangle dashed), dependency (dashed arrow).</li>
+<li>Multiplicity on ends: <code>1</code>, <code>0..1</code>, <code>*</code>, <code>1..*</code>.</li>
+<li>Sequence diagram: participants + lifelines; solid arrow = call, dashed = return; for tracing one use case.</li>
+<li>State diagram: states + <code>event [guard] / action</code> transitions; for lifecycles (order, elevator, connection).</li>
+<li>Interview: class diagram for structure + one sequence for the main flow + state diagram if lifecycle is non-trivial. Legible &gt; complete.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How do you show "class A owns B, and B is destroyed with A" in a class diagram?</dt>
+<dd>Composition &mdash; a solid line with a <em>filled</em> diamond on the A end. Aggregation (hollow diamond) would mean B can outlive A / be shared.</dd>
+<dt>What's the difference between the realization and inheritance arrows?</dt>
+<dd>Both use a hollow triangle head. Inheritance ("extends a class") uses a solid line; realization ("implements an interface") uses a dashed line.</dd>
+<dt>What is a sequence diagram best for?</dt>
+<dd>Tracing a single scenario over time &mdash; which objects send which messages in what order &mdash; to validate the interaction, spot excessive round-trips, and check that error/timeout paths are handled.</dd>
+<dt>When do you need a state diagram?</dt>
+<dd>When an object has a meaningful lifecycle with rules about which transitions are allowed &mdash; an order, a document workflow, a connection, an elevator car. It makes illegal transitions and missing events obvious.</dd>
+<dt>What does multiplicity <code>1..*</code> on an association end mean?</dt>
+<dd>"One or more" &mdash; there must be at least one linked instance on that end (e.g. an <code>Order</code> has <code>1..*</code> <code>OrderLine</code>s).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which diamond means composition?</summary><div class="answer-box">
+The filled (solid) diamond.
+</div></details>
+<details class="answer-reveal"><summary>What does a dashed arrow between two class boxes indicate?</summary><div class="answer-box">
+A dependency &mdash; one class transiently uses the other (as a parameter, local, or return type).
+</div></details>
+<details class="answer-reveal"><summary>What kind of diagram traces one use case's message flow?</summary><div class="answer-box">
+A sequence diagram.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Sketch (in words) the class relationships for: a <code>Library</code> has <code>Branch</code>es; each <code>Branch</code> has many <code>BookCopy</code>; a <code>BookCopy</code> is a copy of a <code>Book</code>; a <code>Member</code> borrows <code>BookCopy</code>s via <code>Loan</code>.</summary><div class="answer-box">
+<code>Library 1 &mdash;&loz; 1..* Branch</code> (composition &mdash; branches belong to the library). <code>Branch 1 &mdash;&loz; * BookCopy</code> (composition). <code>BookCopy * &mdash;&rarr; 1 Book</code> (association &mdash; many copies of one title; the <code>Book</code> exists independently). <code>Member 1 &mdash;&rarr; * Loan</code> and <code>Loan * &mdash;&rarr; 1 BookCopy</code> (a <code>Loan</code> is an association class linking a <code>Member</code> and a <code>BookCopy</code> with attributes: checkout date, due date, returned date).
+</div></details>
+<details class="answer-reveal"><summary>Draw the state diagram for a support ticket.</summary><div class="answer-box">
+States: <strong>Open</strong> &rarr; (<code>assign</code>) &rarr; <strong>In Progress</strong> &rarr; (<code>resolve</code>) &rarr; <strong>Resolved</strong> &rarr; (<code>confirm</code>) &rarr; <strong>Closed</strong>. Extra transitions: <strong>In Progress</strong> &rarr; (<code>need info</code>) &rarr; <strong>Waiting on Customer</strong> &rarr; (<code>customer replies</code>) &rarr; <strong>In Progress</strong>; <strong>Resolved</strong> &rarr; (<code>reopen [within 7 days]</code>) &rarr; <strong>In Progress</strong>; any non-closed state &rarr; (<code>cancel</code>) &rarr; <strong>Closed</strong>. Guards on <code>reopen</code> and <code>assign</code> (must have an assignee) make the rules explicit.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>When is an "association class" the right modelling choice, and how does it map to code / a database?</summary><div class="answer-box">
+Use an association class when the <em>relationship itself</em> carries attributes or behaviour, not just the two entities it links. Classic case: <code>Student</code> &harr; <code>Course</code> is many-to-many, and the <em>enrolment</em> has its own data &mdash; grade, semester, attendance. You can't hang "grade" off <code>Student</code> (which grade? for which course?) or off <code>Course</code>. So <code>Enrollment</code> becomes a class with a link to one <code>Student</code> and one <code>Course</code> plus its attributes. In UML it's drawn as a class connected by a dashed line to the association line. <strong>In code</strong>: it's a normal entity &mdash; <code>class Enrollment { Student student; Course course; Grade grade; Date semester; }</code> &mdash; and the many-to-many is realised as <code>Student.enrollments : List&lt;Enrollment&gt;</code> and <code>Course.enrollments : List&lt;Enrollment&gt;</code>. <strong>In a relational DB</strong>: it's the <em>join table with extra columns</em> &mdash; <code>enrollment(student_id, course_id, grade, semester)</code> with a composite primary key <code>(student_id, course_id)</code> (or a surrogate id if a student can re-take a course). The subtlety interviewers probe: whether <code>(student, course)</code> is unique (one enrolment per pair &rarr; composite PK) or repeatable (retakes &rarr; surrogate id + a <code>semester</code> in the key), and whether the association class is an <em>aggregate root</em> of its own (has a lifecycle: enrolled &rarr; completed &rarr; withdrawn) or just a value linking two roots. Getting this right prevents the "where do I put the grade" flailing that a naive many-to-many causes.
+</div></details>
+<details class="answer-reveal"><summary>What are the practical limits of UML in modern practice, and what do teams use instead?</summary><div class="answer-box">
+Full formal UML (all 14 diagram types, MDA/round-trip code generation) largely failed in industry: the tools were heavy, the diagrams went stale the moment code changed, "executable UML" never delivered, and the notation's precision exceeded what design discussions actually need. What survived and is genuinely useful: <strong>class diagrams</strong> and <strong>sequence diagrams</strong> as lightweight communication aids (on a whiteboard, or as text-to-diagram via PlantUML / Mermaid checked into the repo so they can be diffed and reviewed), and <strong>state machines</strong> where a lifecycle is complex. For architecture (above the class level), the <strong>C4 model</strong> (Context, Container, Component, Code &mdash; Simon Brown) has largely replaced UML component/deployment diagrams because it's simpler and scoped to "diagrams for different audiences at different zoom levels". For sequences of events across services, teams draw plain <strong>flow diagrams</strong> or use tracing tools (the real sequence, from Jaeger/Zipkin, beats a hand-drawn guess). For data, <strong>ER diagrams</strong> (a UML-adjacent notation) remain standard. The pragmatic stance for an LLD interview: know class-diagram and sequence-diagram notation well enough to sketch clearly and read what an interviewer draws, use state diagrams for lifecycles, and don't get precious about strict UML conformance &mdash; the goal is shared understanding, and "boxes and labelled arrows" communicates it. Keeping diagrams as code (Mermaid in markdown, PlantUML) is how teams keep the few they maintain from rotting.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:uml -->
+
+<!-- TOPIC:lld:parking-lot -->
+<section class="view topic" id="v-lld-parking-lot" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Design a Parking Lot</h1>
+<p class="subtitle">The canonical LLD warm-up &mdash; entities, allocation strategy, and where to leave extension points.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Scope (state assumptions)</h3>
+<p>Multi-floor lot; vehicle types (motorcycle, car, bus); matching spot sizes (small, medium,
+large); entry issues a ticket, exit computes a fee. In scope: spot allocation, ticketing,
+pricing hook. Out of scope for now: reservations, license-plate recognition, valet.</p>
+
+<h3>Entities</h3>
+<table>
+<tr><th>Class</th><th>Responsibility</th></tr>
+<tr><td><code>ParkingLot</code></td><td>owns floors; entry/exit points; overall <code>parkVehicle</code>/<code>unpark</code></td></tr>
+<tr><td><code>ParkingFloor</code></td><td>owns its spots; finds a free spot for a vehicle type; tracks free counts</td></tr>
+<tr><td><code>ParkingSpot</code> (abstract) &rarr; <code>Small/Medium/LargeSpot</code></td><td>state: free / occupied; which vehicle</td></tr>
+<tr><td><code>Vehicle</code> (abstract) &rarr; <code>Motorcycle/Car/Bus</code></td><td>type, plate; which spot sizes it can use</td></tr>
+<tr><td><code>Ticket</code></td><td>id, entry time, spot, vehicle; exit time on unpark</td></tr>
+<tr><td><code>ParkingStrategy</code> (interface)</td><td>pick a spot &mdash; nearest, spread across floors, etc.</td></tr>
+<tr><td><code>PricingStrategy</code> (interface)</td><td>compute fee from duration + vehicle type</td></tr>
+<tr><td><code>EntryGate</code> / <code>ExitGate</code></td><td>issue ticket / process payment</td></tr>
+</table>
+
+<h3>Key flows</h3>
+<ul>
+<li><strong>Park</strong>: gate &rarr; <code>lot.park(vehicle)</code> &rarr; strategy picks a compatible free spot &rarr; mark occupied &rarr; create ticket. Fail cleanly if full (return <code>Optional&lt;Ticket&gt;</code> / throw <code>LotFullException</code>).</li>
+<li><strong>Unpark</strong>: <code>lot.unpark(ticket)</code> &rarr; set exit time &rarr; <code>pricing.fee(ticket)</code> &rarr; free the spot &rarr; return the fee.</li>
+</ul>
+
+<h3>Extension points (where OCP matters)</h3>
+<ul>
+<li>New vehicle/spot type &rarr; new subclass + a compatibility rule (a table or method, not a giant <code>switch</code>).</li>
+<li>New allocation policy / pricing model &rarr; new strategy implementation.</li>
+<li>EV charging spots, handicapped spots &rarr; spot attributes + a filter in the strategy.</li>
+</ul>
+
+<h3>Concurrency</h3>
+<p>Two cars racing for the last spot: allocation must be atomic &mdash; a per-floor lock around
+"find + mark", or an atomic compare-and-set on the spot's state, plus an atomic free-count. Keep
+the critical section tiny (just the claim, not ticket creation).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Entities: <code>ParkingLot</code> &loz;&mdash; <code>ParkingFloor</code> &loz;&mdash; <code>ParkingSpot</code> (Small/Med/Large); <code>Vehicle</code> hierarchy; <code>Ticket</code>; gates.</li>
+<li>Pluggable via interfaces: <code>ParkingStrategy</code> (spot selection), <code>PricingStrategy</code> (fee).</li>
+<li>Vehicle&harr;spot compatibility as data/method, not a <code>switch</code>.</li>
+<li>Park: strategy picks a compatible free spot &rarr; atomically claim &rarr; issue ticket. Full &rarr; explicit failure.</li>
+<li>Unpark: stamp exit &rarr; compute fee &rarr; free spot atomically.</li>
+<li>Concurrency: atomic "find + mark" (per-floor lock or CAS on spot state) + atomic free count.</li>
+<li>Extensions: EV/handicapped spots = attributes + strategy filter; new types = subclass + rule.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why make spot selection and pricing separate strategy interfaces?</dt>
+<dd>They're independent axes of change: the business may switch from "nearest spot" to "balance load across floors" without touching pricing, and change from hourly to slab pricing without touching allocation. Separate interfaces keep each swappable and testable, and keep <code>ParkingLot</code> closed to modification.</dd>
+<dt>How do you model which vehicle fits which spot?</dt>
+<dd>A compatibility rule, e.g. each <code>Vehicle</code> exposes the set of spot sizes it can occupy (a motorcycle fits any; a bus needs large, possibly several adjacent), and the allocation strategy filters free spots by that. Avoid a hard-coded <code>switch</code> so new types don't require editing the allocator.</dd>
+<dt>What happens on <code>park()</code> when the lot is full?</dt>
+<dd>Return an explicit "no spot" result &mdash; <code>Optional&lt;Ticket&gt;</code> empty, a result object, or a checked <code>LotFullException</code> &mdash; so the gate can show "FULL" rather than the caller getting a null or a half-created ticket.</dd>
+<dt>Two cars arrive at once and only one spot is left. How do you prevent double allocation?</dt>
+<dd>Make "find a free spot and mark it occupied" a single atomic step: a lock on the floor (or the spot pool) around that operation, or a compare-and-set on the spot's state (<code>free -&gt; occupied</code>) with a retry if it fails. Update the free-count atomically too. The ticket creation can happen outside the lock.</dd>
+<dt>How would you add reserved/handicapped/EV spots without rewriting the design?</dt>
+<dd>Give <code>ParkingSpot</code> attributes (<code>hasCharger</code>, <code>isHandicapped</code>, <code>reservedFor</code>) and let the <code>ParkingStrategy</code> take the request context (permit, EV, reservation id) and filter accordingly. No new class hierarchy needed; the allocator just gains a predicate.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does a <code>Ticket</code> record?</summary><div class="answer-box">
+Ticket id, entry time, the assigned spot, the vehicle; and exit time (set on unpark) used to compute the fee.
+</div></details>
+<details class="answer-reveal"><summary>Which relationship holds between <code>ParkingFloor</code> and <code>ParkingSpot</code>?</summary><div class="answer-box">
+Composition &mdash; spots belong to and are managed by the floor.
+</div></details>
+<details class="answer-reveal"><summary>Where does "hourly vs flat-rate pricing" live?</summary><div class="answer-box">
+Behind a <code>PricingStrategy</code> interface, injected into the exit/lot.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>The interviewer adds: a bus needs 3 adjacent large spots. How does allocation change?</summary><div class="answer-box">
+Spot selection is no longer "find one free spot" but "find <em>k</em> contiguous free spots of size L on one floor". Model adjacency: spots have an ordered position per row, and the floor can scan rows for a run of <em>k</em> free large spots. The claim must mark all <em>k</em> atomically (lock the floor, verify all still free, mark all). The <code>Ticket</code> now references a list of spots. Free/occupancy counts and unpark free all of them. Consider whether partial parking (bus spanning two floors) is allowed &mdash; probably not, keep it one floor.
+</div></details>
+<details class="answer-reveal"><summary>How do you keep per-floor free counts fast and correct under concurrency?</summary><div class="answer-box">
+Maintain an <code>AtomicInteger</code> free count per floor per size class, decremented/incremented in the same critical section (or CAS sequence) that flips the spot state &mdash; never as a separate step. The entry display reads these counters directly (O(1)), so you don't scan spots. On unpark, increment. Reconcile periodically (a background sweep) as a safety net against bugs, and treat the counters as a cache of truth, with the spot states being authoritative.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Scale this to a chain of 500 lots with a central app showing live availability and supporting online reservations. What changes?</summary><div class="answer-box">
+The single-process object model becomes a distributed system. Each lot runs its own service (or edge device) that is the <strong>source of truth for its spots</strong> &mdash; local allocation stays a fast in-process atomic operation, resilient to network partition (a lot must keep working if the WAN drops). Live availability: each lot pushes free-count deltas (or periodic snapshots) to a central store; the app reads eventually-consistent aggregates &mdash; showing "~12 free" is fine, exact isn't needed. <strong>Reservations</strong> are the hard part: a reservation is a hold on capacity, not a specific spot. Model it as a <em>counter reservation</em> against a size class at a lot with an expiry (hold N large spots for the next 30 min), decremented from available capacity centrally, then reconciled with the lot &mdash; the lot must honour "keep M spots for reservations" in its local allocator. Overbooking policy: since holds expire and no-shows happen, you may allow a small overbook ratio with a fallback (comp parking / refund) rather than strict capacity, tuned from no-show data. Consistency: use the central reservation service as the authority for <em>reservable</em> capacity (with idempotent reservation ids, and a saga/compensation if the lot later reports it's actually full), while walk-in capacity is managed lot-locally. Add: an event stream for analytics/billing, per-lot config (pricing, spot mix) served from the center, and offline mode where a lot queues events and syncs on reconnect. The LLD class model per lot barely changes; what's added is the reservation aggregate, a sync/replication layer, expiry handling, and explicit decisions about which numbers are authoritative vs eventually consistent.
+</div></details>
+<details class="answer-reveal"><summary>Model parking fee calculation to support: free first 15 min, tiered hourly rates, daily max, different rates by vehicle type, weekend/holiday pricing, and lost-ticket flat fee. Keep it clean.</summary><div class="answer-box">
+Don't put this in one method with a pile of <code>if</code>s. Model it as a <strong>pipeline of pricing rules</strong> plus a <strong>rate schedule</strong>. The <code>PricingStrategy</code> takes a <code>PricingContext</code> (entry time, exit time, vehicle type, ticket state, lot id) and returns a <code>Fee</code> breakdown. Internally: (1) a <code>RateTable</code> data object &mdash; per vehicle type, an ordered list of tiers (<code>0&ndash;15min: $0</code>, <code>15min&ndash;1h: $4</code>, <code>1&ndash;3h: $3/h</code>, <code>3h+: $2/h</code>) and a daily cap. Tiers and caps are <em>configuration</em>, not code. (2) A <code>Calendar</code>/<code>PricingPeriod</code> resolver that maps a date to <code>weekday</code>/<code>weekend</code>/<code>holiday</code> and selects the right <code>RateTable</code> (so holiday pricing is just a different table, chosen by a rule, not a special branch). (3) A short chain of <strong>modifier rules</strong> applied in order: <code>GracePeriodRule</code> (zero out the first 15 min), <code>TieredDurationRule</code> (walk the tiers over the parked duration, summing), <code>DailyMaxRule</code> (cap per calendar day, handling multi-day stays day-by-day), <code>LostTicketRule</code> (if <code>ticket.state == LOST</code>, short-circuit to the flat lost fee, ignoring duration). (4) Return a <code>Fee</code> with line items so the receipt and disputes are explainable. Adding "first hour free for EVs" or a "validation code" discount is a new rule class or a new row in the rate config &mdash; the calculator and the parking flow don't change (OCP). Test each rule in isolation with crafted contexts, and property-test the whole chain (fee monotonic in duration except at the daily cap, never negative, lost-ticket fee &ge; max possible normal fee).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:parking-lot -->
+
+<!-- TOPIC:lld:lru-cache -->
+<section class="view topic" id="v-lld-lru-cache" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Design an LRU / LFU Cache</h1>
+<p class="subtitle">O(1) get and put &mdash; the hash map + doubly linked list, and where it gets harder.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>LRU: the standard structure</h3>
+<ul>
+<li><strong>Hash map</strong>: key &rarr; node (O(1) lookup).</li>
+<li><strong>Doubly linked list</strong>: nodes in recency order, most-recently-used at the head, least at the tail. Doubly-linked so you can unlink any node in O(1).</li>
+<li><code>get(k)</code>: map lookup; if hit, move node to head; return value.</li>
+<li><code>put(k, v)</code>: if present, update value + move to head; else create node, add at head, insert in map; if size &gt; capacity, evict the tail node (remove from list and map).</li>
+</ul>
+<p>Use a <strong>sentinel head and tail</strong> to avoid null checks. Both operations are O(1). Many
+languages have this built in (Java <code>LinkedHashMap</code> with <code>accessOrder=true</code>, Python
+<code>OrderedDict</code> / <code>functools.lru_cache</code>).</p>
+
+<h3>LFU (least-frequently-used)</h3>
+<p>Evict the item with the lowest access count; break ties by recency. O(1) version: a map key&rarr;node,
+a map frequency&rarr;(doubly linked list of nodes with that frequency), and a <code>minFreq</code>
+pointer. On access, move the node from its freq list to the freq+1 list; update <code>minFreq</code>.
+More complex; use it when access frequency is a better predictor than recency (e.g. a long-tail
+workload with a few very hot keys).</p>
+
+<h3>Real-world concerns</h3>
+<ul>
+<li><strong>Thread-safety</strong>: wrap operations in a lock (simple), or shard the cache into N independently-locked segments (like <code>ConcurrentHashMap</code>) for less contention, or use a concurrent design (Caffeine uses lock-free reads + a ring buffer of access events replayed under a lock).</li>
+<li><strong>TTL / expiry</strong>: store an expiry timestamp per entry; lazily evict on access, plus a background sweep. LRU + TTL together is common.</li>
+<li><strong>Size vs bytes</strong>: cap by entry count is easy; capping by memory needs a per-entry weight.</li>
+<li><strong>Stampede</strong>: on a miss for a hot key, many threads recompute &mdash; add per-key single-flight (compute once, others wait).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>LRU = hash map (key&rarr;node) + doubly linked list (recency order, MRU at head). Sentinel head/tail.</li>
+<li><code>get</code>: lookup + move-to-head. <code>put</code>: upsert + move-to-head; over capacity &rarr; evict tail. Both O(1).</li>
+<li>LFU O(1): key&rarr;node map + freq&rarr;list-of-nodes map + <code>minFreq</code>; access bumps node to next freq list.</li>
+<li>Recency (LRU) for temporal locality; frequency (LFU) for stable hot sets. LRU-K / ARC / W-TinyLFU blend both.</li>
+<li>Thread-safe: one lock (simple), sharded locks (scalable), or a concurrent design (Caffeine).</li>
+<li>Add TTL: per-entry expiry, lazy eviction on access + background sweep.</li>
+<li>Cache stampede on a hot miss &rarr; per-key single-flight.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why a doubly linked list, not singly?</dt>
+<dd>To unlink an arbitrary node (the one you just accessed, found via the hash map) in O(1) you need its predecessor pointer. A singly linked list would require an O(n) scan to find the previous node.</dd>
+<dt>What do the sentinel head/tail nodes buy you?</dt>
+<dd>Every real node always has a non-null <code>prev</code> and <code>next</code>, so insert/remove code has no special cases for "list empty" or "removing the first/last node" &mdash; fewer bugs.</dd>
+<dt>LRU vs LFU &mdash; when does LFU win?</dt>
+<dd>When a small set of keys is accessed far more than the rest over a long period, and occasional bursts of one-time scans shouldn't evict them. Pure LRU lets a big sequential scan flush the hot set; LFU (or scan-resistant hybrids like W-TinyLFU) keeps the frequently-used items.</dd>
+<dt>How do you make an LRU cache thread-safe without killing throughput?</dt>
+<dd>A single mutex is correct but serialises all access. Better: shard into N segments each with its own lock and its own LRU (route by key hash), so concurrent operations on different keys don't contend. Best (libraries like Caffeine): lock-free reads that just append the access to a buffer, with the LRU order maintained asynchronously under one lock, amortising the bookkeeping.</dd>
+<dt>How do you add TTL to an LRU cache?</dt>
+<dd>Store an expiry timestamp on each entry. On <code>get</code>, if now &gt; expiry, treat it as a miss and evict. Run a periodic background sweep (or a min-heap keyed by expiry) to reclaim expired entries that are never accessed again.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Two data structures behind an O(1) LRU cache?</summary><div class="answer-box">
+A hash map (key &rarr; list node) and a doubly linked list (recency order).
+</div></details>
+<details class="answer-reveal"><summary>Which end of the list holds the eviction candidate?</summary><div class="answer-box">
+The tail (least recently used).
+</div></details>
+<details class="answer-reveal"><summary>Does <code>get</code> change the cache's internal order?</summary><div class="answer-box">
+Yes &mdash; a hit moves the entry to the most-recently-used position.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Implement <code>put</code> for an LRU cache in pseudocode.</summary><div class="answer-box">
+<pre><code>put(k, v):
+  if k in map:
+    node = map[k]; node.val = v; moveToHead(node); return
+  node = Node(k, v)
+  map[k] = node; addToHead(node)
+  if map.size &gt; capacity:
+    lru = tail.prev
+    removeNode(lru); del map[lru.key]</code></pre>
+</div></details>
+<details class="answer-reveal"><summary>Your LRU cache is hit by a nightly full-table scan and the hot working set is evicted every night. Fix without switching to LFU entirely.</summary><div class="answer-box">
+Make it scan-resistant. Options: (1) <strong>Segmented LRU / 2Q</strong> &mdash; new entries go into a small "probationary" list; only entries accessed a <em>second</em> time get promoted to the "protected" list. A one-time scan fills and flushes the small probationary segment, leaving the protected hot set intact. (2) <strong>W-TinyLFU</strong> (Caffeine's policy) &mdash; a tiny frequency sketch (counting Bloom filter) gates admission: a candidate for admission only evicts a victim if its estimated frequency is higher, so scan items (freq 1) can't displace hot items (freq &gt;&gt; 1). (3) <strong>ARC</strong> &mdash; adaptively balances recency and frequency lists based on hit history. All keep O(1) operations and dramatically improve hit rate on mixed scan + hot-set workloads over plain LRU.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a bounded, thread-safe, TTL-aware cache for a high-QPS service. Walk through the structures and trade-offs.</summary><div class="answer-box">
+<strong>Core</strong>: a concurrent hash map (key &rarr; entry) as the source of truth; entries hold value, size/weight, createAt, expireAt, and a frequency estimate. <strong>Eviction policy</strong>: W-TinyLFU (admission via a frequency sketch, victims from a small window LRU + a main SLRU) &mdash; scan-resistant and near-optimal hit rate; the policy's ordering data is maintained <em>asynchronously</em>: reads just record the accessed key into a lock-free ring buffer (per-thread striped to avoid contention), and a single maintenance task drains the buffers under one lock, replaying accesses to update recency/frequency and doing evictions in batches. This makes the read path essentially a map lookup + a cheap append &mdash; no per-read lock, no linked-list pointer surgery on the hot path. <strong>TTL</strong>: lazy &mdash; on <code>get</code>, check <code>now &gt; expireAt</code> and treat as a miss; plus the maintenance task expires entries in bulk, optionally driven by a hierarchical timing wheel keyed on expiry so it's O(1) amortised rather than scanning. <strong>Weight/size bound</strong>: track total weight atomically; evict until under the limit, using the policy's victim order. <strong>Stampede control</strong>: on a miss, use single-flight per key (a small map of in-progress futures) so only one thread computes the value and the rest await it; optionally serve a slightly-stale value while refreshing asynchronously (refresh-ahead) so latency-critical reads never block on recomputation. <strong>Observability</strong>: expose hit rate, eviction count, load penalty, size &mdash; a falling hit rate is the signal to resize or revisit the policy. <strong>Trade-offs</strong>: the async policy means recency/frequency data lags reality slightly (fine &mdash; a few ms of imprecision costs almost nothing in hit rate); the ring buffers and sketch add fixed memory overhead; and correctness testing is harder (concurrency + eviction + TTL interactions) so it's worth using a proven library (Caffeine on JVM, or an equivalent) rather than hand-rolling the concurrent maintenance loop.
+</div></details>
+<details class="answer-reveal"><summary>Extend the single-node cache to a distributed cache. What are the key design decisions?</summary><div class="answer-box">
+<strong>Partitioning</strong>: spread keys across N nodes with <em>consistent hashing</em> (+ virtual nodes) so adding/removing a node only remaps ~1/N of keys, not everything &mdash; avoids a cache-wide stampede on scaling events. <strong>Client vs proxy</strong>: a smart client that hashes and talks directly to the owning node (memcached-style, low latency, no extra hop) vs a proxy/router layer (simpler clients, central control, extra hop) &mdash; or a replicated design (Redis Cluster) where nodes gossip topology. <strong>Replication</strong>: for a cache, often none (a lost node just means cache misses that refill from the DB &mdash; acceptable), or 1 replica for hot partitions / to survive a node loss without a thundering herd on the origin. <strong>Consistency</strong>: caches are best-effort; on a write to the DB you either invalidate the key (delete from cache, next read refills) or update it &mdash; invalidate is safer (avoids stale writes racing). Accept a small window of staleness; use short TTLs as a backstop. <strong>Hot keys</strong>: a single key hotter than one node can serve &rarr; replicate that key to multiple nodes, or add a small client-side L1 cache with a very short TTL to absorb the QPS. <strong>Failure</strong>: node down &rarr; requests to its partition fail fast and fall through to the DB (with per-key single-flight and maybe a circuit breaker to protect the DB from the surge); don't block. <strong>Coordination</strong>: topology changes via a config service / gossip; clients refresh their ring on error. This is essentially memcached/Redis-Cluster/ Tair &mdash; the interview points are consistent hashing, invalidate-don't-update, tolerate-misses-not-staleness, and protect the origin during node loss.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:lru-cache -->
+
+<!-- TOPIC:lld:rate-limiter -->
+<section class="view topic" id="v-lld-rate-limiter" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Design a Rate Limiter</h1>
+<p class="subtitle">Four algorithms, and how each handles bursts, boundaries, and distribution.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The algorithms</h3>
+<table>
+<tr><th>Algorithm</th><th>Idea</th><th>Bursts</th></tr>
+<tr><td><strong>Fixed window</strong></td><td>count requests per key per calendar minute; reset at the boundary</td><td>allows 2&times; rate at the boundary (end of one window + start of next)</td></tr>
+<tr><td><strong>Sliding window log</strong></td><td>store timestamps of recent requests; count those within the last minute</td><td>exact, but O(requests) memory per key</td></tr>
+<tr><td><strong>Sliding window counter</strong></td><td>weighted blend of current + previous fixed-window counts</td><td>smooths the boundary spike; approximate; O(1) memory</td></tr>
+<tr><td><strong>Token bucket</strong></td><td>bucket of <code>capacity</code> tokens, refilled at <code>rate</code>/sec; each request takes 1</td><td>allows a burst up to <code>capacity</code>, then steady rate. The usual choice.</td></tr>
+<tr><td><strong>Leaky bucket</strong></td><td>requests queue; drained at a fixed rate; queue full &rarr; reject</td><td>no bursts &mdash; perfectly smooth output</td></tr>
+</table>
+
+<h3>Token bucket &mdash; the common implementation</h3>
+<p>Store per key: <code>tokens</code> (float), <code>lastRefill</code> (timestamp). On a request:
+<code>tokens = min(capacity, tokens + (now - lastRefill) * rate); lastRefill = now;</code> then if
+<code>tokens &ge; 1</code>, decrement and allow, else reject. Two numbers per key, O(1).</p>
+
+<h3>Where it lives</h3>
+<ul>
+<li><strong>Per-process</strong>: an in-memory map; simplest, but each instance has its own limit &rarr; effective limit &times; instance count.</li>
+<li><strong>Distributed</strong>: state in Redis. Do the read-modify-write atomically &mdash; a Lua script (or <code>INCR</code> + <code>EXPIRE</code> for fixed window). Watch Redis latency on the hot path; consider a local token bucket that syncs periodically for approximate limiting with low latency.</li>
+</ul>
+
+<h3>API concerns</h3>
+<ul>
+<li>Key by user / API key / IP / (user, endpoint) &mdash; and often several tiers at once.</li>
+<li>Return <code>429 Too Many Requests</code> with <code>Retry-After</code> and <code>X-RateLimit-Limit/Remaining/Reset</code> headers.</li>
+<li>Fail-open vs fail-closed if the limiter store is down (usually fail-open for availability).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Fixed window: O(1), simple, 2&times; burst at boundaries.</li>
+<li>Sliding log: exact, O(requests) memory. Sliding counter: approx, O(1), smooths boundary.</li>
+<li>Token bucket: capacity + refill rate; allows a bounded burst then steady rate &mdash; default pick. Two fields/key.</li>
+<li>Leaky bucket: fixed drain rate, queue; smooth output, no bursts.</li>
+<li>Per-process = simple but limit multiplies by instance count. Distributed = state in Redis, atomic RMW (Lua / INCR+EXPIRE).</li>
+<li>Key by user / API key / IP / (user,endpoint); support multiple tiers.</li>
+<li>Reject with <code>429</code> + <code>Retry-After</code> + <code>X-RateLimit-*</code> headers.</li>
+<li>Limiter store down &rarr; usually fail-open.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does a fixed-window limiter allow bursts up to twice the rate?</dt>
+<dd>A client can send the full quota in the last instant of window N and the full quota in the first instant of window N+1 &mdash; 2&times; the limit within a span shorter than one window. Sliding-window approaches remove this boundary effect.</dd>
+<dt>Token bucket vs leaky bucket?</dt>
+<dd>Token bucket permits a burst (up to the bucket capacity) after an idle period, then enforces the average rate &mdash; good for APIs where occasional bursts are fine. Leaky bucket forces a perfectly smooth output rate by queuing and draining at fixed speed &mdash; good for protecting a downstream that can't absorb spikes.</dd>
+<dt>What two values does a token-bucket entry need?</dt>
+<dd>The current token count and the timestamp of the last refill. On each request you lazily add <code>(now - last) &times; rate</code> tokens (capped at capacity) before checking.</dd>
+<dt>How do you rate-limit across many server instances?</dt>
+<dd>Keep the counter/bucket state in a shared store (Redis) and make the check-and-decrement atomic &mdash; a Lua script for token bucket, or <code>INCR</code> with <code>EXPIRE</code> for fixed window. Alternatively, give each instance a share of the budget locally and reconcile periodically (approximate but low-latency).</dd>
+<dt>What should a rate-limited response look like?</dt>
+<dd>HTTP <code>429 Too Many Requests</code>, a <code>Retry-After</code> header telling the client when to try again, and ideally <code>X-RateLimit-Limit</code>, <code>-Remaining</code>, <code>-Reset</code> so well-behaved clients can self-throttle.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which HTTP status code means "rate limited"?</summary><div class="answer-box">
+<code>429 Too Many Requests</code>.
+</div></details>
+<details class="answer-reveal"><summary>Which algorithm naturally allows a controlled burst then a steady rate?</summary><div class="answer-box">
+Token bucket.
+</div></details>
+<details class="answer-reveal"><summary>Which algorithm gives a perfectly smooth output rate?</summary><div class="answer-box">
+Leaky bucket.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Implement a distributed fixed-window limiter with Redis. What's the race, and the fix?</summary><div class="answer-box">
+Naively: <code>GET key</code>; if under limit, <code>INCR key</code>. The race: two requests both read the same count before either increments, so both pass and you exceed the limit. Fix: <code>INCR</code> first (atomic), get the new value back, and on the response that made it exceed the limit, reject &mdash; and on the request that created the key (returned 1), also set <code>EXPIRE key window_seconds</code>. Or do it all in one Lua script: check, incr, set expiry atomically. The key is one round trip that both increments and returns the post-increment value.
+</div></details>
+<details class="answer-reveal"><summary>You need per-user limits AND a global limit AND a per-endpoint limit. How do you compose them?</summary><div class="answer-box">
+Run the request through an ordered chain of limiters, each with its own key and config: <code>[globalLimiter (key="global"), userLimiter (key=userId), endpointLimiter (key=userId+":"+endpoint)]</code>. Allow only if <em>all</em> pass; reject with the tightest <code>Retry-After</code> among the failing ones. Check cheap/most-likely-to-fail limiters first to short-circuit. Be careful to only <em>consume</em> tokens from limiters after you know the request will proceed (or refund on later rejection), so a request blocked by limiter 3 doesn't wrongly deplete limiters 1 and 2 &mdash; either check-all-then-consume-all, or consume and compensate.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a rate limiter for a global API gateway: 10k+ nodes, sub-millisecond added latency budget, per-key limits, and it must degrade gracefully when the central store is slow.</summary><div class="answer-box">
+A pure "call Redis on every request" design blows the latency budget and makes Redis a SPOF at that scale. Use a <strong>two-tier / local-token design</strong>: each gateway node keeps an in-memory token bucket per active key, and a background process periodically (every few hundred ms) reconciles with the central store &mdash; it reports how many tokens the node consumed and requests a fresh allotment for the next interval, and the central authority divides the global budget among nodes proportional to recent demand (nodes seeing more traffic for a key get a bigger share). Between syncs, the node enforces limits purely locally &mdash; O(1), zero network latency on the request path. Consequences and tuning: (1) the limit is <em>approximate</em> &mdash; brief overshoot up to (per-node allotment &times; nodes-that-just-got-a-burst) is possible; you set the sync interval and per-node buffer to bound this (shorter interval = tighter limit, more central load). (2) <strong>Cold keys</strong>: a key with no local allotment gets a small starter grant on first hit, refined next sync. (3) <strong>Store slow/down</strong>: nodes keep enforcing with their last-known allotment (fail-open-ish but still bounded), and the central authority is not on the critical path, so gateway latency and availability are unaffected &mdash; you just lose precision until it recovers. (4) <strong>Hot key across nodes</strong>: the demand-proportional split handles skew automatically. (5) For keys that genuinely need exact limits (billing, abuse), route those through a synchronous Redis check and accept the latency for that subset. This is roughly how Stripe/CloudFlare-scale limiters work: local enforcement for speed, periodic central reconciliation for a globally coherent (if slightly fuzzy) limit, and the central component off the request path.
+</div></details>
+<details class="answer-reveal"><summary>Compare rate limiting with load shedding and backpressure &mdash; when do you want which?</summary><div class="answer-box">
+They solve overlapping but distinct problems. <strong>Rate limiting</strong> is a <em>policy</em> control keyed on identity (per user/API key/plan): "this client gets 1000 req/min regardless of whether the system is busy" &mdash; it's about fairness, abuse prevention, and monetisation, and it rejects with <code>429</code> deterministically. <strong>Load shedding</strong> is a <em>self-protection</em> control keyed on system health: when a queue depth, latency, or CPU threshold is exceeded, start dropping requests (ideally the cheapest/least-important first &mdash; priority-aware shedding) to keep the service from collapsing entirely; it returns <code>503</code> and is dynamic &mdash; off when healthy, aggressive when overloaded. <strong>Backpressure</strong> is a <em>flow</em> control mechanism: instead of dropping, you slow the producer &mdash; bounded queues that block/park the caller, TCP window shrinking, reactive-streams "request(n)" signalling, or gRPC flow control &mdash; propagating "I can't keep up" upstream so the source stops sending rather than the receiver drowning. You typically want <em>all three</em> layered: rate limiting at the edge for policy/fairness, backpressure through the internal pipeline so slow downstreams throttle upstreams instead of buffering unboundedly (which turns a latency blip into an OOM), and load shedding as the last resort when backpressure isn't enough (e.g. the slow component is a shared dependency you can't backpressure). A common mistake is using only rate limiting: it doesn't adapt to real-time capacity, so a dependency slowdown still causes a cascading failure that per-client limits never triggered on.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:rate-limiter -->
+
+<!-- TOPIC:lld:elevator -->
+<section class="view topic" id="v-lld-elevator" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Design an Elevator System</h1>
+<p class="subtitle">A state machine plus a scheduling policy &mdash; and the multi-car dispatch problem.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Requests: two kinds</h3>
+<ul>
+<li><strong>Hall call</strong>: a button in the lobby/floor &mdash; has a floor and a direction (up/down). Served by the <em>system</em>, which picks a car.</li>
+<li><strong>Car call</strong>: a button inside a car &mdash; has a target floor. Served by <em>that</em> car.</li>
+</ul>
+
+<h3>Single-car scheduling</h3>
+<p>Keep two sorted sets of target floors: <code>up</code> stops and <code>down</code> stops. The car
+follows the <strong>elevator algorithm (SCAN/LOOK)</strong>: keep moving in the current direction,
+stopping at every requested floor along the way, until there are no more requests ahead; then
+reverse. This minimises direction changes and starvation vs "serve nearest request" (which can
+strand someone at the top).</p>
+
+<h3>State machine per car</h3>
+<pre><code>IDLE  &mdash;request&rarr;  MOVING_UP / MOVING_DOWN
+MOVING_*  &mdash;reached a stop&rarr;  DOORS_OPENING &rarr; DOORS_OPEN &rarr; DOORS_CLOSING &rarr; MOVING_* or IDLE
+any  &mdash;emergency&rarr;  STOPPED / MAINTENANCE</code></pre>
+<p>Guards: doors can't open while moving; can't move with doors open; overload sensor blocks
+close; door-obstruction re-opens.</p>
+
+<h3>Multi-car dispatch</h3>
+<p>On a hall call, a <code>Dispatcher</code> scores each car and assigns the best one. Simple score:
+estimated time to reach that floor = f(distance, current direction vs call direction, number of
+stops already queued, load). Assign to the minimum. Re-evaluate as conditions change (a closer
+car frees up). Real systems use "destination dispatch" (you enter your target in the lobby, the
+system groups passengers and assigns cars to minimise total travel time).</p>
+
+<h3>Classes</h3>
+<ul>
+<li><code>ElevatorSystem</code> (owns cars + dispatcher), <code>ElevatorCar</code> (state machine, own queue), <code>Dispatcher</code> (interface &mdash; strategy for car selection), <code>Request</code> (HallCall / CarCall), <code>Door</code>, <code>Button</code>/<code>Panel</code>, <code>FloorSensor</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Hall call (floor + direction, system picks a car) vs car call (target floor, that car).</li>
+<li>Per-car: two sorted stop sets (up/down) + <strong>SCAN/LOOK</strong> &mdash; sweep in one direction serving all stops, then reverse. Avoids starvation of "nearest request".</li>
+<li>Car state machine: IDLE &harr; MOVING_UP/DOWN &harr; DOORS_OPENING/OPEN/CLOSING; + STOPPED/MAINTENANCE. Guards: no move with doors open, no open while moving, obstruction re-opens.</li>
+<li>Multi-car: <code>Dispatcher</code> strategy scores cars (ETA from distance, direction match, queued stops, load) &rarr; assign minimum; re-evaluate on change.</li>
+<li>Destination dispatch (enter target in lobby) optimises total travel; group passengers.</li>
+<li>Classes: <code>ElevatorSystem</code>, <code>ElevatorCar</code>, <code>Dispatcher</code> (iface), <code>Request</code> (HallCall/CarCall), <code>Door</code>, <code>Panel</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Hall call vs car call?</dt>
+<dd>A hall call comes from a floor button and carries a floor + desired direction; the system chooses which car serves it. A car call comes from a panel inside a car and carries a target floor; it's served by that specific car.</dd>
+<dt>Why use SCAN/LOOK instead of "serve the nearest request"?</dt>
+<dd>Nearest-request can starve far requests indefinitely if closer ones keep arriving. SCAN sweeps steadily in one direction serving everything in its path, then reverses &mdash; bounded wait for everyone and fewer energy-costly direction changes.</dd>
+<dt>What invariants does the door state machine enforce?</dt>
+<dd>Doors never open while the car is moving; the car never moves while doors are open or opening; an obstruction or overload during closing re-opens the doors; a close only proceeds after a dwell timeout with no obstruction.</dd>
+<dt>How does the dispatcher pick a car for a hall call?</dt>
+<dd>It estimates each car's time-to-serve for that call &mdash; based on distance to the floor, whether the car is already heading that way in the requested direction, how many stops it has queued, and its current load &mdash; and assigns the car with the lowest estimate, re-checking if circumstances change.</dd>
+<dt>What is destination dispatch?</dt>
+<dd>Passengers enter their destination floor at a lobby kiosk (not just "up"), so the system knows demand ahead of time. It groups people going to nearby floors into the same car and assigns cars to minimise total or worst-case travel time &mdash; higher throughput in busy buildings.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the elevator scheduling algorithm.</summary><div class="answer-box">
+SCAN (or the LOOK variant, which turns around at the last request rather than the physical end).
+</div></details>
+<details class="answer-reveal"><summary>Which component decides which car answers a lobby button?</summary><div class="answer-box">
+The dispatcher / controller (a strategy for car selection).
+</div></details>
+<details class="answer-reveal"><summary>Can a car move with its doors open?</summary><div class="answer-box">
+No &mdash; a state-machine guard forbids it.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Model a single car's request handling. What data structures and update rules?</summary><div class="answer-box">
+Two ordered sets: <code>upStops</code> (min-heap or sorted set) and <code>downStops</code> (max-heap / reverse-sorted). Current <code>floor</code> and <code>direction</code>. On a new target <code>t</code>: if <code>t &gt; floor</code> add to <code>upStops</code>, if <code>t &lt; floor</code> add to <code>downStops</code>. Step loop: if <code>direction == UP</code>, next stop = smallest element of <code>upStops</code> &gt; floor; move there, open doors, pop it. When <code>upStops</code> has nothing above the current floor, switch to <code>DOWN</code> and serve <code>downStops</code> from the top. If both empty &rarr; IDLE. A hall call with a direction is added to the matching set; a hall call opposite the current sweep is deferred to the return pass.
+</div></details>
+<details class="answer-reveal"><summary>A hall call at floor 5 (going up) arrives while car A is at 8 going down and car B is at 2 going up. Which gets it and why?</summary><div class="answer-box">
+Car B: it's already moving up and will pass floor 5 in the requested direction, so its ETA is ~3 floors of travel plus any stops in between. Car A is going the wrong way &mdash; it would have to finish its downward sweep, reverse, and come back up, a much larger ETA. The dispatcher's score (direction match + distance-along-path) favours B. If B had many queued stops between 2 and 5, or was overloaded, the score might still tip to A &mdash; that's why it's an estimate, re-evaluated.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the dispatcher for a bank of 6 elevators in a 40-floor office building, handling the morning up-peak, evening down-peak, and midday interfloor traffic. What changes by mode?</summary><div class="answer-box">
+One fixed policy is poor across these regimes, so the dispatcher runs in <strong>modes</strong> selected by measured traffic (car load sensors, hall-call rates by floor/direction, time of day): <strong>Up-peak</strong> (morning): almost everyone boards at the lobby going up. Strategy shifts to "return empty cars to the lobby immediately", load cars fully before dispatching, and if destination dispatch is available, <em>group by destination zone</em> so a car serves floors 10&ndash;15, another 16&ndash;22, etc. &mdash; minimising stops per trip. Throughput (people/5min) is the metric. <strong>Down-peak</strong> (evening): mirror image &mdash; sweep down collecting from upper floors; cars should not linger at the lobby; anticipate and pre-position cars high. <strong>Interfloor</strong> (midday): scattered origin/destination pairs, lower volume &mdash; classic SCAN per car with ETA-based hall-call assignment, and park idle cars at "expected demand" floors (lobby + a mid floor) rather than all at the bottom. <strong>Cross-cutting</strong>: (1) <em>Zoning</em> even outside peak reduces average stops. (2) <em>Coincident call</em> handling &mdash; don't send two cars to the same hall call; lock the assignment but allow reassignment if a better car becomes free before pickup. (3) <em>Load-based skipping</em> &mdash; a full car passes hall calls (indicator relights for the next car). (4) <em>Anti-bunching</em> &mdash; penalise assigning a car that's right behind another going the same way; spread the fleet. (5) <em>Fairness/starvation cap</em> &mdash; a hall call older than T seconds gets a priority boost so no one waits forever during a peak. (6) The mode switch itself needs hysteresis so it doesn't oscillate. Modern real controllers (Otis Compass, KONE) use exactly this: continuous traffic estimation + destination dispatch + zoning, often with an optimisation that assigns the whole current call set to cars to minimise a cost function (total wait + total travel + energy), re-solved every few seconds.
+</div></details>
+<details class="answer-reveal"><summary>How do you make the elevator controller robust to sensor failure, power loss, and software crash?</summary><div class="answer-box">
+Safety is layered and mostly <em>not</em> in the dispatch software. (1) <strong>Independent hardware safety chain</strong>: overspeed governor + mechanical brakes/safeties, final limit switches, door interlocks wired in series to a safety relay &mdash; if any opens, the drive is cut regardless of what the controller software thinks. This is certified separately (EN 81 / ASME A17.1) and the software cannot override it. (2) <strong>Controller = real-time state machine</strong> with explicit guards; every transition validated against sensor inputs; an implausible sensor state (car "between floors" reported at two floors at once, door "open" while moving) forces a safe stop and a fault mode, not a best-effort continue. (3) <strong>Watchdog</strong>: hardware watchdog timer the control loop must kick; if the software hangs, the watchdog resets it and the car goes to a defined safe state (stop, doors closed, or creep to nearest floor and open, depending on standard). (4) <strong>Power loss</strong>: battery/UPS drives the car at low speed to the nearest floor and opens the doors ("automatic rescue device"), then parks; never leaves people stuck between floors if avoidable. (5) <strong>Sensor redundancy / plausibility</strong>: floor position from multiple sources (encoder + magnetic floor sensors + door-zone sensor) cross-checked; load from redundant sensors; disagreement &rarr; degrade to a slower, more conservative mode or out-of-service. (6) <strong>Fail operational vs fail safe</strong>: door obstruction fails <em>open</em> (re-open), motion faults fail <em>stopped</em>. (7) <strong>Crash recovery</strong>: on controller restart, the car does a <em>re-levelling / homing</em> run (creep to a known floor sensor) before accepting calls &mdash; it never trusts a persisted position across a crash. (8) The <em>dispatcher</em> (fleet-level optimisation) is a separate, non-safety-critical process; if it dies, each car falls back to serving its own queue with a local SCAN, so the building keeps working degraded rather than stopping. The interview point: separate the safety-critical real-time control (hard guarantees, hardware backstop, certified) from the optimisation layer (soft, restartable, degradable), and never let a software bug or sensor glitch produce an unsafe mechanical state.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:elevator -->
+
+<!-- TOPIC:lld:logging-library -->
+<section class="view topic" id="v-lld-logging-library" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Design a Logging Library</h1>
+<p class="subtitle">Levels, sinks, formatters, and getting logging off the hot path.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Core pieces</h3>
+<table>
+<tr><th>Concept</th><th>Role</th></tr>
+<tr><td><code>Logger</code></td><td>the API (<code>log.info("...")</code>); named/hierarchical; holds a level threshold</td></tr>
+<tr><td><code>LogLevel</code></td><td>TRACE &lt; DEBUG &lt; INFO &lt; WARN &lt; ERROR &lt; FATAL &mdash; a record is emitted iff its level &ge; the logger's threshold</td></tr>
+<tr><td><code>LogRecord</code></td><td>timestamp, level, logger name, thread, message, structured fields, exception</td></tr>
+<tr><td><code>Formatter</code> / <code>Layout</code></td><td>record &rarr; string or JSON</td></tr>
+<tr><td><code>Sink</code> / <code>Appender</code> (interface)</td><td>where output goes: console, rotating file, syslog, network, ring buffer &mdash; OCP extension point</td></tr>
+<tr><td><code>Filter</code></td><td>extra per-record include/exclude logic (by field, rate limit, sampling)</td></tr>
+</table>
+<p>A logger fans a record out to one or more sinks, each with its own level, formatter, and filter.
+Named loggers form a tree so you can set <code>com.acme.db</code> to DEBUG while the root stays INFO.</p>
+
+<h3>Performance</h3>
+<ul>
+<li><strong>Level check first, before building the message</strong>: <code>if (log.isDebugEnabled()) log.debug(expensive())</code>, or lazy args / a format string so <code>expensive()</code> isn't called when DEBUG is off. Lambda/template APIs make this automatic.</li>
+<li><strong>Async logging</strong>: the caller writes the record into a lock-free ring buffer / bounded queue and returns; a background thread formats and writes to sinks. This takes I/O (file, network) off the request path &mdash; often 10&ndash;100&times; lower logging latency. (Log4j2 async, spdlog async, zap.)</li>
+<li>Bounded queue policy when full: block, drop oldest, or drop the new record &mdash; a deliberate choice (usually drop with a counter, so logging can't stall the app).</li>
+</ul>
+
+<h3>Structured &amp; contextual logging</h3>
+<p>Prefer key&ndash;value fields (<code>logger.info("order placed", "orderId", id, "amountCents", amt)</code>)
+over string interpolation &mdash; machine-parseable, queryable. <strong>MDC / context</strong>: attach
+request id, user id, trace id once per request (thread-local or explicit context) so every log
+line in that request carries them.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>Logger</code> (named, hierarchical, level threshold) &rarr; builds a <code>LogRecord</code> &rarr; fans out to <code>Sink</code>s, each with level + <code>Formatter</code> + <code>Filter</code>.</li>
+<li>Levels: TRACE&lt;DEBUG&lt;INFO&lt;WARN&lt;ERROR&lt;FATAL; emit iff record level &ge; threshold.</li>
+<li><code>Sink</code>/<code>Appender</code> is the OCP extension point: console, rotating file, syslog, network, ring buffer.</li>
+<li>Check level <em>before</em> building the message (guard, lazy args, format strings, lambdas).</li>
+<li>Async: caller &rarr; lock-free ring buffer &rarr; background thread formats + writes. Takes I/O off the hot path.</li>
+<li>Full-queue policy: block / drop-oldest / drop-new (+ counter) &mdash; pick deliberately; logging must not stall the app.</li>
+<li>Structured (key&ndash;value) fields &gt; string interpolation. MDC/context for request/trace ids on every line.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why check the level before constructing the log message?</dt>
+<dd>Building the message may involve string concatenation, serialization, or calling expensive methods. If the level is disabled, all that work is wasted. A guard (<code>isDebugEnabled()</code>), a parameterised format string, or a lambda that's only invoked when enabled avoids it.</dd>
+<dt>What does asynchronous logging buy you?</dt>
+<dd>The caller enqueues the record and returns immediately; a background thread does the formatting and the slow I/O (file write, network send). This removes disk/network latency and lock contention on the sink from the application's critical path.</dd>
+<dt>What should happen when the async log queue is full?</dt>
+<dd>A deliberate policy: block the caller (backpressure &mdash; risky, can stall the app), drop the oldest queued records, or drop the new record. Most systems drop and increment a "dropped N messages" counter, because logging should never take the service down.</dd>
+<dt>Why prefer structured logging over interpolated strings?</dt>
+<dd>Key&ndash;value fields (<code>orderId=123 status=paid</code>) are machine-parseable, so log aggregation systems can index and query them (find all logs for <code>orderId=123</code>), aggregate, and alert. Interpolated free text requires fragile regex extraction.</dd>
+<dt>How do you get a request/trace id onto every log line for a request?</dt>
+<dd>A mapped diagnostic context (MDC) &mdash; set the id once at the start of request handling (thread-local, or an explicit context object passed/attached), and the logger reads it and includes it in every record for the duration of that request.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which is more severe: WARN or ERROR?</summary><div class="answer-box">
+ERROR.
+</div></details>
+<details class="answer-reveal"><summary>What's the extension point for "where logs go"?</summary><div class="answer-box">
+The sink / appender interface (console, file, syslog, network, &hellip;).
+</div></details>
+<details class="answer-reveal"><summary>What turns a <code>LogRecord</code> into text or JSON?</summary><div class="answer-box">
+A formatter / layout.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Design the API so <code>log.debug("user " + expensiveLookup(id) + " did X")</code> costs nothing when DEBUG is off.</summary><div class="answer-box">
+Don't accept a pre-built string. Options: (1) parameterised message &mdash; <code>log.debug("user {} did X", () -&gt; expensiveLookup(id))</code> where the arg is a supplier invoked only if DEBUG is enabled; (2) a format string + args &mdash; <code>log.debug("user {} did X", idOrCheapValue)</code> where formatting is deferred and skipped when disabled (but the args are still evaluated, so keep them cheap); (3) an <code>isDebugEnabled()</code> guard the caller writes explicitly. Modern libraries (SLF4J fluent API, Log4j2 lambdas, Rust <code>log</code> macros, zap's typed fields) build (1) in so the expensive work is behind a closure that only runs past the level check.
+</div></details>
+<details class="answer-reveal"><summary>How do you support "root at INFO, but <code>com.acme.payments</code> at DEBUG"?</summary><div class="answer-box">
+Hierarchical named loggers. A logger's effective level is its own configured level, or, if unset, inherited from the nearest configured ancestor up to the root. <code>getLogger("com.acme.payments.StripeClient")</code> with no explicit level inherits <code>com.acme.payments</code>'s DEBUG; everything else inherits root's INFO. Configuration (file / env) maps logger-name prefixes to levels; the library resolves effective levels at logger creation and caches them, invalidating on config reload.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the async pipeline: a lock-free handoff from many producer threads to a formatting/writing consumer, with backpressure and no lost ordering within a thread.</summary><div class="answer-box">
+<strong>Producer side (hot path)</strong>: capture a <code>LogRecord</code> with only cheap fields &mdash; level, timestamp (a monotonic counter or coarse clock), logger id, thread id, the format string + its arguments <em>by reference/value, not yet formatted</em>, and any MDC context (copied, since it may change). Push it onto a bounded MPSC (multi-producer, single-consumer) queue: a lock-free ring buffer (LMAX Disruptor style) or a lock-free linked queue. The push is a CAS on the tail plus a store &mdash; tens of ns, no formatting, no I/O. <strong>Ordering</strong>: per-thread FIFO is naturally preserved because a single thread's pushes are sequenced; global order across threads is approximate (fine &mdash; timestamps disambiguate), and if strict global order matters you sort by timestamp in the consumer's batch. <strong>Backpressure / full queue</strong>: choose per config &mdash; <em>drop-new + increment a dropped counter</em> (default: app never stalls; the consumer periodically emits a "dropped N log messages in the last interval" WARN so the loss is visible), <em>block with timeout</em> (bounded backpressure for audit-critical logs), or <em>overwrite-oldest</em> (ring buffer semantics &mdash; you lose the least recent, keep the newest, good for crash forensics). <strong>Consumer side</strong>: one thread drains in batches, formats each record (now paying the string/JSON cost off the hot path), groups by sink, and does batched writes (one <code>write()</code> per batch to a file, one flush per interval or per N records &mdash; not per line). It handles sink errors (retry, failover to a fallback sink, or drop-with-counter), file rotation, and flush-on-shutdown. <strong>Shutdown / crash</strong>: register a shutdown hook that flips the consumer to "drain and exit", and flush the queue; for crash safety, either use a memory-mapped ring buffer that a separate reader can recover, or accept that the last few unflushed lines are lost (so <em>fatal</em> logs bypass the async path and write synchronously). <strong>Argument lifetime</strong>: since formatting is deferred, mutable arguments passed by reference can change before the consumer formats them &mdash; either snapshot/format eagerly for object args (a middle ground: format to string on the producer, still skip I/O), or document that log args must be effectively immutable. Libraries that do this well: Log4j2 async loggers (Disruptor-backed), Rust <code>tracing</code> with a non-blocking writer, Go zap, C++ spdlog async mode.
+</div></details>
+<details class="answer-reveal"><summary>What are the pitfalls of logging in a highly concurrent, latency-sensitive service, and how do you mitigate each?</summary><div class="answer-box">
+(1) <strong>Lock contention on the sink</strong> &mdash; every thread serialising on one file/console mutex. Mitigate with async logging (single writer thread) or per-thread buffers flushed periodically. (2) <strong>I/O on the request path</strong> &mdash; a slow disk or a blocked network sink stalls request threads. Async + bounded queue + drop-on-full; never let the sink apply backpressure to request handlers. (3) <strong>Log volume / cost</strong> &mdash; DEBUG left on in prod, or logging in a tight loop, generates GB/min, saturates disk and the log pipeline, and the formatting CPU shows up in profiles. Mitigate: correct levels, <em>rate-limited</em> and <em>sampled</em> loggers (log 1 in N, or "at most once per 10s for this message key"), and structured events instead of chatty lines. (4) <strong>Allocation churn</strong> &mdash; each log call allocating strings/objects pressures the GC/allocator. Mitigate: object pooling for <code>LogRecord</code>s, pre-sized buffers, avoid boxing (typed field APIs like zap), format lazily. (5) <strong>Sensitive data</strong> &mdash; PII/secrets in logs is a compliance incident. Mitigate: field-level redaction filters, allowlist structured fields rather than dumping objects, and review at the sink. (6) <strong>Log injection</strong> &mdash; unsanitised user input containing newlines forging fake log lines, or (Log4Shell) being interpreted. Mitigate: escape control chars, never interpret message content, keep the logging lib patched. (7) <strong>Time/ordering confusion</strong> across threads and machines &mdash; interleaved lines from concurrent requests are unreadable. Mitigate: always include a request/trace id (MDC) so you can filter one request's lines, and prefer a trace/span view for causality. (8) <strong>Observability tunnel vision</strong> &mdash; logs alone are expensive for high-cardinality questions; complement with metrics (cheap aggregates) and distributed tracing (causality), and reserve verbose logging for errors and sampled requests.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:logging-library -->
+
+<!-- TOPIC:lld:concurrency-lld -->
+<section class="view topic" id="v-lld-concurrency-lld" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Thread-Safety in Low-Level Design</h1>
+<p class="subtitle">Design the object model so concurrency is contained, not sprinkled everywhere.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Strategy hierarchy (cheapest to most complex)</h3>
+<ol>
+<li><strong>Immutability</strong> &mdash; an object that never changes after construction is thread-safe with no locks. Value objects, config, events. Return new instances instead of mutating.</li>
+<li><strong>Confinement</strong> &mdash; only one thread ever touches the object (thread-local, an actor's private state, per-connection objects). No sharing &rarr; no synchronisation.</li>
+<li><strong>Guarded shared state</strong> &mdash; wrap all access to the mutable shared object in the <em>same</em> lock; keep the critical section small; document the locking discipline.</li>
+<li><strong>Concurrent building blocks</strong> &mdash; use <code>ConcurrentHashMap</code>, blocking queues, atomics, thread pools instead of hand-rolled locking.</li>
+<li><strong>Lock-free</strong> &mdash; last resort, for a proven hot single-word contention point.</li>
+</ol>
+
+<h3>Design-level moves</h3>
+<ul>
+<li><strong>Monitor object</strong>: a class whose every public method acquires the same instance lock; callers see a simple sequential API. Fine for low-contention coordinators (a <code>ParkingLot</code>).</li>
+<li><strong>Split the object</strong>: separate the rarely-changing config from the hot mutable counters so they can have different (or no) synchronisation.</li>
+<li><strong>Copy-on-write</strong>: for read-mostly collections (listener lists, routing tables) &mdash; readers are lock-free, a write swaps in a new copy.</li>
+<li><strong>Message passing</strong>: give a resource to one owner thread and send it requests via a queue (actor model) &mdash; turns shared-state bugs into ordering questions.</li>
+<li>Keep lock scope out of your public API &mdash; don't return a reference to internal mutable state, and don't call user callbacks while holding a lock.</li>
+</ul>
+
+<h3>Thread-safe singleton</h3>
+<p>Prefer eager init (a <code>static final</code> instance) or the initialisation-on-demand holder idiom
+(a private static nested class) &mdash; both give lazy, thread-safe, lock-free access via the
+language's class-init guarantees. Double-checked locking needs a <code>volatile</code>/atomic field to
+be correct; an <code>enum</code> singleton (Java) is the simplest correct lazy-ish form.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Order of preference: immutability &gt; confinement (thread-local / actor) &gt; one lock per shared object &gt; concurrent library types &gt; lock-free.</li>
+<li>Monitor object: every public method takes the same instance lock &rarr; simple sequential API for low-contention coordinators.</li>
+<li>Split hot mutable state from cold config so they synchronise differently (or not).</li>
+<li>Copy-on-write for read-mostly lists/maps (lock-free reads).</li>
+<li>Message passing: single owner thread + request queue turns races into ordering.</li>
+<li>Don't leak internal mutable references; don't run callbacks under a lock.</li>
+<li>Singleton: eager <code>static final</code> or holder-class idiom; DCL needs <code>volatile</code>; <code>enum</code> is simplest.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What's the cheapest way to make an object thread-safe?</dt>
+<dd>Make it immutable &mdash; if state never changes after construction, any number of threads can read it concurrently with no locks and no memory-visibility concerns (given safe publication).</dd>
+<dt>What is thread confinement?</dt>
+<dd>Ensuring an object is only ever accessed by one thread &mdash; via thread-local storage, being private to an actor, or being created and used within a single request handler. No sharing means no synchronisation is needed.</dd>
+<dt>What is a monitor object?</dt>
+<dd>A class that guards all of its state with a single lock acquired at the start of every public method, so callers get a straightforward "one operation at a time" API without managing locks themselves. Suitable when contention is low.</dd>
+<dt>Why split a shared object into "hot" and "cold" parts?</dt>
+<dd>Configuration that rarely changes and a set of frequently-updated counters have very different synchronisation needs. Keeping them separate lets the counters use lightweight atomics (or sharding) while the config is effectively immutable, instead of one coarse lock over everything.</dd>
+<dt>Simplest correct lazy singleton in a language with class-init guarantees?</dt>
+<dd>The holder-class idiom: a private static nested class holds the instance; it's not initialised until first referenced, and the runtime guarantees class initialisation is thread-safe and happens once. No <code>volatile</code>, no explicit lock.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>An immutable object needs how many locks to be shared safely?</summary><div class="answer-box">
+Zero (given it's safely published).
+</div></details>
+<details class="answer-reveal"><summary>What concurrent collection replaces a manually-locked <code>HashMap</code>?</summary><div class="answer-box">
+<code>ConcurrentHashMap</code> (or the language's equivalent).
+</div></details>
+<details class="answer-reveal"><summary>Should a class return a reference to its internal mutable list?</summary><div class="answer-box">
+No &mdash; return a copy or an unmodifiable view, or expose specific operations. Leaking the reference breaks encapsulation and thread-safety.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You're designing a <code>BookingService</code> where two users may book the last seat concurrently. Design for correctness.</summary><div class="answer-box">
+Make "check availability and claim" a single atomic operation. Options: (1) a per-show lock around <code>if (seat.isFree()) seat.hold(user)</code>; keep it tiny &mdash; just the claim, not payment. (2) An atomic compare-and-set on the seat's state (<code>FREE -&gt; HELD</code>); the loser gets <code>false</code> and is told "seat taken". (3) A DB unique constraint on <code>(show_id, seat_id)</code> so the second <code>INSERT</code> fails. Add a <em>hold</em> with expiry (release if payment doesn't complete in N minutes) via a background sweeper. The service API stays simple ("bookSeat returns a confirmation or a SeatUnavailable"); concurrency is confined to that one claim step.
+</div></details>
+<details class="answer-reveal"><summary>A class exposes <code>addListener()</code> and fires events to listeners from many threads. How do you make the listener list safe without locking on every fire?</summary><div class="answer-box">
+Copy-on-write: store listeners in an immutable array/list; <code>addListener</code>/<code>removeListener</code> create a new list and atomically swap the reference (under a small lock, since writes are rare); firing an event just reads the current reference (lock-free) and iterates. Readers never block and never see a partially-updated list. Caveat: a listener added during a fire won't get that event, and you must not hold any lock while calling listener callbacks (they can call back into you &rarr; deadlock/reentrancy).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a thread-safe object pool (e.g. DB connections). What are the concurrency and correctness concerns?</summary><div class="answer-box">
+<strong>Structure</strong>: a bounded set of reusable objects; <code>acquire()</code> hands one out (blocking or with timeout when none free), <code>release()</code> returns it. Back it with a concurrent queue of idle objects plus a semaphore initialised to max size (so <code>acquire</code> = <code>semaphore.acquire()</code> then poll the queue, lazily creating up to max; <code>release</code> = validate + return to queue + <code>semaphore.release()</code>). <strong>Concerns</strong>: (1) <em>Leaks</em> &mdash; a caller that forgets <code>release()</code> permanently shrinks the pool; mitigate with try-with-resources / RAII wrappers, and a leak detector (track acquire stack + max-checkout-time, log/reclaim stale ones). (2) <em>Double release</em> &mdash; returning the same object twice corrupts the count/queue; use a one-shot handle that marks itself returned. (3) <em>Validation</em> &mdash; a pooled connection may have died (server closed it, network dropped); validate on borrow (cheap ping) or on return, and discard+replace bad ones rather than handing out a broken object. (4) <em>Fairness / starvation</em> &mdash; use a fair semaphore or a FIFO wait queue so a burst of new requests doesn't starve a waiter. (5) <em>Shutdown</em> &mdash; drain: stop accepting acquires, wait for outstanding releases (with timeout), then close all idle objects; forcibly close leaked ones after the timeout. (6) <em>Thundering herd on startup</em> &mdash; if all N objects are created lazily on first load spike, that's N slow connects at once; pre-warm a minimum pool size in the background. (7) <em>Sizing</em> &mdash; too small &rarr; contention/queueing; too large &rarr; overloading the downstream (a DB has its own connection limit); expose metrics (in-use, idle, wait time, timeouts) to tune it. (8) <em>Thread affinity / state</em> &mdash; if pooled objects carry per-use state (transaction, prepared-statement cache, session variables), <code>release</code> must reset them (<code>ROLLBACK</code>, clear settings) or the next borrower inherits stale state. Don't hand-roll this in production &mdash; use HikariCP / a proven pool &mdash; but the interview is about naming these hazards and the semaphore-plus-queue core.
+</div></details>
+<details class="answer-reveal"><summary>When would you choose an actor / single-owner-thread model over shared-state-with-locks for a subsystem, and what do you give up?</summary><div class="answer-box">
+<strong>Choose actors</strong> when: the subsystem has complex mutable state with many invariants that are painful to lock correctly (a game world region, a matchmaking pool, a stateful protocol handler, an in-memory order book); when you want to eliminate data races <em>by construction</em> (only one thread touches the state, so there are none) and reason about behaviour as a sequential state machine processing a message stream; when the workload is naturally partitionable (one actor per user / per connection / per shard) so you scale by adding actors, not by making one lock finer-grained; and when you want failure isolation (an actor can crash and restart with fresh state without corrupting neighbours). <strong>What you give up</strong>: (1) <em>Synchronous call convenience</em> &mdash; every interaction is now an async message + reply (or a future), which is more code and changes error handling (timeouts instead of exceptions, no stack traces across the boundary). (2) <em>Cross-actor consistency</em> &mdash; an operation spanning two actors' state can't be a single atomic step; you need a saga/2-phase protocol or you accept eventual consistency &mdash; the same problem as distributed transactions, in-process. (3) <em>Throughput ceiling per actor</em> &mdash; one actor processes its mailbox serially, so a hot actor is a bottleneck (mitigate by sharding it, but then you're back to partitioning problems). (4) <em>Mailbox as a hidden queue</em> &mdash; unbounded mailboxes leak memory under overload; bounded ones need a backpressure story. (5) <em>Debuggability</em> &mdash; the flow is spread across message handlers and time; you rely on tracing/logging rather than stepping through a call stack. (6) <em>Tooling / discipline</em> &mdash; it's easy to accidentally share mutable state via a message payload (send a mutable object, both actors mutate it) &mdash; payloads must be immutable or copied. For a low-contention coordinator (a parking lot, a small in-memory registry), a monitor object with one lock is simpler and perfectly adequate; reach for actors when the locking is getting genuinely hard to keep correct or the partitioning is a natural fit.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:concurrency-lld -->
+
+<!-- TOPIC:lld:evolving-design -->
+<section class="view topic" id="v-lld-evolving-design" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Evolving a Design &amp; Over-Engineering</h1>
+<p class="subtitle">Just enough structure now, and cheap seams for the changes you'll actually make.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>YAGNI vs extensibility</h3>
+<ul>
+<li><strong>YAGNI</strong> ("You Aren't Gonna Need It"): don't build a plugin framework, generic rules engine, or config-driven abstraction for a single case that isn't varying yet. Speculative flexibility usually guesses the wrong axis and adds cost forever.</li>
+<li><strong>But</strong>: keep the code <em>changeable</em> &mdash; small classes, clear boundaries, dependency injection at true seams &mdash; so adding the abstraction later is a local refactor, not a rewrite.</li>
+</ul>
+
+<h3>The rule of three</h3>
+<p>Write it inline the first time. Copy it the second time (duplication is cheaper than the wrong
+abstraction). On the <strong>third</strong> occurrence, you understand the real variation &mdash; now extract
+the abstraction. Premature abstraction from two examples often captures a coincidence.</p>
+
+<h3>Refactoring seams</h3>
+<p>A "seam" is a place you can change behaviour without editing in place: an interface, a factory,
+a strategy parameter, a hook method. Good design leaves seams <em>where change is likely</em>
+(payment providers, storage, notification channels) and keeps everything else concrete and
+direct. Adding a seam later: extract an interface from the concrete class, inject it, done.</p>
+
+<h3>When patterns pay off</h3>
+<table>
+<tr><th>Add a pattern when&hellip;</th></tr>
+<tr><td>you have (or clearly will have) 3+ variants of one behaviour &rarr; Strategy</td></tr>
+<tr><td>object creation is spread out and type is chosen at runtime &rarr; Factory</td></tr>
+<tr><td>you're adding responsibilities in combinations &rarr; Decorator</td></tr>
+<tr><td>a big <code>switch</code> on a type/state keeps growing &rarr; polymorphism / State</td></tr>
+<tr><td>an object has a real lifecycle with rules &rarr; State machine</td></tr>
+</table>
+
+<h3>Signals you over-engineered</h3>
+<p>Interfaces with one implementation and no test need; layers that only forward calls; config for
+things that never change; a framework where a function would do; more time reading the
+indirection than the logic. The fix is usually to inline and delete.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>YAGNI: don't build speculative flexibility; it guesses wrong and costs forever.</li>
+<li>Keep code <em>changeable</em> (small classes, clear boundaries) so adding abstraction later is local.</li>
+<li>Rule of three: inline once, duplicate twice, abstract on the third &mdash; by then you know the real variation.</li>
+<li>Leave seams (interface/factory/strategy/hook) only where change is likely; concrete + direct elsewhere.</li>
+<li>Adding a seam later = extract interface + inject &mdash; cheap if the class was small.</li>
+<li>Patterns when: 3+ behaviour variants (Strategy), runtime type choice (Factory), combinable responsibilities (Decorator), growing type/state <code>switch</code> (polymorphism/State).</li>
+<li>Over-engineering smells: one-impl interfaces, pass-through layers, config for constants, framework where a function fits &rarr; inline and delete.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does the rule of three say about abstraction?</dt>
+<dd>Don't abstract from two examples &mdash; you're likely capturing a coincidence. Duplicate the second time; on the third occurrence you can see what genuinely varies and what's common, so the extracted abstraction fits.</dd>
+<dt>How do you reconcile YAGNI with "design for change"?</dt>
+<dd>Don't build the flexible mechanism now, but do keep the code in small, well-bounded pieces with clean interfaces at module edges, so when the change actually arrives you can introduce the abstraction with a local refactor instead of a rewrite. Changeability &ne; pre-built flexibility.</dd>
+<dt>Give a concrete "over-engineering" smell.</dt>
+<dd>An interface that has exactly one implementation, isn't a module boundary, and isn't needed for testing &mdash; it's pure indirection. Also: config parameters for values that have never changed, and "manager/service/handler" layers that only forward calls.</dd>
+<dt>When is a big <code>switch</code> statement a problem worth a pattern?</dt>
+<dd>When it keeps growing with new cases, the same <code>switch</code> is duplicated in several places, and each case has non-trivial behaviour. Then replace it with polymorphism (a type per case) or the State pattern &mdash; adding a case becomes a new class, not an edit to every switch.</dd>
+<dt>What's a cheap way to add a seam to existing concrete code?</dt>
+<dd>Extract an interface from the concrete class (same method signatures), have callers depend on the interface, and inject the concrete implementation at the composition root. If the class was small and its dependencies were already injected, this is a mechanical change.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How many occurrences before you extract a shared abstraction?</summary><div class="answer-box">
+Three (the rule of three).
+</div></details>
+<details class="answer-reveal"><summary>What does YAGNI stand for?</summary><div class="answer-box">
+"You Aren't Gonna Need It."
+</div></details>
+<details class="answer-reveal"><summary>An interface with one implementation and no test seam is usually what?</summary><div class="answer-box">
+Over-engineering &mdash; unnecessary indirection.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>The interviewer asks you to "make it support multiple databases" but there's only Postgres today. Response?</summary><div class="answer-box">
+Note the axis of change is plausible, so put data access behind a repository interface (a real module boundary that also helps testing) &mdash; but implement only the Postgres one, and don't build a generic query abstraction or ORM layer speculatively. If a second database is genuinely on the roadmap, the interface is enough of a seam; when it arrives you add one implementation and the composition root wires it. Building the abstraction for two hypothetical databases now risks leaking Postgres-isms (or the wrong lowest-common-denominator) into the interface.
+</div></details>
+<details class="answer-reveal"><summary>You inherit a codebase with 5 layers of pass-through services and interfaces with single implementations. How do you improve it?</summary><div class="answer-box">
+Collapse the indirection incrementally. For each interface with one implementation and no test/module reason: inline it (merge interface into class or remove the pass-through layer), guided by tests. Keep interfaces only at genuine boundaries (external I/O, plugin points, where a fake is needed for testing). Re-package by feature so a change is local. Do it under test coverage, one seam at a time, verifying behaviour is unchanged &mdash; the goal is fewer files to read per change, not a big-bang rewrite.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How do you decide, in a real project, where to invest in flexibility &mdash; what evidence do you use?</summary><div class="answer-box">
+Use <em>observed</em> and <em>reasonably-certain</em> change, not imagination. Evidence sources: (1) <strong>Git history</strong> &mdash; which files/modules churn the most? High-churn areas are where seams pay off; stable areas should stay concrete. (2) <strong>The backlog / roadmap</strong> &mdash; a committed requirement to add payment providers next quarter is real evidence for a <code>PaymentGateway</code> interface now; a vague "maybe we'll go multi-region someday" is not. (3) <strong>The rule of three in practice</strong> &mdash; the moment you're writing the third variant, extract; not before. (4) <strong>Bug clusters</strong> &mdash; if the same class breaks every time a certain kind of change is made, its responsibilities need splitting. (5) <strong>Domain knowledge</strong> &mdash; some axes are inherently variable (tax rules, notification channels, report formats, external integrations) and worth a seam even at two examples; others (the core aggregate's invariants) rarely change and should be direct. (6) <strong>Cost asymmetry</strong> &mdash; if adding the abstraction <em>later</em> would be a cheap local refactor (small class, injected deps), defer it; if it would be a cross-cutting rewrite (a persistence model baked throughout), invest earlier. The meta-rule: make the <em>likely</em> changes cheap and accept that <em>unlikely</em> changes will be expensive &mdash; you can't make everything cheap to change without making everything expensive to read. Review this periodically: an abstraction that was speculative and never got a second implementation is debt to remove; a concrete area that's now churning is a candidate for a seam.
+</div></details>
+<details class="answer-reveal"><summary>Describe refactoring a "big ball of mud" module toward a clean design without a rewrite.</summary><div class="answer-box">
+Work in small, safe steps under a growing test net &mdash; the "strangler fig" approach at module scale. (1) <strong>Characterisation tests</strong> first: pin the current behaviour (including its bugs) with tests at the module's boundary, so any refactor that changes observable behaviour fails loudly. Use approval/golden-master tests if the module is hard to assert on. (2) <strong>Find seams</strong>: identify the module's real inputs/outputs and introduce an interface at that boundary; route callers through it. Now you have a place to insert new implementations. (3) <strong>Extract the easy wins</strong>: pull pure functions out (no dependencies &rarr; trivially testable), then classes with a single clear responsibility, using automated refactorings (extract method/class) which are behaviour-preserving. (4) <strong>Break dependencies</strong>: where the tangle is a class that news up its collaborators / hits the DB / reads globals, apply "dependency-breaking" techniques (extract-and-override, parameterise constructor, wrap the static) to get it under test, <em>then</em> refactor its internals. (5) <strong>Introduce the new design alongside the old</strong>: build the clean version of a slice behind a feature flag or a routing switch; migrate one use case at a time; delete the old path once traffic is fully on the new one. (6) <strong>Package by feature</strong> as you go, so each extracted piece lands in a cohesive home. (7) Keep each commit shippable and reviewed &mdash; never a multi-week branch. The discipline: every step is small enough to verify, the module keeps working the whole time, and you can stop at any point with the codebase better than you found it. This is slower than a rewrite on paper but far less risky &mdash; rewrites of understood-badly systems routinely lose edge-case knowledge and take longer than estimated.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:evolving-design -->
+
 </main>
 
 <footer class="site-footer">
@@ -15940,24 +16976,23 @@ Tier by cost vs signal. <strong>Per-commit / PR (fast, blocking, &lt;10 min)</st
       ["cmake",             "CMake Fundamentals",               "Targets, PUBLIC/PRIVATE/INTERFACE, generators, find_package, out-of-source, presets."],
       ["build-flags",       "Build Types, Flags & Optimization", "-O0..-O3/-Os, -g, NDEBUG, -march, LTO, -fno-omit-frame-pointer, stripping."],
       ["sanitizers-ci",     "Sanitizers & Static Analysis in CI","ASan/UBSan/TSan/MSan, -Werror, clang-tidy/cppcheck, warnings-as-gates, reproducible builds."]
+    ],
+    lld: [
+      ["requirements",      "Requirements &rarr; Classes &rarr; Responsibilities","Clarify scope, nouns &rarr; entities, verbs &rarr; behaviours, CRC cards, invariants."],
+      ["solid-applied",     "SOLID Applied to a Real Design",     "Turning SRP/OCP/LSP/ISP/DIP into concrete class splits and interfaces."],
+      ["uml",               "UML Class & Sequence Diagrams",      "Class relations (assoc/agg/comp/inherit), multiplicity, sequence & state diagrams."],
+      ["parking-lot",       "Design a Parking Lot",               "Entities, spot/vehicle types, allocation strategy, pricing, ent/exit, extensibility."],
+      ["lru-cache",         "Design an LRU / LFU Cache",          "O(1) get/put, hashmap + doubly linked list, eviction policy, thread-safety, TTL."],
+      ["rate-limiter",      "Design a Rate Limiter",              "Token bucket, leaky bucket, fixed/sliding window, distributed, per-key, headers."],
+      ["elevator",          "Design an Elevator System",          "Requests, scheduling (SCAN/LOOK), multi-car dispatch, state machine, edge cases."],
+      ["logging-library",   "Design a Logging Library",           "Levels, sinks/appenders, formatters, async ring buffer, filtering, structured logs."],
+      ["concurrency-lld",   "Thread-Safety in Low-Level Design",  "Immutability, confinement, thread-safe singletons, monitor objects, lock scope."],
+      ["evolving-design",   "Evolving a Design & Over-Engineering","YAGNI vs extensibility, rule of three, refactoring seams, when patterns pay off."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    lld: [
-      "Requirements -> classes -> responsibilities",
-      "SOLID applied to a real design",
-      "UML class & sequence diagrams",
-      "Design a parking lot",
-      "Design an LRU / LFU cache",
-      "Design a rate limiter",
-      "Design an elevator system",
-      "Design a logging library",
-      "Design seat booking (concurrency)",
-      "Thread-safety in LLD (singletons, locks)",
-      "Evolving a design & avoiding over-engineering"
-    ],
     sysd: [
       "The interview framework & estimation",
       "Latency numbers & back-of-envelope math",
