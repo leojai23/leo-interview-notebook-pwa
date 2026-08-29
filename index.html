@@ -29936,8 +29936,16 @@ Private, App, and Global.
 <tr><td>Cardinality</td><td>Must stay bounded &mdash; every label combo is a series</td><td>High-cardinality fields fine (in the line)</td><td>High-cardinality attributes fine (per span)</td></tr>
 <tr><td>Latency to signal</td><td>Seconds</td><td>Seconds&ndash;minutes</td><td>Seconds</td></tr>
 </table>
+<pre># same request, one line in each pillar
+# METRIC (Prometheus): aggregatable, no per-request identity
+http_request_duration_seconds_bucket{route="/checkout",le="0.5"}  48213
 
-<h3>How they work together</h3>
+# LOG (JSON): full detail for one event
+{"ts":"...","level":"error","route":"/checkout","user":"u-42","trace_id":"abc123","err":"card_declined"}
+
+# TRACE (span): where the time went, linked by the same trace_id
+span checkout  1.2s
+  |- span db.query  0.9s   trace_id=abc123</pre>
 <ol>
 <li><strong>Metrics</strong> detect and alert: an SLO burn-rate or error-rate alert fires.</li>
 <li><strong>Traces</strong> localise: which service/endpoint/dependency is slow or erroring, and the shape of the failure.</li>
@@ -29946,6 +29954,14 @@ Private, App, and Global.
 <p>Good setups <strong>link</strong> them: exemplars on a latency histogram point to a trace;
 a span links to its logs (shared <code>trace_id</code>); a log line links back to its trace.
 This is "correlated observability".</p>
+<pre># 1. metric alert fires
+ALERT HighErrorRate  sum(rate(http_requests_total{code=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) &gt; 0.05
+
+# 2. jump to traces for the failing route -> find the slow/erroring hop
+{ resource.service.name = "checkout" &amp;&amp; status = ERROR }   # TraceQL
+
+# 3. from a failing span, open its logs by trace_id
+{app="checkout"} | json | trace_id="abc123"</pre>
 
 <h3>Related signals</h3>
 <ul>
@@ -29953,6 +29969,14 @@ This is "correlated observability".</p>
 <li><strong>Profiles</strong> (continuous profiling) &mdash; CPU/memory/lock flame graphs over time; "why is this code path expensive".</li>
 <li><strong>Real user monitoring (RUM) / synthetics</strong> &mdash; client-side timing and scripted probes.</li>
 </ul>
+<pre># events as annotations for context on every dashboard
+POST /api/annotations {"tags":["deploy"],"text":"v2.4.1","time": 1724930400000}
+
+# profile: which function burns the CPU during the incident window
+pprof -http=:8080 -seconds 30 http://svc:6060/debug/pprof/profile
+
+# synthetic probe result -> a metric you can alert on
+probe_success{target="https://shop.example/checkout"}  0     # 0 = failing</pre>
 
 <h3>Design implications</h3>
 <ul>
@@ -29961,6 +29985,15 @@ This is "correlated observability".</p>
 <li>Use traces for anything that crosses a service boundary; propagate context everywhere.</li>
 <li>Don't derive critical availability numbers from logs if you can emit a real metric &mdash; log pipelines drop data under load.</li>
 </ul>
+<pre># GOOD: emit a real counter for availability
+http_requests_total{route="/checkout", code="200"}   # increment in the handler
+
+# BAD: reconstruct it from logs later (lossy under load, expensive)
+sum(count_over_time({app="api"} |= "GET /checkout 200" [5m]))
+
+# GOOD: high-cardinality identity in the log/span, NOT a metric label
+log:  {"user_id":"u-42","order_id":"o-9931"}          # fine
+metric: http_requests_total{user_id="u-42"}          # cardinality explosion</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -30035,6 +30068,17 @@ A log field (or span attribute) &mdash; it's high-cardinality.
 <tr><td><strong>Histogram</strong></td><td>Samples counted into cumulative buckets (<code>_bucket{le=&hellip;}</code>) + <code>_sum</code> + <code>_count</code>. Bucket boundaries fixed at instrumentation time. e.g. request duration.</td><td><code>histogram_quantile()</code> over <code>rate(_bucket[..])</code>; <code>rate(_sum)/rate(_count)</code> for average.</td></tr>
 <tr><td><strong>Summary</strong></td><td>Client-side computed quantiles (<code>{quantile=&hellip;}</code>) + <code>_sum</code> + <code>_count</code>. Quantiles chosen at instrumentation time.</td><td>Read the quantile directly; <strong>cannot</strong> aggregate quantiles across instances.</td></tr>
 </table>
+<pre># /metrics exposition &mdash; one scrape target's output
+# COUNTER
+http_requests_total{route="/pay",code="200"} 91823
+# GAUGE
+queue_depth{queue="email"} 37
+# HISTOGRAM (cumulative buckets + _sum + _count)
+http_req_seconds_bucket{route="/pay",le="0.1"} 61002
+http_req_seconds_bucket{route="/pay",le="0.5"} 90114
+http_req_seconds_bucket{route="/pay",le="+Inf"} 91823
+http_req_seconds_sum{route="/pay"}   18422.7
+http_req_seconds_count{route="/pay"} 91823</pre>
 
 <h3>Counter details</h3>
 <ul>
@@ -30042,6 +30086,14 @@ A log field (or span attribute) &mdash; it's high-cardinality.
 <li>Name with <code>_total</code> suffix (Prometheus convention). Unit in the name (<code>_seconds_total</code>, <code>_bytes_total</code>).</li>
 <li>Never expose a "per-second" value directly &mdash; you lose information and can't re-window it.</li>
 </ul>
+<pre>// instrument the TOTAL, let the query do the rate
+counter := prometheus.NewCounterVec(prometheus.CounterOpts{
+    Name: "http_requests_total"}, []string{"route", "code"})
+counter.WithLabelValues("/pay", "200").Inc()      // just increment
+
+// query side re-windows freely; rate() absorbs the restart-to-0
+rate(http_requests_total[5m])       # per-second, last 5m
+increase(http_requests_total[1h])   # total, last hour  &mdash; same source series</pre>
 
 <h3>Histogram vs Summary &mdash; the key decision</h3>
 <table>
@@ -30056,12 +30108,32 @@ A log field (or span attribute) &mdash; it's high-cardinality.
 aggregatability wins. Use summaries only when you can't pick buckets and only ever look at
 one instance. <strong>Native/exponential histograms</strong> (newer Prometheus/OTel) remove the
 fixed-bucket problem with auto-scaling buckets at low cost.</p>
+<pre># HISTOGRAM: aggregate across all pods, THEN take the quantile -> correct p95
+histogram_quantile(0.95,
+  sum by (le) (rate(http_req_seconds_bucket{route="/pay"}[5m])))
+
+# SUMMARY: the quantile is precomputed per pod -> averaging them is WRONG
+avg(http_req_seconds{quantile="0.95"})        # meaningless: p95 of p95s
+
+# pick buckets AROUND the SLO (e.g. 300ms target):
+buckets = [.05, .1, .2, .3, .4, .5, .75, 1, 2.5]   # dense near 0.3</pre>
 
 <h3>OpenTelemetry additions</h3>
 <ul>
 <li><strong>UpDownCounter</strong> (like a gauge but expressed as deltas), <strong>Observable/async</strong> instruments (callback-sampled gauges/counters), <strong>exponential histogram</strong>.</li>
 <li>Temporality: <strong>cumulative</strong> (Prometheus-style totals) vs <strong>delta</strong> (value since last export) &mdash; matters when wiring OTel to different backends.</li>
 </ul>
+<pre>// OTel instruments
+counter   := meter.Int64Counter("requests")              // up only
+updown    := meter.Int64UpDownCounter("queue_depth")     // +/- deltas (gauge-like)
+meter.Int64ObservableGauge("cpu_temp",                    // sampled via callback
+    metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+        o.Observe(readSensor()); return nil }))
+hist := meter.Float64Histogram("rpc.duration",
+    metric.WithExplicitBucketBoundaries(0.05, 0.1, 0.3, 1))
+
+// Collector: convert delta -> cumulative for a Prometheus backend
+// processors: [cumulativetodelta]  (or the reverse, per backend)</pre>
 
 <h3>Common mistakes</h3>
 <ul>
@@ -30071,6 +30143,14 @@ fixed-bucket problem with auto-scaling buckets at low cost.</p>
 <li>Using a gauge for something that should be a counter (you lose events between scrapes).</li>
 <li>Computing <code>avg(rate(...))</code> when you want <code>sum(rate(...))</code> (or vice versa).</li>
 </ul>
+<pre>http_requests_total                          # WRONG: a ramp; use rate()
+avg(http_req_seconds{quantile="0.99"})       # WRONG: averaging summary quantiles
+
+# total throughput across pods -> SUM the rates
+sum(rate(http_requests_total[5m]))
+# typical per-pod rate -> AVG the rates
+avg(rate(http_requests_total[5m]))
+# buckets 0.05..0.5 but real latencies ~2s -> histogram_quantile returns +Inf</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -30148,6 +30228,14 @@ No &mdash; quantiles are not aggregatable.
 <p>They overlap heavily: Golden Signals &asymp; RED (latency/traffic/errors) + saturation. Use
 <strong>RED per service</strong>, <strong>USE per resource</strong>, and think of the Golden Signals
 as the union.</p>
+<pre># RED (the /checkout service)
+sum(rate(http_requests_total{svc="checkout"}[5m]))                              # Rate
+sum(rate(http_requests_total{svc="checkout",code=~"5.."}[5m])) / sum(rate(...)) # Errors
+histogram_quantile(0.95, sum by(le)(rate(http_req_seconds_bucket{svc="checkout"}[5m]))) # Duration
+
+# USE (the node it runs on)
+1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m]))   # Utilisation
+node_load1 / count(node_cpu_seconds_total{mode="idle"})  # Saturation (runq vs cores)</pre>
 
 <h3>RED in practice</h3>
 <ul>
@@ -30156,6 +30244,13 @@ as the union.</p>
 <li><strong>Duration</strong>: a <em>histogram</em> &rarr; p50/p90/p95/p99, not just the average. Track the distribution; the mean hides the tail that users feel.</li>
 <li>Split success vs error latency &mdash; fast failures can flatter your latency graph.</li>
 </ul>
+<pre># error RATIO, by route, with a readable legend
+sum by (route) (rate(http_requests_total{code=~"5..|429"}[5m]))
+  / sum by (route) (rate(http_requests_total[5m]))
+
+# split latency: successes only, so a flood of instant 500s can't flatter it
+histogram_quantile(0.99,
+  sum by (le) (rate(http_req_seconds_bucket{code=~"2..|3.."}[5m])))</pre>
 
 <h3>USE in practice</h3>
 <ul>
@@ -30165,6 +30260,13 @@ as the union.</p>
 <li>App-level resources too: DB connection pool (in-use / max; wait time; timeouts), thread pool, work queue depth.</li>
 <li><strong>Saturation is the leading indicator</strong> &mdash; it climbs before latency/errors blow up.</li>
 </ul>
+<pre># DB connection pool as a USE resource (the app-level one people forget)
+db_pool_in_use / db_pool_max                       # Utilisation
+rate(db_pool_wait_seconds_sum[5m]) / rate(db_pool_wait_seconds_count[5m])  # Saturation (wait)
+rate(db_pool_timeouts_total[5m])                   # Errors
+
+# saturation leads: this climbs minutes before p99 latency does
+avg_over_time(db_pool_wait_seconds_count[5m])</pre>
 
 <h3>Golden Signals notes</h3>
 <ul>
@@ -30173,12 +30275,29 @@ as the union.</p>
 <li><strong>Errors</strong>: explicit (5xx, exceptions) and implicit (200 with wrong body, policy violations, too-slow-to-be-useful).</li>
 <li><strong>Saturation</strong>: how "full" the most constrained resource is; often the thing to alert on early.</li>
 </ul>
+<pre># implicit errors are still errors: 200 that's too slow to be useful
+sum(rate(http_req_seconds_bucket{code="200", le="10"}[5m]))
+  - sum(rate(http_req_seconds_bucket{code="200", le="2"}[5m]))   # 200s taking 2-10s
+
+# traffic context: "errors flat" can mean "traffic dropped 90%"
+sum(rate(http_requests_total[5m]))
+  / sum(rate(http_requests_total[5m] offset 1w))     # vs same time last week</pre>
 
 <h3>Turning them into dashboards &amp; alerts</h3>
 <ul>
 <li>Standard per-service dashboard: a RED row at the top (rate, error ratio, latency percentiles), USE rows below for the service's resources, deploy annotations.</li>
 <li>Alert on <strong>symptoms</strong> from RED / Golden Signals (SLO burn, error ratio, latency) &mdash; page-worthy. Alert on <strong>saturation</strong> as an early warning (ticket, or page if imminent). Cause metrics (USE details) are for dashboards and diagnosis, not paging.</li>
 </ul>
+<pre># PAGE: user-visible symptom (RED error ratio)
+- alert: HighErrorRatio
+  expr: sum(rate(http_requests_total{code=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) &gt; 0.02
+  for: 5m
+  labels: { severity: page }
+
+# TICKET: saturation early warning, not yet user-visible
+- alert: DiskFillingUp
+  expr: predict_linear(node_filesystem_avail_bytes[6h], 4*3600) &lt; 0
+  labels: { severity: ticket }</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -30265,6 +30384,12 @@ Saturation.
 <tr><td><strong>SLA</strong> (Agreement)</td><td>A contract with consequences (credits/penalties) if an SLO-like target is missed. SLO is internal and stricter than any SLA.</td></tr>
 <tr><td><strong>Error budget</strong></td><td><code>1 &minus; SLO</code>. At 99.9% over 28 days &rarr; 0.1% &rarr; ~40 min of "allowed badness". You <em>spend</em> it on releases, experiments, incidents.</td></tr>
 </table>
+<pre># the maths, one worked window
+SLO      = 99.9%      window = 28 days = 40320 min
+budget   = (1 - 0.999) * 40320  = 40.3 min of "allowed bad" per window
+# or in request terms, at 2000 req/s:
+valid    = 2000 * 60 * 40320    = 4.84e9 requests
+bad_ok   = 0.001 * 4.84e9       = 4.84M requests may fail before the SLO is missed</pre>
 
 <h3>Good SLIs</h3>
 <ul>
@@ -30273,6 +30398,13 @@ Saturation.
 <li>Common types: <strong>availability</strong> (non-error / total), <strong>latency</strong> (fraction faster than threshold), <strong>quality/correctness</strong> (right answer), <strong>freshness</strong> (data age &lt; X), <strong>coverage</strong> (fraction of items processed), <strong>throughput/durability</strong> for storage.</li>
 <li>Define <strong>valid</strong> carefully: exclude health checks, bots if appropriate; decide if 4xx count as valid-but-good, valid-but-bad, or invalid.</li>
 </ul>
+<pre># availability SLI: good / valid, measured at the edge (LB), near the user
+good  = sum(rate(lb_requests_total{code!~"5..", path!="/healthz"}[5m]))
+valid = sum(rate(lb_requests_total{path!="/healthz"}[5m]))        # health checks excluded
+sli   = good / valid
+
+# latency SLI: fraction served under the 300ms threshold
+sum(rate(http_req_seconds_bucket{le="0.3", path!="/healthz"}[5m])) / valid</pre>
 
 <h3>Choosing the target &amp; window</h3>
 <ul>
@@ -30280,6 +30412,14 @@ Saturation.
 <li>Rolling window (e.g. 28 or 30 days) &mdash; continuous, no calendar-reset gaming.</li>
 <li>Start from current performance; ratchet up only if users need it.</li>
 </ul>
+<pre># cost of each extra 9 (downtime allowed over 30 days)
+99%     -> 7h 18m
+99.9%   -> 43m 12s
+99.99%  -> 4m 19s        # needs automated failover, no manual steps in the path
+99.999% -> 26s           # rarely justified for anything user-facing
+
+# set the target from the measured baseline, then hold it:
+quantile_over_time(0.1, sli:availability:ratio_rate1h[30d])   # ~10th percentile hour</pre>
 
 <h3>Error budget policy</h3>
 <p>The budget is only useful if there's an agreed <strong>policy</strong> for what happens when it's
@@ -30291,6 +30431,14 @@ low/exhausted, e.g.:</p>
 <li>Repeated exhaustion &rarr; re-examine the SLO (too strict?) or invest in the system.</li>
 </ul>
 <p>This makes the reliability/velocity trade-off <strong>data-driven</strong> instead of an argument.</p>
+<pre># budget remaining, as a fraction (drives the policy gate in CI)
+budget_remaining =
+  1 - ( (1 - sli:availability:ratio_rate30d) / (1 - 0.999) )
+
+# CI deploy gate
+if budget_remaining < 0:      block feature deploys, allow reliability/rollback only
+elif budget_remaining < 0.25: require senior review
+else:                         ship</pre>
 
 <h3>Burn rate</h3>
 <ul>
@@ -30298,6 +30446,15 @@ low/exhausted, e.g.:</p>
 <li>Alert on burn rate with <strong>multi-window, multi-burn-rate</strong> conditions (fast + slow window must both exceed a threshold) &mdash; fast detection of severe burn, no flapping on blips, and a slow low-severity alert for gradual erosion.</li>
 <li>Typical set: page at 14.4&times; over 1h (&amp; 5m), page at 6&times; over 6h (&amp; 30m), ticket at 1&times; over 3d (&amp; 6h).</li>
 </ul>
+<pre># multi-window multi-burn-rate: fast AND slow window must BOTH exceed
+- alert: ErrorBudgetBurnFast          # 14.4x -> whole 30d budget in ~2 days
+  expr: |
+    (1 - sli:availability:ratio_rate1h) > 14.4 * (1 - 0.999)
+    and
+    (1 - sli:availability:ratio_rate5m) > 14.4 * (1 - 0.999)
+  for: 2m
+  labels: { severity: page }
+# slow companion: 1x over 3d (&amp; 6h) -> ticket, catches gradual erosion without flapping</pre>
 
 <h3>Implementation</h3>
 <pre># SLI as good/valid ratio via recording rules
@@ -30385,6 +30542,15 @@ A ratio of good events to valid events (0&ndash;100%).
 </ul>
 <p>If it fails "actionable" or "urgent", it's a <strong>ticket</strong> or a <strong>dashboard</strong>,
 not a page.</p>
+<pre># PASSES the test -> page
+- alert: CheckoutErrorRate            # real, user-impacting, actionable, urgent
+  expr: sum(rate(http_requests_total{svc="checkout",code=~"5.."}[5m]))
+        / sum(rate(http_requests_total{svc="checkout"}[5m])) > 0.05
+  for: 5m
+  labels: { severity: page }
+
+# FAILS "user-impacting" + "actionable" -> dashboard only, NOT an alert
+#   node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.2</pre>
 
 <h3>Symptoms vs causes</h3>
 <ul>
@@ -30392,6 +30558,15 @@ not a page.</p>
 <li><strong>Don't page on causes</strong> &mdash; "CPU 90%", "disk 80%", "GC time up", "one pod restarted". A cause that isn't hurting users is a dashboard line; a cause that <em>is</em> hurting users already tripped a symptom alert.</li>
 <li><strong>Exception</strong>: a small number of <em>leading-indicator</em> alerts where the fix takes long enough that waiting for the symptom is too late &mdash; "disk will be full in 4 hours", "certificate expires in 7 days", "no successful backup in 25 hours". These page/ticket <em>because</em> they're actionable and time-boxed.</li>
 </ul>
+<pre># SYMPTOM (catches every cause, even unforeseen ones)
+- alert: RequestsFailing
+  expr: sum(rate(http_requests_total{code=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.02
+
+# CAUSE: only alert when the fix is slow AND the clock is running
+- alert: DiskWillFill
+  expr: predict_linear(node_filesystem_avail_bytes{mountpoint="/"}[6h], 4*3600) < 0
+- alert: CertExpiringSoon
+  expr: (probe_ssl_earliest_cert_expiry - time()) / 86400 < 7</pre>
 
 <h3>Three delivery tiers</h3>
 <table>
@@ -30400,6 +30575,15 @@ not a page.</p>
 <tr><td><strong>Ticket</strong></td><td>Look within a day, business hours</td><td>SLO slow-burn, a single replica unhealthy, cert expiring in 10 days</td></tr>
 <tr><td><strong>Log / dashboard</strong></td><td>Available when investigating</td><td>Per-pod CPU, retry counts, cache hit ratio</td></tr>
 </table>
+<pre># the tier is just a label the router acts on
+labels: { severity: page }     -> receiver: pagerduty  (24x7)
+labels: { severity: ticket }   -> receiver: jira-alerts (business hours)
+labels: { severity: info }     -> receiver: slack-fyi   (no notification noise)
+
+# Alertmanager route
+routes:
+  - matchers: ['severity="page"']   receiver: pagerduty
+  - matchers: ['severity="ticket"'] receiver: jira   mute_time_intervals: [nights]</pre>
 
 <h3>Reducing noise</h3>
 <ul>
@@ -30410,6 +30594,18 @@ not a page.</p>
 <li><strong>Maintenance windows / silences</strong> for known work.</li>
 <li>Delete alerts that have never been actioned; every alert has an owner and a runbook.</li>
 </ul>
+<pre># inhibition: one "region down" page, not 400 service pages
+inhibit_rules:
+  - source_matchers: ['alertname="RegionDown"']
+    target_matchers: ['severity="page"']
+    equal: ['region']                       # silence page-level alerts in that region
+
+# grouping + repeat cadence
+route:
+  group_by: ['alertname', 'cluster']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h</pre>
 
 <h3>Runbooks &amp; context</h3>
 <ul>
@@ -30417,6 +30613,14 @@ not a page.</p>
 <li>The alert payload carries: the SLO/graph link, affected scope (service/region), recent deploys, and severity.</li>
 <li>Goal: responder goes from page to "I know what's wrong and the first thing to try" in under a minute.</li>
 </ul>
+<pre>- alert: CheckoutErrorRate
+  annotations:
+    summary: "checkout 5xx ratio {{ $value | humanizePercentage }} (SLO 99.9%)"
+    description: "Started {{ $startsAt }}. Region {{ $labels.region }}."
+    runbook_url: "https://wiki/runbooks/checkout-5xx"
+    dashboard:   "https://grafana/d/checkout?var-region={{ $labels.region }}"
+    deploys:     "https://ci/deploys?service=checkout&window=1h"
+# payload gives: what it means, where to look, what changed -> triage in &lt; 1 min</pre>
 
 <h3>On-call health</h3>
 <ul>
@@ -30424,6 +30628,13 @@ not a page.</p>
 <li>Every page reviewed: was it valid? actionable? could it be a ticket? Tune or delete.</li>
 <li>Compensate on-call; keep rotations big enough; hand off cleanly.</li>
 </ul>
+<pre># track on-call load from the alert stream itself
+sum(increase(alertmanager_notifications_total{integration="pagerduty"}[7d]))
+  / count(count by (oncall_shift)(...))          # pages per shift  (target: &lt; ~2, sleepable)
+
+# actionability: of pages fired, how many led to a human action / incident?
+sum(rate(page_acknowledged_with_action_total[30d])) / sum(rate(pages_total[30d]))
+# < ~0.5 -> you have an alert-fatigue problem; review + delete noisy rules</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -30497,6 +30708,11 @@ A runbook (and it should have a named owner).
 <li>Know the <strong>audience &amp; moment</strong>: on-call triage (fast, few panels, health-first), deep-dive debugging (detailed, drill-down), capacity planning (trends, long windows), exec/status (SLOs, high level).</li>
 <li>If you can't say the question in a sentence, split the dashboard.</li>
 </ul>
+<pre># name each dashboard after its question + audience
+"Checkout - Health (on-call triage)"    # 6 panels, health-first, 15m default range
+"Checkout - Deep dive (debugging)"      # per-pod, GC, pools; 1h; drill-down links
+"Checkout - Capacity (planning)"        # 30d trends, no auto-refresh
+# NOT: "Checkout - Everything"  (60 panels, answers nothing quickly)</pre>
 
 <h3>Layout: top-down, most-important-first</h3>
 <ol>
@@ -30505,6 +30721,12 @@ A runbook (and it should have a named owner).
 <li><strong>Supporting detail</strong>: time series for the summary signals, broken down by endpoint / dependency / region.</li>
 <li><strong>Deep-dive rows</strong>: per-pod, runtime (GC, heap), pools, queues &mdash; <strong>collapsed by default</strong>, lazy-loaded.</li>
 </ol>
+<pre># gridPos y-order encodes priority (y grows downward)
+row  "Header"   y=0   : 1x text (owner, runbook, links)
+row  "Health"   y=1   : Stat  availability | error % | p95 | RPS   (threshold-coloured)
+row  "Signals"  y=7   : TS    error ratio by route, latency percentiles, saturation
+row  "Runtime"  y=15  collapsed:true : GC pause, heap, goroutines   # lazy-loads on expand
+row  "Per-pod"  y=16  collapsed:true : CPU/mem by pod</pre>
 
 <h3>Panel hygiene</h3>
 <ul>
@@ -30515,6 +30737,14 @@ A runbook (and it should have a named owner).
 <li>Percentiles for latency (p50/p95/p99), not averages. Rates for counters, not raw.</li>
 <li>Every panel has a <strong>description</strong> (what it shows, what "bad" looks like).</li>
 </ul>
+<pre># latency: percentiles, threshold line at the SLO, real unit
+histogram_quantile(0.50, sum by(le)(rate(http_req_seconds_bucket[5m])))   # p50
+histogram_quantile(0.95, sum by(le)(rate(http_req_seconds_bucket[5m])))   # p95
+histogram_quantile(0.99, sum by(le)(rate(http_req_seconds_bucket[5m])))   # p99
+# fieldConfig: unit=s, thresholds step at 0.3 (the SLO), Y-min unset (latency)
+
+# rates: cap the series count so the graph stays readable
+topk(5, sum by (route) (rate(http_requests_total[5m])))   # + Y-min = 0</pre>
 
 <h3>Context</h3>
 <ul>
@@ -30523,6 +30753,14 @@ A runbook (and it should have a named owner).
 <li><strong>Template variables</strong> (env, region, service, instance) so one dashboard covers the fleet; cascade them; provide sensible defaults.</li>
 <li><strong>Data links</strong> from panels to logs, traces, and the next dashboard down &mdash; carry the time range and labels.</li>
 </ul>
+<pre># template vars: one dashboard covers the fleet, cascading with defaults
+$env    = label_values(up, env)                       # prod (default)
+$region = label_values(up{env="$env"}, region)
+$svc    = label_values(up{env="$env",region="$region"}, service)
+
+# panel query uses them; data link carries context to the next view
+sum(rate(http_requests_total{env="$env",region="$region",service="$svc"}[5m]))
+link: /d/checkout-deepdive?var-svc=$svc&var-region=$region&${__url_time_range}</pre>
 
 <h3>Consistency &amp; maintenance</h3>
 <ul>
@@ -30530,6 +30768,14 @@ A runbook (and it should have a named owner).
 <li><strong>Dashboards as code</strong> (Jsonnet/grafonnet, Terraform) for anything shared &mdash; reviewable, consistent, regenerable.</li>
 <li>Kill dashboards nobody opens; a graveyard of stale dashboards is worse than none.</li>
 </ul>
+<pre># grafonnet: one function -> identical RED row on every service dashboard
+local redRow(svc) = row.new('RED - ' + svc) + row.withPanels([
+  statPanel('Availability', 'sli:avail:ratio5m{svc="%s"}' % svc),
+  tsPanel('Error ratio',    'errRatio5m{svc="%s"}' % svc),
+  tsPanel('Latency p95',    'lat:p95:5m{svc="%s"}' % svc),
+]);
+# find dead dashboards to delete
+sum by (dashboard_uid)(increase(grafana_dashboard_view_total[30d])) == 0</pre>
 
 <h3>Performance</h3>
 <ul>
@@ -30537,6 +30783,15 @@ A runbook (and it should have a named owner).
 <li><strong>Recording rules</strong> for heavy aggregations; collapsed rows lazy-load; shared base queries where the tool supports it.</li>
 <li>Target: a triage dashboard loads in &lt; 2&ndash;3 seconds.</li>
 </ul>
+<pre># recording rule: precompute the heavy SLI once, per minute
+groups:
+  - name: sli
+    interval: 1m
+    rules:
+      - record: sli:avail:ratio_rate5m
+        expr: sum(rate(http_requests_total{code!~"5.."}[5m]))
+              / sum(rate(http_requests_total[5m]))
+# dashboards + burn-rate alerts read sli:avail:ratio_rate5m -> fast + always agree</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -30610,6 +30865,12 @@ Percentiles (p50/p95/p99) &mdash; the average hides the tail.
 <li>A histogram multiplies again by its bucket count.</li>
 <li>Cost drivers: Prometheus holds an in-memory index and per-series memory for the head block; queries touch every matching series; remote-write and long-term stores charge per series/sample.</li>
 </ul>
+<pre># series count = product of label value counts
+http_requests_total{method, route, status}
+  methods=4  x  routes=25  x  status=15   = 1,500 series          # fine
+# add user_id (100k values):
+  4 x 25 x 15 x 100000 = 150,000,000 series                       # OOM
+# histogram multiplies again:  x (buckets + 3)  e.g. x13 -> ~2B series</pre>
 
 <h3>Cardinality-explosion offenders (never put these in labels)</h3>
 <ul>
@@ -30622,6 +30883,17 @@ Percentiles (p50/p95/p99) &mdash; the average hides the tail.
 </ul>
 <p>These belong in <strong>logs</strong> or <strong>trace/span attributes</strong>, where high
 cardinality is fine.</p>
+<pre># BAD: raw path -> one series per order id
+http_requests_total{path="/orders/48213"}
+
+# GOOD: route template, filled in by router middleware BEFORE the metric label
+http_requests_total{route="/orders/:id"}
+
+# BAD: per-code   GOOD: status class (unless you truly need per-code)
+{status="503"}  ->  {status_class="5xx"}
+
+# the id still exists where it's cheap:
+log:  {"order_id": 48213}          span attr:  order.id = 48213</pre>
 
 <h3>Churn &mdash; the sneaky one</h3>
 <p>Even if <em>active</em> cardinality is bounded, rapidly <strong>changing</strong> label values
@@ -30630,6 +30902,18 @@ jobs, deploy-versioned labels. Prometheus keeps churned series for the staleness
 window; the index grows; queries over a range see all of them. Fix: relabel ephemeral
 identifiers away (map to a stable <code>instance</code>), don't label with pod name / start
 time / version-per-scrape.</p>
+<pre># active series bounded at ~1500, but over 30 days...
+# every deploy: new "version" label value.  every pod restart: new "pod" value.
+#   30 deploys x 20 pods x 1500 = 900,000 series in the index, 1500 active
+
+# fix: relabel the ephemeral parts away at scrape time
+relabel_configs:
+  - source_labels: [__meta_kubernetes_pod_name]
+    target_label: instance
+    regex: '(.*)-[a-z0-9]+-[a-z0-9]+$'      # strip the replica-set hash
+    replacement: '$1'
+  - action: labeldrop
+    regex: 'pod|version'</pre>
 
 <h3>Controlling it</h3>
 <ul>
@@ -30641,6 +30925,19 @@ time / version-per-scrape.</p>
 <li><strong>Downsampling &amp; retention tiers</strong>: raw high-res short; rollups long (Thanos/Mimir/VictoriaMetrics).</li>
 <li><strong>Native/exponential histograms</strong> to cut bucket-driven cardinality.</li>
 </ul>
+<pre># drop an offending label / series at scrape time
+metric_relabel_configs:
+  - action: labeldrop
+    regex: 'client_ip|request_id'
+  - source_labels: [__name__]
+    regex: 'go_gc_duration_seconds.*'     # noisy metric we never query
+    action: drop
+
+# per-scrape safety limits
+scrape_configs:
+  - job_name: app
+    sample_limit: 20000          # refuse a target that suddenly explodes
+    label_limit: 30</pre>
 
 <h3>Finding the problem</h3>
 <pre>topk(10, count by (__name__)({__name__=~".+"}))        # biggest metrics by series
@@ -30726,12 +31023,32 @@ In logs and/or as a trace/span attribute.
 </table>
 <p>Prometheus chose <strong>pull</strong> mainly for the free liveness signal, simple local
 testing (curl the endpoint), and the server controlling scrape rate and limits.</p>
+<pre># PULL: server calls the target; you can reproduce a scrape by hand
+$ curl -s localhost:9090/api/v1/query?query=up | jq '.data.result[0].value'
+$ curl -s localhost:8080/metrics | head          # exactly what Prometheus sees
+# a target that's down -> up{job="api",instance="10.0.1.4:8080"} 0   (free liveness)
+
+# PUSH: app sends; no scrape to reproduce, liveness inferred from absence
+$ echo 'jobs_done_total 42' | curl --data-binary @- localhost:9091/metrics/job/nightly</pre>
 
 <h3>Exporters</h3>
 <ul>
 <li>An <strong>exporter</strong> translates some system's stats into Prometheus format on <code>/metrics</code>: <code>node_exporter</code> (host), <code>cAdvisor</code>/kubelet (containers), <code>blackbox_exporter</code> (probe HTTP/TCP/ICMP/DNS from outside), <code>*_exporter</code> for databases, queues, hardware, cloud APIs.</li>
 <li><strong>Direct instrumentation</strong> (client library in the app) is preferred where you own the code; exporters bridge things you don't.</li>
 </ul>
+<pre># blackbox_exporter: probe a URL from outside, Prometheus scrapes the probe result
+scrape_configs:
+  - job_name: blackbox
+    metrics_path: /probe
+    params: { module: [http_2xx] }
+    static_configs:
+      - targets: [ https://shop.example/health ]
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - target_label: __address__
+        replacement: blackbox-exporter:9115     # scrape the exporter, not the site
+# yields: probe_success 1|0, probe_duration_seconds, probe_http_status_code</pre>
 
 <h3>Service discovery &amp; relabeling</h3>
 <ul>
@@ -30739,12 +31056,37 @@ testing (curl the endpoint), and the server controlling scrape rate and limits.<
 <li><strong><code>relabel_configs</code></strong> (before scrape): filter which targets to keep (<code>keep</code>/<code>drop</code> on SD meta labels), set the <code>__address__</code>, <code>job</code>, <code>instance</code>, and attach labels (namespace, team) from SD metadata.</li>
 <li><strong><code>metric_relabel_configs</code></strong> (after scrape, before ingest): drop noisy metrics/labels, rename, cut cardinality.</li>
 </ul>
+<pre>scrape_configs:
+  - job_name: kubernetes-pods
+    kubernetes_sd_configs: [{ role: pod }]
+    relabel_configs:                                    # PRE-scrape: pick + label targets
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        action: keep
+        regex: "true"                                   # only pods that opt in
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_label_team]
+        target_label: team                              # attach team from a pod label
+    metric_relabel_configs:                             # POST-scrape: trim what's ingested
+      - source_labels: [__name__]
+        regex: 'apiserver_request_duration_seconds_bucket'
+        action: drop</pre>
 
 <h3>Pushgateway &mdash; use sparingly</h3>
 <ul>
 <li>For <strong>service-level batch jobs</strong> that exit before they can be scraped: the job pushes its final metrics to the Pushgateway, which Prometheus scrapes.</li>
 <li>Caveats: it's a single point, metrics persist until overwritten/deleted (a dead job's last values linger &mdash; use <code>push --delete</code> or grouping), and it breaks <code>up</code> semantics. Not for per-instance or high-frequency pushing.</li>
 </ul>
+<pre># batch job: push final metrics on exit, then DELETE so old values don't linger
+cat &lt;&lt;EOF | curl --data-binary @- http://pgw:9091/metrics/job/db_backup/instance/$(hostname)
+# TYPE backup_last_success_timestamp_seconds gauge
+backup_last_success_timestamp_seconds $(date +%s)
+backup_size_bytes 4823002112
+EOF
+trap 'curl -s -X DELETE http://pgw:9091/metrics/job/db_backup/instance/$(hostname)' EXIT
+
+# alert on staleness instead of "up":
+#   time() - backup_last_success_timestamp_seconds &gt; 90000   # no backup in 25h</pre>
 
 <h3>Agents &amp; the OpenTelemetry Collector</h3>
 <ul>
@@ -30752,6 +31094,19 @@ testing (curl the endpoint), and the server controlling scrape rate and limits.<
 <li><strong>OTel Collector</strong> pipeline: <em>receivers</em> (OTLP, Prometheus scrape, statsd, host metrics) &rarr; <em>processors</em> (batch, memory_limiter, attributes, filter, tail-sampling for traces, transform) &rarr; <em>exporters</em> (Prometheus remote write, OTLP, vendor). One agent for metrics, logs, and traces.</li>
 <li><strong>remote_write</strong>: durable queue with retries, sharding, and backpressure; used for HA, long-term storage, and multi-tenant fan-in.</li>
 </ul>
+<pre># OTel Collector: one pipeline, receivers -> processors -> exporters
+receivers:
+  prometheus: { config: { scrape_configs: [ ... ] } }
+  otlp:       { protocols: { grpc: {} } }
+processors:
+  memory_limiter: { check_interval: 1s, limit_mib: 800 }
+  batch: {}
+  attributes: { actions: [ { key: request_id, action: delete } ] }   # drop high-card
+exporters:
+  prometheusremotewrite: { endpoint: https://mimir/api/v1/push }
+service:
+  pipelines:
+    metrics: { receivers: [prometheus, otlp], processors: [memory_limiter, attributes, batch], exporters: [prometheusremotewrite] }</pre>
 
 <h3>Scrape hygiene</h3>
 <ul>
@@ -30760,6 +31115,18 @@ testing (curl the endpoint), and the server controlling scrape rate and limits.<
 <li>Every scrape yields <code>up</code>, <code>scrape_duration_seconds</code>, <code>scrape_samples_*</code> &mdash; alert on <code>up == 0</code> and on sample-limit hits.</li>
 <li>Staleness: if a series disappears from a scrape, Prometheus marks it stale after ~5 min so <code>rate()</code> and instant queries behave.</li>
 </ul>
+<pre>global:
+  scrape_interval: 30s
+  scrape_timeout: 10s          # < interval, always
+
+# self-monitoring: alert when scrapes fail or get slow
+- alert: TargetDown
+  expr: up == 0
+  for: 5m
+- alert: ScrapeSlow
+  expr: scrape_duration_seconds > 0.8 * 30      # nearing the timeout
+- alert: SampleLimitHit
+  expr: scrape_samples_scraped == 0 and up == 1  # target rejected for too many samples</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -30844,6 +31211,17 @@ Service-level batch/cron jobs that exit before Prometheus can scrape them.
 <li>Spans form a tree (or DAG with links); the <strong>root span</strong> is the entry point. A <strong>waterfall</strong> view shows each span's start offset and duration.</li>
 <li>Span <strong>kind</strong>: server, client, producer, consumer, internal &mdash; tells the UI how to connect them.</li>
 </ul>
+<pre># manual span around a business operation (OTel, Go)
+ctx, span := tracer.Start(ctx, "charge_card", trace.WithSpanKind(trace.SpanKindClient))
+defer span.End()
+span.SetAttributes(attribute.String("psp", "stripe"), attribute.Int("amount_cents", 4999))
+
+resp, err := stripe.Charge(ctx, ...)      // ctx carries trace_id + this span_id
+if err != nil {
+    span.RecordError(err)                 // -> a span event with the stack
+    span.SetStatus(codes.Error, "declined")
+}
+// waterfall: charge_card is a child of the HTTP handler span, sibling of db.query</pre>
 
 <h3>Context propagation</h3>
 <ul>
@@ -30852,6 +31230,15 @@ Service-level batch/cron jobs that exit before Prometheus can scrape them.
 <li><strong>Instrumentation</strong>: auto (agents/SDK hooks for common frameworks and clients) + manual spans for business-meaningful operations. OpenTelemetry is the vendor-neutral standard for APIs, SDKs, and the wire format (OTLP).</li>
 <li>A gap in propagation = a <strong>broken trace</strong> (orphan spans, a new trace starting mid-request).</li>
 </ul>
+<pre># W3C header carried on EVERY hop (HTTP, gRPC metadata, queue message headers)
+traceparent: 00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01
+#            ver  trace_id (16 bytes)              parent span_id      flags(sampled)
+
+# extract on the way in, inject on the way out
+incoming := propagation.TraceContext{}.Extract(ctx, headerCarrier(r.Header))
+child, span := tracer.Start(incoming, "handler")
+propagation.TraceContext{}.Inject(child, headerCarrier(outReq.Header))   # or msg.Headers
+# forget the inject on a queue publish -> consumer starts a NEW trace -> broken</pre>
 
 <h3>Sampling</h3>
 <table>
@@ -30864,6 +31251,15 @@ Service-level batch/cron jobs that exit before Prometheus can scrape them.
 <p>Common: low head sampling as a floor + tail sampling to always keep errors and outliers.
 Keep <code>trace_id</code> in logs so you can find a trace even when the request wasn't sampled
 (then only its logs exist).</p>
+<pre># OTel Collector: low head-sample floor + tail rules that always keep the interesting ones
+processors:
+  probabilistic_sampler: { sampling_percentage: 2 }     # floor, applied at ingest
+  tail_sampling:
+    decision_wait: 10s
+    policies:
+      - { name: errors,     type: status_code, status_code: { status_codes: [ERROR] } }
+      - { name: slow,       type: latency,     latency: { threshold_ms: 800 } }
+      - { name: sample_rest, type: probabilistic, probabilistic: { sampling_percentage: 5 } }</pre>
 
 <h3>What tracing answers</h3>
 <ul>
@@ -30872,6 +31268,14 @@ Keep <code>trace_id</code> in logs so you can find a trace even when the request
 <li><strong>Service dependency map</strong> &mdash; derived from span parent/child + kind across many traces.</li>
 <li><strong>RED metrics from spans</strong> ("span metrics" / metrics generated by the collector) &mdash; rate/error/duration per service+operation without separate instrumentation.</li>
 </ul>
+<pre># TraceQL: find the traces that matter
+{ resource.service.name = "checkout" &amp;&amp; status = error }
+{ span.db.system = "postgres" &amp;&amp; duration &gt; 500ms }        # slow DB spans
+{ } | by(resource.service.name) | count() &gt; 30              # fan-out / N+1
+
+# span metrics the collector generates (spanmetrics connector) -> RED for free
+traces_spanmetrics_calls_total{service="checkout", span_name="POST /pay", status_code="STATUS_CODE_ERROR"}
+traces_spanmetrics_latency_bucket{service="checkout", le="0.5"}</pre>
 
 <h3>Correlation</h3>
 <ul>
@@ -30879,6 +31283,13 @@ Keep <code>trace_id</code> in logs so you can find a trace even when the request
 <li><strong>Trace &harr; logs</strong>: logs include <code>trace_id</code>/<code>span_id</code>; span &rarr; its logs, log line &rarr; its trace.</li>
 <li><strong>Trace &rarr; profiles</strong>: link a span to a CPU profile of that time window.</li>
 </ul>
+<pre># 1. graph shows a p99 spike; exemplar on the bucket carries a trace_id
+histogram_quantile(0.99, sum by(le)(rate(http_req_seconds_bucket[5m])))   # exemplars ON
+
+# 2. open that trace -> the db.query span is 900ms of a 1.1s request
+
+# 3. from the span, jump to its logs by the shared id
+{app="checkout"} | json | trace_id="4bf92f3577b34da6a3ce929d0e0e4736"</pre>
 
 <h3>Pitfalls</h3>
 <ul>
@@ -30888,6 +31299,14 @@ Keep <code>trace_id</code> in logs so you can find a trace even when the request
 <li>Clock skew between hosts makes child spans appear to start before their parent &mdash; UIs clamp; keep NTP tight.</li>
 <li>Sampling math: if you compute rates from sampled traces, weight by the sampling rate.</li>
 </ul>
+<pre># async: the span ends when you enqueue, not when the work runs -> propagate explicitly
+msg.Headers["traceparent"] = inject(ctx)          // carry context onto the message
+// consumer:
+ctx = extract(msg.Headers)
+_, span := tracer.Start(ctx, "process", trace.WithLinks(trace.LinkFromContext(ctx)))
+
+# rate from 2%-sampled traces must be scaled back up
+sum(rate(traces_spanmetrics_calls_total[5m])) / 0.02     # true call rate</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -30963,6 +31382,16 @@ Tail-based sampling.
 <li><strong>Comms cadence</strong>: regular updates even if "still investigating"; internal channel + external status page; declare start and all-clear explicitly.</li>
 <li><strong>Standard tooling</strong>: a declared incident opens a channel/bridge, a doc/timeline, and a tracking ticket automatically.</li>
 </ul>
+<pre># /incident declare  -> automation spins up the scaffold
+SEV2  checkout latency  IC=@leo  comms=@sara  scribe=@raj
+  #inc-2026-08-29-checkout   (bridge)   doc: timeline.md   ticket: INC-482
+  status page: "Investigating elevated checkout errors"   (update every 15m)
+
+# order of operations
+1. mitigate:  roll back deploy v2.4.1        <- stop the bleeding first
+2. confirm:   error ratio back under 1%
+3. THEN diagnose root cause
+4. all-clear declared explicitly (not "seems fine now")</pre>
 
 <h3>Key metrics</h3>
 <table>
@@ -30974,6 +31403,15 @@ Tail-based sampling.
 </table>
 <p>Time to <em>mitigate</em> (user impact ends) usually matters more than time to full
 resolution.</p>
+<pre># one incident's timeline, in epoch terms
+t0  09:02  bad deploy rolled out            <- incident START (impact begins)
+t1  09:14  page fires                       MTTD  = 12 min
+t2  09:16  on-call acks                     MTTA  = 2 min  (from page)
+t3  09:23  rollback complete, errors normal MTT-mitigate = 21 min (from t0)  <- the one that matters
+t4  11:40  faulty query fixed + deployed    MTTR (full) = 2h 38m
+
+# track the distribution, not just the mean
+histogram_quantile(0.9, sum by(le)(rate(incident_mitigate_seconds_bucket[90d])))</pre>
 
 <h3>Blameless postmortems</h3>
 <ul>
@@ -30983,6 +31421,19 @@ resolution.</p>
 <li><strong>Trigger criteria</strong>: every SEV1/2, any customer-visible outage, any near-miss worth learning from &mdash; agreed in advance, not discretionary after the fact.</li>
 <li>Action items should reduce <em>likelihood</em> (fix the bug, add a guardrail), <em>impact</em> (graceful degradation, faster rollback), or <em>detection</em> (add the missing alert). Avoid "be more careful" items.</li>
 </ul>
+<pre># postmortem skeleton (blameless)
+## Impact:   42 min, ~18k failed checkouts, 31% of 30d error budget spent
+## Timeline: factual, timestamped (see Key metrics)
+## Contributing factors (NOT one root cause):
+   - latent N+1 query, dormant for months
+   - deploy skipped the staging soak step
+   - no alert on DB connection-pool saturation
+   - rollback took 9 min (manual steps)
+## Action items (owner / due / priority):
+   - [ ] add pool-saturation alert            @raj  2026-09-05  P1  (detection)
+   - [ ] one-command rollback                 @leo  2026-09-12  P1  (impact)
+   - [ ] fix the N+1                           @sara 2026-09-08  P2  (likelihood)
+# NOT: "engineers should review queries more carefully"</pre>
 
 <h3>Alert fatigue</h3>
 <ul>
@@ -30991,11 +31442,23 @@ resolution.</p>
 <li><strong>Fixes</strong>: symptom/SLO-based alerting; multi-window burn rate; <code>for:</code> durations; grouping &amp; inhibition; delete never-actioned alerts; require owner + runbook for every alert; a weekly alert review that tunes or deletes; track pages/shift with a target.</li>
 <li><strong>On-call health</strong>: rotations large enough that a normal week is quiet; compensation; clean handoffs with an on-call log; a "you may fix noisy alerts on shift" mandate.</li>
 </ul>
+<pre># weekly alert-review queries
+topk(10, sum by (alertname) (increase(alertmanager_alerts_received_total[7d])))  # noisiest
+# actionability per alert (needs a "did a human act?" signal, e.g. incident linkage)
+sum by (alertname)(increase(page_led_to_action_total[30d]))
+  / sum by (alertname)(increase(pages_total[30d]))
+# rows near 0 -> tune the threshold, add for:, or DELETE the alert</pre>
 
 <h3>Operational review loop</h3>
 <p>Weekly/biweekly: review incidents, page volume &amp; actionability, action-item burn-down,
 SLO status, and recurring toil. Feeds prioritisation &mdash; reliability work competes with
 features via the error-budget policy.</p>
+<pre># the weekly review dashboard, as queries
+incidents_last_7d           = count(incident_start_timestamp &gt; time() - 7*86400)
+action_items_overdue        = count(action_item_due &lt; time() and action_item_state != "done")
+pages_per_shift_p90         = quantile_over_time(0.9, pages_per_shift[8w])
+slo_budget_remaining        = 1 - (1 - sli:avail:ratio_rate30d) / (1 - 0.999)
+# budget_remaining &lt; 0.25  -> next sprint prioritises reliability items over features</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
