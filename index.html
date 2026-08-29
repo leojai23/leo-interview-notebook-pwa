@@ -13652,6 +13652,1032 @@ When a performance counter overflows (e.g. every 100,000 cache misses) it raises
 </section>
 <!-- /TOPIC:linux:perf-valgrind -->
 
+<!-- ============================== ARCHITECTURE TOPICS ============================== -->
+<!-- TOPIC:arch:number-repr -->
+<section class="view topic" id="v-arch-number-repr" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>Number Representation &amp; Endianness</h1>
+<p class="subtitle">Two's complement, IEEE-754, and which byte comes first.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Two's complement</h3>
+<p>The near-universal signed-integer format. To negate: invert all bits and add 1. Properties:</p>
+<ul>
+<li>One representation of zero; range for N bits is <code>-2^(N-1)</code> to <code>2^(N-1)-1</code> (asymmetric &mdash; no positive counterpart to <code>INT_MIN</code>).</li>
+<li>Addition/subtraction hardware is identical for signed and unsigned &mdash; the bits are the same, only interpretation differs.</li>
+<li>The top bit is the sign bit; sign-extension replicates it when widening.</li>
+</ul>
+
+<h3>Overflow</h3>
+<ul>
+<li><strong>Unsigned</strong>: wraps modulo <code>2^N</code> &mdash; defined behaviour.</li>
+<li><strong>Signed</strong>: overflow is undefined behaviour in C/C++ (the compiler assumes it can't happen); at the hardware level it wraps and sets the overflow flag.</li>
+<li><code>INT_MIN / -1</code> and <code>-INT_MIN</code> overflow (the asymmetry).</li>
+</ul>
+
+<h3>IEEE-754 floating point</h3>
+<p><code>[sign | exponent | mantissa]</code> &mdash; 32-bit: 1+8+23; 64-bit: 1+11+52. Value =
+<code>(-1)^sign &times; 1.mantissa &times; 2^(exp-bias)</code>.</p>
+<ul>
+<li>Not all decimals are representable (<code>0.1</code> isn't) &rarr; never compare floats with <code>==</code>; use a tolerance.</li>
+<li>Special values: &plusmn;0, &plusmn;&infin;, NaN (NaN &ne; everything, including itself), subnormals (gradual underflow, often slow).</li>
+<li>Precision decreases as magnitude grows; adding a small number to a large one can be a no-op. Sum small-to-large, or use Kahan summation.</li>
+</ul>
+
+<h3>Endianness</h3>
+<table>
+<tr><th></th><th>Little-endian</th><th>Big-endian</th></tr>
+<tr><td>Byte order of <code>0x12345678</code></td><td><code>78 56 34 12</code> (LSB first)</td><td><code>12 34 56 78</code> (MSB first)</td></tr>
+<tr><td>Used by</td><td>x86, ARM (default), RISC-V</td><td>network byte order, older MIPS/SPARC/PowerPC</td></tr>
+</table>
+<p>Matters when reading binary formats, casting between <code>int</code> and <code>char[]</code>, or sending
+data over the network. Use <code>htonl</code>/<code>ntohl</code> (or explicit shift-and-mask) &mdash; never
+<code>memcpy</code> a multi-byte integer to the wire without converting.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Two's complement: negate = invert + 1; one zero; range <code>-2^(N-1)</code>&hellip;<code>2^(N-1)-1</code>; same add/sub HW for signed/unsigned.</li>
+<li>Unsigned overflow wraps (defined). Signed overflow = UB in C/C++.</li>
+<li>Sign-extend when widening signed; zero-extend unsigned.</li>
+<li>IEEE-754: sign/exp/mantissa; <code>0.1</code> not exact; never <code>==</code> floats; NaN &ne; NaN.</li>
+<li>Float precision drops with magnitude; sum smallest-first or use Kahan.</li>
+<li>Little-endian (x86/ARM) = LSB first; big-endian = network byte order.</li>
+<li>Wire/binary I/O: convert with <code>htonl</code>/<code>ntohl</code> or explicit byte assembly; don't rely on host layout.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is two's complement preferred over sign-magnitude?</dt>
+<dd>It has a single representation of zero, and addition/subtraction use the exact same circuitry as unsigned arithmetic &mdash; no special-casing the sign. Sign-magnitude and one's complement have two zeros and need correction steps.</dd>
+<dt>Is <code>x + 1 &gt; x</code> always true for <code>int x</code>?</dt>
+<dd>Mathematically no (fails at <code>INT_MAX</code>), but a C compiler may assume it's always true because signed overflow is UB &mdash; and optimise the check away. For <code>unsigned</code>, it genuinely wraps and the check is false at the max.</dd>
+<dt>Why shouldn't you compare floats with <code>==</code>?</dt>
+<dd>Most decimal fractions aren't exactly representable in binary floating point, and rounding in intermediate operations accumulates, so two computations that "should" be equal often differ in the last bits. Compare with an absolute/relative epsilon appropriate to the magnitude.</dd>
+<dt>What is endianness and when does it bite you?</dt>
+<dd>The order in which a multi-byte value's bytes are stored in memory. It matters when you reinterpret bytes as integers (parsing binary files, network packets, casting <code>char*</code> to <code>int*</code>) &mdash; the same bytes mean different numbers on little- vs big-endian machines.</dd>
+<dt>What's special about NaN?</dt>
+<dd>It's not equal to anything, including itself &mdash; <code>x != x</code> is a NaN test. It propagates through arithmetic. It's produced by <code>0.0/0.0</code>, <code>sqrt(-1)</code>, <code>&infin; - &infin;</code>, etc.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How do you negate a number in two's complement?</summary><div class="answer-box">
+Invert all the bits and add 1.
+</div></details>
+<details class="answer-reveal"><summary>What is "network byte order"?</summary><div class="answer-box">
+Big-endian &mdash; most significant byte first.
+</div></details>
+<details class="answer-reveal"><summary>How do you test for NaN?</summary><div class="answer-box">
+<code>x != x</code> (true only for NaN), or <code>isnan(x)</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why does <code>0.1 + 0.2 == 0.3</code> return false?</summary><div class="answer-box">
+None of <code>0.1</code>, <code>0.2</code>, <code>0.3</code> is exactly representable in binary double. <code>0.1</code> and <code>0.2</code> each round to the nearest double, their sum rounds again, and the result differs from the double nearest <code>0.3</code> by one ULP (<code>0.30000000000000004</code>). Compare with a tolerance, or use decimal/fixed-point for money.
+</div></details>
+<details class="answer-reveal"><summary>You <code>memcpy</code> a <code>uint32_t</code> into a network packet and it's garbled on the other end. Fix?</summary><div class="answer-box">
+The sender and receiver differ in endianness (or you're relying on host order). Convert to a defined wire order: <code>uint32_t net = htonl(host);</code> before sending, <code>uint32_t host = ntohl(net);</code> after receiving &mdash; or serialise byte-by-byte with explicit shifts so it's endianness-independent.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain catastrophic cancellation and a technique to avoid it.</summary><div class="answer-box">
+When you subtract two nearly-equal floating-point numbers, the leading significant digits cancel and the result is dominated by the rounding error that was already present in the inputs &mdash; you can lose most or all of your significant figures in one operation. Classic example: the quadratic formula <code>(-b + sqrt(b&sup2; - 4ac)) / 2a</code> when <code>b&sup2; &gt;&gt; 4ac</code>: <code>sqrt(b&sup2;-4ac) &asymp; |b|</code>, so one root subtracts two almost-equal values. Fix: compute the "safe" root <code>x&#8321; = (-b - sign(b)&middot;sqrt(disc)) / 2a</code> (an addition, no cancellation), then get the other from the identity <code>x&#8321;&middot;x&#8322; = c/a</code>. General techniques: algebraically rearrange to replace the subtraction (rationalise, use <code>log1p</code>/<code>expm1</code> for <code>log(1+x)</code>/<code>e&#739;-1</code> near 0), use higher precision for the intermediate, or compensated arithmetic (Kahan/two-sum) to carry the lost bits.
+</div></details>
+<details class="answer-reveal"><summary>Why are subnormal (denormal) floating-point numbers sometimes a performance problem, and what's "flush to zero"?</summary><div class="answer-box">
+Subnormals fill the gap between the smallest normal number and zero by giving up the implicit leading 1 and reducing precision as the value shrinks (gradual underflow) &mdash; important for numerical stability near zero. But many CPUs handle them in <em>microcode</em> or take a fault-and-fixup path rather than the fast hardware path, so an operation that produces or consumes a subnormal can be 10&ndash;100&times; slower than the same operation on normals. Audio DSP, physics simulations with decaying values, and recursive filters are notorious for drifting into the subnormal range and suddenly dropping to a fraction of expected throughput. Mitigations: enable <strong>FTZ</strong> (flush-to-zero: results that would be subnormal become &plusmn;0) and <strong>DAZ</strong> (denormals-are-zero: subnormal inputs are treated as &plusmn;0) via the CPU's floating-point control register (<code>_MM_SET_FLUSH_ZERO_MODE</code> / <code>-ffast-math</code> sets these), or add a tiny "dither"/DC offset to keep signals out of the subnormal region. The trade-off is a small loss of accuracy near zero, which is acceptable for most real-time media and games but not for high-accuracy scientific code.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:number-repr -->
+
+<!-- TOPIC:arch:memory-hierarchy -->
+<section class="view topic" id="v-arch-memory-hierarchy" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>The Memory Hierarchy &amp; Caches</h1>
+<p class="subtitle">Why "memory is slow" is the single most important performance fact.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The latency ladder (rough, modern desktop)</h3>
+<table>
+<tr><th>Level</th><th>Latency</th><th>Size</th></tr>
+<tr><td>Register</td><td>0 cycles</td><td>~1&thinsp;KB</td></tr>
+<tr><td>L1 cache</td><td>~4 cycles (~1&thinsp;ns)</td><td>32&ndash;64&thinsp;KB per core</td></tr>
+<tr><td>L2 cache</td><td>~12 cycles (~4&thinsp;ns)</td><td>256&thinsp;KB&ndash;2&thinsp;MB per core</td></tr>
+<tr><td>L3 cache</td><td>~40 cycles (~15&thinsp;ns)</td><td>8&ndash;64&thinsp;MB shared</td></tr>
+<tr><td>Main RAM</td><td>~200&ndash;300 cycles (~80&thinsp;ns)</td><td>GBs</td></tr>
+<tr><td>NVMe SSD</td><td>~50&ndash;100&thinsp;&micro;s</td><td>TBs</td></tr>
+<tr><td>Network / spinning disk</td><td>ms</td><td>&mdash;</td></tr>
+</table>
+<p>Each level down is ~3&ndash;10&times; slower and ~10&times; bigger. A last-level-cache miss to RAM costs
+<em>hundreds</em> of instructions' worth of time &mdash; the CPU may stall entirely.</p>
+
+<h3>Why caches work</h3>
+<p><strong>Locality</strong>: programs reuse recently-touched data (temporal) and touch nearby data soon
+(spatial). Caches exploit both &mdash; keep recent data, and fetch a whole <strong>64-byte cache line</strong>
+on a miss so neighbours are already present.</p>
+
+<h3>The mental model that matters</h3>
+<ul>
+<li>Modern CPUs are so fast that most non-trivial code is <strong>memory-bound</strong>, not compute-bound.</li>
+<li>"Big-O" ignores constants, but a cache-friendly O(n&sup2;) can beat a pointer-chasing O(n log n) for realistic sizes.</li>
+<li>Reducing memory traffic and improving locality is often a bigger win than reducing instruction count.</li>
+</ul>
+
+<h3>Inclusive vs exclusive, write policies</h3>
+<ul>
+<li><strong>Inclusive</strong> (Intel historically): L3 contains everything in L1/L2 &mdash; simplifies coherence, wastes some capacity. <strong>Exclusive</strong> (AMD): a line lives in only one level.</li>
+<li><strong>Write-back</strong> (normal): writes update the cache, main memory later. <strong>Write-through</strong>: every write also hits the next level (simpler, more traffic).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Rough latencies: L1 ~1&thinsp;ns, L2 ~4&thinsp;ns, L3 ~15&thinsp;ns, RAM ~80&thinsp;ns, SSD ~50&thinsp;&micro;s, disk/net ~ms. Each level ~10&times; bigger, several&times; slower.</li>
+<li>An LLC miss = hundreds of cycles &mdash; the CPU can stall completely.</li>
+<li>Cache line = 64 bytes; a miss fetches the whole line (spatial locality payoff).</li>
+<li>Caches exploit temporal + spatial locality.</li>
+<li>Most real code is memory-bound; improving locality often beats reducing instructions.</li>
+<li>Write-back (default): cache updated now, RAM later. Write-through: both, more traffic.</li>
+<li>Inclusive L3 (some Intel) vs exclusive (AMD) &mdash; affects effective capacity + coherence.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Roughly how much slower is a main-memory access than an L1 hit?</dt>
+<dd>About 50&ndash;100&times; (a few cycles vs a couple hundred). In wall time, ~1&thinsp;ns vs ~80&thinsp;ns.</dd>
+<dt>Why does the CPU fetch a whole 64-byte line on a cache miss, not just the word you asked for?</dt>
+<dd>Spatial locality &mdash; programs very often access nearby addresses soon after (the next array element, another struct field). Bringing the whole line amortises the expensive memory transaction over several likely-future accesses.</dd>
+<dt>What does "memory-bound" mean?</dt>
+<dd>The program's speed is limited by how fast data can be moved from memory into the CPU, not by how fast the CPU can compute. Adding more arithmetic is free; adding cache misses is expensive.</dd>
+<dt>Temporal vs spatial locality?</dt>
+<dd>Temporal: if you accessed an address recently, you'll likely access it again soon (loop counters, hot objects). Spatial: if you accessed an address, you'll likely access nearby ones soon (array traversal, struct fields).</dd>
+<dt>Write-back vs write-through cache?</dt>
+<dd>Write-back keeps the modified line in cache and only writes it to the next level when it's evicted &mdash; less memory traffic. Write-through writes to cache and the next level on every store &mdash; simpler coherence, more bandwidth used.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How big is a typical cache line?</summary><div class="answer-box">
+64 bytes on x86 and most ARM.
+</div></details>
+<details class="answer-reveal"><summary>Which is bigger and slower: L1 or L3?</summary><div class="answer-box">
+L3 &mdash; megabytes and ~10&times; the latency of L1's tens of kilobytes.
+</div></details>
+<details class="answer-reveal"><summary>Two properties caches exploit?</summary><div class="answer-box">
+Temporal locality and spatial locality.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>An array-of-structs traversal that only reads one field is slow. Why, and the fix?</summary><div class="answer-box">
+Each struct is, say, 64 bytes but you only use 4 &mdash; so every cache line brought in is ~94% wasted, and you touch far more memory than necessary. Fix: structure-of-arrays (SoA) &mdash; store that field in its own contiguous array, so a traversal reads only what it needs and every cache line is fully used. Trade-off: worse locality when you <em>do</em> need multiple fields of one element together.
+</div></details>
+<details class="answer-reveal"><summary>Why can a linked list be dramatically slower than a vector for the same O(n) traversal?</summary><div class="answer-box">
+Vector elements are contiguous, so the hardware prefetcher streams them in and each cache line holds many elements &mdash; near-zero miss rate. List nodes are scattered heap allocations; each <code>node = node-&gt;next</code> is a dependent load to an unpredictable address, likely a cache miss (~80&thinsp;ns), and you can't prefetch what you haven't loaded the pointer for. So the list traversal is a chain of full memory latencies; the vector's is bandwidth-limited streaming.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Estimate the performance ceiling of a data-parallel loop using the roofline model.</summary><div class="answer-box">
+The roofline model plots attainable GFLOP/s against <em>arithmetic intensity</em> (FLOPs performed per byte of memory traffic), with two ceilings: a horizontal line at the machine's peak compute rate, and a diagonal line = (memory bandwidth) &times; (arithmetic intensity). Your kernel's ceiling is the lower of the two at its intensity. Example: a loop doing <code>c[i] = a[i] + b[i]</code> over <code>double</code>s reads 16 bytes, writes 8 (24 bytes, or 16 if <code>c</code> is write-allocate-avoided), does 1 FLOP &rarr; intensity &asymp; 1/24 &asymp; 0.04 FLOP/byte. On a machine with 50&thinsp;GB/s bandwidth that caps you at ~2&thinsp;GFLOP/s regardless of a 500&thinsp;GFLOP/s compute peak &mdash; you are firmly <em>memory-bound</em> and the only wins are reducing traffic (fuse loops so intermediates stay in registers/cache, use lower precision, avoid the write-allocate read of <code>c</code> with non-temporal stores) or raising intensity (do more math per element loaded, e.g. a stencil that reuses neighbours). A matrix multiply, by contrast, has intensity O(n) with blocking and sits under the compute roof &mdash; there SIMD/FMA and instruction scheduling matter. The model tells you <em>which</em> optimisation category can possibly help before you spend time on it.
+</div></details>
+<details class="answer-reveal"><summary>What is a hardware prefetcher, what patterns does it catch, and how can it hurt?</summary><div class="answer-box">
+Prefetchers are dedicated units that watch the stream of cache misses/accesses and speculatively fetch lines they predict you'll need, hiding memory latency behind current work. Common types: <em>next-line</em> (fetch line N+1 on access to N), <em>stride</em> (detect constant-stride access like <code>a[i]</code>, <code>a[i+8]</code>, <code>a[i+16]</code> and run ahead), <em>stream</em> (multiple concurrent sequential streams), and per-core adjacent-line and L2 stream prefetchers. They make linear array traversal essentially free of visible latency. They fail on pointer-chasing (address isn't known until the previous load completes &mdash; no pattern), random access, and indirect access (<code>a[idx[i]]</code>). They can <em>hurt</em> by: (1) wasting bandwidth and evicting useful lines when the predicted pattern doesn't continue (e.g. at array boundaries, or a stride that changes); (2) "prefetcher thrashing" when too many streams compete; (3) polluting the cache in latency-sensitive code where the extra bandwidth contention delays demand misses; (4) crossing a page boundary conservatively stops most prefetchers (they don't do the TLB walk speculatively), so 4&thinsp;KB-granular access patterns lose the benefit &mdash; huge pages help. Some workloads disable specific prefetchers via MSRs, and software prefetch intrinsics (<code>_mm_prefetch</code>) are used for the irregular patterns hardware can't predict, though modern hardware prefetchers have made explicit software prefetch rarely worthwhile.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:memory-hierarchy -->
+
+<!-- TOPIC:arch:cache-misses -->
+<section class="view topic" id="v-arch-cache-misses" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>Cache Lines, Associativity &amp; Misses</h1>
+<p class="subtitle">How a cache decides where a line can live, and the three reasons it isn't there.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Organisation</h3>
+<p>A cache is an array of 64-byte <strong>lines</strong>. An address is split into
+<code>[ tag | set index | line offset ]</code>. The set index picks a <strong>set</strong>; the line can go
+in any <strong>way</strong> of that set (an N-way set-associative cache has N ways per set).</p>
+<table>
+<tr><th>Type</th><th>Placement</th></tr>
+<tr><td>Direct-mapped (1-way)</td><td>each line has exactly one possible slot &mdash; fast, but two hot addresses mapping to the same set thrash</td></tr>
+<tr><td>N-way set-associative</td><td>N candidate slots per set; a replacement policy (pseudo-LRU) picks the victim. The common design (L1 8-way, L3 12&ndash;16-way)</td></tr>
+<tr><td>Fully associative</td><td>a line can go anywhere &mdash; no conflict misses, but expensive to search (used for small TLBs)</td></tr>
+</table>
+
+<h3>The 3 C's of cache misses</h3>
+<ul>
+<li><strong>Compulsory</strong> (cold) &mdash; first-ever access to a line. Unavoidable except by prefetching.</li>
+<li><strong>Capacity</strong> &mdash; the working set is bigger than the cache; lines are evicted and re-fetched. Fix: shrink the working set (blocking/tiling, smaller data types).</li>
+<li><strong>Conflict</strong> &mdash; too many active addresses map to the same set, so they evict each other even though the cache isn't full. Fix: change data layout/strides, add padding, or (hardware) more associativity.</li>
+</ul>
+<p>(Multicore adds a 4th: <strong>coherence</strong> misses &mdash; a line invalidated because another core wrote it. See False Sharing.)</p>
+
+<h3>Pathological strides</h3>
+<p>Accessing an array with a stride that's a large power of two (e.g. walking column-major through
+a <code>1024&times;1024</code> float matrix) makes every access map to the same handful of sets &rarr;
+conflict misses on every access despite tiny data volume. Padding the row to a non-power-of-two
+length breaks the pattern.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Address = tag | set index | 6-bit line offset (64-byte line). Set index selects a set; line goes in one of N ways.</li>
+<li>Direct-mapped (1 slot, thrash-prone) &lt; N-way set-associative (typical) &lt; fully associative (TLBs only).</li>
+<li><strong>3 C's</strong>: compulsory (cold, first touch), capacity (working set &gt; cache), conflict (same-set collisions though cache isn't full).</li>
+<li>+ coherence misses on multicore (another core wrote the line).</li>
+<li>Fix capacity misses: blocking/tiling, smaller types, fewer fields.</li>
+<li>Fix conflict misses: avoid power-of-two strides; pad array rows; interleave/transpose.</li>
+<li><code>perf stat -e L1-dcache-load-misses,LLC-load-misses</code> to measure.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What are the three types of cache miss?</dt>
+<dd>Compulsory (first access to a line, nothing could be cached yet), capacity (the working set exceeds the cache size, so needed lines get evicted), and conflict (multiple hot addresses map to the same set and evict each other even though the cache has free space elsewhere).</dd>
+<dt>What does "8-way set-associative" mean?</dt>
+<dd>Each set has 8 slots (ways). A given memory line maps to exactly one set (by its set-index bits) but can occupy any of that set's 8 ways; the hardware picks which one to evict on a miss.</dd>
+<dt>Why can walking a matrix column-by-column be catastrophically slow even though the matrix is small?</dt>
+<dd>Column stride equals the row length; if that's a power of two, consecutive column accesses have addresses differing by a large power of two, so they all index the same cache set &mdash; conflict misses on nearly every access. The data would fit in cache, but the mapping defeats it. Padding the row length breaks the alignment.</dd>
+<dt>Which miss type does loop blocking (tiling) reduce?</dt>
+<dd>Capacity misses &mdash; by processing the data in blocks small enough that each block's working set fits in cache and is fully reused before moving on.</dd>
+<dt>Can a direct-mapped cache have conflict misses even when mostly empty?</dt>
+<dd>Yes &mdash; that's its defining weakness. Two frequently-used addresses that happen to map to the same single slot will evict each other repeatedly regardless of how much of the cache is unused.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How many bytes does the line-offset field of an address cover for a 64-byte line?</summary><div class="answer-box">
+6 bits (2^6 = 64).
+</div></details>
+<details class="answer-reveal"><summary>Which cache-miss type is unavoidable for data you've never touched?</summary><div class="answer-box">
+Compulsory (cold) misses &mdash; short of prefetching.
+</div></details>
+<details class="answer-reveal"><summary>Fully associative caches eliminate which miss type?</summary><div class="answer-box">
+Conflict misses (a line can go anywhere).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You process a 2048&times;2048 float array and see a huge L1 miss rate; changing the array to 2049 columns fixes it. Explain.</summary><div class="answer-box">
+2048 floats = 8192 bytes = a power of two that's a multiple of (L1 size / associativity), so accessing <code>a[i][j]</code> and <code>a[i+1][j]</code> (stride 8192) lands in the same L1 set. A column walk or a stencil touching several rows thrashes that one set (conflict misses) despite low data volume. Making the row 2049 floats adds a 4-byte skew per row, so successive rows' same-column elements map to different sets &mdash; the conflicts disappear. This "array padding" trick is standard in HPC.
+</div></details>
+<details class="answer-reveal"><summary>How would you distinguish a capacity-miss problem from a conflict-miss problem?</summary><div class="answer-box">
+Shrink the working set (or use a machine with a bigger cache) &mdash; if misses drop roughly in proportion, it's capacity. Change only the <em>layout/stride</em> (pad rows, transpose, add offset) while keeping total data the same &mdash; if misses drop, it was conflict. Cache simulators (Cachegrind) and <code>perf c2c</code> / associativity-aware tools can also attribute misses.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Modern L1 caches are "virtually indexed, physically tagged" (VIPT). Why that combination, and what constraint does it impose?</summary><div class="answer-box">
+On every load the CPU must both (a) select the cache set and (b) verify the tag, and it wants to overlap these with the TLB lookup that translates virtual&rarr;physical. If the cache were <em>physically</em> indexed, you'd have to finish the TLB translation before you could even pick the set &mdash; serial, slow. If it were <em>virtually</em> indexed <em>and</em> tagged, you'd have aliasing problems (two virtual addresses mapping to one physical address occupying two different cache locations, so a write via one isn't seen via the other) and you'd have to flush on context switch. <strong>VIPT</strong> is the compromise: use the <em>virtual</em> address bits for the set index (available immediately, in parallel with the TLB) but the <em>physical</em> address for the tag (from the TLB result, ready by the time you compare). The constraint: the set-index bits must come entirely from the <em>page offset</em> (the bits that don't change during translation) &mdash; otherwise two virtual addresses for the same physical page could index different sets and you're back to aliasing. That caps the indexable size at <code>page_size &times; associativity</code>: with 4&thinsp;KB pages, an 8-way L1 can be at most 32&thinsp;KB, a 16-way at most 64&thinsp;KB. This is precisely why L1 caches have been stuck around 32&ndash;48&thinsp;KB for two decades despite transistor budgets exploding &mdash; growing L1 means growing associativity (costly, power-hungry) or larger pages. Apple's M-series uses 16&thinsp;KB pages partly to allow larger VIPT L1 caches.
+</div></details>
+<details class="answer-reveal"><summary>What is a "way-predictor" and why do L1 caches use one despite being set-associative?</summary><div class="answer-box">
+A traditional set-associative lookup reads the tags from <em>all</em> N ways of the selected set in parallel, compares them to the address tag, and muxes out the matching way's data &mdash; fast but it powers up N tag arrays and N data arrays every access (energy) and the N-way comparison + mux is on the critical path (latency). A <strong>way-predictor</strong> is a small table (indexed by a hash of the address, or by PC + stride history) that guesses <em>which</em> way will hit; the cache then speculatively reads only that one way's data, checks its tag, and if the prediction was right (typically 90&ndash;95%) you got direct-mapped-like latency and energy from a set-associative cache. On a mispredict it falls back to the full parallel lookup, costing an extra cycle. This is how L1 caches hit in ~4 cycles despite being 8-way. Downsides: the extra cycle on mispredict, the predictor table's area, and &mdash; discovered later &mdash; way-predictor state is a microarchitectural side channel (the "Take A Way" / AMD way-predictor attacks) that can leak which way an address hit, usable for cache-based covert channels and ASLR breaking.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:cache-misses -->
+
+<!-- TOPIC:arch:locality -->
+<section class="view topic" id="v-arch-locality" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>Locality &amp; Cache-Friendly Code</h1>
+<p class="subtitle">Concrete transformations that turn a memory-bound loop into a fast one.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Traverse in memory order</h3>
+<pre><code><span class="c">// C is row-major: a[i][j] and a[i][j+1] are adjacent</span>
+<span class="k">for</span> (i) <span class="k">for</span> (j) sum += a[i][j];   <span class="c">// GOOD: sequential, prefetcher-friendly</span>
+<span class="k">for</span> (j) <span class="k">for</span> (i) sum += a[i][j];   <span class="c">// BAD: stride = row length, a miss per access</span></code></pre>
+<p>Fortran/MATLAB are column-major &mdash; the loop order flips.</p>
+
+<h3>AoS vs SoA</h3>
+<ul>
+<li><strong>Array of Structs</strong>: <code>struct P{float x,y,z; int id;} p[N];</code> &mdash; good when you use most fields of one element together.</li>
+<li><strong>Struct of Arrays</strong>: <code>float x[N], y[N], z[N]; int id[N];</code> &mdash; good when a pass touches one field across all elements (SIMD-friendly, no wasted bytes per line).</li>
+</ul>
+
+<h3>Loop blocking / tiling</h3>
+<p>Process the data in cache-sized blocks so each block is fully reused before eviction. Matrix
+multiply goes from cache-thrashing to compute-bound this way &mdash; the classic example.</p>
+
+<h3>Other wins</h3>
+<ul>
+<li><strong>Shrink the data</strong>: <code>int16_t</code> instead of <code>int</code>, bitfields, indices instead of pointers, deduplicate.</li>
+<li><strong>Hot/cold splitting</strong>: put rarely-used fields in a separate struct so the hot struct is smaller and more per line.</li>
+<li><strong>Pack the working set</strong>: keep the data a loop touches contiguous (arena allocation, sorting by access order).</li>
+<li><strong>Avoid pointer chasing</strong>: flat arrays over linked structures; if you must chase, prefetch the next node.</li>
+<li><strong>Software prefetch</strong> (<code>__builtin_prefetch</code>) for irregular-but-predictable access (e.g. <code>a[idx[i+8]]</code>) &mdash; rarely needed for regular patterns.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Iterate in storage order: C = row-major (<code>for i for j a[i][j]</code>); column-major langs flip it.</li>
+<li>AoS for "use many fields of one element"; SoA for "use one field across all elements" (also SIMD-friendly).</li>
+<li>Blocking/tiling: work in cache-sized chunks &rarr; reuse before eviction (matmul, stencils, transpose).</li>
+<li>Shrink data: smaller types, indices vs pointers, hot/cold field splitting, dedup.</li>
+<li>Keep the working set contiguous (arena alloc, sort by access order).</li>
+<li>Prefer flat arrays to linked structures; prefetch the next node if you must chase pointers.</li>
+<li><code>__builtin_prefetch</code> only for irregular-but-predictable access; hardware handles regular strides.</li>
+<li>Measure with <code>perf stat</code> (miss rate, IPC) before and after.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>In C, which loop order sums a 2-D array fastest and why?</dt>
+<dd><code>for (i) for (j) a[i][j]</code> &mdash; row-major storage means <code>a[i][0..cols-1]</code> is contiguous, so you stream through memory sequentially and the prefetcher keeps ahead. The transposed order strides by a full row each step, missing cache almost every access.</dd>
+<dt>When is Struct-of-Arrays better than Array-of-Structs?</dt>
+<dd>When a given pass reads only one or two fields across all elements. SoA puts those fields contiguously, so every cache line is fully used and the loop vectorises cleanly. AoS wins when you need most fields of one element together (better temporal locality per element).</dd>
+<dt>What does loop tiling achieve?</dt>
+<dd>It restructures nested loops to operate on sub-blocks that fit in cache, so each loaded block is fully reused before being evicted &mdash; converting capacity misses into cache hits. Essential for matrix multiply, image convolution, and transposition.</dd>
+<dt>Why prefer array indices over pointers in a hot data structure?</dt>
+<dd>Indices are smaller (often 4 bytes vs 8), so more elements fit per cache line; the backing array is contiguous so traversal prefetches well; and there's no per-node allocation overhead. You trade a base-plus-offset computation for far fewer cache misses.</dd>
+<dt>Is software prefetching usually worth it?</dt>
+<dd>Rarely for regular strided access &mdash; the hardware prefetcher already handles that. It can help for irregular-but-computable patterns (hash probes, <code>a[index[i]]</code>) where you can prefetch several iterations ahead. Get the distance wrong and it hurts (evictions, bandwidth). Measure.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Is C row-major or column-major?</summary><div class="answer-box">
+Row-major &mdash; <code>a[i][j]</code> and <code>a[i][j+1]</code> are adjacent in memory.
+</div></details>
+<details class="answer-reveal"><summary>What layout is best for SIMD over one field of many elements?</summary><div class="answer-box">
+Struct-of-Arrays (SoA).
+</div></details>
+<details class="answer-reveal"><summary>What optimisation makes matrix multiply cache-efficient?</summary><div class="answer-box">
+Loop blocking / tiling.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A game's particle update reads <code>position</code> only but stores particles as 128-byte structs. How do you speed it up 10&times;?</summary><div class="answer-box">
+Split to SoA: a contiguous <code>vec3 positions[N]</code> array (plus separate arrays for velocity, colour, etc.). The position pass now reads 12 useful bytes per 64-byte line instead of 12 out of 128, cutting memory traffic ~10&times; and letting the loop vectorise. If some passes need position+velocity together, keep those two interleaved and the rest separate ("AoSoA" / hybrid).
+</div></details>
+<details class="answer-reveal"><summary>You transpose a large matrix and it's slow. Approach?</summary><div class="answer-box">
+Naive transpose has one operand strided (a miss per element). Tile it: transpose in small blocks (e.g. 16&times;16 or 32&times;32) that fit in cache, so each block is read once and written once with good locality. Optionally use non-temporal stores for the output (you won't re-read it), and pad the array to avoid conflict misses on the strided side.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Derive the optimal tile size for blocked matrix multiplication.</summary><div class="answer-box">
+For <code>C += A&times;B</code> with a tile size <code>b</code>, the inner blocked loops work on a <code>b&times;b</code> tile of <code>A</code>, a <code>b&times;b</code> tile of <code>B</code>, and a <code>b&times;b</code> tile of <code>C</code>. To keep all three resident so each is loaded from memory only <code>n/b</code> times (instead of <code>n</code> times), you need <code>3b&sup2; &times; sizeof(elem) &le; cache_size</code> &mdash; solve for <code>b &le; sqrt(cache_size / (3&middot;elem_size))</code>. For a 32&thinsp;KB L1 and 8-byte doubles: <code>b &le; sqrt(32768/24) &asymp; 36</code>, so tiles around 32 are typical for L1, with an outer level of tiling sized to L2/L3 for a multi-level blocked kernel. In practice you tune empirically around this estimate because associativity, TLB coverage (want the tile within a few pages), register-blocking of the innermost micro-kernel, and prefetch all shift the sweet spot &mdash; which is why libraries like OpenBLAS ship hand-tuned, architecture-specific block sizes and micro-kernels rather than a formula.
+</div></details>
+<details class="answer-reveal"><summary>What is the difference between "cache-aware" and "cache-oblivious" algorithms, and why does the latter matter?</summary><div class="answer-box">
+A <strong>cache-aware</strong> (or "cache-conscious") algorithm has the cache/block size <em>as a parameter</em> &mdash; blocked matmul with a tuned tile size, a B-tree with node size = page size. It's optimal when tuned but must be re-tuned per machine and per cache level, and picking one block size can't be optimal for L1 <em>and</em> L2 <em>and</em> L3 simultaneously. A <strong>cache-oblivious</strong> algorithm achieves asymptotically optimal cache complexity <em>without knowing</em> the block size, typically via recursive divide-and-conquer that keeps halving the problem until subproblems fit in <em>whatever</em> cache level &mdash; e.g. recursive matrix multiply (split into 8 half-size products), recursive/Z-order matrix transpose, funnelsort, van Emde Boas tree layout. Because the recursion naturally passes through every "granularity", it's simultaneously good for L1, L2, L3, TLB, and even disk, and it needs no tuning or platform detection. It matters for portable library code and for deep hierarchies (a single tiled algorithm can't block for 4 levels at once), though hand-tuned cache-aware kernels still win the last ~10&ndash;30% on a specific machine because they also control register blocking, prefetch, and instruction scheduling that the oblivious recursion leaves to the compiler.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:locality -->
+
+<!-- TOPIC:arch:pipeline -->
+<section class="view topic" id="v-arch-pipeline" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>The CPU Pipeline &amp; Hazards</h1>
+<p class="subtitle">Overlapping instruction execution &mdash; and the three things that stall it.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Pipelining</h3>
+<p>An instruction goes through stages &mdash; classic 5-stage RISC: <strong>F</strong>etch, <strong>D</strong>ecode,
+<strong>E</strong>xecute, <strong>M</strong>emory, <strong>W</strong>riteback. Instead of finishing one before
+starting the next, the CPU overlaps them: while instr 1 executes, instr 2 decodes, instr 3
+fetches. Ideal throughput: one instruction retired per cycle even though each takes 5 cycles
+end-to-end. Real CPUs have 14&ndash;20 stages.</p>
+
+<h3>Hazards (things that break the overlap)</h3>
+<table>
+<tr><th>Hazard</th><th>Cause</th><th>Mitigation</th></tr>
+<tr><td>Structural</td><td>two instructions need the same hardware unit</td><td>duplicate units, more ports</td></tr>
+<tr><td>Data</td><td>instr N needs a result instr N&minus;1 hasn't written yet</td><td><strong>forwarding/bypassing</strong> (route the result straight from execute), else stall ("bubble")</td></tr>
+<tr><td>Control</td><td>a branch &mdash; the CPU doesn't know which instructions to fetch next until the branch resolves</td><td><strong>branch prediction</strong> + speculative execution; a misprediction flushes the pipeline</td></tr>
+</table>
+
+<h3>Costs</h3>
+<ul>
+<li>A data-hazard stall the compiler/scheduler couldn't hide: 1&ndash;a few cycles.</li>
+<li>A load that misses cache: hundreds of cycles &mdash; the pipeline drains or the CPU finds other work (out-of-order).</li>
+<li>A branch misprediction: flush everything fetched speculatively and refill &mdash; ~15&ndash;20 cycles on a deep pipeline.</li>
+</ul>
+
+<h3>Why deeper pipelines are a trade-off</h3>
+<p>More stages &rarr; shorter stage &rarr; higher clock frequency &mdash; but each hazard/misprediction wastes
+more cycles, and it takes longer to refill. The Pentium 4's 31-stage pipeline chased GHz and lost
+to shorter, wider designs. Modern CPUs are moderately deep and very wide (see ILP topic).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Pipeline: overlap Fetch/Decode/Execute/Mem/Writeback &rarr; ~1 instr/cycle throughput despite multi-cycle latency.</li>
+<li><strong>Structural hazard</strong>: resource conflict &rarr; more units/ports.</li>
+<li><strong>Data hazard</strong>: need a not-yet-written result &rarr; forwarding/bypassing hides most; else a bubble.</li>
+<li><strong>Control hazard</strong>: branch &rarr; predict + speculate; mispredict = full flush (~15&ndash;20 cycles).</li>
+<li>Cache-missing load = hundreds of cycles; OoO execution finds other work meanwhile.</li>
+<li>Deeper pipeline &rarr; higher clock but costlier mispredicts/refills; modern = moderate depth, very wide.</li>
+<li>Write branch-predictable code and expose independent work to keep the pipeline full.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does pipelining buy you?</dt>
+<dd>Throughput. Each instruction still takes several cycles start-to-finish, but by overlapping the stages the CPU can retire (up to) one instruction per cycle instead of one every N cycles.</dd>
+<dt>What is a data hazard and how do CPUs usually avoid stalling on it?</dt>
+<dd>An instruction needs a value that a recent prior instruction is still computing/writing. Forwarding (bypassing) routes the result directly from the execute stage's output to the dependent instruction's input, so it doesn't have to wait for the writeback. Only unhidable dependencies cause a stall (bubble).</dd>
+<dt>Why is a branch a "control hazard"?</dt>
+<dd>Until the branch condition resolves in the execute stage, the front end doesn't know whether to fetch the fall-through or the target instructions. Rather than stall, it predicts and speculatively executes down the predicted path; a wrong guess means discarding that work.</dd>
+<dt>Roughly what does a branch misprediction cost?</dt>
+<dd>On a modern deep pipeline, ~15&ndash;20 cycles &mdash; the entire speculative pipeline is flushed and refilled from the correct address.</dd>
+<dt>Why aren't pipelines just made very deep for a high clock?</dt>
+<dd>Deeper means each hazard and misprediction wastes more cycles and the pipeline takes longer to refill, so per-instruction penalties grow. Past a point the clock gains don't offset the stall losses &mdash; the Pentium 4 is the cautionary tale.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the classic 5 pipeline stages.</summary><div class="answer-box">
+Fetch, Decode, Execute, Memory, Writeback.
+</div></details>
+<details class="answer-reveal"><summary>What hardware technique hides most data hazards?</summary><div class="answer-box">
+Forwarding / bypassing.
+</div></details>
+<details class="answer-reveal"><summary>What kind of hazard does a conditional jump create?</summary><div class="answer-box">
+A control hazard.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why can a tight loop with a hard-to-predict branch inside it run several times slower than the same loop with the branch removed?</summary><div class="answer-box">
+Each mispredict flushes ~15&ndash;20 cycles of speculative work. If the branch is ~50% predictable and the loop body is only ~10 cycles of real work, you're paying roughly a full extra flush per iteration &mdash; effectively 2&ndash;3&times; the work. Removing the branch (branchless <code>cmov</code>/arithmetic/masking, or sorting the data so the branch becomes predictable) recovers the pipeline throughput.
+</div></details>
+<details class="answer-reveal"><summary>A dependent chain <code>x = f(x)</code> repeated N times runs at 1/latency, but N <em>independent</em> <code>y[i] = f(y[i])</code> run much faster on the same CPU. Why?</summary><div class="answer-box">
+The dependent chain is limited by the <em>latency</em> of <code>f</code> &mdash; each iteration must wait for the previous result, so the pipeline can't overlap them; throughput = 1 / latency. The independent operations have no data dependency between them, so the out-of-order engine issues several in flight at once, and throughput is limited by the execution unit's <em>throughput</em> (issue rate), which is much higher than its latency. This is why unrolling with multiple accumulators speeds up reductions.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is the front-end vs back-end bottleneck distinction, and how do you tell which you're hitting?</summary><div class="answer-box">
+A modern core has a <strong>front end</strong> (fetch, branch prediction, decode, &micro;op cache, delivering &micro;ops into the queue) and a <strong>back end</strong> (rename, schedule, execute, retire). "Top-down" analysis (Intel's methodology, exposed via <code>perf</code> as <code>topdown-*</code> events / <code>toplev</code>) attributes every pipeline slot to one of four buckets: <em>Retiring</em> (useful work), <em>Bad Speculation</em> (mispredicts &mdash; slots filled then flushed), <em>Front-End Bound</em> (back end was ready but the front end couldn't deliver &micro;ops &mdash; i-cache/iTLB misses, decode bottlenecks, too many branches, &micro;op-cache misses), and <em>Back-End Bound</em> (front end delivered but the back end couldn't accept &mdash; further split into <em>Core Bound</em>: execution-port contention, long dependency chains, divides; and <em>Memory Bound</em>: L1/L2/L3/DRAM stalls, store-buffer full). You measure the percentages and drill into the dominant one: Front-End Bound &rarr; reduce code size, align hot loops, cut indirect branches, use PGO/LTO; Memory Bound &rarr; the locality work from the cache topics; Core Bound &rarr; break dependency chains, reduce expensive ops, add ILP; Bad Speculation &rarr; make branches predictable or branchless. Guessing which one it is without top-down metrics is the classic way to waste optimisation effort.
+</div></details>
+<details class="answer-reveal"><summary>What is the &micro;op cache (DSB / loop stream detector) and why does hot-loop alignment matter?</summary><div class="answer-box">
+x86 instructions are variable-length and expensive to decode (find boundaries, crack into &micro;ops). To avoid re-decoding hot code, the CPU caches the <em>decoded</em> &micro;ops in a <strong>&micro;op cache</strong> (Intel's DSB, ~1.5&ndash;4K &micro;ops, organised in lines tied to 32- or 64-byte code regions) and, for very short loops, a <strong>loop stream detector</strong> that replays &micro;ops straight from the queue with the fetch/decode stages powered down. Delivering from the &micro;op cache is higher bandwidth (e.g. 6+ &micro;ops/cycle vs 4&ndash;5 from legacy decode) and lower power. The catch: the &micro;op cache is filled and indexed in aligned code chunks, and there are microarchitectural rules about how many &micro;ops/branches fit per chunk and per way. If a hot loop straddles a 32-byte boundary awkwardly, or has too many branches in one window, parts of it can't be cached and fall back to legacy decode &mdash; a sudden throughput cliff. Compilers therefore pad/align loop entry points (<code>-falign-loops</code>, <code>.p2align</code>), and the infamous Intel "JCC erratum" microcode fix (which disables &micro;op-cache lines where a jump ends on a 32-byte boundary) made alignment even more consequential &mdash; assemblers added mitigation padding, and some codebases saw multi-percent regressions purely from instruction-address shifts. It's why "I added a log line and an unrelated loop got slower" is a real phenomenon.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:pipeline -->
+
+<!-- TOPIC:arch:branch-prediction -->
+<section class="view topic" id="v-arch-branch-prediction" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>Branch Prediction &amp; Speculation</h1>
+<p class="subtitle">Guessing the future to keep the pipeline full &mdash; and the security fallout.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Why predict</h3>
+<p>On a deep pipeline, waiting for each branch to resolve before fetching would waste 15&ndash;20 cycles
+every branch (~1 in 5 instructions). So the CPU <strong>predicts</strong> the outcome and direction,
+speculatively executes down that path, and commits the results only if the guess was right. A
+mispredict flushes and refills.</p>
+
+<h3>Predictor mechanics (roughly)</h3>
+<ul>
+<li><strong>Branch Target Buffer (BTB)</strong> &mdash; caches "this branch address jumps to that target".</li>
+<li><strong>Direction predictors</strong> &mdash; from simple 2-bit saturating counters ("mostly taken/not-taken") to sophisticated <strong>TAGE</strong>-style predictors that use long global history to recognise patterns (loop trip counts, correlated branches).</li>
+<li><strong>Return Address Stack</strong> for <code>ret</code>; <strong>indirect branch predictors</strong> for <code>switch</code>/vtables/function pointers.</li>
+<li>Accuracy on typical code: 95&ndash;99%. Data-dependent branches on random data: ~50% (worst case).</li>
+</ul>
+
+<h3>Writing predictable code</h3>
+<ul>
+<li>Loops with fixed iteration counts predict perfectly.</li>
+<li>Sorting data before a threshold-branch makes the branch a long run of one outcome (the famous "why is processing a sorted array faster" result).</li>
+<li><strong>Branchless</strong> techniques for genuinely unpredictable branches: <code>cmov</code>, arithmetic/bit-mask select, table lookup, <code>min</code>/<code>max</code> intrinsics. Trade a predictable data dependency for an unpredictable control dependency.</li>
+<li><code>[[likely]]</code>/<code>[[unlikely]]</code>, PGO (profile-guided optimisation) let the compiler lay out the hot path fall-through.</li>
+</ul>
+
+<h3>Speculation &amp; security</h3>
+<p><strong>Spectre</strong> / <strong>Meltdown</strong> (2018): speculatively executed instructions &mdash; even ones
+later discarded &mdash; leave microarchitectural traces (cache-line residency), which an attacker
+reads via timing to exfiltrate data across security boundaries. Mitigations (retpolines, IBRS,
+KPTI, <code>lfence</code> barriers) cost real performance. Speculation is fundamental to modern
+performance, so this is an ongoing tension.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Predict branch direction + target &rarr; speculate &rarr; commit if right, flush ~15&ndash;20 cycles if wrong.</li>
+<li>Hardware: BTB (targets), direction predictor (2-bit &rarr; TAGE with global history), Return Address Stack, indirect predictor.</li>
+<li>Typical accuracy 95&ndash;99%; random data-dependent branch &asymp; 50% (worst case).</li>
+<li>Predictable: fixed-count loops; sorting data before a threshold branch; the hot path as fall-through.</li>
+<li>Unpredictable branch in a hot loop &rarr; go branchless (<code>cmov</code>, masks, table lookup, <code>min</code>/<code>max</code>).</li>
+<li>Branchless trades a control dependency for a (predictable) data dependency &mdash; not always a win; measure.</li>
+<li>Spectre/Meltdown: speculation leaves cache traces &rarr; timing side channel across boundaries; mitigations cost perf.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does a branch predictor predict, and what happens when it's wrong?</dt>
+<dd>The direction (taken/not-taken) and the target address of a branch, so the front end can keep fetching and the pipeline stays full. A wrong prediction means every speculatively executed instruction after the branch is discarded and the pipeline refills from the correct address &mdash; a ~15&ndash;20 cycle penalty.</dd>
+<dt>Why is iterating a <em>sorted</em> array with a value-threshold branch faster than an unsorted one?</dt>
+<dd>When sorted, the branch (<code>if (a[i] &gt; threshold)</code>) is not-taken for a long run then taken for the rest &mdash; the predictor nails it. On random data it's ~50/50, so nearly every iteration mispredicts and pays the flush.</dd>
+<dt>When should you make code branchless?</dt>
+<dd>Only when the branch is genuinely unpredictable (data-dependent on random-ish input) <em>and</em> in a hot loop. You replace the control dependency with a data dependency (a <code>cmov</code> or arithmetic select), which is unconditional. If the branch is actually predictable, branchless code is often <em>slower</em> because it always does both sides' work.</dd>
+<dt>What's the connection between speculation and Spectre?</dt>
+<dd>The CPU speculatively executes instructions past a branch/bounds-check before it's confirmed. Even though wrong-path results are architecturally discarded, side effects like which cache lines got loaded persist. An attacker trains the predictor to mis-speculate into code that touches secret-dependent addresses, then times cache accesses to recover the secret.</dd>
+<dt>Does adding <code>[[likely]]</code> change the branch predictor's behaviour?</dt>
+<dd>No &mdash; the hardware predictor learns at runtime regardless. <code>[[likely]]</code>/<code>[[unlikely]]</code> and PGO influence the <em>compiler</em>: code layout (hot path as straight-line fall-through, cold path out-of-line), which improves i-cache/&micro;op-cache density and makes the static "not-taken" default correct before the predictor has warmed up.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does a branch misprediction cost, roughly?</summary><div class="answer-box">
+~15&ndash;20 cycles on a modern pipeline (full flush + refill).
+</div></details>
+<details class="answer-reveal"><summary>How predictable is a fixed-count <code>for</code> loop's back-edge branch?</summary><div class="answer-box">
+Essentially perfectly &mdash; taken every iteration except the last.
+</div></details>
+<details class="answer-reveal"><summary>What x86 instruction does a compiler use for a branchless conditional select?</summary><div class="answer-box">
+<code>cmov</code> (conditional move).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Turn <code>if (x &lt; 0) x = 0;</code> (clamp) into branchless code, and say when it helps.</summary><div class="answer-box">
+<code>x = x &amp; ~(x &gt;&gt; 31);</code> (arithmetic shift makes a 0 or all-ones mask), or <code>x = max(x, 0)</code> which compiles to a <code>maxss</code>/<code>cmov</code>. It helps when <code>x</code>'s sign is unpredictable and this is a hot loop &mdash; you remove the mispredicts. If <code>x</code> is almost always non-negative, the branch predicts well and the branchy version is fine (or faster, since it skips the work).
+</div></details>
+<details class="answer-reveal"><summary>A <code>switch</code> over an enum in a hot interpreter loop mispredicts constantly. Options?</summary><div class="answer-box">
+The single indirect jump for the switch is hard to predict when opcodes are effectively random. <strong>Computed goto / threaded code</strong>: each opcode handler ends with its own indirect jump to the next handler (<code>goto *dispatch[next_op]</code>), spreading the indirect branch across many sites so each gets its own predictor entry correlated with the current opcode &mdash; historically 20&ndash;30% faster for interpreters. Other options: a jump table the compiler already emits (helps target prediction a bit), replicating the dispatch, or in extreme cases a JIT that removes the dispatch entirely.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how a TAGE-style predictor recognises correlated and history-dependent branches that a 2-bit counter can't.</summary><div class="answer-box">
+A per-branch 2-bit saturating counter only captures "this branch is usually taken/not-taken" &mdash; it fails on branches whose outcome depends on <em>recent history</em> (e.g. <code>if (i % 3 == 0)</code> in a loop, or branch B that's taken iff branch A was taken). <strong>TAGE</strong> (TAgged GEometric history length) keeps several tables indexed by a hash of the branch PC <em>and</em> the global branch-history register, where each table uses a different history length forming a geometric series (e.g. 4, 8, 16, 32, 64, 128 bits). A short history captures local patterns; a long history captures long-range correlations and loop periods. On a lookup, all tables are probed; the matching entry (tag hit) using the <em>longest</em> history wins, on the theory that a longer matching context is more specific. Entries are tagged (partial hash of PC+history) to detect aliasing, and there's a usefulness bit + a base bimodal predictor as fallback. Allocation on mispredict adds an entry in a table with a slightly longer history than the one that failed. This lets TAGE learn things like "branch X is taken on iterations 3, 7, 11, ... of this loop" or "taken only when the previous two branches went not-taken, taken". Real predictors (e.g. in recent Intel/AMD/Apple cores) are TAGE variants plus a perceptron/statistical-corrector component and dedicated loop and indirect predictors, reaching 99%+ accuracy on SPEC. The cost is significant area/power and warm-up time &mdash; a cold predictor (after a context switch or into new code) mispredicts a lot until the history tables fill.
+</div></details>
+<details class="answer-reveal"><summary>Why did Spectre variant 1 (bounds-check bypass) prove so hard to fix in hardware, and what's the software mitigation?</summary><div class="answer-box">
+Variant 1 is: <code>if (i &lt; array_len) x = array2[array1[i] * 64];</code> &mdash; the CPU speculatively executes the body while the bounds check is still resolving (the length might be a cache miss), using an attacker-controlled out-of-bounds <code>i</code>; <code>array1[i]</code> reads a secret byte, and <code>array2[secret*64]</code> pulls a secret-dependent cache line in; the results are squashed when the check fails, but the cache line stays, and the attacker times <code>array2</code> to recover the byte. It's hard to fix in hardware because speculating past a not-yet-resolved conditional is the <em>entire point</em> of branch prediction &mdash; you can't disable it without crippling performance, and the leak is through the cache (and dozens of other microarchitectural structures: TLBs, ports, the predictor itself), so plugging one channel leaves others. There's no clean architectural boundary being crossed the way Meltdown crossed user/kernel &mdash; it's an in-bounds program speculating on its own data. The practical software mitigation is a <strong>speculation barrier</strong> on the specific gadget: after the bounds check, insert <code>lfence</code> (x86) / <code>csdb</code> (ARM), which stalls speculation until the branch resolves &mdash; but you must find every vulnerable pattern (compilers and static analysers help: <code>-mspeculative-load-hardening</code> / MSVC <code>/Qspectre</code> insert masks or fences), and it only matters where untrusted code shares an address space with secrets (JS engines, kernels, sandboxes). Data masking (<code>i &amp;= (i &lt; len) ? ~0 : 0</code> so an out-of-bounds index becomes 0 even on the speculative path) is cheaper than <code>lfence</code> and is what SLH and hand-hardened crypto use.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:branch-prediction -->
+
+<!-- TOPIC:arch:ilp-ooo -->
+<section class="view topic" id="v-arch-ilp-ooo" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>ILP &amp; Out-of-Order Execution</h1>
+<p class="subtitle">Why a modern core runs 3&ndash;6 instructions per cycle &mdash; and why latency &ne; throughput.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Superscalar + out-of-order</h3>
+<p>A modern core has multiple execution units (several ALUs, load/store units, FP/SIMD units) and
+issues several instructions per cycle (<strong>superscalar</strong>). It doesn't run them in program
+order &mdash; it runs whatever is <em>ready</em> (operands available, unit free), then commits results
+in order for correctness.</p>
+
+<h3>The machinery</h3>
+<ul>
+<li><strong>Register renaming</strong> &mdash; maps architectural registers to a large pool of physical registers, removing false ("write-after-read", "write-after-write") dependencies so more instructions can run in parallel.</li>
+<li><strong>Reservation stations / scheduler</strong> &mdash; hold decoded instructions until their operands are ready, then dispatch to a free unit.</li>
+<li><strong>Reorder Buffer (ROB)</strong> &mdash; tracks all in-flight instructions so results retire in program order and exceptions/mispredicts can roll back. Its size (hundreds of entries) sets the "window" the CPU can look ahead.</li>
+<li><strong>Load/store queue</strong> &mdash; lets loads execute early and store-to-load forwarding happen.</li>
+</ul>
+
+<h3>Latency vs throughput</h3>
+<ul>
+<li><strong>Latency</strong> &mdash; cycles from an instruction's inputs ready to its output ready (e.g. FP multiply ~4, division ~20+, dependent chain).</li>
+<li><strong>Throughput</strong> &mdash; how often you can start a new one (e.g. 2 FP multiplies/cycle).</li>
+<li>A <em>dependent</em> chain runs at 1/latency. <em>Independent</em> operations run at the unit's throughput. Hence: unroll reductions with multiple accumulators, avoid long dependency chains, interleave independent work.</li>
+</ul>
+
+<h3>What limits ILP</h3>
+<p>True data dependencies, branch mispredictions (window flushed), cache misses that don't fill the
+ROB fast enough to hide, and running out of a resource (physical registers, ROB entries, load
+queue). Real code averages ~1&ndash;3 IPC despite 4&ndash;8-wide hardware.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Superscalar: multiple execution units, several instrs issued/cycle. Out-of-order: run what's ready, retire in order.</li>
+<li>Register renaming removes false (WAR/WAW) deps &rarr; more parallelism. Real deps (RAW) still serialise.</li>
+<li>ROB size = look-ahead window; scheduler dispatches ready instrs to free units; load/store queue enables early loads + forwarding.</li>
+<li><strong>Latency</strong> = input-ready to output-ready. <strong>Throughput</strong> = issue rate. They differ a lot (mul: ~4 lat, 2/cycle tput).</li>
+<li>Dependent chain runs at 1/latency; independent ops at throughput &rarr; use multiple accumulators, unroll, interleave.</li>
+<li>ILP limited by true deps, mispredicts, cache misses, and resource limits. Typical IPC ~1&ndash;3.</li>
+<li>To speed up: shorten dependency chains, expose independent work, reduce mispredicts and misses.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does out-of-order execution do?</dt>
+<dd>It executes instructions as soon as their operands and an execution unit are available, rather than strictly in program order, then retires (commits) results in order so the architectural state stays correct. This lets it work around stalls (e.g. keep going during a cache-missing load).</dd>
+<dt>What is register renaming for?</dt>
+<dd>To eliminate false dependencies. If two independent instructions both write architectural register <code>rax</code>, they'd appear dependent; renaming gives each its own physical register so they can execute in parallel. Only genuine read-after-write dependencies remain.</dd>
+<dt>Latency vs throughput of an instruction &mdash; why does the distinction matter?</dt>
+<dd>Latency is how long one result takes; throughput is how many you can start per cycle. A chain of dependent operations is bottlenecked by latency (each waits for the last). Independent operations run at throughput, which is much higher. Restructuring code to have independent work (multiple accumulators) exploits this.</dd>
+<dt>Why does a sum reduction speed up when you unroll it with 4 partial sums?</dt>
+<dd>A single accumulator makes every <code>sum += a[i]</code> depend on the previous one &mdash; the loop runs at the FP-add latency. Four independent partial sums break the chain into 4 parallel chains, so the out-of-order engine keeps 4 adds in flight and you hit the adder's throughput. Combine the 4 at the end.</dd>
+<dt>Why is real-world IPC only ~1&ndash;3 on 4&ndash;8-wide cores?</dt>
+<dd>True data dependencies serialise work, branch mispredicts periodically flush the window, cache misses stall dependent instructions faster than the ROB can hide, and code often can't be reordered enough to keep all units busy. The wide hardware is there for the bursts where ILP is available.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does "superscalar" mean?</summary><div class="answer-box">
+The core can issue and execute more than one instruction per clock cycle.
+</div></details>
+<details class="answer-reveal"><summary>In what order are results made architecturally visible in an OoO core?</summary><div class="answer-box">
+In program order &mdash; via the reorder buffer &mdash; even though execution was out of order.
+</div></details>
+<details class="answer-reveal"><summary>A dependent chain of operations runs at roughly what rate?</summary><div class="answer-box">
+1 / (operation latency) &mdash; each step waits for the previous result.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You have a hot loop <code>for i: acc = acc*31 + s[i];</code> (string hash). It's latency-bound. Speed it up.</summary><div class="answer-box">
+The <code>acc</code> chain serialises on the multiply-add latency. Split into independent sub-hashes: process 4 (or 8) input positions in parallel with 4 accumulators using precomputed powers of 31 (<code>acc0 = acc0*31^4 + ...</code>), so 4 independent dependency chains run concurrently at the FMA throughput, then combine. Or use a hash with more ILP (a tree/parallel-friendly mixing function). This is the same trick as multi-accumulator reductions and is how fast hash/CRC implementations work.
+</div></details>
+<details class="answer-reveal"><summary>Why doesn't out-of-order execution hide a chain of dependent cache-missing loads (pointer chasing)?</summary><div class="answer-box">
+Each load's <em>address</em> depends on the previous load's <em>result</em>, so the CPU can't issue load N+1 until load N returns &mdash; hundreds of cycles later. The ROB fills up with the dependent instructions waiting on load N and stalls; there's no independent work to overlap. This is why linked-list / tree traversal is latency-bound at full memory latency per node, and why converting to arrays (parallel prefetchable loads) or prefetching several nodes ahead is the only real fix.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is "memory-level parallelism" (MLP) and how do you increase it?</summary><div class="answer-box">
+MLP is the number of independent cache-miss/memory requests a core keeps outstanding at once. The memory subsystem can service many concurrent misses (limited by <strong>MSHRs</strong> &mdash; Miss Status Holding Registers, ~10&ndash;20 per L1/L2 &mdash; and DRAM bank parallelism), so if your code has 12 independent misses in flight, total time &asymp; one memory latency, not twelve. Pointer chasing has MLP = 1 (serial dependent misses) &rarr; worst case. To raise MLP: (1) make misses <em>independent</em> &mdash; iterate an array of pointers rather than following <code>next</code> links; batch-process K items so their loads are unrelated. (2) Prefetch several iterations ahead so the requests are issued before they're needed. (3) Restructure algorithms to a "gather then process" phase (issue all the loads, then use the results) rather than interleaved load-use. (4) Larger OoO window / more MSHRs on newer cores helps automatically. A concrete example: a hash join probing a hash table one row at a time is MLP-1; software-pipelining the probe (compute hash for row i+8, prefetch bucket, while processing row i) can be 2&ndash;4&times; faster purely from overlapping the misses. Tools: <code>perf</code> can estimate it as (L1 miss count &times; miss latency) / (stall cycles) &mdash; a ratio well below 1 means you're serialising misses.
+</div></details>
+<details class="answer-reveal"><summary>How do modern cores handle the fact that a store's value or address may not be known when a later load executes?</summary><div class="answer-box">
+The core wants to execute loads as early as possible (they're often on the critical path), but a load might alias an earlier, still-pending store to the same address &mdash; executing it early with stale data would be wrong. Structures involved: the <strong>store buffer / store queue</strong> holds in-flight stores (address + data) not yet committed to cache; the <strong>load queue</strong> tracks in-flight loads. On a load, the core checks the store queue for an older store to the same address: if found with data ready, it does <strong>store-to-load forwarding</strong> (get the value directly, no cache access); if found but data not ready, the load waits; if no match, the load goes to cache. The hard case is when an older store's <em>address</em> isn't computed yet &mdash; the core doesn't know if the load aliases. Options: <em>conservative</em> (wait for all older store addresses &mdash; safe, slow) or <em>speculative</em> memory disambiguation: predict (via a predictor keyed on the load's PC) that the load doesn't alias, execute it early, and if a later store address turns out to match, squash and re-execute the load and everything after it (a "memory-order violation", visible in <code>perf</code> as <code>machine_clears.memory_ordering</code>). Getting this wrong repeatedly &mdash; e.g. a real store-load dependency the predictor keeps mispredicting &mdash; causes a nasty performance cliff, which is why some code deliberately separates producer/consumer accesses or pads to avoid 4K-aliasing (loads and stores whose addresses match in the low 12 bits are conservatively treated as possibly aliasing on some Intel cores).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:ilp-ooo -->
+
+<!-- TOPIC:arch:alignment-layout -->
+<section class="view topic" id="v-arch-alignment-layout" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>Alignment &amp; Struct Layout</h1>
+<p class="subtitle">Where the padding comes from, why it matters, and how to control it.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Natural alignment</h3>
+<p>Each scalar type prefers an address that's a multiple of its size: <code>int</code> at 4, <code>double</code>
+/ pointer at 8, a 32-byte SIMD vector at 32. Hardware reads are fast when aligned; misaligned
+access is slower on x86 (may span two cache lines &rarr; two accesses) and <strong>faults</strong> on some
+ARM/SPARC configs and for some SIMD instructions.</p>
+
+<h3>Struct padding</h3>
+<pre><code><span class="k">struct</span> Bad { <span class="k">char</span> a; <span class="k">double</span> b; <span class="k">char</span> c; };
+<span class="c">//  a[1]  pad[7]  b[8]  c[1]  pad[7]   = 24 bytes</span>
+<span class="k">struct</span> Good { <span class="k">double</span> b; <span class="k">char</span> a; <span class="k">char</span> c; };
+<span class="c">//  b[8]  a[1]  c[1]  pad[6]           = 16 bytes</span></code></pre>
+<ul>
+<li>The compiler inserts padding <em>between</em> members so each is naturally aligned, and <em>at the end</em> so arrays keep every element aligned.</li>
+<li>Struct alignment = the largest member's alignment; struct size is rounded up to a multiple of it.</li>
+<li>Order members <strong>largest to smallest</strong> to minimise padding.</li>
+</ul>
+
+<h3>Controlling it</h3>
+<ul>
+<li><code>alignof(T)</code> / <code>offsetof(T, m)</code> to inspect; <code>alignas(N)</code> to over-align (e.g. cache-line-align a hot struct).</li>
+<li><code>#pragma pack(1)</code> / <code>__attribute__((packed))</code> removes all padding &mdash; needed for exact wire/hardware layouts, but then members may be misaligned (slow / faulting; don't take pointers to them).</li>
+<li>Cache-line awareness: pad a per-thread struct to 64 bytes so two threads' structs don't share a line (false sharing &mdash; see next topic).</li>
+</ul>
+
+<h3>Cache-line straddling</h3>
+<p>A 16-byte value at offset 56 of a 64-byte line spans two lines &rarr; two cache accesses per read.
+Align hot, frequently-accessed fields to line boundaries or keep them within one line.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Natural alignment: type at an address multiple of its size (int@4, double/ptr@8, SIMD@16/32/64).</li>
+<li>Misaligned access: slow on x86 (may split a cache line), faults on some ARM / SIMD.</li>
+<li>Compiler pads between members (align each) and at the end (align array elements).</li>
+<li>Struct alignment = max member alignment; size rounded up to that.</li>
+<li>Order members big&rarr;small to cut padding.</li>
+<li><code>alignof</code>/<code>offsetof</code> inspect; <code>alignas(N)</code> over-align; <code>packed</code>/<code>#pragma pack</code> remove padding (then don't take member pointers).</li>
+<li>Cache-line-align (64) hot/per-thread structs to prevent false sharing and line straddling.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does the compiler add padding to structs?</dt>
+<dd>So each member sits at a naturally aligned address (fast, and required by some hardware), and so that in an array of the struct, every element's members stay aligned &mdash; hence trailing padding to make the size a multiple of the struct's alignment.</dd>
+<dt>How do you minimise a struct's size?</dt>
+<dd>Declare members from largest alignment to smallest, so padding is only ever needed for trailing alignment. Also consider using smaller types, bitfields, or splitting rarely-used fields into a separate struct.</dd>
+<dt>What does <code>__attribute__((packed))</code> do and what's the risk?</dt>
+<dd>Removes all padding so the layout exactly matches, e.g. a network packet or hardware register block. The risk: members are now potentially misaligned, so accessing them (especially taking a pointer and dereferencing) can be slow on x86 and fault on stricter architectures. Access via <code>memcpy</code> or the compiler's packed-aware member access.</dd>
+<dt>What is the alignment of a struct?</dt>
+<dd>Equal to the strictest (largest) alignment requirement among its members. Its total size is padded up to a multiple of that.</dd>
+<dt>Why cache-line-align a per-thread counter struct?</dt>
+<dd>To prevent false sharing: if thread A's counter and thread B's counter are in the same 64-byte line, every write by A invalidates that line in B's cache and vice versa, serialising them. Padding each to its own line removes the contention.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What alignment does a <code>double</code> normally require?</summary><div class="answer-box">
+8 bytes.
+</div></details>
+<details class="answer-reveal"><summary>How do you get a struct member's byte offset?</summary><div class="answer-box">
+<code>offsetof(struct T, member)</code>.
+</div></details>
+<details class="answer-reveal"><summary>Best member order to minimise padding?</summary><div class="answer-box">
+Largest/strictest-aligned members first, down to smallest.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary><code>struct { char c; int i; short s; };</code> &mdash; give its size and layout on a typical 64-bit system.</summary><div class="answer-box">
+<code>c</code> at 0, 3 bytes pad, <code>i</code> at 4, <code>s</code> at 8, 2 bytes trailing pad (struct alignment 4) &rarr; total <strong>12 bytes</strong>. Reordered <code>{ int i; short s; char c; }</code>: 4 + 2 + 1 + 1 pad = <strong>8 bytes</strong>.
+</div></details>
+<details class="answer-reveal"><summary>You <code>memcpy</code> received bytes into a <code>struct Packet *</code> pointer and read a <code>uint32_t</code> field; it works on x86 but crashes on an ARM device. Why?</summary><div class="answer-box">
+The received buffer isn't 4-byte aligned (or the field is at an odd offset in a packed struct), so the <code>uint32_t</code> load is misaligned. x86 tolerates misaligned loads (with a penalty); many ARM configurations fault (<code>SIGBUS</code>) on misaligned word access, and NEON aligned loads always do. Fix: parse field-by-field with <code>memcpy</code> into an aligned local, or use <code>__attribute__((aligned))</code> on the buffer and don't pack, or use byte-wise assembly.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does over-aligning a heap allocation work, and why can't plain <code>malloc</code> guarantee 64-byte alignment?</summary><div class="answer-box">
+<code>malloc</code> guarantees alignment suitable for <em>any standard type</em> &mdash; <code>alignof(max_align_t)</code>, which is 8 or 16 bytes on mainstream ABIs (enough for <code>long double</code> / <code>__int128</code>). It has no way to know you want a 64-byte-aligned buffer for AVX-512 or cache-line isolation, and internally it packs chunks with 8/16-byte granularity headers, so a returned pointer is generally not 64-aligned. To get stronger alignment: C11 <code>aligned_alloc(64, size)</code> (size must be a multiple of the alignment), POSIX <code>posix_memalign(&amp;p, 64, size)</code>, C++17 <code>operator new(size, std::align_val_t{64})</code> / <code>alignas(64)</code> on the type (which routes to the aligned new), or Windows <code>_aligned_malloc</code>. Under the hood these typically over-allocate by <code>alignment + sizeof(void*)</code>, round the address up to the alignment boundary, and stash the original pointer just before the returned block so the matching free can recover it &mdash; which is why you must pair <code>_aligned_malloc</code>/<code>_aligned_free</code> and not mix aligned allocation with plain <code>free</code> on some platforms (C11 <code>aligned_alloc</code> and <code>posix_memalign</code> results <em>can</em> use plain <code>free</code>). For arrays of hot structs, <code>alignas(64) struct Foo</code> makes both stack and (properly routed) heap allocations line-aligned automatically.
+</div></details>
+<details class="answer-reveal"><summary>What is the "empty base optimization" and how does <code>[[no_unique_address]]</code> generalise it for layout?</summary><div class="answer-box">
+An empty class (no data members, e.g. a stateless allocator, comparator, or deleter) still has <code>sizeof &ge; 1</code> so distinct objects have distinct addresses. As a <em>member</em>, that 1 byte plus its alignment padding is pure waste &mdash; a <code>std::vector</code> storing an empty allocator by value would grow. The <strong>empty base optimization (EBO)</strong>: if you make the empty class a <em>base</em> instead of a member, the standard allows it to occupy zero bytes as long as it doesn't collide with a base of the same type. So library types historically inherited from their empty policy classes (or used a helper like <code>boost::compressed_pair</code>) to avoid the overhead &mdash; ugly, and it exposes the base's interface. C++20 <code>[[no_unique_address]]</code> generalises this to members: <code>[[no_unique_address]] Alloc alloc_;</code> tells the compiler the member may share address space with other members (or occupy no space if empty), so <code>unique_ptr</code>'s deleter, <code>vector</code>'s allocator, and small function wrappers can carry a stateless policy for free without the inheritance trick. Caveats: two <code>[[no_unique_address]]</code> members of the <em>same</em> type still need distinct addresses (so they can't both be zero-size), and MSVC needed a separate spelling (<code>[[msvc::no_unique_address]]</code>) for ABI reasons.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:alignment-layout -->
+
+<!-- TOPIC:arch:memory-barriers -->
+<section class="view topic" id="v-arch-memory-barriers" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>The Hardware Memory Model &amp; Barriers</h1>
+<p class="subtitle">Store buffers, why x86 and ARM disagree, and what a fence actually does.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Why order isn't preserved</h3>
+<ul>
+<li><strong>Store buffer</strong>: a write goes into a per-core FIFO and completes to cache later. The writing core sees its own store immediately (store-to-load forwarding); other cores don't see it until it drains.</li>
+<li>The core may also let a <em>later load</em> execute before an <em>earlier store</em> drains (store&rarr;load reordering) &mdash; the most common relaxation.</li>
+<li>Compilers separately reorder independent memory ops.</li>
+</ul>
+
+<h3>x86-TSO vs ARM/POWER</h3>
+<table>
+<tr><th></th><th>x86 (TSO)</th><th>ARM / POWER (weak)</th></tr>
+<tr><td>load&ndash;load, load&ndash;store, store&ndash;store</td><td>preserved</td><td>can all be reordered</td></tr>
+<tr><td>store&ndash;load</td><td>can reorder (store buffer)</td><td>can reorder</td></tr>
+<tr><td>atomic store</td><td>plain <code>mov</code> (has release semantics)</td><td>needs explicit barrier / <code>stlr</code></td></tr>
+</table>
+<p>Consequence: lock-free / racy code that "works" on x86 frequently breaks on ARM &mdash; x86 is
+accidentally forgiving.</p>
+
+<h3>Barriers / fences</h3>
+<ul>
+<li><strong>Full barrier</strong> (x86 <code>mfence</code>, ARM <code>dmb ish</code>) &mdash; no memory op crosses it in either direction; drains the store buffer.</li>
+<li><strong>Acquire</strong> &mdash; no later load/store moves before it (used after taking a lock / after a flag load).</li>
+<li><strong>Release</strong> &mdash; no earlier load/store moves after it (used before releasing a lock / before a flag store).</li>
+<li>Compilers emit these from <code>std::atomic</code> operations with the given <code>memory_order</code>; <code>atomic_thread_fence</code> is a standalone barrier.</li>
+</ul>
+
+<h3><code>volatile</code> is not a barrier</h3>
+<p>C/C++ <code>volatile</code> stops the <em>compiler</em> from eliding/reordering accesses to that one
+variable. It emits <strong>no</strong> CPU fence, gives no atomicity, and doesn't order <em>other</em>
+memory. For cross-thread communication use <code>std::atomic</code> (which is <code>volatile</code>-like
+<em>plus</em> the right barriers). Java's <code>volatile</code> is different &mdash; it does imply
+acquire/release.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Store buffer &rarr; your own stores are visible to you instantly, to others only after drain; store&rarr;load reorder is the common relaxation.</li>
+<li><strong>x86-TSO</strong>: keeps LL/LS/SS order, allows SL reorder, atomic store = plain <code>mov</code>. <strong>ARM/POWER</strong>: reorders everything, needs explicit barriers.</li>
+<li>Racy code that passes on x86 often fails on ARM &mdash; test on weak-memory hardware.</li>
+<li>Fences: full (<code>mfence</code>/<code>dmb</code>), acquire (nothing after moves before), release (nothing before moves after).</li>
+<li>Release store publishes prior writes; a paired acquire load that sees it observes them all.</li>
+<li>C/C++ <code>volatile</code> = compiler-only, no fence, no atomicity &rarr; use <code>std::atomic</code>. (Java <code>volatile</code> = acquire/release.)</li>
+<li>Let the compiler emit barriers via <code>std::atomic</code> + <code>memory_order</code>; hand-written asm fences are a last resort.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is a store buffer and how does it cause reordering?</dt>
+<dd>A per-core queue that holds stores before they reach cache. The core continues past the store without waiting, and can execute a later load before the buffered store is globally visible &mdash; so another core can observe the load's effect before the store's (store&ndash;load reordering).</dd>
+<dt>Why does racy code often work on x86 but fail on ARM?</dt>
+<dd>x86's TSO model only permits store&ndash;load reordering and gives atomic stores release semantics for free. ARM's weak model reorders load&ndash;load, load&ndash;store, and store&ndash;store as well, so missing barriers that x86 tolerated now manifest as real bugs.</dd>
+<dt>What does an acquire barrier guarantee?</dt>
+<dd>No memory operation after the acquire (in program order) can be reordered to before it. Combined with a matching release on another thread, if your acquire-load sees the released value, you also see every write the other thread did before its release.</dd>
+<dt>Is <code>volatile</code> (C/C++) enough to communicate a flag between threads?</dt>
+<dd>No. It prevents the compiler from optimising away or reordering accesses to that variable, but emits no CPU memory barrier, provides no atomicity, and doesn't order other data. Use <code>std::atomic</code> with an appropriate memory order.</dd>
+<dt>When do you need a full barrier (<code>mfence</code>) rather than acquire/release?</dt>
+<dd>For patterns needing store&ndash;load ordering &mdash; e.g. Dekker/Peterson-style mutual exclusion where each thread stores its "want" flag then loads the other's; without a full fence the store can sit in the buffer while the load proceeds, and both threads enter. A <code>seq_cst</code> operation or an explicit full fence between the store and the load fixes it.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which reordering does x86 allow?</summary><div class="answer-box">
+Store&ndash;load (a later load can be observed before an earlier store completes). It preserves the other three orderings.
+</div></details>
+<details class="answer-reveal"><summary>Does C/C++ <code>volatile</code> emit a CPU memory fence?</summary><div class="answer-box">
+No. It's a compiler directive only.
+</div></details>
+<details class="answer-reveal"><summary>A release store pairs with which barrier on the reader?</summary><div class="answer-box">
+An acquire load.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Producer: <code>buf = data; ready = 1;</code> Consumer: <code>while (!ready); use(buf);</code> &mdash; make it correct on ARM.</summary><div class="answer-box">
+Both variables must be <code>std::atomic</code>. Producer: write <code>buf</code>, then <code>ready.store(1, memory_order_release)</code> &mdash; the release ensures the <code>buf</code> write is visible before <code>ready</code> becomes 1. Consumer: <code>while (ready.load(memory_order_acquire) == 0) ;</code> then read <code>buf</code> &mdash; the acquire ensures that once it sees <code>ready == 1</code>, the <code>buf</code> write is visible. On x86 the barriers are nearly free (plain movs); on ARM the compiler emits <code>stlr</code>/<code>ldar</code> or a <code>dmb</code>.
+</div></details>
+<details class="answer-reveal"><summary>Why is the double-checked-locking singleton bug fundamentally a memory-ordering problem?</summary><div class="answer-box">
+The publishing store <code>instance = new Foo()</code> is really: allocate, construct the object's fields, then store the pointer. Without a release barrier on that pointer store (and an acquire on the reader's load), another thread can observe the non-null pointer <em>before</em> the field writes are visible &mdash; it dereferences a half-constructed object. The fix is to make <code>instance</code> an atomic with release on publish / acquire on read (or use a language-level guaranteed-once init like a function-local <code>static</code> in C++11, or an eager/holder idiom).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain "multi-copy atomicity" and how x86, ARMv8, and POWER differ on it.</summary><div class="answer-box">
+A memory system is <strong>multi-copy atomic</strong> if, whenever any core other than the writer can observe a store, <em>all</em> other cores can observe it (a store becomes visible to everyone at once). <strong>x86-TSO is multi-copy atomic</strong>: the only relaxation is a core seeing its <em>own</em> buffered store early via forwarding; once a store leaves the store buffer it's visible to all other cores simultaneously. This is why the IRIW litmus test (two readers disagreeing on the order of two independent writes) is <em>forbidden</em> on x86. <strong>Classic POWER (and older ARM) are non-multi-copy-atomic</strong>: a store can propagate to different cores at different times (cache-coherence protocol + write-through-shared-buffers), so two reader cores genuinely can observe two independent writes in opposite orders &mdash; IRIW is allowed, and you need heavyweight <code>sync</code>/<code>dmb ish</code> (not just <code>lwsync</code>) plus, on POWER, cumulative barriers to recover a total order. <strong>ARMv8 was revised to be "other-multi-copy atomic"</strong>: a core may see its own stores early, but any store visible to <em>one</em> other core is visible to <em>all</em> other cores &mdash; a middle ground that still forbids IRIW-without-fences but is weaker than TSO on the single-thread orderings. Practical impact: an algorithm proven correct only under multi-copy atomicity (some seqlock and RCU variants, certain lock-free constructs) is safe on x86 and ARMv8 but needs extra full barriers on classic POWER; and <code>seq_cst</code> in C++ is the portable way to get a single total order everywhere without reasoning about which model you're on.
+</div></details>
+<details class="answer-reveal"><summary>Why is <code>seq_cst</code> more expensive than <code>acquire</code>/<code>release</code>, and where does the cost actually land on x86 vs ARM?</summary><div class="answer-box">
+<code>acquire</code>/<code>release</code> give you <em>pairwise</em> ordering: a release store synchronises-with an acquire load of the <em>same</em> variable, and transitively publishes prior writes. But two <code>seq_cst</code> operations on <em>different</em> variables must also appear in one global total order that all threads agree on &mdash; a much stronger, non-local guarantee (it's what makes Dekker's algorithm and IRIW-free reasoning work). To enforce it the compiler must prevent store&ndash;load reordering across the operation, which the cheap fences don't. <strong>On x86</strong>: a <code>seq_cst</code> <em>load</em> is a plain <code>mov</code> (loads already have acquire, and TSO forbids the other reorderings), but a <code>seq_cst</code> <em>store</em> must drain the store buffer &mdash; emitted as <code>xchg</code> (which is a locked, fencing operation) or <code>mov</code>+<code>mfence</code>, costing ~20&ndash;40 cycles because the core stalls until pending stores are globally visible. So on x86 the cost is entirely on <code>seq_cst</code> stores/RMWs. <strong>On ARMv8</strong>: <code>seq_cst</code> maps to <code>ldar</code>/<code>stlr</code> (acquire/release variants that are also mutually ordered), which are cheaper than a full <code>dmb</code> but still more than a relaxed load/store, and both loads and stores pay. The upshot: prefer <code>acquire</code>/<code>release</code> for producer/consumer, refcounts, and flags; reserve <code>seq_cst</code> (the default) for the rare cases that genuinely need a single global order across multiple locations, and don't sprinkle it "to be safe" &mdash; on a hot atomic it's a measurable throughput hit.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:memory-barriers -->
+
+<!-- TOPIC:arch:simd-perf -->
+<section class="view topic" id="v-arch-simd-perf" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>SIMD, False Sharing &amp; Measuring</h1>
+<p class="subtitle">Doing 8 operations per instruction, the multicore trap that silently kills scaling, and how to benchmark honestly.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>SIMD (vectorization)</h3>
+<ul>
+<li>One instruction operates on a vector of values: SSE 128-bit (4&times;float), AVX2 256-bit (8&times;float), AVX-512 512-bit (16&times;float), ARM NEON 128-bit, SVE variable.</li>
+<li><strong>Auto-vectorization</strong>: the compiler vectorises simple loops at <code>-O2</code>/<code>-O3</code> if there are no loop-carried dependencies, the trip count is knowable, memory access is unit-stride, and there's no aliasing (use <code>restrict</code> / <code>__restrict</code>). Check with <code>-fopt-info-vec</code>.</li>
+<li><strong>Intrinsics</strong> (<code>&lt;immintrin.h&gt;</code>) for control the compiler won't find: shuffles, horizontal ops, gather/scatter, masked ops. Portable wrappers: <code>std::simd</code> (C++26/experimental), Highway, xsimd, ISPC.</li>
+<li>Needs SoA layout, alignment, and independent iterations to pay off.</li>
+</ul>
+
+<h3>False sharing</h3>
+<p>Two threads write two <em>different</em> variables that happen to sit in the <em>same 64-byte cache
+line</em>. The coherence protocol treats the line as one unit: each write invalidates the other
+core's copy, so the line ping-pongs between cores and the two "independent" writes serialise &mdash;
+often a 5&ndash;50&times; slowdown that scales <em>negatively</em> with core count.</p>
+<pre><code><span class="k">struct</span> Counters { <span class="k">long</span> a; <span class="k">long</span> b; };          <span class="c">// a and b share a line -&gt; false sharing</span>
+<span class="k">struct</span> Counters { alignas(64) <span class="k">long</span> a; alignas(64) <span class="k">long</span> b; }; <span class="c">// each on its own line</span></code></pre>
+<p>Fix: pad/align per-thread data to a cache line; keep read-only and written-by-different-threads
+data apart.</p>
+
+<h3>Benchmarking pitfalls</h3>
+<ul>
+<li><strong>Dead-code elimination</strong> &mdash; the compiler deletes work whose result is unused. Consume the result (<code>DoNotOptimize</code>, print a checksum).</li>
+<li><strong>Cold caches / warm-up</strong> &mdash; discard the first iterations; report a distribution, not one number.</li>
+<li><strong>Frequency scaling / turbo / thermal</strong> &mdash; pin the CPU frequency, disable turbo, pin the thread (<code>taskset</code>).</li>
+<li><strong>Measuring the wrong thing</strong> &mdash; wall time vs CPU time; include the setup you didn't mean to; too-small input fits in L1 and hides the real behaviour.</li>
+<li>Use a real harness (Google Benchmark, nanobench, Criterion) and <code>perf stat</code> for counters.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>SIMD: 1 instr, N lanes (SSE 4&times;f32, AVX2 8&times;f32, AVX-512 16&times;f32, NEON 4&times;f32).</li>
+<li>Auto-vec needs: no loop-carried deps, unit stride, known trip count, no aliasing (<code>restrict</code>), often SoA + alignment. Verify with <code>-fopt-info-vec</code>.</li>
+<li>Intrinsics/libraries (Highway, xsimd, ISPC) for shuffles, gather, masks the compiler won't emit.</li>
+<li><strong>False sharing</strong>: different vars, same 64-byte line, different threads writing &rarr; line ping-pongs &rarr; huge slowdown, negative scaling. Fix: <code>alignas(64)</code> / pad per-thread data.</li>
+<li>Benchmark: prevent dead-code elimination (<code>DoNotOptimize</code>), warm up, pin freq + core (no turbo), report a distribution, use inputs bigger than L1.</li>
+<li>Tools: Google Benchmark / nanobench + <code>perf stat</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What conditions let a loop auto-vectorize?</dt>
+<dd>No loop-carried dependency (iteration i+1 doesn't need iteration i's result), a trip count the compiler can determine, unit-stride (contiguous) memory access, no possible pointer aliasing between input and output (add <code>restrict</code>), and the target ISA enabled (<code>-march=native</code> or specific <code>-mavx2</code>).</dd>
+<dt>What is false sharing?</dt>
+<dd>Two threads writing to distinct variables that reside in the same cache line. Cache coherence works at line granularity, so each write invalidates the line in the other core's cache; the line bounces back and forth and the writes serialise despite being logically independent.</dd>
+<dt>How do you fix false sharing?</dt>
+<dd>Separate the contended data onto different cache lines &mdash; <code>alignas(64)</code> on per-thread structs, or padding fields, so no two threads' hot writes share a line. Also group read-mostly data away from write-heavy data.</dd>
+<dt>Why might a micro-benchmark show a function taking "0 ns"?</dt>
+<dd>The compiler saw the result was unused and deleted the whole computation (dead-code elimination). You must consume the result &mdash; write it to a <code>volatile</code>, pass it to <code>benchmark::DoNotOptimize</code>, or accumulate a checksum you print.</dd>
+<dt>Why can a benchmark with a tiny input mislead you?</dt>
+<dd>If the working set fits in L1, you measure L1-hit behaviour and instruction throughput, hiding the cache-miss and memory-bandwidth costs that dominate at production data sizes. Benchmark with realistic input sizes, including ones that exceed each cache level.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How many 32-bit floats fit in an AVX2 (256-bit) register?</summary><div class="answer-box">
+8.
+</div></details>
+<details class="answer-reveal"><summary>What cache-line-related bug silently kills multithreaded scaling?</summary><div class="answer-box">
+False sharing.
+</div></details>
+<details class="answer-reveal"><summary>One thing every micro-benchmark must do to its result?</summary><div class="answer-box">
+Consume it so the compiler can't eliminate the work (e.g. <code>DoNotOptimize</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A parallel histogram (each thread increments <code>counts[bucket]</code> in a shared array) scales worse than single-threaded. Why and fix?</summary><div class="answer-box">
+Adjacent <code>counts[]</code> entries share cache lines, and different threads hitting nearby buckets cause constant line invalidation (false sharing), plus the increments themselves race (need atomics or per-thread copies). Fix: give each thread its own private <code>counts[]</code> array (padded so they don't overlap lines), accumulate locally, then sum the per-thread arrays once at the end. Now the hot path is contention-free.
+</div></details>
+<details class="answer-reveal"><summary>Your loop won't auto-vectorize; <code>-fopt-info-vec-missed</code> says "possible aliasing". Fix?</summary><div class="answer-box">
+The compiler can't prove the output pointer doesn't overlap the input pointers, so vectorising could produce wrong results. Add <code>restrict</code> (<code>__restrict</code> in C++) to the pointer parameters to promise no aliasing, or use <code>#pragma omp simd</code> / <code>#pragma GCC ivdep</code> to assert independence, or copy to local non-overlapping buffers. Verify the vectorised code is actually correct for your call sites (you're making a promise the compiler will trust).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why can enabling AVX-512 make a program <em>slower</em> overall?</summary><div class="answer-box">
+Several effects: (1) <strong>Frequency throttling</strong> &mdash; on many Intel server chips, executing 512-bit (and heavy 256-bit) instructions drops the core (and sometimes package) clock by 10&ndash;40% for a licence-based period, because those execution units draw more power; if only a small fraction of your code is vectorised, the whole program runs at the lower clock and the scalar majority loses more than the vector minority gains. (2) <strong>Warm-up / transition penalty</strong> &mdash; the first AVX-512 (or dirty-upper-state AVX&harr;SSE transition) instructions after a gap incur a stall of tens to hundreds of cycles while the wide datapath powers up / state is saved. (3) <strong>Larger register save area</strong> &mdash; context switches and signal handling save 512-bit state (2&thinsp;KB+ with AVX-512), raising syscall/switch cost. (4) <strong>Code bloat / i-cache pressure</strong> from wider unrolled loops. (5) On some microarchitectures only one AVX-512 FMA port is enabled, so peak throughput isn't double AVX2. Guidance: measure end-to-end, not the kernel in isolation; use AVX-512 where the vectorised region is large and hot enough to dominate; consider staying at AVX2 for mixed workloads; and check whether your CPU has the frequency penalty (later Intel client chips and AMD Zen4/5 largely removed it, so "AVX-512 is always slower" is now often outdated).
+</div></details>
+<details class="answer-reveal"><summary>Design a rigorous latency micro-benchmark for a single function. What must you control?</summary><div class="answer-box">
+<strong>Compiler</strong>: prevent dead-code elimination (feed the result to <code>DoNotOptimize</code>/an <code>asm volatile</code> sink) and prevent hoisting the call out of the loop (make an input depend on the previous output, or use <code>ClobberMemory</code>). Compile with the exact flags you'll ship. <strong>Measurement</strong>: use a monotonic high-resolution clock or <code>rdtscp</code> with a serialising fence; measure many iterations and divide, but also record the <em>distribution</em> (min is often the "true" cost with least noise; median and p99 show variance) &mdash; never a single mean. <strong>System</strong>: pin the thread to one core (<code>taskset</code>/<code>pthread_setaffinity</code>), pin the CPU frequency and disable turbo and deep C-states (or the first calls run at a different clock), isolate the core from the scheduler and IRQs if possible, run at elevated priority, and quiesce the machine (no builds/browsers). <strong>Data</strong>: choose input sizes that reflect production and that don't all fit in L1 unless that's the real case; randomise access patterns you can't predict; if the function has data-dependent branches, feed a realistic mix. <strong>Warm-up</strong>: run and discard iterations until timings stabilise (caches, branch predictors, frequency, page faults settled). <strong>Cross-check</strong>: run under <code>perf stat</code> to see whether cycles/instructions/misses match your model &mdash; if the counters don't explain the number, the benchmark is measuring something you didn't intend. Use an established harness (Google Benchmark, nanobench, Criterion.rs) that bakes in most of this rather than hand-rolling.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:simd-perf -->
+
 </main>
 
 <footer class="site-footer">
@@ -13831,25 +14857,23 @@ When a performance counter overflows (e.g. every 100,000 cache misses) it raises
       ["proc-sys",        "/proc, /sys, Environment & Limits",   "procfs/sysfs, /proc/PID, rlimits, ulimit, environ, getopt, exit codes."],
       ["gdb-strace",      "Debugging: gdb, strace, ltrace",      "Breakpoints/backtrace/core dumps, syscall tracing, attaching, common recipes."],
       ["perf-valgrind",   "Profiling: perf, valgrind & friends", "perf stat/record/top, flame graphs, cache misses, valgrind memcheck/cachegrind."]
+    ],
+    arch: [
+      ["number-repr",      "Number Representation & Endianness",   "Two's complement, overflow, IEEE-754, signed/unsigned, big vs little endian."],
+      ["memory-hierarchy", "The Memory Hierarchy & Caches",        "Registers/L1/L2/L3/RAM/disk latencies, why caches exist, inclusive vs exclusive."],
+      ["cache-misses",     "Cache Lines, Associativity & Misses",  "64-byte lines, direct/set/full associative, compulsory/capacity/conflict misses."],
+      ["locality",         "Locality & Cache-Friendly Code",       "Temporal/spatial locality, row- vs column-major, AoS vs SoA, blocking, prefetch."],
+      ["pipeline",         "The CPU Pipeline & Hazards",           "Fetch/decode/execute stages, structural/data/control hazards, forwarding, stalls."],
+      ["branch-prediction","Branch Prediction & Speculation",      "Predictors, misprediction cost, branchless code, Spectre, speculation."],
+      ["ilp-ooo",          "ILP & Out-of-Order Execution",         "Superscalar, register renaming, ROB, dependencies, why latency != throughput."],
+      ["alignment-layout", "Alignment & Struct Layout",            "Natural alignment, padding, packing, cache-line straddling, alignas."],
+      ["memory-barriers",  "The Hardware Memory Model & Barriers", "Store buffers, x86-TSO vs ARM, acquire/release fences, why volatile isn't enough."],
+      ["simd-perf",        "SIMD, False Sharing & Measuring",      "Vectorization, auto-vec vs intrinsics, false sharing, roofline, benchmarking pitfalls."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    arch: [
-      "Number representation & endianness",
-      "The memory hierarchy & caches",
-      "Cache lines, associativity & misses",
-      "Locality & cache-friendly code",
-      "The CPU pipeline & hazards",
-      "Branch prediction & speculation",
-      "Instruction-level parallelism & out-of-order",
-      "Alignment & structure layout",
-      "The hardware memory model & barriers",
-      "SIMD & vectorization",
-      "False sharing & cache coherence (MESI)",
-      "Measuring & reasoning about performance"
-    ],
     build: [
       "The C/C++ compilation pipeline",
       "Translation units & the preprocessor",
