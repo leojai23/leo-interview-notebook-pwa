@@ -20955,6 +20955,13 @@ Several effects: (1) <strong>Frequency throttling</strong> &mdash; on many Intel
 <tr><td>Assemble</td><td>as</td><td><code>.s</code> &rarr; object file <code>.o</code> (machine code + symbol table + relocations)</td><td><code>gcc -c</code></td></tr>
 <tr><td>Link</td><td>ld / lld / gold</td><td><code>.o</code> files + libraries &rarr; executable or shared library</td><td><code>gcc</code> (default final step)</td></tr>
 </table>
+<pre><code>$ gcc -save-temps -c hello.c       <span class="c"># keeps hello.i, hello.s, hello.o</span>
+$ gcc -E hello.c | wc -l           <span class="c"># ~750 lines after &lt;stdio.h&gt; is pasted in</span>
+$ gcc -S hello.c &amp;&amp; head -3 hello.s
+$ gcc -c hello.c &amp;&amp; nm hello.o
+0000000000000000 T main
+                 U puts             <span class="c"># U = undefined -> the linker must resolve it</span>
+$ gcc hello.o -o hello             <span class="c"># link: resolves puts against libc</span></code></pre>
 
 <h3>What each stage does</h3>
 <ul>
@@ -20963,12 +20970,22 @@ Several effects: (1) <strong>Frequency throttling</strong> &mdash; on many Intel
 <li><strong>Assemble</strong>: encode instructions to bytes; build a symbol table (what this <code>.o</code> defines and needs) and relocation entries (addresses to patch later).</li>
 <li><strong>Link</strong>: resolve every undefined symbol against another <code>.o</code> or library, lay out sections, apply relocations, produce the final binary. Errors like "undefined reference", "multiple definition".</li>
 </ul>
+<pre><code><span class="c">// which stage catches which error:</span>
+<span class="k">#include</span> <span class="s">"nope.h"</span>          <span class="c">// PREPROCESS: fatal error: nope.h: No such file or directory</span>
+<span class="k">int</span> x = <span class="s">"str"</span>;             <span class="c">// COMPILE:   error: initialization of 'int' from 'char*'</span>
+<span class="k">extern</span> <span class="k">void</span> missing();
+<span class="k">int</span> main(){ missing(); }   <span class="c">// LINK:      undefined reference to `missing'</span></code></pre>
 
 <h3>Separate compilation</h3>
 <p>Each <code>.c</code> compiles independently to a <code>.o</code>; only changed files (and dependents via
 headers) recompile, then a fast relink. This is why the preprocessor + a stable header interface
 matter for build times, and why LTO (optimising across TUs at link time) is a separate opt-in
 that costs link time.</p>
+<pre><code>$ gcc -c a.c b.c c.c              <span class="c"># three independent compiles -> a.o b.o c.o</span>
+$ touch b.c &amp;&amp; make              <span class="c"># only b.c recompiles, then a fast relink</span>
+
+$ gcc -flto a.o b.o c.o -o app   <span class="c"># LTO: optimise ACROSS TUs at link time (inlines a.c calls into b.c)</span>
+                                 <span class="c"># -> smaller/faster binary, but the link now does real optimisation work</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -21048,6 +21065,15 @@ Headers are a <em>textual</em> mechanism: every <code>#include</code> pastes the
 <p>A single <code>.c</code>/<code>.cpp</code> plus every header it <code>#include</code>s (recursively), after
 preprocessing. The compiler sees exactly this and nothing else &mdash; it has no knowledge of other
 <code>.cpp</code> files. Each TU becomes one <code>.o</code>.</p>
+<pre><code>$ gcc -E -H main.c 2&gt;&amp;1 | grep '^\.'   <span class="c"># the header tree pulled into ONE TU</span>
+. /usr/include/stdio.h
+.. /usr/include/features.h
+.. /usr/include/bits/types.h
+. ./widget.h
+
+$ echo 'inline int helper(){ return foo(); }' &gt; bad.h
+$ gcc -c a.c b.c        <span class="c"># a.c and b.c both #include bad.h -> compiled separately,</span>
+                        <span class="c"># neither knows the other exists; the linker joins the .o files</span></code></pre>
 
 <h3>Headers &amp; include guards</h3>
 <pre><code><span class="c">// widget.h</span>
@@ -21066,6 +21092,16 @@ definitions, templates, and type definitions &mdash; not non-inline function or 
 <li>Types, templates, inline functions may be defined in <em>every</em> TU &mdash; but every definition must be <strong>token-for-token identical</strong> (same tokens, same meaning of names).</li>
 <li>Violating the "identical" clause is <strong>ODR-UB</strong>: it usually links fine (the linker keeps one copy) but behaves unpredictably. Caused by: a header compiled with different macros/flags in different TUs, a struct with different members in two files, inconsistent packing.</li>
 </ul>
+<pre><code><span class="c">// point.h -- struct layout depends on a macro</span>
+<span class="k">struct</span> Point { <span class="k">int</span> x, y;
+<span class="k">#ifdef</span> WITH_Z
+    <span class="k">int</span> z;
+<span class="k">#endif</span>
+};
+
+$ gcc -c a.c              <span class="c"># sizeof(Point) == 8</span>
+$ gcc -c b.c -DWITH_Z     <span class="c"># sizeof(Point) == 12   -- SAME type, two layouts</span>
+$ gcc a.o b.o -o app      <span class="c"># LINKS FINE. Then a.c writes p.y where b.c expects p.z -> corruption</span></code></pre>
 
 <h3>Reducing TU coupling</h3>
 <ul>
@@ -21073,6 +21109,18 @@ definitions, templates, and type definitions &mdash; not non-inline function or 
 <li><strong>PImpl</strong> (pointer to implementation): the header exposes only an opaque pointer; the real members live in the <code>.cpp</code>, so changing them doesn't recompile clients.</li>
 <li>Put implementation details in the <code>.cpp</code>; keep headers minimal.</li>
 </ul>
+<pre><code><span class="c">// widget.h -- clients never see Impl's fields, so changing them doesn't recompile them</span>
+<span class="k">class</span> Widget {
+    <span class="k">struct</span> Impl;
+    std::unique_ptr&lt;Impl&gt; p_;      <span class="c">// opaque pointer</span>
+<span class="k">public</span>:
+    Widget(); ~Widget();
+    <span class="k">void</span> draw();
+};
+
+<span class="c">// forward-declare instead of #include when only a reference is used:</span>
+<span class="k">class</span> Renderer;                    <span class="c">// not #include "renderer.h"</span>
+<span class="k">void</span> paint(Renderer&amp; r);</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -21158,6 +21206,13 @@ The standard grants them an explicit ODR exemption (multiple definitions allowed
 <tr><td><code>.rela.text</code> etc.</td><td>relocation entries</td></tr>
 <tr><td><code>.debug_*</code></td><td>DWARF debug info (from <code>-g</code>)</td></tr>
 </table>
+<pre><code><span class="c">// int g = 7;  int z;  const char *s = "hi";</span>
+$ size -A obj.o | grep -E '\.text|\.data|\.bss|\.rodata'
+.text     124
+.data       8      <span class="c"># g and the pointer s (non-zero init)</span>
+.bss        4      <span class="c"># z (zero) -- size only, no bytes in the file</span>
+.rodata     3      <span class="c"># the literal "hi\0"</span>
+$ readelf -SW obj.o | head    <span class="c"># full section headers</span></code></pre>
 
 <h3>Symbols</h3>
 <ul>
@@ -21166,12 +21221,26 @@ The standard grants them an explicit ODR exemption (multiple definitions allowed
 <li><strong>Weak</strong> (<code>W</code>): a global that a strong definition overrides; multiple weaks are allowed. Used for inline functions, <code>__attribute__((weak))</code> optional hooks.</li>
 <li><strong>Common</strong> (<code>C</code>): a tentative definition (<code>int x;</code> in C) &mdash; merged by the linker. Modern default (<code>-fno-common</code>) makes these normal definitions so duplicates error.</li>
 </ul>
+<pre><code>$ nm util.o
+0000000000000000 T api            <span class="c"># T: global text definition</span>
+0000000000000010 t helper         <span class="c"># t: local (static) -> invisible to other .o</span>
+                 U printf          <span class="c"># U: undefined -> resolved at link</span>
+0000000000000000 W inline_fn       <span class="c"># W: weak -> a strong def elsewhere wins</span>
+0000000000000004 D shared          <span class="c"># D: initialised global data</span>
+
+$ __attribute__((weak)) void on_start(void);   <span class="c">// optional hook: null if nobody defines it</span></code></pre>
 
 <h3>Relocations</h3>
 <p>The assembler doesn't know final addresses, so it emits placeholders plus <strong>relocation
 entries</strong> saying "patch the 4 bytes at offset X to point at symbol <code>foo</code> (+ addend), using
 this formula". The linker (and, for shared libs, the dynamic loader) applies them. PC-relative
 relocations enable position-independent code.</p>
+<pre><code>$ objdump -dr obj.o
+  11:   e8 00 00 00 00   call   16 &lt;main+0x16&gt;
+                12: R_X86_64_PLT32   puts-0x4      <span class="c"># "patch bytes at 0x12 to reach `puts`"</span>
+  1d:   48 8d 05 00 00 00 00   lea    0x0(%rip),%rax
+                20: R_X86_64_PC32   .rodata        <span class="c"># PC-relative -> position-independent</span>
+<span class="c"># the 00 00 00 00 placeholders get filled in by the linker once addresses are known</span></code></pre>
 
 <h3>Inspection tools</h3>
 <pre><code>nm file.o            <span class="c"># symbols: T=text def, D=data def, U=undefined, W=weak, t/d=local</span>
@@ -21284,6 +21353,11 @@ Normally the compiler puts all functions from a TU into one <code>.text</code> s
 <li><strong>Relocation</strong>: patch every reference with the now-known address.</li>
 <li>Write the executable / shared object (headers, program segments, dynamic info).</li>
 </ol>
+<pre><code>$ ld --verbose | grep -A2 '\.text'      <span class="c"># the default linker script: where .text lands</span>
+  .text : { *(.text .text.*) }          <span class="c"># merge every input's .text into one</span>
+
+$ gcc -Wl,-Map=app.map a.o b.o -o app   <span class="c"># -> app.map: every symbol's final address + which .o it came from</span>
+$ readelf -l app | grep LOAD           <span class="c"># the PT_LOAD segments the kernel will mmap</span></code></pre>
 
 <h3>Link order (the classic gotcha)</h3>
 <p>The traditional Unix linker processes inputs <strong>left to right</strong>, keeping a set of
@@ -21303,11 +21377,25 @@ regardless of order.</p>
 <li><strong>multiple definition of X</strong>: two strong definitions (a real function/variable definition in a header included twice, missing <code>inline</code>/<code>static</code>, two libs with the same symbol).</li>
 <li><strong>DSO missing from command line</strong>: an indirect dependency you now must name explicitly.</li>
 </ul>
+<pre><code><span class="c">// C++ calling a C function without extern "C" -> name mangling mismatch</span>
+<span class="c">// C: defines   sqrt_impl</span>
+<span class="c">// C++: expects _Z9sqrt_impld   -> "undefined reference to `sqrt_impl(double)'"</span>
+<span class="k">extern</span> <span class="s">"C"</span> <span class="k">double</span> sqrt_impl(<span class="k">double</span>);   <span class="c">// FIX in the C++ header</span>
+
+<span class="c">// header with a real definition, included by 2 TUs -> "multiple definition of `k'"</span>
+<span class="c">// int k = 3;               // in a header -> BAD</span>
+<span class="k">inline</span> <span class="k">int</span> k = <span class="n">3</span>;                     <span class="c">// C++17: OK in a header</span>
+<span class="c">// extern int k;  in header + one `int k = 3;` in a .c  -> also OK</span></code></pre>
 
 <h3>Optimisations at link</h3>
 <p><code>--gc-sections</code> (drop unused sections), <code>--icf</code> (identical code folding &mdash; merge
 byte-identical functions), <code>-flto</code> (whole-program optimisation), <code>-s</code> (strip). Fast
 linkers: <code>lld</code>, <code>mold</code>, <code>gold</code> &mdash; large wins over classic <code>ld</code> for big binaries.</p>
+<pre><code>$ gcc -ffunction-sections -fdata-sections -Wl,--gc-sections a.c -o app
+                                 <span class="c"># unreferenced functions/data dropped from the binary</span>
+$ gcc -flto -O2 *.o -o app       <span class="c"># cross-TU inlining + dead-code removal at link</span>
+$ strip app                      <span class="c"># or link with -s : remove the symbol table</span>
+$ gcc -fuse-ld=mold ...          <span class="c"># swap in a fast linker: 5-10x quicker link for big binaries</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -21408,12 +21496,26 @@ Single-pass left-to-right resolution keeps a running "undefined set". Say <code>
 <tr><td>Updates</td><td>relink to pick up a library fix</td><td>drop-in a new <code>.so</code> (if ABI-compatible)</td></tr>
 <tr><td>Startup</td><td>fast</td><td>loader must find, map, and relocate each library</td></tr>
 </table>
+<pre><code><span class="c"># build both from the same object</span>
+$ gcc -c -fPIC util.c
+$ ar rcs libutil.a util.o                    <span class="c"># static archive = just a bag of .o files</span>
+$ gcc -shared -Wl,-soname,libutil.so.1 -o libutil.so.1 util.o
+
+$ gcc app.c -static -L. -lutil -o app_s      <span class="c"># ~900 KB, `ldd` -> "not a dynamic executable"</span>
+$ gcc app.c        -L. -lutil -o app_d       <span class="c"># ~16 KB, `ldd` -> libutil.so.1 =&gt; ./libutil.so.1</span></code></pre>
 
 <h3>Position-independent code</h3>
 <p>Shared libraries are built with <code>-fPIC</code> so they work at any load address (ASLR). References
 to globals and cross-library functions go through the <strong>GOT</strong> (Global Offset Table) and
 <strong>PLT</strong> (Procedure Linkage Table), filled in by the dynamic loader &mdash; a small indirection
 cost. Executables use <code>-fPIE</code> (PIC for the main program) &mdash; now the default for ASLR.</p>
+<pre><code>$ gcc -shared util.c -o libutil.so
+/usr/bin/ld: util.o: relocation R_X86_64_32 ... recompile with -fPIC   <span class="c"># forgot -fPIC</span>
+
+$ gcc -c -fPIC util.c &amp;&amp; gcc -shared util.o -o libutil.so   <span class="c"># fixed</span>
+$ objdump -d app | grep '@plt'
+  call  1050 &lt;printf@plt&gt;     <span class="c"># cross-.so calls jump through the PLT; GOT gets patched on first call</span>
+$ readelf -d app | grep PIE   <span class="c"># FLAGS_1  ...  PIE   -> main program is position-independent too</span></code></pre>
 
 <h3>Runtime loading</h3>
 <ul>
@@ -21421,12 +21523,28 @@ cost. Executables use <code>-fPIE</code> (PIC for the main program) &mdash; now 
 <li><strong>Lazy binding</strong>: a function's address is resolved on first call (via the PLT). <code>LD_BIND_NOW</code> forces eager resolution.</li>
 <li><code>dlopen</code>/<code>dlsym</code>/<code>dlclose</code> for plugins loaded explicitly at runtime.</li>
 </ul>
+<pre><code>$ ldd app
+    libfoo.so.1 =&gt; not found          <span class="c"># DT_NEEDED not on the search path</span>
+$ LD_LIBRARY_PATH=./libs ldd app     <span class="c"># or: gcc ... -Wl,-rpath,'$ORIGIN/libs'</span>
+$ LD_DEBUG=libs,bindings ./app       <span class="c"># trace every search + symbol bind</span>
+
+<span class="c">// runtime plugin:</span>
+<span class="k">void</span> *h = dlopen(<span class="s">"./plugin.so"</span>, RTLD_NOW);
+<span class="k">int</span> (*run)(<span class="k">void</span>) = dlsym(h, <span class="s">"run"</span>);
+run(); dlclose(h);</code></pre>
 
 <h3>Versioning</h3>
 <p><strong>SONAME</strong> (<code>libfoo.so.2</code>) encodes the ABI major version; a compatible update
 bumps only the minor (<code>libfoo.so.2.3</code> &rarr; <code>2.4</code>) and keeps the same SONAME so existing
 binaries keep working. Symbol versioning (<code>libc.so.6</code> with <code>GLIBC_2.34</code> tags) lets one
 <code>.so</code> serve old and new callers. Break the ABI &rarr; bump the SONAME.</p>
+<pre><code>$ ls -l /usr/lib/x86_64-linux-gnu/libssl*
+libssl.so       -&gt; libssl.so.3       <span class="c"># dev symlink (link with -lssl)</span>
+libssl.so.3     -&gt; libssl.so.3.0.2   <span class="c"># SONAME -- what binaries record in DT_NEEDED</span>
+libssl.so.3.0.2                       <span class="c"># the real file; a 3.0.x fix keeps SONAME libssl.so.3</span>
+
+$ objdump -T /lib/x86_64-linux-gnu/libc.so.6 | grep 'GLIBC_2.34' | head
+<span class="c"># one libc.so.6 exposes memcpy@GLIBC_2.14 AND memcpy@GLIBC_2.34 -> old binaries still run</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -21511,6 +21629,12 @@ Instead of bumping the SONAME every time a function's behaviour changes, glibc a
 </ul>
 <p>The <strong>API</strong> is the source-level interface (function signatures); the <strong>ABI</strong> is the
 binary-level one. Code compiled separately must share an ABI to interoperate.</p>
+<pre><code><span class="c">// same C source, the calling convention is fixed by the platform ABI:</span>
+<span class="k">int</span> f(<span class="k">int</span> a, <span class="k">int</span> b, <span class="k">int</span> c) { <span class="k">return</span> a + b + c; }
+<span class="c">// x86-64 SysV:   a-&gt;edi  b-&gt;esi  c-&gt;edx    return-&gt;eax</span>
+<span class="c">// Windows x64:   a-&gt;ecx  b-&gt;edx  c-&gt;r8d    return-&gt;eax   + 32 bytes "shadow space"</span>
+<span class="c">// -> an .o built for one CANNOT be linked into a program using the other</span>
+$ gcc -c f.c &amp;&amp; objdump -d f.o | head</code></pre>
 
 <h3>Name mangling</h3>
 <pre><code>C:    int add(int, int);          -&gt; symbol:  add
@@ -21530,8 +21654,23 @@ symbol so C and C++ can call each other; note it also disables overloading for t
 <li>Changing a function's signature in a way that affects the mangled name or the calling convention (adding a default argument is API-compatible but callers still linked against the old symbol).</li>
 <li>Switching standard-library implementation or the infamous <code>_GLIBCXX_USE_CXX11_ABI</code> flag (pre-C++11 vs C++11 <code>std::string</code>).</li>
 </ul>
+<pre><code><span class="c">// v1 of the shared lib's header:</span>
+<span class="k">struct</span> Config { <span class="k">int</span> timeout; <span class="k">bool</span> verbose; };
+<span class="c">// v2 -- API looks identical, ABI is BROKEN: sizeof/offsets changed</span>
+<span class="k">struct</span> Config { <span class="k">int</span> timeout; <span class="k">int</span> retries; <span class="k">bool</span> verbose; };
+<span class="c">// old app (still linked against v1) passes an 8-byte Config; v2 lib reads 12 -> garbage `verbose`</span>
+
+<span class="c">// the glibc++ string ABI switch bites the same way:</span>
+$ g++ -D_GLIBCXX_USE_CXX11_ABI=0 a.cpp   <span class="c"># old std::string layout</span>
+$ g++                             b.cpp   <span class="c"># new layout -> "undefined reference" on std::string params</span></code></pre>
 <p>Stable-ABI techniques: a pure C interface, opaque handles + accessor functions, PImpl,
 versioned symbols, "only add, never change" rules.</p>
+<pre><code><span class="c">// stable ABI: a C surface + opaque handle. Struct changes never reach the caller.</span>
+<span class="k">typedef</span> <span class="k">struct</span> Session Session;        <span class="c">// incomplete type -- caller can't see its size</span>
+<span class="k">extern</span> <span class="s">"C"</span> Session *session_open(<span class="k">const</span> <span class="k">char</span> *url);
+<span class="k">extern</span> <span class="s">"C"</span> <span class="k">int</span>      session_get(Session *, <span class="k">const</span> <span class="k">char</span> *key, <span class="k">char</span> *out, size_t n);
+<span class="k">extern</span> <span class="s">"C"</span> <span class="k">void</span>     session_close(Session *);
+<span class="c">// add session_set_timeout() later -> old binaries keep working (additive only)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -21621,11 +21760,33 @@ declare what depends on what, and only stale things rebuild.</p>
 <li><strong><code>.PHONY: clean all test</code></strong> &mdash; targets that aren't files, so they always run and don't clash with a file of that name.</li>
 <li><strong>Parallelism</strong>: <code>make -j$(nproc)</code> &mdash; correct only if the dependency graph is complete (missing deps &rarr; race, flaky builds).</li>
 </ul>
+<pre><code>CC      := gcc
+CFLAGS  := -O2 -Wall
+SRC     := $(wildcard src/*.c)
+OBJ     := $(SRC:.c=.o)
+
+app: $(OBJ)
+	$(CC) $^ -o $@              <span class="c"># $^ = all prereqs, $@ = target</span>
+
+%.o: %.c                       <span class="c"># pattern rule for every .c</span>
+	$(CC) $(CFLAGS) -c $&lt; -o $@ <span class="c"># $&lt; = the .c file</span>
+
+.PHONY: clean
+clean:
+	rm -f $(OBJ) app           <span class="c"># always runs, even if a file named `clean` exists</span></code></pre>
 
 <h3>Header dependency tracking</h3>
 <p>Naive Makefiles miss "<code>.o</code> depends on the headers the <code>.c</code> includes", so editing a
 header doesn't rebuild. The fix: <code>gcc -MMD -MP</code> emits a <code>.d</code> file listing the includes;
 <code>-include $(OBJ:.o=.d)</code> pulls them in. Now header edits trigger the right rebuilds.</p>
+<pre><code>%.o: %.c
+	$(CC) $(CFLAGS) -MMD -MP -c $&lt; -o $@   <span class="c"># also writes src/foo.d</span>
+
+-include $(OBJ:.o=.d)          <span class="c"># pull in "foo.o: foo.c bar.h baz.h"</span>
+
+<span class="c"># src/foo.d contains:</span>
+<span class="c">#   src/foo.o: src/foo.c include/bar.h include/baz.h</span>
+<span class="c">#   include/bar.h:        &lt;- -MP adds empty rules so a DELETED header doesn't break the build</span></code></pre>
 
 <h3>Why people moved on</h3>
 <ul>
@@ -21633,6 +21794,14 @@ header doesn't rebuild. The fix: <code>gcc -MMD -MP</code> emits a <code>.d</cod
 <li>mtime-based staleness is fooled by clock skew, <code>touch</code>, and checkout order; content-hash build systems (Bazel, Buck) are more robust.</li>
 <li>Hand-writing portable, correct Makefiles is tedious &rarr; <strong>CMake</strong>/<strong>Meson</strong> generate them (or Ninja files).</li>
 </ul>
+<pre><code><span class="c"># mtime lies: git checkout writes NEW mtimes on unchanged files -> spurious rebuild</span>
+$ git checkout main &amp;&amp; make    <span class="c"># rebuilds half the tree for no reason</span>
+
+<span class="c"># content-hash build system: rebuilds only if the INPUT BYTES changed</span>
+$ bazel build //app:server     <span class="c"># cache hit across machines / branches / CI</span>
+
+<span class="c"># the common middle ground: let CMake generate Ninja</span>
+$ cmake -G Ninja -B build &amp;&amp; ninja -C build</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -21838,6 +22007,13 @@ Each target stores its requirements as properties: <code>INTERFACE_INCLUDE_DIREC
 <tr><td><code>-Og</code></td><td>optimise but keep debuggability &mdash; good for debug builds you also want responsive.</td></tr>
 <tr><td><code>-ffast-math</code></td><td>relax IEEE-754 (reassociation, no NaN/inf handling, FTZ) &mdash; faster FP, changes results. Opt-in, per-file ideally.</td></tr>
 </table>
+<pre><code>$ gcc -O0 -g   app.c -o app   &amp;&amp; ls -l app   <span class="c"># dev: fast compile, step-through debug, slow</span>
+$ gcc -O2      app.c -o app                  <span class="c"># release baseline</span>
+$ gcc -O3 -march=native app.c -o app         <span class="c"># aggressive -- BENCHMARK vs -O2, can be slower</span>
+$ gcc -Os      app.c -o app                  <span class="c"># smallest binary (embedded)</span>
+
+<span class="c">// -ffast-math changes results -- scope it to one file, never whole-project</span>
+$ gcc -O2 -ffast-math dsp.c -c    <span class="c"># isnan() checks now compile away; sum reassociates</span></code></pre>
 
 <h3>Debug info &amp; asserts</h3>
 <ul>
@@ -21845,6 +22021,14 @@ Each target stores its requirements as properties: <code>INTERFACE_INCLUDE_DIREC
 <li><code>-DNDEBUG</code> disables <code>assert()</code> (and often triggers "release" code paths). Release builds define it; be sure asserts have no side effects you rely on.</li>
 <li><code>-fno-omit-frame-pointer</code> keeps frame pointers so profilers/`perf` can unwind cheaply &mdash; a small speed cost, big observability win. Often worth it in production.</li>
 </ul>
+<pre><code><span class="c"># ship optimised + fully symbolicated, with zero runtime cost:</span>
+$ gcc -O2 -g -fno-omit-frame-pointer app.c -o app
+$ objcopy --only-keep-debug app app.debug     <span class="c"># extract symbols</span>
+$ strip --strip-debug app                      <span class="c"># ship this (small)</span>
+$ objcopy --add-gnu-debuglink=app.debug app    <span class="c"># gdb/perf auto-find app.debug</span>
+
+<span class="c">// -DNDEBUG danger: side effects in an assert vanish in release</span>
+assert(init() == <span class="n">0</span>);        <span class="c">// release: init() is NEVER called</span></code></pre>
 
 <h3>Target &amp; safety flags</h3>
 <ul>
@@ -21852,11 +22036,26 @@ Each target stores its requirements as properties: <code>INTERFACE_INCLUDE_DIREC
 <li>Hardening: <code>-D_FORTIFY_SOURCE=2</code>, <code>-fstack-protector-strong</code>, <code>-fPIE -pie</code>, <code>-Wl,-z,relro,-z,now</code>, <code>-fstack-clash-protection</code>, <code>-fcf-protection</code>.</li>
 <li><code>-flto</code> for whole-program optimisation (release/CI).</li>
 </ul>
+<pre><code><span class="c"># distributable: pick a defined ISA baseline, NOT native</span>
+$ gcc -O2 -march=x86-64-v2 app.c -o app   <span class="c"># SSE4.2/POPCNT -- runs on ~any 64-bit CPU since 2009</span>
+<span class="c"># -march=native on a build box with AVX-512 -> customer's older CPU: SIGILL</span>
+
+<span class="c"># the standard hardening bundle:</span>
+$ gcc -O2 -D_FORTIFY_SOURCE=2 -fstack-protector-strong -fstack-clash-protection \
+      -fcf-protection -fPIE -pie -Wl,-z,relro,-z,now app.c -o app
+$ checksec --file=app     <span class="c"># verify: RELRO Full, Canary yes, NX yes, PIE yes</span></code></pre>
 
 <h3>Build types in CMake</h3>
 <p><code>Debug</code> (<code>-O0 -g</code>), <code>Release</code> (<code>-O3 -DNDEBUG</code>),
 <code>RelWithDebInfo</code> (<code>-O2 -g -DNDEBUG</code> &mdash; the usual shipping choice),
 <code>MinSizeRel</code> (<code>-Os -DNDEBUG</code>).</p>
+<pre><code>$ cmake -B build -DCMAKE_BUILD_TYPE=RelWithDebInfo   <span class="c"># the usual ship config</span>
+$ cmake --build build
+
+<span class="c"># multi-config generators (VS / Ninja Multi-Config) pick per build, not per configure:</span>
+$ cmake --build build --config Release
+<span class="c"># override just the extra flags without clobbering the type's defaults:</span>
+$ cmake -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_FLAGS_RELEASE="-O2 -g"</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -21944,6 +22143,13 @@ Compilers guess which branches are hot, which functions to inline, and how to la
 <p>ASan+UBSan combine; TSan and MSan are exclusive of ASan. Build a dedicated CI job per sanitizer,
 run the full test suite, treat any report as a failure. Add <code>-fno-sanitize-recover</code> to
 abort on first error; symbolise with <code>llvm-symbolizer</code>.</p>
+<pre><code>$ clang -fsanitize=address,undefined -fno-sanitize-recover=all -g -O1 app.c -o app
+$ ./app
+app.c:12:5: runtime error: signed integer overflow: 2147483647 + 1   <span class="c"># UBSan</span>
+==4521==ERROR: AddressSanitizer: heap-buffer-overflow ...             <span class="c"># ASan, both in one run</span>
+
+$ CC="clang -fsanitize=thread"  make check    <span class="c"># SEPARATE job: TSan can't combine with ASan</span>
+$ ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 ./app</code></pre>
 
 <h3>Static analysis (no execution)</h3>
 <ul>
@@ -21951,6 +22157,12 @@ abort on first error; symbolise with <code>llvm-symbolizer</code>.</p>
 <li><strong>clang-tidy</strong> &mdash; lint + modernise + bug-prone-pattern checks; <strong>cppcheck</strong>; <strong>clang --analyze</strong> / <strong>Coverity</strong> / <strong>PVS-Studio</strong> for deeper path-sensitive analysis.</li>
 <li><strong>include-what-you-use</strong>, <strong>clang-format</strong> for hygiene.</li>
 </ul>
+<pre><code>$ gcc -Wall -Wextra -Werror -Wshadow -Wconversion -c app.c   <span class="c"># the free analyser -- fails the build</span>
+
+$ clang-tidy --checks='bugprone-*,performance-*,modernize-*' app.c -- -std=c++20
+app.cpp:8:9: warning: use range-based for loop [modernize-loop-convert]
+
+$ cppcheck --enable=all --error-exitcode=1 src/   <span class="c"># path-sensitive: null derefs, leaks, dead code</span></code></pre>
 
 <h3>CI gate structure</h3>
 <ol>
@@ -21959,12 +22171,25 @@ abort on first error; symbolise with <code>llvm-symbolizer</code>.</p>
 <li>Nightly / pre-merge: ASan+UBSan suite, TSan suite, MSan suite, valgrind for the cases sanitizers miss, fuzzers (libFuzzer/AFL) on parsers.</li>
 <li>Release: static analyzer, LTO/PGO build, reproducible-build check.</li>
 </ol>
+<pre><code><span class="c"># .github/workflows/ci.yml</span>
+jobs:
+  fast:      { steps: [ "cmake -B b -DCMAKE_CXX_FLAGS=-Werror", "cmake --build b", "ctest --test-dir b" ] }
+  tidy:      { steps: [ "git diff --name-only origin/main | grep '\\.cpp$' | xargs clang-tidy" ] }
+  asan:      { steps: [ "CXX='clang++ -fsanitize=address,undefined' cmake -B b && ctest --test-dir b" ] }
+  tsan:      { steps: [ "CXX='clang++ -fsanitize=thread'            cmake -B b && ctest --test-dir b" ] }
+  fuzz:      { steps: [ "clang++ -fsanitize=fuzzer,address parse_fuzz.cc -o f &amp;&amp; ./f -max_total_time=300" ] }</code></pre>
 
 <h3>Reproducible builds</h3>
 <p>Same source + toolchain &rarr; bit-identical output. Requires stripping timestamps
 (<code>-Wno-builtin-macro-redefined -D__DATE__=</code>&hellip; or <code>SOURCE_DATE_EPOCH</code>), sorted
 inputs, fixed paths (<code>-ffile-prefix-map</code>), deterministic archive members (<code>ar D</code>).
 Enables build caching and supply-chain verification.</p>
+<pre><code>$ export SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)   <span class="c"># stable __DATE__/__TIME__</span>
+$ gcc -ffile-prefix-map=$PWD=. -O2 -c *.c               <span class="c"># strip absolute build paths from debug info</span>
+$ ar Drcs libfoo.a *.o                                   <span class="c"># D = zero mtime/uid/gid in the archive</span>
+
+$ gcc ... -o app &amp;&amp; sha256sum app        <span class="c"># build twice on different machines...</span>
+$ gcc ... -o app2 &amp;&amp; sha256sum app2      <span class="c"># ...hashes must match -> supply-chain verifiable</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
