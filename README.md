@@ -7,24 +7,23 @@ Every topic has four blocks: **Notes** (full explanation), **Cheat Sheet** (cond
 recall), **Q&A** (short self-check pairs), and **Interview Questions** graded
 Basic → Intermediate → Advanced with click-to-reveal answers. No quizzes.
 
-## Roadmap — 16 skill areas
+## Roadmap — 16 skill areas — ✅ all complete
 
-Built one skill at a time, with a review checkpoint after each. The app already shows
-every area's planned topic list on its landing page (`#/<slug>`).
+Built one skill at a time. Every area is written; open any topic at `#/<slug>/<topic>`.
 
 **Languages**
-- ✅ **C Concepts** (`c`) — 12 topics, done
-- ⏳ C++ (`cpp`)
-- ⏳ Shell Scripting (`shell`) — *next*
+- ✅ **C Concepts** (`c`) — 12 topics
+- ✅ **C++** (`cpp`) — 14 topics
+- ✅ **Shell Scripting** (`shell`) — 12 topics
 
 **CS fundamentals**
-- ⏳ OOPS (`oops`) · Data Structures (`ds`) · Algorithms (`algo`) · DBMS & SQL (`db`) · Computer Networks (`net`)
+- ✅ OOPS (`oops`) · Data Structures (`ds`) · Algorithms (`algo`) · DBMS & SQL (`db`) · Computer Networks (`net`) — 10 topics each
 
 **Systems**
-- ⏳ Operating Systems (`os`) · Concurrency & Multithreading (`concurrency`) · Linux / Systems Programming (`linux`) · Computer Architecture (`arch`) · Build & Toolchain (`build`)
+- ✅ Operating Systems (`os`) · Concurrency & Multithreading (`concurrency`) · Linux / Systems Programming (`linux`) · Computer Architecture (`arch`) · Build & Toolchain (`build`) — 10 topics each
 
 **Design & tools**
-- ⏳ Low-Level Design (`lld`) · System Design (`sysd`) · Git (`git`)
+- ✅ Low-Level Design (`lld`) · System Design (`sysd`) · Git (`git`) — 10 topics each
 
 ## Files
 

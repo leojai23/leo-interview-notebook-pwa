@@ -17827,6 +17827,1284 @@ On send, always persist the message to the conversation store with its sequence 
 </section>
 <!-- /TOPIC:sysd:chat-feed -->
 
+<!-- TOPIC:git:object-model -->
+<section class="view topic" id="v-git-object-model" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>The Object Model: Blob, Tree, Commit</h1>
+<p class="subtitle">Everything in Git is an object in a content-addressed store &mdash; understand this and the rest follows.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>A content-addressed key-value store</h3>
+<p>At its core Git is a key-value database. You hand it content, it stores the content and
+returns a hash (SHA-1 historically; SHA-256 in newer repos). The hash <em>is</em> the key:
+the same content always produces the same hash, and any change to the content produces a
+completely different hash. Objects live in <code>.git/objects/</code> (loose objects, then
+packed into <code>.pack</code> files for efficiency).</p>
+
+<h3>The four object types</h3>
+<table>
+<tr><th>Type</th><th>What it holds</th></tr>
+<tr><td><strong>blob</strong></td><td>The raw contents of one file. No filename, no permissions, no history &mdash; just bytes. Two files with identical content anywhere in the repo share one blob.</td></tr>
+<tr><td><strong>tree</strong></td><td>A directory listing: a list of entries, each being <code>(mode, type, hash, name)</code>. Entries point at blobs (files) or other trees (subdirectories). This is where filenames and the executable bit live.</td></tr>
+<tr><td><strong>commit</strong></td><td>A snapshot pointer: the hash of one <em>root</em> tree, zero or more parent commit hashes, author + committer (name, email, timestamp), and the commit message.</td></tr>
+<tr><td><strong>tag</strong> (annotated)</td><td>A named, described pointer to another object (usually a commit) with its own author, message, and optional signature. Lightweight tags are just a ref, not an object.</td></tr>
+</table>
+
+<h3>How a commit represents your whole project</h3>
+<p>A commit points to <em>one</em> tree &mdash; the root directory. That tree points to blobs
+and subtrees, which point to more blobs and subtrees, all the way down. So a single commit
+hash transitively names the exact content of every file and every directory. Git stores a
+<strong>full snapshot</strong> conceptually (not diffs); it just deduplicates via hashing, so
+unchanged files across commits reuse the same blob and unchanged directories reuse the same
+tree. Packfiles then delta-compress similar objects on disk, but that's a storage
+optimisation invisible to the model.</p>
+
+<h3>History = a DAG of commits</h3>
+<p>Each commit records its parent(s), so commits form a <strong>directed acyclic graph</strong>.
+A normal commit has one parent; the first commit has none (a "root commit"); a merge commit
+has two or more. Branches and tags are just named pointers ("refs") into this graph, stored
+as files under <code>.git/refs/</code> (or in <code>packed-refs</code>). <code>HEAD</code>
+usually points at a branch ref.</p>
+
+<h3>Inspecting objects</h3>
+<pre>git hash-object -w file.txt      # store content as a blob, print its hash
+git cat-file -t &lt;hash&gt;           # show an object's type
+git cat-file -p &lt;hash&gt;           # pretty-print an object's content
+git cat-file -p HEAD^{tree}      # dump the root tree of the current commit
+git rev-parse HEAD               # resolve a ref/expression to a full hash
+git count-objects -v             # loose vs packed object stats</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Git = content-addressed KV store; the SHA of the content is the key. Same content &rarr; same hash; any change &rarr; new hash.</li>
+<li><strong>blob</strong> = file contents (no name). <strong>tree</strong> = directory (entries: mode, type, hash, name). <strong>commit</strong> = one root tree + parent(s) + author/committer + message. <strong>annotated tag</strong> = named pointer object with message/signature.</li>
+<li>A commit &rarr; a tree &rarr; blobs + subtrees: one hash names your entire project state.</li>
+<li>Snapshots, not diffs &mdash; but unchanged blobs/trees are reused across commits; packfiles delta-compress on disk.</li>
+<li>History is a DAG: 1 parent = normal, 0 = root commit, &ge;2 = merge.</li>
+<li>Refs (branches, tags) = files in <code>.git/refs/</code> holding a commit hash. <code>HEAD</code> &rarr; current branch.</li>
+<li>Poke around: <code>git cat-file -p &lt;hash&gt;</code>, <code>git cat-file -t</code>, <code>git rev-parse</code>, <code>git hash-object -w</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What are the four Git object types?</dt>
+<dd>Blob (file contents), tree (a directory listing pointing at blobs and subtrees), commit (a pointer to one root tree plus parent commits and metadata), and annotated tag (a named pointer object with its own message/signature).</dd>
+<dt>Does a blob store the filename?</dt>
+<dd>No. A blob is just the file's bytes. The filename, path, and mode (e.g. executable bit) are stored in the <em>tree</em> entry that points at the blob. That's why two identically-named files with different content are different blobs, and two differently-named files with identical content are the <em>same</em> blob.</dd>
+<dt>Does Git store diffs between commits?</dt>
+<dd>Conceptually no &mdash; each commit is a full snapshot (a complete tree). Git avoids bloat by reusing unchanged blob and tree objects across commits (dedup via hashing) and by delta-compressing objects inside packfiles on disk. The <em>model</em> is snapshots; deltas are an invisible storage detail.</dd>
+<dt>What is a branch, physically?</dt>
+<dd>A tiny file (e.g. <code>.git/refs/heads/main</code>, or a line in <code>packed-refs</code>) containing a single 40-hex-character commit hash. "Moving a branch" just rewrites that file. This is why branching and deleting branches are instant.</dd>
+<dt>Why is the commit hash different if I commit the same tree twice?</dt>
+<dd>Because the commit object includes the committer timestamp (and usually a different parent). The <em>tree</em> hash would be identical, but the commit object's bytes differ, so its hash differs.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What is used as the key for a Git object?</summary><div class="answer-box">
+A cryptographic hash of the object's content (SHA-1, or SHA-256 in newer repositories).
+</div></details>
+<details class="answer-reveal"><summary>Which object type contains filenames?</summary><div class="answer-box">
+The tree object &mdash; each entry is <code>(mode, type, hash, name)</code>.
+</div></details>
+<details class="answer-reveal"><summary>How many parents does the very first commit in a repo have?</summary><div class="answer-box">
+Zero &mdash; it's a root commit.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You copy <code>config.yaml</code> to <code>config.bak</code> without changing it and commit. How many new blobs are created?</summary><div class="answer-box">
+Zero new blobs. The content is identical, so it hashes to the same blob that already exists; Git just adds a second tree entry (<code>config.bak</code>) pointing at that same blob hash. A new tree object (the directory now has an extra entry) and a new commit object are created, but no new blob.
+</div></details>
+<details class="answer-reveal"><summary>Explain how one commit hash can guarantee the exact state of a 10,000-file project.</summary><div class="answer-box">
+The commit points to a single root tree hash. That tree's bytes include the hashes of all its entries (files as blobs, subdirectories as subtrees). Each subtree in turn includes its children's hashes, recursively. Because every hash is derived from content, changing any byte of any file changes that blob's hash, which changes its parent tree's hash, which propagates up to the root tree hash, which changes the commit hash. So the commit hash is a Merkle-root over the entire directory structure &mdash; it cryptographically fixes every file and folder.
+</div></details>
+<details class="answer-reveal"><summary>What's the difference between an annotated tag and a lightweight tag?</summary><div class="answer-box">
+A lightweight tag is just a ref &mdash; a file under <code>.git/refs/tags/</code> holding a commit hash, with no extra data. An annotated tag creates a real <em>tag object</em> containing a tagger name/email/date, a message, and optionally a GPG signature; the ref then points at that tag object, which points at the commit. Releases should use annotated (or signed) tags so there's a recorded author and message; lightweight tags are fine as private bookmarks.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Git historically used SHA-1, which has known collision attacks. Why hasn't this broken Git, and what has been done about it?</summary><div class="answer-box">
+Several reasons it hasn't been catastrophic: (1) Git hashes a type/length header plus the content, and for commits the object includes parent hashes and timestamps, so a useful collision must be a valid Git object of the right type that also fits the surrounding DAG &mdash; much harder than a raw SHA-1 collision. (2) The known attacks (SHAttered, 2017) are <em>identical-prefix / chosen-prefix collisions</em> requiring the attacker to craft <em>both</em> colliding blobs; they can't produce a collision for an <em>existing</em> object they don't control (no preimage attack on SHA-1 is known). (3) Git added a collision-detection library (sha1dc / "hardened SHA-1") that detects the SHAttered attack pattern and aborts, so those specific PDFs can't even be added. (4) The real fix is the <strong>SHA-256 object format</strong>: repositories can be created with <code>--object-format=sha256</code>, making all object names 256-bit. Interop with SHA-1 repos is still maturing (hosting support, a mapping between the two hashes), so migration has been gradual, but the transition design exists and new security-sensitive repos can opt in today.
+</div></details>
+<details class="answer-reveal"><summary>What is a packfile, how does <code>git gc</code> build one, and what problem does it solve?</summary><div class="answer-box">
+Storing every object as its own zlib-compressed file ("loose objects") wastes space (no cross-object compression) and inodes, and makes network transfer chatty. A <strong>packfile</strong> (<code>.git/objects/pack/*.pack</code> with a companion <code>.idx</code>) bundles many objects into one file and stores similar objects as <strong>deltas</strong> against a chosen base object (delta chains), then compresses. <code>git gc</code> (invoked automatically past thresholds, or manually) runs <code>git repack</code>: it walks reachable objects, groups likely-similar ones (heuristics on type, size, path/filename, and recency &mdash; newer objects are kept whole or shallowly-deltated for fast access), picks base objects, computes deltas up to a max chain length, and writes the pack plus an index for O(log n) lookup by hash. It also prunes unreachable loose objects older than the expiry (default 2 weeks, and only those not referenced by the reflog). The result: dramatically smaller repos, fewer files, and packs can be sent almost as-is over the wire ("thin packs" during fetch/push send deltas against objects the other side already has). Trade-off: deep delta chains cost CPU to reconstruct an object, so Git caps chain depth and keeps a delta cache.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:object-model -->
+
+<!-- TOPIC:git:three-trees -->
+<section class="view topic" id="v-git-three-trees" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>The Three Trees: Working Tree, Index, HEAD</h1>
+<p class="subtitle">Almost every confusing Git command makes sense once you track which of the three trees it moves.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The three "trees" (states)</h3>
+<table>
+<tr><th>Tree</th><th>What it is</th></tr>
+<tr><td><strong>HEAD</strong></td><td>The last commit on the current branch &mdash; the snapshot your next commit will be based on. "What I last committed."</td></tr>
+<tr><td><strong>Index</strong> (staging area / cache)</td><td>A binary file (<code>.git/index</code>) listing the exact file contents (blob hashes) + metadata that will go into the <em>next</em> commit. "What I've proposed to commit."</td></tr>
+<tr><td><strong>Working tree</strong></td><td>The actual files on disk you edit. "What I'm working on right now."</td></tr>
+</table>
+
+<h3>The basic workflow moves content between them</h3>
+<pre>edit file        # working tree changes, index & HEAD unchanged
+git add file     # copy working-tree version into the index
+git commit       # write the index as a new commit; HEAD moves to it
+</pre>
+<p>After a clean commit, all three trees match. <code>git status</code> is essentially a
+diff report: <em>"Changes to be committed"</em> = index vs HEAD;
+<em>"Changes not staged"</em> = working tree vs index; <em>"Untracked files"</em> = in
+working tree, not in index.</p>
+
+<h3>reset moves things between the three trees</h3>
+<table>
+<tr><th>Command</th><th>HEAD</th><th>Index</th><th>Working tree</th></tr>
+<tr><td><code>reset --soft &lt;c&gt;</code></td><td>&rarr; c</td><td>unchanged</td><td>unchanged</td></tr>
+<tr><td><code>reset [--mixed] &lt;c&gt;</code></td><td>&rarr; c</td><td>&rarr; c</td><td>unchanged</td></tr>
+<tr><td><code>reset --hard &lt;c&gt;</code></td><td>&rarr; c</td><td>&rarr; c</td><td>&rarr; c (discards changes)</td></tr>
+</table>
+<p>So <code>git reset --soft HEAD~1</code> "uncommits" but keeps everything staged;
+<code>git reset HEAD~1</code> also unstages; <code>git reset --hard HEAD~1</code> throws the
+work away entirely.</p>
+
+<h3>checkout / restore / switch</h3>
+<ul>
+<li><code>git checkout &lt;commit&gt;</code> &mdash; moves <strong>HEAD</strong> (detaches it) and updates index + working tree to that commit; refuses if it would clobber uncommitted changes.</li>
+<li><code>git checkout &lt;branch&gt;</code> &mdash; same, but HEAD follows the branch (not detached).</li>
+<li><code>git checkout -- &lt;file&gt;</code> / <code>git restore &lt;file&gt;</code> &mdash; overwrite the working-tree file from the <em>index</em> (discard unstaged edits).</li>
+<li><code>git restore --staged &lt;file&gt;</code> &mdash; copy HEAD's version into the index (unstage), leaving the working tree alone. <code>git restore --staged --worktree &lt;file&gt;</code> resets both.</li>
+<li>Newer split: <code>git switch</code> for branches, <code>git restore</code> for files &mdash; less overloaded than <code>checkout</code>.</li>
+</ul>
+
+<h3>Other index operations</h3>
+<pre>git add -p          # stage selected hunks interactively
+git reset -p        # unstage selected hunks
+git rm --cached f   # remove from index (stop tracking) but keep on disk
+git diff            # working tree vs index
+git diff --staged   # index vs HEAD  (aka --cached)
+git diff HEAD       # working tree vs HEAD (both combined)
+</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>HEAD</strong> = last commit. <strong>Index</strong> = next commit's staged content (<code>.git/index</code>). <strong>Working tree</strong> = files on disk.</li>
+<li><code>add</code> = working tree &rarr; index. <code>commit</code> = index &rarr; new commit, HEAD moves.</li>
+<li><code>git status</code>: "to be committed" = index vs HEAD; "not staged" = worktree vs index; "untracked" = not in index.</li>
+<li><code>reset --soft</code> = move HEAD only. <code>reset --mixed</code> (default) = HEAD + index. <code>reset --hard</code> = HEAD + index + working tree (destroys changes).</li>
+<li><code>git restore &lt;file&gt;</code> = discard unstaged edits (from index). <code>git restore --staged &lt;file&gt;</code> = unstage (from HEAD).</li>
+<li><code>git diff</code> = worktree vs index. <code>git diff --staged</code> = index vs HEAD. <code>git diff HEAD</code> = worktree vs HEAD.</li>
+<li><code>git rm --cached</code> = untrack but keep file. <code>git add -p</code> / <code>reset -p</code> = hunk-level staging.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is the index / staging area?</dt>
+<dd>A file (<code>.git/index</code>) that holds the complete list of file paths and their blob hashes that will form the next commit. <code>git add</code> writes working-tree content into it; <code>git commit</code> turns it into a commit. It lets you build a commit incrementally and commit only some of your changes.</dd>
+<dt>Difference between <code>git diff</code> and <code>git diff --staged</code>?</dt>
+<dd><code>git diff</code> (no args) shows working tree vs index &mdash; your <em>unstaged</em> changes. <code>git diff --staged</code> (or <code>--cached</code>) shows index vs HEAD &mdash; what you've <em>staged</em> and would commit. <code>git diff HEAD</code> shows everything (staged + unstaged) vs the last commit.</dd>
+<dt>What do <code>--soft</code>, <code>--mixed</code>, and <code>--hard</code> control in <code>git reset</code>?</dt>
+<dd>Which of the three trees get updated to the target commit. <code>--soft</code>: only HEAD moves (index and working tree untouched &rarr; your changes are left staged). <code>--mixed</code> (default): HEAD and index move (changes left unstaged in the working tree). <code>--hard</code>: all three move (working-tree changes are discarded &mdash; the only destructive one).</dd>
+<dt>How do I unstage a file I accidentally <code>git add</code>ed?</dt>
+<dd><code>git restore --staged &lt;file&gt;</code> (modern) or <code>git reset HEAD &lt;file&gt;</code> (classic). Both copy HEAD's version of that path back into the index; your working-tree edits are preserved.</dd>
+<dt>What's the difference between <code>git rm</code> and <code>git rm --cached</code>?</dt>
+<dd><code>git rm file</code> deletes it from both the index and the working tree (staged for deletion). <code>git rm --cached file</code> removes it only from the index &mdash; Git stops tracking it, but the file stays on disk. Use <code>--cached</code> when you committed something that should have been gitignored.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which command copies a change from the working tree into the index?</summary><div class="answer-box">
+<code>git add</code>.
+</div></details>
+<details class="answer-reveal"><summary>After a clean <code>git commit</code> with nothing else changed, how do the three trees compare?</summary><div class="answer-box">
+All three (HEAD, index, working tree) are identical &mdash; <code>git status</code> reports "nothing to commit, working tree clean".
+</div></details>
+<details class="answer-reveal"><summary>Which reset mode discards your uncommitted working-tree changes?</summary><div class="answer-box">
+<code>git reset --hard</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You've made 3 commits that should really be 1. You want to keep all the changes staged and re-commit once. Which command?</summary><div class="answer-box">
+<code>git reset --soft HEAD~3</code>. HEAD moves back 3 commits, but the index and working tree are untouched &mdash; so all the combined changes from those 3 commits are sitting staged, ready for a single new <code>git commit</code>. (<code>git reset --mixed HEAD~3</code> would also work but leaves them unstaged, so you'd need to <code>git add</code> again.)
+</div></details>
+<details class="answer-reveal"><summary>You run <code>git checkout &lt;some-old-commit&gt;</code> and Git warns about "detached HEAD". What does that mean and what's the risk?</summary><div class="answer-box">
+Normally HEAD points at a branch name, and that branch points at a commit. In detached HEAD, HEAD points <em>directly</em> at a commit with no branch in between. You can look around and even make commits, but those commits aren't on any branch &mdash; if you then <code>git checkout main</code>, nothing references them and they become candidates for garbage collection (recoverable via the reflog for a while). To keep work done in detached HEAD, create a branch first: <code>git switch -c new-branch</code>.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>git add -p</code> do and when is it useful?</summary><div class="answer-box">
+It walks through your unstaged changes hunk by hunk and asks, for each, whether to stage it (y/n/split/edit). It lets you separate unrelated changes that live in the same file into different commits &mdash; e.g. stage a bug fix now while leaving a half-finished refactor in the same file unstaged. It operates purely on the index; nothing is committed.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Walk through exactly what <code>git commit -a -m "msg"</code> does in terms of the three trees, and name a case where <code>-a</code> silently does the wrong thing.</summary><div class="answer-box">
+<code>-a</code> makes Git, just before committing, automatically stage modifications and deletions of <strong>already-tracked</strong> files (equivalent to <code>git add -u</code>) &mdash; it copies the current working-tree content of every tracked, modified path into the index. Then it commits the index as a new commit and advances HEAD. Sequence: (working tree &rarr; index) for tracked changes, then (index &rarr; new commit), then HEAD moves. Cases where it does the wrong thing: (1) <strong>New files</strong> are not tracked yet, so <code>-a</code> ignores them &mdash; you think you committed everything but new files were left out. (2) If you had <em>carefully</em> staged only some hunks with <code>git add -p</code>, <code>-a</code> overrides that by staging the <em>entire</em> current content of those files, silently including the hunks you deliberately left out. (3) A file you'd staged and then further edited: <code>-a</code> commits the newer working-tree version, not the version you reviewed and staged. So <code>-a</code> is a convenience for the "I edited tracked files and want all of it" case and a footgun whenever your index was intentionally different from your working tree.
+</div></details>
+<details class="answer-reveal"><summary>Why is the index a performance feature, not just a UX feature? What metadata does it cache and how is that used?</summary><div class="answer-box">
+The index is a flat, sorted binary file listing every tracked path with its blob hash <em>and</em> cached stat data from the last time Git saw that file: mtime, ctime, inode, device, size, and mode. On <code>git status</code> / <code>git diff</code>, Git doesn't re-hash every file in the repo &mdash; it <code>lstat()</code>s each path and compares the stat fields to the cached ones. If they match, Git assumes the content is unchanged and skips reading and hashing the file entirely. Only files whose stat data differs get their content hashed to confirm a real change. For a large repo this turns an O(total bytes) operation into O(number of files) syscalls. Extensions build on this: the <strong>untracked cache</strong> stores directory mtimes so Git can skip scanning unchanged directories for new files; the <strong>fsmonitor</strong> integration (Watchman / built-in) lets the OS tell Git which paths changed since last time, avoiding even the full <code>lstat()</code> walk; the <strong>split index</strong> and <strong>sparse index</strong> reduce the cost of writing and carrying the index itself. The "racy git" problem (a file modified in the same second the index was written, so mtime matches but content changed) is handled by treating entries with mtime &ge; index mtime as dirty and re-checking them.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:three-trees -->
+
+<!-- TOPIC:git:branches-head -->
+<section class="view topic" id="v-git-branches-head" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>Branches, HEAD &amp; Fast-Forward</h1>
+<p class="subtitle">A branch is just a movable pointer &mdash; once that clicks, merges and rebases stop being mysterious.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>A branch is a pointer, not a copy</h3>
+<p>A branch is a 41-byte file under <code>.git/refs/heads/</code> containing one commit hash.
+Creating a branch writes that file; it does not copy any files. When you commit <em>on</em> a
+branch, Git creates the commit and then updates the branch file to point at the new commit.
+That's the whole mechanism &mdash; branches are cheap because they're one line of text.</p>
+
+<h3>HEAD</h3>
+<ul>
+<li><code>HEAD</code> is a file (<code>.git/HEAD</code>) that normally contains
+<code>ref: refs/heads/main</code> &mdash; a <em>symbolic</em> reference to the current branch.
+"The current branch" is defined as whatever HEAD points to.</li>
+<li>When you commit, Git follows HEAD &rarr; branch, and moves that branch.</li>
+<li><strong>Detached HEAD</strong>: HEAD contains a commit hash directly (from
+<code>git checkout &lt;hash&gt;</code> or <code>git checkout v1.0</code>). Commits you make
+advance HEAD but no branch &mdash; create a branch to keep them.</li>
+</ul>
+
+<h3>Fast-forward vs true merge</h3>
+<p>Say <code>main</code> is at commit C and you branch <code>feature</code>, then add D and E
+on <code>feature</code>. <code>main</code> has not moved.</p>
+<pre>C ← D ← E   (feature, HEAD)
+^
+main</pre>
+<p><code>git checkout main; git merge feature</code>: since <code>main</code>'s commit C is an
+<strong>ancestor</strong> of <code>feature</code>'s E, Git can just slide the
+<code>main</code> pointer forward to E. No new commit, no merge &mdash; a
+<strong>fast-forward</strong>. History stays linear.</p>
+<p>Now suppose someone else committed F on <code>main</code> while you worked:</p>
+<pre>      D ← E   (feature)
+     /
+C ← F         (main)</pre>
+<p>The branches have <strong>diverged</strong>. A fast-forward is impossible. Git creates a
+<strong>merge commit</strong> M with two parents (E and F) that combines both lines. This is
+a "true" / "3-way" merge (it uses E, F, and their common ancestor C).</p>
+
+<h3>Controlling merge behaviour</h3>
+<pre>git merge feature              # FF if possible, else a merge commit
+git merge --no-ff feature      # always create a merge commit (keeps the branch visible)
+git merge --ff-only feature    # only if it can FF, else fail (good for scripts / pulls)
+git config pull.ff only        # make 'git pull' refuse to create surprise merge commits
+git merge --squash feature     # stage the combined diff, no merge; you commit once, no link to feature
+</pre>
+
+<h3>Everyday branch commands</h3>
+<pre>git switch -c feature           # create + switch (old: git checkout -b)
+git branch                      # list local branches (* = current)
+git branch -vv                  # + upstream tracking + ahead/behind
+git branch -d feature           # delete (refuses if not merged)
+git branch -D feature           # force delete
+git branch -m old new           # rename
+git switch -                    # jump back to previous branch
+git push -u origin feature      # push + set upstream tracking
+</pre>
+
+<h3>Tracking branches &amp; remotes</h3>
+<p><code>origin/main</code> is a <strong>remote-tracking branch</strong> &mdash; Git's local
+cache of where <code>main</code> was on <code>origin</code> at your last fetch. It only moves
+when you <code>fetch</code>/<code>pull</code>. Your local <code>main</code> can be "ahead 2,
+behind 1" relative to it. <code>git status</code> reports this when your branch has an
+<em>upstream</em> set.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Branch = file in <code>.git/refs/heads/</code> holding one commit hash. Committing moves it. Creating/deleting is instant.</li>
+<li><code>HEAD</code> = symbolic ref to the current branch (<code>ref: refs/heads/&hellip;</code>). Detached HEAD = points straight at a commit.</li>
+<li><strong>Fast-forward</strong>: target branch's tip is an ancestor of the source &rarr; just slide the pointer, no merge commit, linear history.</li>
+<li><strong>True / 3-way merge</strong>: branches diverged &rarr; new merge commit with 2 parents, using the common ancestor.</li>
+<li><code>merge --no-ff</code> = always a merge commit. <code>merge --ff-only</code> = FF or fail. <code>merge --squash</code> = flatten, no parent link.</li>
+<li><code>git switch -c</code> new branch; <code>git branch -d</code> safe delete; <code>-D</code> force; <code>switch -</code> = previous branch.</li>
+<li><code>origin/main</code> = remote-tracking branch, a snapshot from your last fetch; "ahead/behind" is measured against it.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What actually happens when you create a branch?</dt>
+<dd>Git writes a new file under <code>.git/refs/heads/</code> containing the current commit's hash. No files are copied, nothing is duplicated. Switching to it just updates <code>HEAD</code> to point at that ref and updates the working tree/index to match its commit.</dd>
+<dt>What is a fast-forward merge?</dt>
+<dd>When the branch you're merging <em>into</em> has not diverged &mdash; its tip commit is a direct ancestor of the branch you're merging <em>from</em> &mdash; Git doesn't need a merge commit. It simply moves the current branch pointer forward to the other branch's tip. History remains a straight line.</dd>
+<dt>When is a fast-forward <em>not</em> possible?</dt>
+<dd>When both branches have commits the other doesn't &mdash; they've diverged from a common ancestor. Git then performs a three-way merge and records a merge commit with two parents.</dd>
+<dt>What does <code>--no-ff</code> achieve?</dt>
+<dd>It forces a merge commit even when a fast-forward would be possible. Teams use it so that every feature branch leaves a visible "merge bubble" in history, making it easy to see which commits belonged together and to revert a whole feature with one <code>git revert -m 1</code>.</dd>
+<dt>What is <code>origin/main</code> and why doesn't it update as I work?</dt>
+<dd>It's a remote-tracking branch: a local, read-only pointer recording where <code>main</code> was on the remote <code>origin</code> the last time you communicated with it. It only advances on <code>git fetch</code> (or <code>pull</code>, which fetches then merges/rebases). Between fetches it's a stale-but-useful reference point for "ahead/behind" counts.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How much data is copied when you run <code>git branch new-feature</code>?</summary><div class="answer-box">
+Essentially none &mdash; Git writes one small file containing a commit hash.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>HEAD</code> normally point to?</summary><div class="answer-box">
+The current branch (a symbolic ref like <code>ref: refs/heads/main</code>), not a commit directly.
+</div></details>
+<details class="answer-reveal"><summary>Does a fast-forward merge create a merge commit?</summary><div class="answer-box">
+No &mdash; it just moves the branch pointer forward.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary><code>git branch -d feature</code> fails with "not fully merged". What does that check, and when is <code>-D</code> safe?</summary><div class="answer-box">
+<code>-d</code> refuses to delete a branch whose tip commit is not reachable from HEAD (or from its configured upstream) &mdash; i.e. it has commits that would become unreferenced. It's protecting you from losing work. <code>-D</code> (force) is safe when you know those commits are unwanted (an abandoned experiment), or when they <em>are</em> reachable another way &mdash; e.g. you already merged the branch with <code>--squash</code> or rebased its commits onto main under new hashes, so the original commits are redundant. Even after <code>-D</code>, the branch's old tip is in the reflog for a couple of weeks, so an accidental force-delete is recoverable.
+</div></details>
+<details class="answer-reveal"><summary>Your teammate asks why <code>git pull</code> sometimes creates a weird "Merge branch 'main' of &hellip;" commit on their branch. What's happening and how do you prevent it?</summary><div class="answer-box">
+<code>git pull</code> = <code>git fetch</code> + <code>git merge origin/&lt;branch&gt;</code> by default. If they have local commits and the remote also advanced, the two have diverged, so the merge can't fast-forward and Git records a merge commit right there on their branch &mdash; often with an ugly auto-generated message, and it clutters history with tiny merge bubbles. Prevention options: <code>git config --global pull.ff only</code> (pull refuses and tells them to decide) combined with <code>git pull --rebase</code> when they do have local work (replays their commits on top of the updated remote, keeping history linear); or set <code>git config --global pull.rebase true</code> to make rebase the default. For shared long-lived branches, merges are fine; for a personal feature branch, rebase-on-pull is usually what people want.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how Git computes "ahead 3, behind 2", and why that count can be misleading after a rebase or force-push.</summary><div class="answer-box">
+Given your branch tip L and its upstream tip R, Git finds the merge base B (their most recent common ancestor) and counts commits on each side: "ahead" = commits reachable from L but not R (i.e. on <code>B..L</code>), "behind" = commits reachable from R but not L (<code>B..R</code>). It's literally <code>git rev-list --left-right --count R...L</code>. This is a <em>graph</em> comparison by commit identity (hash), not by content. After you rebase your branch, every one of your commits gets a new hash even though the diffs are identical. So if upstream hasn't changed, you'll now show "ahead N, behind N" &mdash; N brand-new commits ahead, and the N original pre-rebase commits (still reachable from <code>origin/branch</code> until you push) counted as "behind" &mdash; because Git sees two disjoint sets of commit objects that happen to represent the same changes. Similarly, after someone force-pushes a rewritten upstream, your local remote-tracking branch is stale and the ahead/behind numbers reflect the divergence between old and new histories, not real unmerged work. The fix is to fetch and then reconcile deliberately (reset your local branch to the new upstream, or rebase onto it), after which the counts become meaningful again. The lesson: ahead/behind answers "how do these two commit graphs differ?", which only equals "how does the work differ?" when no history rewriting has happened.
+</div></details>
+<details class="answer-reveal"><summary>What is a symbolic ref, how does <code>git symbolic-ref</code> differ from a normal ref, and where else does Git use them besides HEAD?</summary><div class="answer-box">
+A normal ref (<code>.git/refs/heads/main</code>) contains a 40-hex commit hash &mdash; it points at an object. A <strong>symbolic ref</strong> contains the text <code>ref: refs/heads/&lt;name&gt;</code> &mdash; it points at <em>another ref</em>, forming one level of indirection. <code>HEAD</code> is the canonical example: "current branch" is implemented as HEAD being a symbolic ref to a branch, so that committing updates the branch HEAD names, and detaching just means overwriting HEAD with a raw hash instead. <code>git symbolic-ref HEAD</code> reads it; <code>git symbolic-ref HEAD refs/heads/other</code> repoints it without touching the working tree (unlike <code>switch</code>, which also updates files). Other uses: <code>refs/remotes/origin/HEAD</code> is a symbolic ref recording the remote's default branch (what <code>git clone</code> checks out, and what a bare <code>origin</code> means in some commands) &mdash; you can retarget it with <code>git remote set-head origin -a</code>. During an interactive rebase or a merge, Git writes transient symbolic/plain refs like <code>ORIG_HEAD</code>, <code>MERGE_HEAD</code>, <code>REBASE_HEAD</code> to track state. Worktrees each get their own HEAD. The indirection is also why the reflog is <em>per ref</em>: <code>HEAD</code>'s reflog records every value HEAD took (including branch switches), while <code>main</code>'s reflog records only where <code>main</code> pointed.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:branches-head -->
+
+<!-- TOPIC:git:merge-vs-rebase -->
+<section class="view topic" id="v-git-merge-vs-rebase" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>Merge vs Rebase</h1>
+<p class="subtitle">Two ways to combine work &mdash; one preserves history as it happened, the other rewrites it to look tidy.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The setup</h3>
+<pre>      D ← E     feature
+     /
+A ← B ← C       main</pre>
+<p>You want <code>feature</code> to include <code>main</code>'s new commit C.</p>
+
+<h3>Merge</h3>
+<p><code>git checkout feature; git merge main</code> creates a <strong>merge commit</strong> M
+with two parents (E and C):</p>
+<pre>      D ← E ← M     feature
+     /       /
+A ← B ← C ←--/     main</pre>
+<ul>
+<li>Nothing is rewritten. E, D, C keep their hashes.</li>
+<li>M records "these two lines of development were joined here", with the exact state at that time.</li>
+<li>History is truthful but can become a tangle of criss-crossing lines ("merge bubbles") on busy repos.</li>
+</ul>
+
+<h3>Rebase</h3>
+<p><code>git checkout feature; git rebase main</code> takes your commits (D, E), sets them
+aside, moves <code>feature</code> to C, then <strong>replays</strong> D and E on top as
+<em>brand-new</em> commits D&prime; and E&prime;:</p>
+<pre>A ← B ← C ← D&prime; ← E&prime;     feature
+        ^
+        main</pre>
+<ul>
+<li>D&prime; and E&prime; have new hashes (new parent, new committer date) &mdash; the originals are now unreferenced.</li>
+<li>History is <strong>linear</strong>: it looks like you started your work from C all along.</li>
+<li>Each replayed commit can hit conflicts; you resolve, <code>git rebase --continue</code>, repeat.</li>
+</ul>
+
+<h3>The golden rule</h3>
+<p><strong>Don't rebase commits that others have based work on</strong> (anything already
+pushed to a shared branch that teammates pulled). Rebasing rewrites hashes; when you
+force-push the rewritten branch, everyone else's history diverges from yours and they get
+painful conflicts. Rebase freely on <em>your own</em> unpushed / unshared commits.</p>
+
+<h3>When to use which</h3>
+<table>
+<tr><th>Use merge</th><th>Use rebase</th></tr>
+<tr><td>Integrating a shared/long-lived branch</td><td>Updating your local feature branch onto latest <code>main</code></td></tr>
+<tr><td>You want the true record of when things joined</td><td>You want a clean, linear, reviewable history</td></tr>
+<tr><td>The branch is public and others use it</td><td>Cleaning up your own commits before opening/merging a PR</td></tr>
+<tr><td>Preserving context of parallel work</td><td>Avoiding "Merge branch 'main'" noise commits</td></tr>
+</table>
+
+<h3>Related commands</h3>
+<pre>git pull --rebase             # fetch, then rebase your local commits onto the new upstream
+git rebase --onto A B feature # replay feature's commits that are after B, onto A
+git merge --no-ff feature     # force a merge bubble even if FF is possible
+git rebase -i main            # interactive: also reorder/squash/edit while replaying
+git rebase --abort            # bail out, restore pre-rebase state
+git config rerere.enabled true# reuse recorded conflict resolutions across replays</pre>
+<p><strong>Semi-linear / "rebase and merge"</strong> workflows (common on GitHub/GitLab):
+rebase the feature branch onto <code>main</code> first, then merge with <code>--no-ff</code>
+&mdash; linear commits <em>plus</em> a merge commit marking the feature boundary.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Merge</strong>: joins two branches with a 2-parent merge commit. Non-destructive, hashes unchanged, true history, can get tangled.</li>
+<li><strong>Rebase</strong>: replays your commits on top of another branch as new commits (new hashes). Linear history, "as if you started from latest". Rewrites history.</li>
+<li><strong>Golden rule</strong>: never rebase/rewrite commits others have already pulled from a shared branch.</li>
+<li>Rebase conflicts are resolved per replayed commit: fix &rarr; <code>git add</code> &rarr; <code>git rebase --continue</code> (or <code>--abort</code>).</li>
+<li><code>git pull --rebase</code> avoids "Merge branch 'main'" noise on your feature branch.</li>
+<li>Rule of thumb: <strong>rebase</strong> to update <em>your</em> branch onto main; <strong>merge</strong> to bring a finished branch into main (often <code>--no-ff</code>).</li>
+<li>Enable <code>rerere</code> to auto-reapply conflict resolutions during long rebases.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Core difference between merge and rebase?</dt>
+<dd>Merge combines two branches by creating a new commit with both branch tips as parents &mdash; existing commits are untouched. Rebase moves your branch's commits so they replay on top of another branch, creating new commits with new hashes and discarding the originals &mdash; producing a linear history.</dd>
+<dt>Why does rebase change commit hashes?</dt>
+<dd>A commit's hash is derived from its content <em>including its parent hash and committer date</em>. Rebasing gives each replayed commit a different parent (and a new committer timestamp), so its bytes differ and it gets a new hash. The original commits still exist until garbage-collected but nothing points to them.</dd>
+<dt>What is "the golden rule of rebasing"?</dt>
+<dd>Never rebase commits that exist outside your local repo &mdash; i.e. that others may have pulled. Rewriting shared history forces everyone else into a divergent state and messy recovery. Only rebase private, unpushed (or unshared) work.</dd>
+<dt>How are conflicts handled differently in merge vs rebase?</dt>
+<dd>A merge resolves conflicts once, at the single merge commit. A rebase replays commits one at a time and can stop with a conflict on <em>each</em> commit; you fix each, <code>git add</code>, and <code>git rebase --continue</code>. It's more interruptions but each is smaller and localised to that commit's change.</dd>
+<dt>What does <code>git pull --rebase</code> do?</dt>
+<dd>It fetches the upstream, then instead of merging <code>origin/&lt;branch&gt;</code> into your local branch (which would create a merge commit when you have local commits), it rebases your local commits on top of the updated upstream. Result: linear history, no "Merge branch" commits on your branch.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which operation produces a linear history?</summary><div class="answer-box">
+Rebase.
+</div></details>
+<details class="answer-reveal"><summary>How many parents does a standard merge commit have?</summary><div class="answer-box">
+Two (or more, for an octopus merge).
+</div></details>
+<details class="answer-reveal"><summary>Is it safe to rebase commits you've already pushed to a shared <code>main</code> that colleagues pulled?</summary><div class="answer-box">
+No &mdash; that violates the golden rule and forces everyone into a divergent history.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your feature branch is 20 commits behind <code>main</code>. Compare the review/history outcome of <code>git merge main</code> into it vs <code>git rebase main</code>.</summary><div class="answer-box">
+<code>merge main</code>: one merge commit is added to your feature branch; your 20-behind situation is resolved in a single conflict-resolution pass; history now shows a merge bubble, and when the PR is eventually merged, reviewers see your original commits plus a "Merge branch 'main' into feature" commit mixed in. Diffs against main include the merge. <code>rebase main</code>: your feature commits are replayed on top of current main as new commits, so the branch becomes a clean linear series that applies directly to main's tip; the PR diff is exactly your changes with no merge noise; reviewers can read commit-by-commit. Cost: you may resolve conflicts multiple times (once per replayed commit that touches contested code), the commits get new hashes (fine, since the branch is yours and unshared or you'll force-push-with-lease), and you lose the information about when you integrated main. Most teams prefer rebase here for review clarity, reserving merge for when the branch is shared.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>git rebase --onto</code> do that a plain <code>git rebase</code> can't? Give a concrete use.</summary><div class="answer-box">
+Plain <code>git rebase &lt;base&gt;</code> replays "all commits on the current branch since its merge base with &lt;base&gt;" onto &lt;base&gt;. <code>git rebase --onto &lt;newbase&gt; &lt;upstream&gt; [&lt;branch&gt;]</code> decouples <em>which commits to replay</em> from <em>where to put them</em>: it replays the commits in <code>&lt;upstream&gt;..&lt;branch&gt;</code> onto <code>&lt;newbase&gt;</code>. Concrete use: you branched <code>featureB</code> off <code>featureA</code>, but <code>featureA</code> got abandoned. You want <code>featureB</code>'s commits (only the ones unique to it) to sit on <code>main</code> instead. <code>git rebase --onto main featureA featureB</code> takes exactly the commits after <code>featureA</code> and lands them on <code>main</code>, dropping <code>featureA</code>'s commits from the branch. Another use: dropping a range of commits from the middle of a branch by rebasing <code>--onto</code> the commit before the range, over the commit at the end of the range.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>A teammate force-pushed a rebased shared branch and now three people's local copies are broken. Walk through what went wrong and how each person recovers safely.</summary><div class="answer-box">
+What happened: the branch <code>origin/shared</code> used to point at history H1 (commits &hellip;X&ndash;Y&ndash;Z). The teammate rebased, producing H2 (&hellip;X&ndash;Y&prime;&ndash;Z&prime; with new hashes) and force-pushed, so <code>origin/shared</code> now points at H2 and Y, Z are no longer referenced on the remote. Everyone else still has H1 as their local <code>shared</code> plus possibly new local commits on top. On their next <code>git pull</code>, Git fetches H2, sees local <code>shared</code> (H1-based) and <code>origin/shared</code> (H2) have diverged, and either creates a mess of a merge (re-introducing Y and Z alongside Y&prime; and Z&prime; &mdash; duplicated commits, spurious conflicts) or refuses. Recovery per person: (1) <code>git fetch</code> to get H2. (2) If they had <strong>no</strong> local commits beyond H1: <code>git checkout shared &amp;&amp; git reset --hard origin/shared</code> &mdash; discard the old-history local branch and match the remote. (3) If they <strong>did</strong> have local work on top of the old Y&ndash;Z: identify just those commits (e.g. <code>git log origin/shared@{1}..shared</code> using the reflog of the remote-tracking branch, or the range since the old merge base) and <strong>rebase --onto</strong> them from the old tip to the new one: <code>git rebase --onto origin/shared &lt;old-shared-tip&gt; shared</code>. This drops the now-duplicated Y/Z and lands only their genuinely-new commits on the rewritten history. (4) Verify with <code>git range-diff &lt;old&gt; &lt;new&gt;</code> that nothing was lost. Prevention going forward: don't rebase shared branches; if a shared branch <em>must</em> be rewritten, coordinate a freeze, use <code>--force-with-lease</code> (fails if someone else pushed in the meantime), announce it, and have everyone reset rather than pull. Better: only ever rebase private branches; integrate shared branches with merges.
+</div></details>
+<details class="answer-reveal"><summary>Explain how <code>git rebase</code> decides which commits to replay, and why "already applied upstream" commits are silently dropped. How does this interact with cherry-picks?</summary><div class="answer-box">
+<code>git rebase &lt;upstream&gt;</code> computes the commit list as roughly <code>git rev-list &lt;upstream&gt;..HEAD</code> &mdash; commits reachable from your branch tip but not from &lt;upstream&gt; &mdash; in topological order, then replays each with an internal <code>cherry-pick</code>. Before replaying, it runs a <strong>patch-id equivalence check</strong> (like <code>git cherry</code> / <code>git patch-id</code>): for each of your commits it computes a hash of the <em>diff</em> (whitespace- and context-normalised, independent of commit metadata and line numbers) and compares against the patch-ids of commits in <code>&lt;upstream&gt;</code> that aren't in your branch. If a match is found, that commit is considered already present upstream (someone cherry-picked it, or an earlier version of your branch was merged) and it is <strong>skipped</strong> to avoid applying the same change twice (which would usually conflict or create an empty commit). This is why, after a maintainer cherry-picks two of your five commits into main, rebasing your branch onto main cleanly replays only the other three. Caveats: the patch-id match requires the diffs to be essentially identical &mdash; if the upstream version was modified during cherry-pick (conflict resolution, a squash, an amended hunk), the patch-ids differ and your commit is <em>not</em> recognised as duplicate, so it replays and conflicts against the already-present change. <code>git rebase --keep-empty</code> / <code>--empty=keep</code> and <code>--no-reapply-cherry-picks</code> (or the older <code>--reapply-cherry-picks</code>) control this behaviour; <code>--interactive</code> shows you the computed list (with dropped commits commented out) before you commit to it. The same patch-id machinery powers <code>git cherry -v</code> and <code>git format-patch</code>'s duplicate detection.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:merge-vs-rebase -->
+
+<!-- TOPIC:git:interactive-rebase -->
+<section class="view topic" id="v-git-interactive-rebase" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>Interactive Rebase &amp; Editing History</h1>
+<p class="subtitle">Reword, squash, split, reorder, and drop commits before anyone else sees them.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Starting it</h3>
+<pre>git rebase -i HEAD~5        # edit the last 5 commits
+git rebase -i main         # edit every commit on this branch since it left main
+git rebase -i --root       # edit from the very first commit</pre>
+<p>Git opens an editor with the commits listed <strong>oldest first</strong>, each prefixed
+with <code>pick</code>. You change the verbs and/or reorder lines, save, and Git replays the
+list top to bottom.</p>
+
+<h3>The commands (the "todo list")</h3>
+<table>
+<tr><th>Verb</th><th>Effect</th></tr>
+<tr><td><code>pick</code> (p)</td><td>Use the commit as-is.</td></tr>
+<tr><td><code>reword</code> (r)</td><td>Use the commit's changes, but stop to edit its message.</td></tr>
+<tr><td><code>edit</code> (e)</td><td>Stop <em>after</em> applying the commit so you can amend it, split it, add files, etc. Then <code>git rebase --continue</code>.</td></tr>
+<tr><td><code>squash</code> (s)</td><td>Merge this commit into the previous one; combine both messages (editor opens).</td></tr>
+<tr><td><code>fixup</code> (f)</td><td>Like squash but discard this commit's message. <code>fixup -C</code> keeps <em>this</em> message instead.</td></tr>
+<tr><td><code>drop</code> (d)</td><td>Delete the commit entirely (same as removing the line).</td></tr>
+<tr><td><code>reorder</code></td><td>Just move the lines &mdash; commits replay in the new order.</td></tr>
+<tr><td><code>exec</code> (x)</td><td>Run a shell command (e.g. tests) at that point; a non-zero exit pauses the rebase.</td></tr>
+<tr><td><code>break</code> (b)</td><td>Stop here unconditionally; resume with <code>--continue</code>.</td></tr>
+</table>
+
+<h3>Common recipes</h3>
+<pre># Fix the message of the last commit (nothing else)
+git commit --amend
+
+# Squash the last 3 commits into one
+git rebase -i HEAD~3     # set lines 2 and 3 to 'fixup' (or 'squash')
+
+# Auto-squash: make review fixups that collapse into the right commit later
+git commit --fixup &lt;hash&gt;          # message becomes "fixup! &lt;subject&gt;"
+git rebase -i --autosquash main    # fixup!/squash! lines auto-placed &amp; marked
+
+# Split one commit into two
+git rebase -i &lt;before&gt;   # mark the target 'edit'
+git reset HEAD~          # un-commit it, changes now unstaged
+git add -p; git commit   # stage &amp; commit piece 1
+git add -p; git commit   # ... piece 2
+git rebase --continue
+
+# Drop a secret that was committed 6 commits ago
+git rebase -i HEAD~6     # 'edit' that commit, remove the file, amend, continue
+                          # (for something already pushed/shared, use git-filter-repo)</pre>
+
+<h3>Safety &amp; recovery</h3>
+<ul>
+<li><code>git rebase --abort</code> at any pause restores the exact pre-rebase state.</li>
+<li>Before starting, the branch tip is saved as <code>ORIG_HEAD</code> and in the reflog &mdash; <code>git reset --hard ORIG_HEAD</code> undoes a finished rebase.</li>
+<li>Set <code>git config rerere.enabled true</code> so repeated conflicts (common when squashing) are resolved automatically after the first time.</li>
+<li>Pushing a rebased branch needs <code>git push --force-with-lease</code> (safer than <code>--force</code>: it refuses if the remote moved since your last fetch).</li>
+<li><strong>Only do this on unshared commits</strong> &mdash; the golden rule from Merge vs Rebase applies.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>git rebase -i &lt;base&gt;</code> &rarr; editor lists commits oldest-first, all <code>pick</code>. Change verbs / reorder / delete lines, save.</li>
+<li><code>reword</code> = edit message; <code>edit</code> = pause to amend/split; <code>squash</code> = fold into prev (keep both msgs); <code>fixup</code> = fold in, drop msg; <code>drop</code> = remove; <code>exec</code> = run a command.</li>
+<li>Amend just the last commit: <code>git commit --amend</code>.</li>
+<li>Auto-squash flow: <code>git commit --fixup &lt;hash&gt;</code> &hellip; then <code>git rebase -i --autosquash &lt;base&gt;</code>.</li>
+<li>Split a commit: mark <code>edit</code> &rarr; <code>git reset HEAD~</code> &rarr; stage &amp; commit in pieces &rarr; <code>--continue</code>.</li>
+<li>Undo a whole rebase: <code>git reset --hard ORIG_HEAD</code>. Bail mid-rebase: <code>git rebase --abort</code>.</li>
+<li>Push rewritten branch: <code>git push --force-with-lease</code>. Never rewrite shared/pushed-and-pulled history.</li>
+<li><code>rerere.enabled true</code> reuses conflict resolutions across the replay.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between <code>squash</code> and <code>fixup</code> in an interactive rebase?</dt>
+<dd>Both combine a commit into the one above it. <code>squash</code> opens an editor so you can craft a combined commit message from both. <code>fixup</code> silently discards the squashed commit's message and keeps only the earlier commit's message &mdash; ideal for "oops, typo" commits.</dd>
+<dt>How do you edit a commit that isn't the most recent one?</dt>
+<dd><code>git rebase -i &lt;commit-before-it&gt;</code>, change that commit's line to <code>edit</code>, save. The rebase stops right after applying it; make your changes and <code>git commit --amend</code>, then <code>git rebase --continue</code>. Later commits are replayed on top with new hashes.</dd>
+<dt>What is <code>--autosquash</code> and how do you set it up?</dt>
+<dd>While working, run <code>git commit --fixup=&lt;hash&gt;</code> (or <code>--squash=&lt;hash&gt;</code>); Git makes the message <code>fixup! &lt;original subject&gt;</code>. Later, <code>git rebase -i --autosquash &lt;base&gt;</code> automatically moves each such commit directly below its target and pre-marks it <code>fixup</code>/<code>squash</code>, so you just save. Set <code>git config rebase.autosquash true</code> to make it the default.</dd>
+<dt>You started a rebase, hit conflicts, and it's a mess. How do you get back to safety?</dt>
+<dd><code>git rebase --abort</code>. It restores the branch, index, and working tree to exactly how they were before you ran <code>git rebase</code>. If the rebase already <em>finished</em> and you don't like the result, <code>git reset --hard ORIG_HEAD</code> (or a reflog entry) puts it back.</dd>
+<dt>Why do you need <code>--force-with-lease</code> after an interactive rebase?</dt>
+<dd>Rebasing rewrites commit hashes, so your local branch and the remote branch have diverged &mdash; a normal push is rejected. <code>--force-with-lease</code> overwrites the remote branch but only if it still points where you last saw it (i.e. nobody else pushed in the meantime), preventing you from clobbering a colleague's work the way plain <code>--force</code> would.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>In the interactive-rebase todo list, are commits shown newest-first or oldest-first?</summary><div class="answer-box">
+Oldest-first (the reverse of <code>git log</code>).
+</div></details>
+<details class="answer-reveal"><summary>Which verb only changes a commit's message?</summary><div class="answer-box">
+<code>reword</code>.
+</div></details>
+<details class="answer-reveal"><summary>What command undoes a rebase you just completed?</summary><div class="answer-box">
+<code>git reset --hard ORIG_HEAD</code> (or reset to the pre-rebase reflog entry).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You have 8 messy WIP commits on your branch. The reviewer wants "one commit per logical change" &mdash; you decide there are 3. Outline the process.</summary><div class="answer-box">
+<code>git rebase -i main</code>. In the todo list, arrange the 8 lines so commits belonging to the same logical change are adjacent (reorder lines as needed &mdash; watch for dependencies that would cause conflicts). Keep the first commit of each group as <code>pick</code> (or <code>reword</code> to give it a good message), and mark the rest of that group <code>fixup</code> (or <code>squash</code> if their messages have content worth merging). Save. Resolve any conflicts as each group replays (<code>git add</code> + <code>git rebase --continue</code>), enabling <code>rerere</code> first if the same conflict recurs. End with 3 clean commits. Then <code>git push --force-with-lease</code>. If reordering causes too many conflicts, an alternative is <code>git reset --soft main</code> to collapse everything to staged changes, then <code>git add -p</code> + <code>git commit</code> three times to rebuild the history from scratch.
+</div></details>
+<details class="answer-reveal"><summary>What does an <code>exec</code> line do in the todo list, and how would you use it to guarantee every commit builds?</summary><div class="answer-box">
+<code>exec &lt;cmd&gt;</code> runs <code>&lt;cmd&gt;</code> in the shell at that point in the replay; if it exits non-zero, the rebase pauses so you can fix things, then <code>git rebase --continue</code>. To check that every commit builds/tests, run <code>git rebase -i --exec "make test" main</code> &mdash; Git inserts <code>exec make test</code> after <em>every</em> picked commit. The rebase stops at the first commit where tests fail; you amend that commit to fix it and continue. This is how you enforce "no broken commits" (important for <code>git bisect</code> later) across a whole branch in one pass.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>A password was committed 40 commits ago and the branch has been pushed. Interactive rebase can "fix" it &mdash; why is that insufficient, and what's the correct remediation?</summary><div class="answer-box">
+Why <code>rebase -i</code> alone is insufficient: (1) It's error-prone for deep history and doesn't touch <em>other</em> branches or tags that also contain the commit. (2) The old commits still exist in your local repo (reflog, <code>ORIG_HEAD</code>) and, crucially, <strong>on the remote</strong> &mdash; force-pushing the branch doesn't delete unreachable objects on the server immediately; they linger until the host runs gc (and many hosts keep them reachable via PR refs, forks, and caches essentially forever). (3) Anyone who already cloned/fetched has the secret. (4) Search engines / dorking and automated scanners may have already indexed it. Correct remediation, in order: (a) <strong>Rotate the credential immediately</strong> &mdash; assume it's compromised; this is the only step that truly fixes the exposure. History rewriting is damage-limitation, not the fix. (b) Rewrite history with a purpose-built tool: <code>git filter-repo --replace-text</code> (or the older BFG Repo-Cleaner) to strip the secret from <em>every</em> commit on <em>every</em> ref, not just one branch. <code>filter-branch</code> is deprecated and slow. (c) Force-push all rewritten refs (<code>--force-with-lease</code>), and have all collaborators re-clone or hard-reset &mdash; merging old clones would reintroduce the secret. (d) Ask the hosting provider (GitHub/GitLab) to <strong>expire the cached views and run gc</strong>, and invalidate any PRs that reference the old SHAs; on GitHub, old commit SHAs can remain accessible directly until support purges them. (e) Delete and recreate affected forks. (f) Add prevention: a pre-commit secret scanner (gitleaks, trufflehog), server-side push protection, and store secrets in a vault / env, never in the repo. Bottom line: rotate first, rewrite with filter-repo across all refs second, coordinate re-clone third.
+</div></details>
+<details class="answer-reveal"><summary>How does interactive rebase implement "split a commit", and what happens to authorship, dates, and signatures of the rewritten commits?</summary><div class="answer-box">
+Mechanism: when you mark a commit <code>edit</code>, the rebase applies that commit normally (so HEAD is now <em>at</em> the commit, working tree clean) and then pauses. <code>git reset HEAD~</code> (a mixed reset) moves the branch pointer back one commit while leaving the working tree untouched &mdash; so the commit's changes are now present as unstaged modifications, and the commit itself is no longer on the branch. You then stage subsets with <code>git add -p</code> and make as many commits as you want. <code>git rebase --continue</code> resumes, replaying the <em>remaining</em> todo entries on top of your new commits. Every subsequent commit is recreated with a new hash (new parent). Regarding metadata: the <strong>author</strong> name/email and <strong>author date</strong> are <em>preserved</em> from the original commits by default (rebase reuses them), which is why <code>git log</code> still shows the original author and time; the <strong>committer</strong> identity and <strong>committer date</strong> are set to you/now (visible with <code>git log --format=fuller</code>). For the commits you manually created during the split, both author and committer default to you/now unless you pass <code>--author=</code>. Use <code>git rebase --committer-date-is-author-date</code> or <code>--ignore-date</code>/<code>--reset-author-date</code> to control this. <strong>GPG/SSH signatures</strong> are <em>not</em> carried over &mdash; a rewritten commit is a new object with different bytes, so the old signature can't apply; the commit becomes unsigned unless you rebase with <code>-S</code> (or set <code>commit.gpgsign true</code> and <code>rebase.gpgSign true</code>), which re-signs each replayed commit as you. This is why signature-verification policies and rebase-heavy workflows need explicit configuration to coexist.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:interactive-rebase -->
+
+<!-- TOPIC:git:reflog-recovery -->
+<section class="view topic" id="v-git-reflog-recovery" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>The Reflog &amp; Recovering Lost Work</h1>
+<p class="subtitle">Git almost never truly loses a commit &mdash; the reflog is your undo history for refs.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What the reflog is</h3>
+<p>Every time a ref (a branch, or <code>HEAD</code>) changes where it points &mdash; commit,
+checkout, reset, rebase, merge, pull, <code>amend</code> &mdash; Git appends a line to that
+ref's <strong>reflog</strong> under <code>.git/logs/</code>. It records the old hash, the new
+hash, who/when, and the action. It is <strong>local-only</strong> (never pushed or fetched)
+and per-clone.</p>
+<pre>git reflog                       # HEAD's reflog (most useful)
+git reflog show main             # a specific branch's reflog
+git log -g --oneline             # reflog as a log, with dates
+</pre>
+<p>Entries are addressable: <code>HEAD@{2}</code> = "where HEAD was 2 moves ago",
+<code>main@{1}</code> = "main's previous position", <code>HEAD@{yesterday}</code>,
+<code>main@{2.hours.ago}</code>.</p>
+
+<h3>The core recovery move</h3>
+<p>You did something destructive (<code>reset --hard</code>, a bad rebase, deleted a branch,
+a botched merge). The commits look gone &mdash; nothing points to them &mdash; but the
+<em>objects still exist</em> and the reflog still names them.</p>
+<pre>git reflog                        # find the good state, e.g. "HEAD@{4}: commit: add parser"
+git reset --hard HEAD@{4}         # move the current branch back there
+#   -- or, non-destructively: --
+git switch -c recovered HEAD@{4}  # put the lost commits on a new branch
+git branch recovered &lt;hash&gt;       # if you have the raw hash from reflog / log -g
+</pre>
+
+<h3>Recovering a deleted branch</h3>
+<pre>git reflog                        # look for "... : checkout: moving from feature to main"
+                                  # the hash before that line is feature's old tip
+git branch feature &lt;that-hash&gt;    # recreate it
+# HEAD's reflog persists even after 'git branch -D feature'</pre>
+
+<h3>When the reflog can't help: <code>git fsck</code></h3>
+<p>If even the reflog entry expired or you're in a fresh clone, dangling objects can still be
+found directly:</p>
+<pre>git fsck --lost-found            # lists dangling commits / blobs
+git fsck --unreachable
+git show &lt;dangling-hash&gt;         # inspect
+git cat-file -p &lt;blob-hash&gt; &gt; recovered.txt   # rescue a single lost file</pre>
+
+<h3>Expiry &amp; garbage collection</h3>
+<ul>
+<li>Reachable-from-reflog commits are protected from <code>git gc</code>.</li>
+<li>Reflog entries expire: <strong>90 days</strong> for reachable entries
+(<code>gc.reflogExpire</code>), <strong>30 days</strong> for entries pointing at now-unreachable
+commits (<code>gc.reflogExpireUnreachable</code>).</li>
+<li>After that, <code>git gc</code> can prune the objects (loose objects also have a 2-week
+grace period via <code>gc.pruneExpire</code>). So recover sooner rather than later.</li>
+<li><code>git gc --prune=now</code> or <code>git reflog expire --expire=now --all</code> then
+<code>gc</code> will destroy unreachable history immediately &mdash; occasionally what you
+want (see the secrets question), usually not.</li>
+</ul>
+
+<h3>Other undo anchors</h3>
+<p><code>ORIG_HEAD</code> is set by reset, merge, rebase, and pull to the pre-operation tip
+&mdash; <code>git reset --hard ORIG_HEAD</code> is a quick one-step undo for the <em>last</em>
+such operation. <code>git merge --abort</code> / <code>git rebase --abort</code> /
+<code>git cherry-pick --abort</code> use it too.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Reflog = per-ref local log of every position a ref (esp. <code>HEAD</code>) has held. Not pushed, not shared.</li>
+<li><code>git reflog</code> to browse; address entries as <code>HEAD@{n}</code>, <code>main@{1}</code>, <code>HEAD@{1.hour.ago}</code>.</li>
+<li>Undo a bad reset/rebase: <code>git reset --hard HEAD@{n}</code> or <code>git switch -c rescue HEAD@{n}</code>.</li>
+<li>Quick single-step undo of last reset/merge/rebase/pull: <code>git reset --hard ORIG_HEAD</code>.</li>
+<li>Recover a deleted branch: find its old tip hash in <code>git reflog</code>, then <code>git branch &lt;name&gt; &lt;hash&gt;</code>.</li>
+<li>Reflog gone? <code>git fsck --lost-found</code> / <code>--unreachable</code> lists dangling commits &amp; blobs; <code>git show</code> / <code>cat-file -p</code> to inspect &amp; rescue.</li>
+<li>Expiry: 90 days (reachable), 30 days (unreachable), then <code>gc</code> may prune. Recover promptly.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is the reflog and where does it live?</dt>
+<dd>A local log, under <code>.git/logs/HEAD</code> and <code>.git/logs/refs/&hellip;</code>, recording every change to where a ref points &mdash; each line has the old hash, new hash, and the action (commit, checkout, reset, rebase, &hellip;). It's private to your clone and never transferred by push/fetch.</dd>
+<dt>You ran <code>git reset --hard HEAD~3</code> and realise you needed those 3 commits. Recovery?</dt>
+<dd><code>git reflog</code>, find the entry for the tip before the reset (e.g. <code>HEAD@{1}</code>), then <code>git reset --hard HEAD@{1}</code> (or <code>git reset --hard ORIG_HEAD</code>, which the reset set for you). The commits were never deleted &mdash; only the branch pointer moved.</dd>
+<dt>Does <code>git branch -D feature</code> permanently destroy that branch's commits?</dt>
+<dd>No, not immediately. The branch <em>ref</em> is deleted, but the commits remain as unreachable objects, and <code>HEAD</code>'s reflog still contains the hash of the branch's last tip (from when you last checked it out). Recreate it with <code>git branch feature &lt;hash-from-reflog&gt;</code>. They're only gone after reflog expiry (~30 days unreachable) plus a <code>gc</code>.</dd>
+<dt>What's the difference between the reflog and <code>git log</code>?</dt>
+<dd><code>git log</code> walks the <em>commit graph</em> by parent pointers &mdash; it shows history as it currently exists and is the same for everyone. The reflog is a <em>chronological local record of your actions</em> on refs &mdash; it includes commits that are no longer reachable, shows checkouts and resets, and is unique to your machine.</dd>
+<dt>When does the reflog stop being able to save you?</dt>
+<dd>After entries expire (default 90 days if the commit is still reachable some other way, 30 days if unreachable) and <code>git gc</code> subsequently prunes the now-unreferenced objects. A fresh clone has no reflog at all. Also, <code>git reflog expire --expire=now --all &amp;&amp; git gc --prune=now</code> wipes it deliberately.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Is the reflog shared when you push a branch?</summary><div class="answer-box">
+No &mdash; the reflog is entirely local to your clone.
+</div></details>
+<details class="answer-reveal"><summary>How do you refer to "where HEAD pointed two moves ago"?</summary><div class="answer-box">
+<code>HEAD@{2}</code>.
+</div></details>
+<details class="answer-reveal"><summary>What single ref does reset/merge/rebase/pull set to the previous tip, for easy one-step undo?</summary><div class="answer-box">
+<code>ORIG_HEAD</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A colleague force-pushed over your feature branch and your local copy auto-updated after a pull. Can the reflog recover your lost commits? From which reflog?</summary><div class="answer-box">
+Yes, if it hasn't expired. The commits you had are still objects in your local repo, and the <strong>remote-tracking branch's reflog</strong> (<code>git reflog show origin/feature</code> or <code>git log -g origin/feature</code>) plus your local branch's reflog (<code>git reflog show feature</code>) record the pre-pull tip. Find that hash and either <code>git reset --hard &lt;hash&gt;</code> on your local <code>feature</code>, or <code>git branch feature-rescue &lt;hash&gt;</code>. Then reconcile with the new upstream (rebase your genuinely-unique commits onto it). Note: this only works on a machine that <em>had</em> those commits before the force-push; a fresh clone can't see them.
+</div></details>
+<details class="answer-reveal"><summary>You did an interactive rebase that squashed 10 commits, then realised commit #4 had a change you now can't find in the working tree. How do you retrieve just that change?</summary><div class="answer-box">
+The pre-rebase branch tip is in the reflog (<code>git reflog</code> &rarr; the entry labelled <code>rebase (start)</code> or the <code>commit</code> just before it, also available as <code>ORIG_HEAD</code>). You don't want to undo the whole rebase, just inspect the old commit #4. Get the old tip: <code>OLD=$(git rev-parse ORIG_HEAD)</code>. Then <code>git log --oneline $OLD</code> to find commit #4's hash, and <code>git show &lt;hash&gt;</code> to see its diff. To reapply just that change onto your current squashed history: <code>git cherry-pick -n &lt;hash&gt;</code> (no-commit, so you can review/adjust) or <code>git checkout &lt;hash&gt; -- path/to/file</code> to grab a specific file version, then commit or amend. <code>git range-diff ORIG_HEAD HEAD</code> is also excellent here &mdash; it shows commit-by-commit what the rebase changed, making a dropped hunk obvious.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain the full lifecycle of an "orphaned" commit from the moment it becomes unreachable to when its bytes are actually deleted from disk. Which knobs control each stage?</summary><div class="answer-box">
+Stage 1 &mdash; <strong>becomes unreachable</strong>: a ref move (reset, rebase, branch delete, amend) leaves commit C with nothing in <code>refs/</code> pointing to it. C is still on disk (loose object or inside a packfile) and is still named by one or more <strong>reflog</strong> entries, which count as "reachable" for gc purposes &mdash; so C is fully protected. Stage 2 &mdash; <strong>reflog expiry</strong>: <code>git gc</code> (or an explicit <code>git reflog expire</code>) prunes reflog entries older than <code>gc.reflogExpire</code> (default 90 days) if the entry's commit is otherwise reachable, or older than <code>gc.reflogExpireUnreachable</code> (default 30 days) if not. Per-ref overrides exist (e.g. keep <code>refs/stash</code> forever &mdash; Git sets <code>gc.refs/stash.reflogExpire=never</code> by default). Once C's last reflog entry is gone, C is truly unreferenced. Stage 3 &mdash; <strong>object pruning</strong>: <code>git gc</code> calls <code>git repack</code> (which writes a new pack of reachable objects, leaving unreachable ones as loose) and then <code>git prune</code>, which deletes loose objects whose mtime is older than <code>gc.pruneExpire</code> (default "2 weeks ago"). The two-week grace protects objects that were just written by an in-progress operation (a concurrent <code>git commit</code> that hasn't updated its ref yet) from being reaped by a simultaneous gc. Objects that were <em>inside a pack</em> and became unreachable are handled by <code>--cruft</code> packs (modern Git) or fall out when the pack is rewritten, again respecting the expiry via cruft-pack mtimes. Stage 4 &mdash; <strong>gone</strong>: after prune, the bytes are unlinked. Forcing it: <code>git reflog expire --expire=now --all &amp;&amp; git gc --prune=now</code> collapses every stage immediately. Auto-gc: most commands opportunistically run <code>git gc --auto</code>, which triggers a real gc once loose objects exceed <code>gc.auto</code> (6700) or packs exceed <code>gc.autoPackLimit</code> (50); until that threshold, orphaned commits can linger well past the nominal expiry. On hosted platforms, server-side gc scheduling, plus hidden refs for pull requests and fork networks, mean an "unreachable" commit can remain fetchable by hash far longer than these local defaults suggest.
+</div></details>
+<details class="answer-reveal"><summary>The stash is built on the same machinery as the reflog. Explain how <code>git stash</code> stores data and how you'd recover a stash you accidentally dropped.</summary><div class="answer-box">
+<code>git stash</code> creates <strong>commit objects</strong> &mdash; it doesn't use a special file format. A single stash entry is a merge commit W with two (or three) parents: parent 1 is the current HEAD, parent 2 is a commit I capturing the <em>index</em> state, and (with <code>-u</code>) parent 3 captures untracked files; W's tree is the full working-tree state. That commit W is pointed to by the ref <code>refs/stash</code>, and &mdash; crucially &mdash; every stash you make is pushed onto <code>refs/stash</code>'s <strong>reflog</strong>: <code>stash@{0}</code>, <code>stash@{1}</code>, &hellip; are literally reflog entries of that one ref. <code>git stash pop</code> applies <code>stash@{0}</code> and then <em>drops</em> it (deletes that reflog entry, shifting the rest down). If you <code>drop</code> or <code>pop</code> a stash and regret it: the underlying commit W is now unreachable but not yet gc'd, and its hash may still be in the <code>refs/stash</code> reflog (<code>git reflog stash</code> / <code>git log -g stash</code>) if other entries remain, or in <code>HEAD</code>'s reflog, or findable via <code>git fsck --unreachable | grep commit</code> and inspecting each with <code>git show --stat</code> (a stash commit is recognisable: message like "WIP on branch: &hellip;", a merge commit with that parent structure). Once you have the hash, recover with <code>git stash apply &lt;hash&gt;</code> or <code>git stash store -m "recovered" &lt;hash&gt;</code> to put it back on the stash list, or just <code>git branch recovered &lt;hash&gt;</code>. This works only before gc removes it &mdash; and because <code>refs/stash</code> has <code>reflogExpireUnreachable=never</code> by default, dropped stash commits are actually somewhat more durable than other orphans, though an explicit <code>gc --prune=now</code> still kills them.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:reflog-recovery -->
+
+<!-- TOPIC:git:bisect -->
+<section class="view topic" id="v-git-bisect" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>bisect for Regression Hunting</h1>
+<p class="subtitle">Binary search over history to find the exact commit that introduced a bug &mdash; in log&#8322;(n) steps.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The idea</h3>
+<p>You know the bug is present now (a "bad" commit) and absent at some older commit (a
+"good" commit). Somewhere between them one commit flipped it. <code>git bisect</code> checks
+out the midpoint, you test, tell it "good" or "bad", it halves the remaining range, and
+repeats. 1000 commits &rarr; ~10 tests.</p>
+
+<h3>Manual session</h3>
+<pre>git bisect start
+git bisect bad                 # current HEAD is broken
+git bisect good v2.3           # this tag/commit was fine
+# Git checks out a commit in the middle...
+#   build &amp; test it
+git bisect good                # ...or 'git bisect bad'
+#   repeat until:
+# "&lt;hash&gt; is the first bad commit"  + shows the commit
+git bisect reset              # return to where you were (or 'git bisect reset &lt;ref&gt;')</pre>
+
+<h3>Automated: <code>git bisect run</code></h3>
+<p>Give it a script/command whose <strong>exit code</strong> classifies a commit:
+<strong>0 = good</strong>, <strong>1&ndash;124 &amp; 126&ndash;127 = bad</strong>,
+<strong>125 = skip</strong> (can't be tested), <strong>&ge;128 = abort the bisect</strong>.</p>
+<pre>git bisect start HEAD v2.3     # bad good, in one line
+git bisect run ./test.sh      # or: make check / pytest -q tests/test_x.py / cargo test foo
+# Git drives the whole search unattended and prints the first bad commit.
+git bisect reset</pre>
+<pre># typical test.sh
+#!/bin/sh
+make -s || exit 125           # build broken here -> skip, don't call it "bad"
+./run-repro || exit 1         # repro fails -> bad
+exit 0                        # repro passes -> good</pre>
+
+<h3>Handy extras</h3>
+<ul>
+<li><code>git bisect skip</code> &mdash; the current commit can't be judged (won't build, unrelated breakage). Git picks a nearby one. Too many skips &rarr; result is "somewhere in this range".</li>
+<li><code>git bisect terms --term-old &lt;x&gt; --term-new &lt;y&gt;</code> or <code>git bisect start --term-new slow --term-old fast</code> &mdash; rename good/bad when you're hunting a performance regression or a fix rather than a break.</li>
+<li><code>git bisect log</code> &mdash; dump the session; <code>git bisect replay &lt;file&gt;</code> &mdash; re-run it (great after a misclassification: fix the log, replay).</li>
+<li><code>git bisect visualize</code> / <code>--stat</code> &mdash; see the remaining suspect range.</li>
+<li><code>git bisect start -- &lt;path&gt;</code> &mdash; only consider commits touching that path, shrinking the search.</li>
+</ul>
+
+<h3>Requirements &amp; pitfalls</h3>
+<ul>
+<li>Needs a <strong>reliable, fast repro</strong> &mdash; a flaky test makes bisect converge on the wrong commit. Make the repro deterministic first.</li>
+<li>Works cleanly when <strong>every commit builds</strong>. Messy WIP history &rarr; lots of <code>skip</code>s; consider bisecting merge commits only (first-parent) or a cleaned-up branch.</li>
+<li>The "first bad commit" might be a <em>merge</em> that pulled in a bad branch &mdash; then bisect within that branch's commits.</li>
+<li>A regression that was introduced <em>and later temporarily masked</em> can confuse the good/bad monotonicity assumption.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>git bisect start</code> &rarr; <code>git bisect bad [rev]</code> &rarr; <code>git bisect good [rev]</code>. Then test each checkout and mark <code>good</code>/<code>bad</code>.</li>
+<li>One-liner start: <code>git bisect start &lt;bad&gt; &lt;good&gt;</code>.</li>
+<li>Automate: <code>git bisect run &lt;cmd&gt;</code>. Exit codes: <strong>0</strong>=good, <strong>1&ndash;127 (not 125)</strong>=bad, <strong>125</strong>=skip, <strong>&ge;128</strong>=abort.</li>
+<li><code>git bisect skip</code> for untestable commits; <code>git bisect reset</code> when done.</li>
+<li>Narrow it: <code>git bisect start -- &lt;path&gt;</code>. Rename terms for perf hunts: <code>--term-new slow --term-old fast</code>.</li>
+<li><code>git bisect log</code> &rarr; save; <code>git bisect replay &lt;file&gt;</code> after fixing a wrong answer.</li>
+<li>Prerequisites: deterministic repro, ideally every commit builds. Complexity ~log&#8322;(commits).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does <code>git bisect</code> do?</dt>
+<dd>It performs a binary search across a range of commits to find the first one where some property changed (typically a bug appeared). You mark one end "good" and one "bad"; Git repeatedly checks out the midpoint for you to test, halving the candidate range each round, until it names the first bad commit.</dd>
+<dt>How many tests for 1000 commits?</dt>
+<dd>About log&#8322;(1000) &asymp; 10. Each answer eliminates half the remaining commits.</dd>
+<dt>What's the exit-code contract for <code>git bisect run</code>?</dt>
+<dd>The command is run at each step: exit 0 means the commit is good; exit 1&ndash;124 or 126&ndash;127 means bad; exit 125 means "skip, can't test this one" (e.g. it doesn't compile); exit 128 or higher aborts the whole bisect.</dd>
+<dt>When would you use <code>git bisect skip</code>?</dt>
+<dd>When the checked-out commit can't be evaluated &mdash; it doesn't build, or an unrelated bug prevents running the test. Git then picks another nearby commit. If too many commits in a region are skipped, Git reports a range of possible first-bad commits instead of a single one.</dd>
+<dt>Why does bisect need a deterministic reproduction?</dt>
+<dd>Because a single wrong "good"/"bad" answer sends the search down the wrong half and it converges on an innocent commit. A flaky test that sometimes passes on a genuinely-bad commit (or fails on a good one) produces exactly that. Make the repro reliable before bisecting.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What two labels do you give Git to start a bisect?</summary><div class="answer-box">
+A "bad" commit (bug present) and a "good" commit (bug absent).
+</div></details>
+<details class="answer-reveal"><summary>Which command automates the search using a test script?</summary><div class="answer-box">
+<code>git bisect run &lt;command&gt;</code>.
+</div></details>
+<details class="answer-reveal"><summary>What exit code tells <code>bisect run</code> to skip the current commit?</summary><div class="answer-box">
+125.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Write the <code>test.sh</code> for <code>git bisect run</code> to find which commit made a specific pytest case start failing, given the build sometimes doesn't compile on old commits.</summary><div class="answer-box">
+<pre>#!/bin/sh
+# reinstall/build; if it can't build, this commit is untestable -> skip
+pip install -e . -q || exit 125
+# run only the one test; -x stops on first failure, -q quiet
+python -m pytest -q -x tests/test_orders.py::test_discount
+status=$?
+# pytest: 0 = passed (good). 1 = test failed (bad).
+# 2-5 = usage/collection error -> treat as skip rather than bad
+if [ $status -eq 0 ]; then exit 0; fi
+if [ $status -eq 1 ]; then exit 1; fi
+exit 125</pre>
+Then: <code>git bisect start HEAD &lt;known-good-tag&gt;; git bisect run ./test.sh; git bisect reset</code>. Mapping collection errors to skip (125) rather than bad avoids blaming a commit where the test simply couldn't run.
+</div></details>
+<details class="answer-reveal"><summary>You suspect a performance regression, not a functional break &mdash; the code works at every commit but got 3&times; slower somewhere. How do you bisect that?</summary><div class="answer-box">
+Rename the terms so the monotonic property is "speed": <code>git bisect start --term-old fast --term-new slow</code>, then <code>git bisect fast &lt;old-rev&gt;</code> and <code>git bisect slow HEAD</code>. Write a run script that benchmarks deterministically and thresholds: build, run the workload N times (discard warm-up), take the median duration, and <code>exit 0</code> if it's under a chosen cutoff (say 1.5&times; the known-fast baseline), <code>exit 1</code> if over, <code>exit 125</code> if it won't build or the benchmark is too noisy that round. Pin things that add variance: fixed input size, single thread or fixed thread count, CPU frequency governor set to performance, no other load, enough iterations that the fast/slow gap dwarfs the noise. <code>git bisect run ./bench.sh</code> then converges on the commit that crossed the threshold.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does bisect choose the next commit to test in a non-linear history (branches and merges), and why isn't it just "the middle of the list"?</summary><div class="answer-box">
+The suspect set isn't a line, it's a DAG subgraph: all commits that are descendants of a <em>good</em> commit and ancestors of the <em>bad</em> commit (commits reachable from bad but not from any good). "Halving" means picking the commit whose classification eliminates as close to half of that set as possible &mdash; but eliminating in a DAG is asymmetric: marking commit X <strong>bad</strong> removes X and everything <em>not</em> an ancestor of X (the search continues below X), while marking X <strong>good</strong> removes X and all its ancestors. So for each candidate X, Git computes the number of ancestors of X within the suspect set; the best test commit is the one where that count is nearest to half the total, because whichever answer you give, the larger remaining side is minimised (this is a minimax choice). Git does this efficiently by counting, for every commit, how many suspect commits are reachable from it, then choosing the max&ndash;min. Merges complicate it: a merge commit's "ancestors" include both branches, so testing near a merge can collapse the range fast if the bug came in through one parent. Git also weights toward commits it can actually check out cleanly. If several commits tie, it prefers ones with more even splits. This is why bisect on a repo with lots of parallel feature branches sometimes seems to jump around unintuitively &mdash; it's optimising graph-reachability reduction, not list position. Practical corollary: a cleaner, more linear history (or bisecting <code>--first-parent</code> to treat each merge as one step) makes each bisection step more predictable and is often faster overall, then you bisect inside the guilty feature branch as a second pass.
+</div></details>
+<details class="answer-reveal"><summary>Your <code>git bisect run</code> finished and blamed commit C, but C looks totally unrelated to the bug. List the ways this can happen and how to validate or correct the result.</summary><div class="answer-box">
+Causes: (1) <strong>Flaky repro</strong> &mdash; the test is nondeterministic, so a genuinely-good commit was marked bad (or vice versa) once, sending the search astray. (2) <strong>Non-monotonic bug</strong> &mdash; the bug was introduced at A, accidentally masked at B (unrelated change hid the symptom), then unmasked at C; bisect assumes "once bad, stays bad" and lands on C. (3) <strong>Build/env contamination</strong> &mdash; stale build artifacts, a cached <code>__pycache__</code>, an installed package not reinstalled per step, or a generated file not regenerated, so you tested the wrong code. (4) <strong>Wrong good baseline</strong> &mdash; the "good" commit actually already had the bug (just not noticed), so the true culprit is outside the searched range and bisect converges on the earliest in-range commit. (5) <strong>Test script exit-code bug</strong> &mdash; e.g. returning 1 for a compile failure instead of 125, so untestable commits were called bad. (6) <strong>Skips</strong> &mdash; heavy skipping left ambiguity and Git reported a plausible-but-not-certain commit. (7) The culprit is a <strong>merge</strong> and C is a random commit on the merged branch. Validation/correction: run <code>git bisect log</code> and eyeball every classification; manually re-test C and its parent several times to confirm the flip is real and reproducible; <code>git show C</code> &mdash; if truly unrelated, widen the good end (<code>git bisect good &lt;much-older&gt;</code>) and re-run; fix the repro to be deterministic (seed RNG, pin clock, isolate state) and use <code>git bisect replay</code> on a corrected log; add <code>make clean</code> / fresh venv to the run script; bisect with <code>--first-parent</code> to blame the merge, then bisect inside that branch; if non-monotonic, bisect for the <em>masking</em> change separately. Finally, once you have a candidate, prove it: <code>git revert</code> it (or checkout its parent) and confirm the bug disappears, and inspect the diff for a plausible mechanism.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:bisect -->
+
+<!-- TOPIC:git:cherry-pick-reset -->
+<section class="view topic" id="v-git-cherry-pick-reset" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>cherry-pick, revert &amp; reset</h1>
+<p class="subtitle">Copy a commit, safely undo a commit on shared history, or move a branch pointer around.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>cherry-pick &mdash; copy a commit onto the current branch</h3>
+<pre>git cherry-pick &lt;hash&gt;             # apply that commit's diff as a NEW commit here
+git cherry-pick A^..B              # a range (A exclusive .. B inclusive)
+git cherry-pick -n &lt;hash&gt;          # apply but don't commit (stage only) so you can tweak
+git cherry-pick -x &lt;hash&gt;          # append "(cherry picked from commit ...)" to the message
+git cherry-pick -m 1 &lt;merge&gt;       # pick a merge commit, relative to parent 1
+# on conflict:
+git cherry-pick --continue / --skip / --abort</pre>
+<ul>
+<li>Takes the <em>diff</em> of the target commit and reapplies it here; the result is a brand-new commit with a new hash (author preserved, committer = you).</li>
+<li>Classic uses: backport a fix from <code>main</code> to a release branch; grab one commit from an abandoned branch; move a commit made on the wrong branch.</li>
+<li>Overusing it across long-lived branches creates <strong>duplicate commits</strong> (same change, different hash) that later merges/rebases must reconcile via patch-id.</li>
+</ul>
+
+<h3>revert &mdash; undo a commit by making an inverse commit</h3>
+<pre>git revert &lt;hash&gt;                  # new commit that applies the reverse diff
+git revert --no-commit &lt;a&gt; &lt;b&gt;     # stage several reverts, commit once
+git revert -m 1 &lt;merge-hash&gt;       # undo a merge, keeping parent-1 line; re-merging later needs care</pre>
+<ul>
+<li><strong>Doesn't rewrite history</strong> &mdash; it adds a commit. Safe on <code>main</code> / anything already pushed and shared.</li>
+<li>The reverted change stays visible in history; you can revert the revert to bring it back.</li>
+<li>Contrast with <code>reset</code>, which <em>removes</em> commits from the branch and is unsafe to push to shared branches.</li>
+</ul>
+
+<h3>reset &mdash; move the current branch pointer (and optionally index / working tree)</h3>
+<table>
+<tr><th>Mode</th><th>HEAD/branch</th><th>Index</th><th>Working tree</th><th>Use</th></tr>
+<tr><td><code>--soft</code></td><td>moves</td><td>&mdash;</td><td>&mdash;</td><td>uncommit but keep changes staged (re-commit differently)</td></tr>
+<tr><td><code>--mixed</code> (default)</td><td>moves</td><td>reset</td><td>&mdash;</td><td>uncommit &amp; unstage; changes remain in working tree</td></tr>
+<tr><td><code>--hard</code></td><td>moves</td><td>reset</td><td>reset</td><td>discard commits <em>and</em> changes (destructive)</td></tr>
+</table>
+<pre>git reset --soft HEAD~1           # undo last commit, keep everything staged
+git reset HEAD~1                  # undo last commit, keep changes unstaged
+git reset --hard origin/main      # make local branch exactly match remote (loses local work)
+git reset &lt;path&gt;                   # unstage just that path (no mode = mixed, path-limited)
+git reset --hard ORIG_HEAD        # undo the last reset/merge/rebase</pre>
+
+<h3>Choosing</h3>
+<ul>
+<li>Undo a commit <strong>on a shared branch</strong> &rarr; <code>git revert</code>.</li>
+<li>Undo commits <strong>only on your local, unpushed branch</strong> &rarr; <code>git reset</code>.</li>
+<li>Bring <strong>one specific commit</strong> from elsewhere &rarr; <code>git cherry-pick</code>.</li>
+<li>Discard <em>all</em> local changes to match upstream &rarr; <code>git reset --hard @{upstream}</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>cherry-pick</strong> = reapply another commit's diff as a new commit here. <code>-n</code> stage-only, <code>-x</code> record origin, <code>-m 1</code> for merges, range <code>A^..B</code>.</li>
+<li><strong>revert</strong> = add a commit that undoes a commit. History-safe, use on shared branches. <code>-m 1</code> to revert a merge.</li>
+<li><strong>reset</strong> = move current branch pointer. <code>--soft</code> (keep staged) / <code>--mixed</code> default (keep unstaged) / <code>--hard</code> (discard). Unsafe to push if it drops shared commits.</li>
+<li>Undo last commit keep work: <code>git reset --soft HEAD~1</code>. Match remote exactly: <code>git reset --hard origin/&lt;branch&gt;</code>.</li>
+<li>Unstage a file: <code>git reset &lt;path&gt;</code> (or <code>git restore --staged &lt;path&gt;</code>).</li>
+<li>Undo a reset/merge/rebase: <code>git reset --hard ORIG_HEAD</code>.</li>
+<li>Rule: <strong>revert</strong> for public history, <strong>reset</strong> for private history, <strong>cherry-pick</strong> to copy a change.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between <code>git revert</code> and <code>git reset</code>?</dt>
+<dd><code>revert</code> creates a <em>new</em> commit whose diff is the inverse of a target commit &mdash; history grows, nothing is rewritten, safe to push to shared branches. <code>reset</code> <em>moves the branch pointer</em> to an earlier commit, effectively removing the later commits from the branch &mdash; it rewrites which commits the branch contains and is unsafe on anything others have pulled.</dd>
+<dt>What does <code>git cherry-pick</code> actually apply?</dt>
+<dd>The diff between the target commit and its parent, reapplied onto your current HEAD, then committed as a new commit (new hash, original author retained). It does not link back to the original commit unless you pass <code>-x</code>.</dd>
+<dt>How do you cherry-pick or revert a merge commit?</dt>
+<dd>A merge has multiple parents, so Git needs to know which parent's line represents "mainline". Pass <code>-m 1</code> (usually parent 1 = the branch you were on) so the diff is computed relative to that parent. <code>git revert -m 1 &lt;merge&gt;</code> undoes the merged-in changes; <code>git cherry-pick -m 1 &lt;merge&gt;</code> replays them elsewhere.</dd>
+<dt>You committed to <code>main</code> but it should have been on a feature branch. Fix?</dt>
+<dd>On <code>main</code>: note the hash, then <code>git reset --hard HEAD~1</code> (assuming it's unpushed) to drop it. Then <code>git switch -c feature</code> and <code>git cherry-pick &lt;hash&gt;</code> &mdash; or, if you switched before resetting, cherry-pick onto the feature branch first, then reset <code>main</code>. If <code>main</code> was already pushed, use <code>git revert</code> on <code>main</code> instead of reset.</dd>
+<dt>Which reset mode is destructive?</dt>
+<dd><code>--hard</code> &mdash; it overwrites the working tree and index, discarding uncommitted changes. <code>--soft</code> and <code>--mixed</code> leave your file changes intact (staged / unstaged respectively).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which command is safe to use on an already-pushed shared branch to undo a commit?</summary><div class="answer-box">
+<code>git revert</code> &mdash; it adds an inverse commit instead of rewriting history.
+</div></details>
+<details class="answer-reveal"><summary>Does <code>git cherry-pick</code> keep the original commit's hash?</summary><div class="answer-box">
+No &mdash; it creates a new commit with a new hash (the author is preserved).
+</div></details>
+<details class="answer-reveal"><summary>Which <code>reset</code> mode leaves your changes staged?</summary><div class="answer-box">
+<code>--soft</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A critical fix landed on <code>main</code> as commit F. You need it on <code>release/1.8</code> without pulling in the other 30 commits on main. Steps and caveats?</summary><div class="answer-box">
+<code>git switch release/1.8; git cherry-pick -x F</code>. The <code>-x</code> annotates the new commit with "(cherry picked from commit F)" so the provenance is recorded. If F depends on earlier changes not present on the release branch, the cherry-pick will conflict &mdash; resolve, <code>git add</code>, <code>git cherry-pick --continue</code>, and verify the fix actually works in the release context (it may need adaptation). Caveats: F now exists as two commits with different hashes on two branches; if <code>release/1.8</code> is ever merged back into <code>main</code> (or vice versa), Git's patch-id detection usually recognises them as equivalent and avoids a double-apply, but a conflicting resolution during cherry-pick can defeat that and cause a spurious conflict later. Tag or note the backport in the PR. If several related commits form the fix, cherry-pick the whole range (<code>git cherry-pick F1^..F3</code>).
+</div></details>
+<details class="answer-reveal"><summary>You merged feature branch X into <code>main</code> (merge commit M, already pushed), then discovered X is broken. You revert M. Two weeks later X is fixed &mdash; why won't a plain re-merge work, and what do you do?</summary><div class="answer-box">
+When you <code>git revert -m 1 M</code>, Git adds commit R to <code>main</code> that undoes X's changes &mdash; but the <em>merge</em> M is still in history, so from Git's graph perspective X's commits are "already merged into main". If you now <code>git merge X</code> again, Git sees nothing new to bring in (X's tip is an ancestor of main via M) and either fast-forwards nothing or produces an empty/partial merge &mdash; the fixed code doesn't actually land, because R already removed the old version and the merge won't re-add it. Options: (a) <strong>Revert the revert</strong>: <code>git revert R</code> on main to restore X's original changes, then merge the branch containing the fixes on top. This is the documented approach (see "Reverting a faulty merge" in the Git docs) &mdash; but it also re-introduces any genuinely bad parts of the original X, so the fix branch must correct them. (b) <strong>Rebuild the feature branch</strong> from current main and re-apply the (now-fixed) work as new commits, then merge that &mdash; cleaner history, no double-negative. (c) Cherry-pick just the fixed commits onto main. Most teams prefer (b) or (c) unless X was large.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Contrast the three-tree effect and the safety profile of <code>git reset --hard &lt;C&gt;</code>, <code>git checkout &lt;C&gt;</code>, and <code>git restore --source=&lt;C&gt; --staged --worktree .</code>. When is each the right tool?</summary><div class="answer-box">
+<strong><code>git reset --hard C</code></strong>: moves the <em>current branch ref</em> to C, then forces index and working tree to match C. Effect on trees: branch&rarr;C, index&rarr;C, worktree&rarr;C. It changes <em>which commit the branch points at</em> &mdash; history-altering for that branch. Uncommitted changes are silently destroyed (they're not in the reflog; only commits are). Right tool: "throw away my last N local commits and all current edits; make this branch identical to C" &mdash; e.g. <code>git reset --hard @{upstream}</code> to abandon a broken local line. Dangerous on shared branches (rewrites history) and dangerous with valuable uncommitted work (unrecoverable). <strong><code>git checkout C</code></strong> (a commit, not a branch): does <em>not</em> move any branch &mdash; it detaches HEAD to point straight at C, and updates index + worktree to C. Effect: HEAD&rarr;C (detached), index&rarr;C, worktree&rarr;C, but your branch is untouched. It <em>refuses</em> if the switch would overwrite uncommitted changes (unless <code>-f</code>), so it's safer. Right tool: "let me look at / build / test the project as of C without changing my branch"; make commits here only if you then create a branch. <strong><code>git restore --source=C --staged --worktree .</code></strong>: doesn't touch HEAD or any branch <em>at all</em>. It copies the content of paths (here <code>.</code> = everything) from C into both the index and the working tree, leaving you "on" your current branch with a big pending change: your worktree now matches C's content but your next commit's parent is still your current HEAD. Effect: branch&rarr;unchanged, HEAD&rarr;unchanged, index&rarr;C's content, worktree&rarr;C's content. Right tool: "I want the <em>files</em> from C as a change I can commit on top of my current history" &mdash; e.g. resurrecting an old version of the tree as a new commit, or partial restores (<code>git restore --source=C -- path/</code>). It's the most surgical: fully reversible via <code>git restore .</code> again (from HEAD), never rewrites history, and scopes to paths. Summary: reset --hard = move the branch and nuke state (powerful, unsafe); checkout = inspect another commit with HEAD detached (branch-safe, refuses to clobber); restore --source = pull file content from a commit into your worktree/index as an ordinary pending change (history-safe, path-scoped, reversible).
+</div></details>
+<details class="answer-reveal"><summary>Explain how Git detects that a cherry-picked commit is "the same" as one already present (avoiding duplicates during later merges/rebases), and the failure modes of that detection.</summary><div class="answer-box">
+The mechanism is <strong>patch-id</strong>. <code>git patch-id</code> reads a commit's diff, strips line numbers / hunk offsets and (by default) whitespace, canonicalises it, and hashes the result &mdash; producing an ID that depends only on the <em>content of the change</em>, not on the commit message, author, dates, parent, or where in the file it applies. Commands that need duplicate detection &mdash; <code>git rebase</code> (skips commits whose patch-id matches one already upstream), <code>git cherry</code> / <code>git log --cherry-mark</code> / <code>git format-patch</code> (mark or omit equivalent commits) &mdash; compute patch-ids for the candidate range and the target range and match them up. This is why, after backporting fix F to a release branch, a later merge of that release branch into main doesn't apply F twice, and why <code>git rebase</code> quietly drops commits a maintainer already cherry-picked. Failure modes: (1) <strong>Any content change during the cherry-pick</strong> &mdash; a conflict you resolved differently, a manual tweak, a rebase that squashed it with something &mdash; changes the diff, so the patch-ids differ and Git no longer sees them as the same commit; you then get a spurious conflict when the "second copy" tries to apply over the already-present change. (2) <strong>Context shift</strong> &mdash; if surrounding code changed enough that the diff's context lines differ, the canonical diff differs. (3) <strong>Whitespace-significant changes</strong> or reformatting between the two copies. (4) <strong>Split or combined commits</strong> &mdash; one commit cherry-picked as two (or vice versa) has no single matching patch-id. (5) <strong>Mode/rename differences</strong> in how the diff is expressed. (6) Very large diffs where Git's rename detection resolves differently on the two branches. When detection fails you see the classic "this was already applied" conflict: the incoming patch and the working tree both already contain the change, producing add/add or content conflicts that are confusing until you realise it's a duplicate. Mitigations: prefer merging over repeated cherry-picking between long-lived branches; use <code>-x</code> so humans can spot the provenance; when a merge conflicts on an already-backported fix, resolve by taking the version already in the branch; and consider <code>rerere</code> so the resolution is remembered.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:cherry-pick-reset -->
+
+<!-- TOPIC:git:merge-conflicts -->
+<section class="view topic" id="v-git-merge-conflicts" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>Resolving Merge Conflicts</h1>
+<p class="subtitle">Read the markers, pick the right resolution, and set up Git so you fight the same conflict only once.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Why conflicts happen</h3>
+<p>Git does a <strong>three-way merge</strong>: it compares "ours" (current branch), "theirs"
+(the branch being merged), and the <strong>merge base</strong> (their common ancestor). If a
+region changed on <em>only one</em> side, Git takes that side automatically. A conflict is
+raised only when the <em>same region</em> changed differently on <em>both</em> sides &mdash;
+Git can't know which you want. Also: file deleted on one side + modified on the other,
+rename/rename, add/add with different content.</p>
+
+<h3>Conflict markers</h3>
+<pre>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD            (ours)
+current branch's version
+=======
+incoming branch's version
+&gt;&gt;&gt;&gt;&gt;&gt;&gt; feature/login  (theirs)</pre>
+<p>With <code>merge.conflictStyle = zdiff3</code> (recommended) you also get a
+<code>|||||||</code> section showing the <strong>base</strong>, so you can see what each side
+actually changed rather than guessing.</p>
+
+<h3>Workflow</h3>
+<pre>git merge feature                 # ... CONFLICT (content): foo.c
+git status                        # "Unmerged paths" lists conflicted files
+# edit each file: remove markers, keep the correct combined result
+git add foo.c                     # marks it resolved
+git merge --continue             # or: git commit
+# bail out entirely:
+git merge --abort                # restore pre-merge state (uses ORIG_HEAD)</pre>
+
+<h3>Shortcuts for whole-file decisions</h3>
+<pre>git checkout --ours   path       # keep our version of this file entirely
+git checkout --theirs path       # take their version entirely
+git restore --source=MERGE_HEAD --staged --worktree path   # modern 'theirs'
+git merge -X ours feature         # merge, auto-resolving conflicts in our favour
+git merge -X theirs feature       # ...in their favour  (still a real merge of non-conflict parts)
+git checkout --conflict=zdiff3 path   # re-expand markers with base shown</pre>
+<p>Note <code>-X ours</code> / <code>-X theirs</code> are merge <em>strategy options</em> (only
+touch conflicting hunks); the full <code>-s ours</code> strategy is different &mdash; it
+records a merge but keeps <em>our</em> tree entirely, discarding theirs.</p>
+
+<h3>Tools</h3>
+<pre>git mergetool                     # launch a configured 3-way tool (vimdiff, meld, kdiff3, VS Code)
+git config merge.tool vscode
+git diff                          # during a conflict: shows a combined diff of both sides
+git log --merge -p path          # commits from each side that touched the conflicted file
+git checkout -m path             # re-create conflict markers if you lost them</pre>
+
+<h3>rerere &mdash; reuse recorded resolution</h3>
+<pre>git config --global rerere.enabled true</pre>
+<p>Git records how you resolved each conflicted hunk. If the identical conflict reappears
+(common when rebasing a long branch, or repeatedly merging a long-lived branch), Git
+<strong>replays your resolution automatically</strong>. <code>git rerere status</code> /
+<code>diff</code> to inspect; <code>git rerere forget &lt;path&gt;</code> to discard a bad one.</p>
+
+<h3>Reducing conflicts</h3>
+<ul>
+<li>Merge / rebase from <code>main</code> <strong>often</strong> &mdash; small, frequent integrations beat one giant merge.</li>
+<li>Keep PRs small and short-lived.</li>
+<li>Agree on formatting (a formatter + <code>.gitattributes</code>) so whitespace/style don't cause conflicts.</li>
+<li>Use <code>.gitattributes</code> merge drivers: <code>merge=union</code> for changelogs/lockfiles where "keep both" is fine; a custom driver for generated files; <code>-merge</code> (binary) for assets.</li>
+<li>Structure code so hot files aren't edited by everyone (split large modules).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Conflict = same region changed differently on both sides (3-way: ours / theirs / merge base).</li>
+<li>Markers: <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; ours</code> / <code>=======</code> / <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt; theirs</code>; with <code>zdiff3</code> also <code>|||||||</code> base. Set <code>merge.conflictStyle=zdiff3</code>.</li>
+<li>Resolve: edit file &rarr; <code>git add &lt;file&gt;</code> &rarr; <code>git merge --continue</code>. Abort: <code>git merge --abort</code>.</li>
+<li>Whole-file: <code>git checkout --ours|--theirs &lt;path&gt;</code> then <code>git add</code>.</li>
+<li>Bias a merge: <code>git merge -X ours|theirs &lt;branch&gt;</code> (conflicts only). Different from <code>-s ours</code> (keeps our whole tree).</li>
+<li><code>git mergetool</code> for a 3-way GUI; <code>git log --merge -p &lt;path&gt;</code> to see each side's commits.</li>
+<li><code>git config --global rerere.enabled true</code> &rarr; resolve a repeating conflict once, Git replays it.</li>
+<li>Prevent: integrate often, small PRs, shared formatter, <code>.gitattributes</code> merge drivers (<code>union</code> for changelogs/lockfiles).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does Git raise a conflict for some overlapping changes but not others?</dt>
+<dd>It uses a three-way merge with the common ancestor as the base. If a hunk changed on only one side, Git applies that side automatically. It only conflicts when the <em>same lines</em> were changed on both branches relative to the base, because then there's no unambiguous answer.</dd>
+<dt>What do <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code>, <code>=======</code>, <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> mean?</dt>
+<dd>Everything between <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt;</code> and <code>=======</code> is your current branch's version ("ours"); everything from <code>=======</code> to <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> is the incoming branch's version ("theirs"). You edit the region into the correct final content and delete all three marker lines.</dd>
+<dt>What extra information does <code>zdiff3</code> conflict style give you?</dt>
+<dd>It adds a <code>|||||||</code> section showing the <em>merge base</em> (the common-ancestor version of that region). Seeing the original lets you understand what each side changed and merge intentions rather than blindly picking one block.</dd>
+<dt>How do you take one whole file entirely from the other branch during a conflict?</dt>
+<dd><code>git checkout --theirs path/to/file</code> (or <code>--ours</code> for your side), then <code>git add path/to/file</code> to mark it resolved. For finer control, use a merge tool or edit by hand.</dd>
+<dt>What is <code>git rerere</code> and when does it pay off?</dt>
+<dd>"Reuse recorded resolution." With it enabled, Git remembers how you resolved each specific conflict hunk and automatically reapplies that resolution if the same conflict shows up again &mdash; hugely helpful when rebasing a long-lived branch (the same conflicts recur on every replayed commit) or repeatedly merging main into a feature branch.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>After editing a conflicted file to the correct content, what marks it resolved?</summary><div class="answer-box">
+<code>git add &lt;file&gt;</code>.
+</div></details>
+<details class="answer-reveal"><summary>Which command undoes an in-progress merge entirely?</summary><div class="answer-box">
+<code>git merge --abort</code>.
+</div></details>
+<details class="answer-reveal"><summary>In the conflict markers, which side is "ours"?</summary><div class="answer-box">
+The top section, between <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</code> and <code>=======</code> &mdash; the branch you're currently on.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>During a <em>rebase</em>, the conflict markers say <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD</code> is one thing and <code>&gt;&gt;&gt;&gt;&gt;&gt;&gt; &lt;hash&gt; (your commit message)</code> is another. Which is "ours" and why is it the opposite of what people expect?</summary><div class="answer-box">
+During a rebase, "ours" (HEAD / top) is the <strong>branch you're rebasing onto</strong> (e.g. updated <code>main</code>), and "theirs" (bottom) is <strong>your commit currently being replayed</strong>. It feels backwards because in a normal merge "ours" is your work. The reason: rebase works by checking out the target base and then <em>cherry-picking your commits onto it</em> one by one, so at each step the already-established side is the base ("ours") and the patch being applied is your commit ("theirs"). Keep this straight or you'll resolve conflicts inside-out. <code>git checkout --ours</code> during a rebase keeps the <em>upstream</em> version; <code>--theirs</code> keeps <em>your</em> change.
+</div></details>
+<details class="answer-reveal"><summary>Your team constantly gets conflicts in <code>CHANGELOG.md</code> and <code>package-lock.json</code>. What can you configure to reduce or eliminate them?</summary><div class="answer-box">
+For <code>CHANGELOG.md</code>: add <code>CHANGELOG.md merge=union</code> to <code>.gitattributes</code> &mdash; the <code>union</code> merge driver keeps <em>both</em> sides' added lines (no conflict), which is exactly right for an append-only list, though ordering may need a tidy-up. Better still, adopt a workflow where changelog entries are separate files (e.g. <code>changes/</code> fragments assembled at release) so two PRs never touch the same line. For <code>package-lock.json</code> / <code>yarn.lock</code>: these are generated, so define a custom merge driver in <code>.gitattributes</code> (<code>package-lock.json merge=lockfile</code>) whose script just takes one side and re-runs <code>npm install</code> to regenerate a consistent lockfile; npm 7+ also resolves many lockfile conflicts automatically if you run <code>npm install</code> after a conflicted merge. Also enable <code>rerere</code> for the recurring hunks, agree on a formatter to kill whitespace conflicts, and integrate <code>main</code> frequently so divergence stays small.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain what a "semantic conflict" is, why Git reports the merge as clean, and how teams defend against it.</summary><div class="answer-box">
+A <strong>semantic (or logical) conflict</strong> is when two branches change <em>different</em> lines &mdash; so Git's textual three-way merge finds no overlap and merges cleanly &mdash; but the combined result is <em>broken</em> because the changes are semantically incompatible. Classic examples: branch A renames a function <code>getUser</code> &rarr; <code>fetchUser</code> and updates all call sites it can see; branch B, in parallel, adds a new file with a call to <code>getUser</code>. Textually disjoint, merges clean, doesn't compile. Or: A changes a function's units from seconds to milliseconds and updates its callers; B adds a new caller passing seconds. Or A tightens a validation invariant while B adds code that relied on the looser one. Git can't catch these because it has no model of the code's meaning &mdash; it only diffs text regions against a base. Defences: (1) <strong>CI on the merge result</strong>, not just on the branch &mdash; build and run the full test suite on the actual post-merge commit (GitHub's "require branches to be up to date before merging" / merge queues do this); a red build is the primary catch. (2) <strong>Merge queues / trains</strong> (Bors, GitHub merge queue, GitLab merge trains) that serialise merges and test each combined state before it lands, so two individually-green PRs can't silently combine into a broken <code>main</code>. (3) <strong>Strong typing and a compiler</strong> &mdash; a rename or signature change then fails to build rather than misbehaving at runtime; dynamic languages are far more exposed. (4) <strong>Small, short-lived branches</strong> and frequent integration, shrinking the window for incompatible parallel change. (5) <strong>Communication / ownership</strong> for cross-cutting changes (renames, invariant changes) &mdash; do them in a dedicated PR merged quickly, not inside a long feature branch. (6) <strong>Contract tests / integration tests</strong> that exercise the seams between modules. (7) Tools like <em>SemanticMerge</em>/structural-merge reduce <em>textual</em> false conflicts but don't solve logical ones. The core point for an interview: clean merge &ne; correct merge; the safety net is testing the merged state in CI, ideally gated by a merge queue.
+</div></details>
+<details class="answer-reveal"><summary>How does <code>git rerere</code> actually store and match resolutions, and what are its risks?</summary><div class="answer-box">
+When a conflict occurs with <code>rerere.enabled</code>, Git computes a <strong>normalised fingerprint</strong> of each conflicted file's conflict: it takes the pre-image (the file with conflict markers), canonicalises it &mdash; strips the specific branch names from the marker lines, normalises the two conflicting sides, sorts the two sides into a canonical order so "ours vs theirs" and "theirs vs ours" hash the same &mdash; and hashes that to a directory name under <code>.git/rr-cache/&lt;hash&gt;/</code>. It stores the <code>preimage</code> (conflict as presented) there. When you finish resolving and <code>git add</code> the file, Git records the <code>postimage</code> (your resolved content) in the same directory. Next time a conflict produces the same normalised pre-image hash, Git finds the cached directory, and if a <code>postimage</code> exists it <strong>applies that resolved content directly</strong> to the working file and tells you "Resolved '&lt;path&gt;' using previous resolution" &mdash; you still must <code>git add</code> to accept it. <code>git rerere status</code> shows files with an active pre-image; <code>git rerere diff</code> shows what it would apply; <code>git rerere forget &lt;path&gt;</code> deletes the cached resolution for the current conflict; entries are garbage-collected after <code>gc.rerereResolved</code> (60 days) / <code>gc.rerereUnresolved</code> (15 days). Risks: (1) <strong>Silently applying a wrong resolution</strong> &mdash; if you once resolved a conflict incorrectly (or resolved it correctly for a context that has since changed), rerere will keep replaying that stale resolution on every rebase/merge, and because it looks "already resolved" you may <code>git add</code> without re-reading it. The mitigation is to actually review rerere-applied hunks and run tests. (2) The normalisation can occasionally match conflicts that <em>look</em> the same but should be resolved differently because surrounding code changed. (3) It's <strong>local only</strong> &mdash; not shared, so a rebase done on a colleague's machine or in CI won't benefit and may resolve differently, causing inconsistency (some teams commit / sync the <code>rr-cache</code> to share it, which has its own hazards). (4) During a huge rebase it can mask the fact that you're fighting the same design problem repeatedly &mdash; the signal that the branch should be restructured. Overall it's high-value for long rebases and repeated main-into-branch merges, but it trades away some of the "you must look at every conflict" safety, so pair it with CI on the result.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:merge-conflicts -->
+
+<!-- TOPIC:git:workflows -->
+<section class="view topic" id="v-git-workflows" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>Branching Models &amp; the PR Workflow</h1>
+<p class="subtitle">Trunk-based vs git-flow vs GitHub flow, and how pull requests, review, and CI gates fit together.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The main branching models</h3>
+<table>
+<tr><th>Model</th><th>Shape</th><th>Fits</th></tr>
+<tr><td><strong>GitHub Flow</strong></td><td>One long-lived branch (<code>main</code>, always deployable). Short-lived feature branches off it, PR, merge back, deploy. No release branches.</td><td>Web apps / SaaS with continuous deployment. The common default.</td></tr>
+<tr><td><strong>Trunk-Based Development</strong></td><td>Everyone commits to <code>main</code> (trunk) at least daily, via tiny branches or direct commits behind <strong>feature flags</strong>. Branches live hours, not days. Releases cut from trunk (optionally a short-lived release branch for stabilisation).</td><td>High-throughput teams practising CI/CD; the model behind "elite" DORA performers.</td></tr>
+<tr><td><strong>Git Flow</strong></td><td><code>main</code> (released) + <code>develop</code> (integration) + <code>feature/*</code> + <code>release/*</code> + <code>hotfix/*</code>. Explicit, ceremonious.</td><td>Versioned/packaged software with scheduled releases and multiple supported versions. Overkill for continuous web delivery.</td></tr>
+<tr><td><strong>GitLab Flow</strong></td><td>GitHub Flow + environment branches (<code>staging</code>, <code>production</code>) or release branches; changes flow "downstream" via merges.</td><td>Teams needing staged promotion without full Git Flow.</td></tr>
+</table>
+
+<h3>The pull / merge request workflow</h3>
+<ol>
+<li>Branch from up-to-date <code>main</code>: <code>git switch -c feat/x</code>.</li>
+<li>Commit small logical steps; push; open a PR early (draft) for visibility.</li>
+<li>CI runs on the PR: build, tests, lint, type-check, security scan, coverage.</li>
+<li>Review: at least one approval; discussion resolved; suggestions applied.</li>
+<li>Keep current: rebase or merge <code>main</code> in; some teams <strong>require the branch to be up to date</strong> before merge (or use a merge queue).</li>
+<li>Merge via one of the strategies below; delete the branch; CI deploys.</li>
+</ol>
+
+<h3>Merge strategies on the platform</h3>
+<table>
+<tr><th>Option</th><th>Result on <code>main</code></th><th>Trade-off</th></tr>
+<tr><td><strong>Merge commit</strong> (<code>--no-ff</code>)</td><td>All branch commits + a merge commit</td><td>Full history &amp; grouping; noisier graph; preserves exactly what happened.</td></tr>
+<tr><td><strong>Squash &amp; merge</strong></td><td>One commit per PR</td><td>Clean, linear <code>main</code>; loses intra-PR granularity; <code>main</code> commit != any real branch commit (bisect-friendly though).</td></tr>
+<tr><td><strong>Rebase &amp; merge</strong></td><td>Branch commits replayed, no merge commit</td><td>Linear history with every commit; requires each commit to be good; rewrites hashes.</td></tr>
+</table>
+
+<h3>Protecting <code>main</code></h3>
+<ul>
+<li><strong>Branch protection</strong>: no direct pushes; require PR + N approvals; require status checks to pass; require up-to-date branch; require signed commits / linear history; restrict who can push; dismiss stale approvals on new commits.</li>
+<li><strong>CODEOWNERS</strong>: auto-request review from the owners of changed paths.</li>
+<li><strong>Merge queue / train</strong>: serialises merges and tests each combined result, so two green PRs can't break <code>main</code> together (semantic conflicts).</li>
+<li><strong>CI gates</strong>: required checks are the real enforcement &mdash; tests, lint, coverage threshold, build, container scan, license check.</li>
+</ul>
+
+<h3>Releases &amp; hotfixes</h3>
+<ul>
+<li><strong>Tag releases</strong> with annotated/signed tags (<code>v1.4.0</code>), ideally driven by CI on merge to <code>main</code> (semantic-release / release-please).</li>
+<li><strong>Hotfix</strong>: branch from the release tag, fix, tag a patch release, then merge/cherry-pick the fix forward into <code>main</code> so it isn't lost.</li>
+<li><strong>Release branch</strong> (<code>release/1.4</code>) only when you must support older versions in parallel; backport fixes with <code>cherry-pick -x</code>.</li>
+</ul>
+
+<h3>Commit hygiene that makes workflows work</h3>
+<ul>
+<li>Imperative subject &le;50 chars, blank line, body explaining <em>why</em>; reference issues (<code>Fixes #123</code>).</li>
+<li><strong>Conventional Commits</strong> (<code>feat:</code>, <code>fix:</code>, <code>chore:</code>&hellip;) enable automated changelogs &amp; version bumps.</li>
+<li>One logical change per commit; every commit builds (so <code>bisect</code> works).</li>
+<li>Hooks: <code>pre-commit</code> for format/lint, <code>commit-msg</code> for message rules, server-side / CI for the hard gates.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>GitHub Flow</strong>: <code>main</code> always deployable + short feature branches + PR. Default for SaaS. <strong>Trunk-based</strong>: commit to trunk daily, tiny branches, feature flags &mdash; the CI/CD ideal. <strong>Git Flow</strong>: <code>main</code>/<code>develop</code>/<code>feature</code>/<code>release</code>/<code>hotfix</code> &mdash; for versioned, scheduled releases. <strong>GitLab Flow</strong>: + environment/release branches.</li>
+<li>PR loop: branch &rarr; small commits &rarr; push &rarr; CI &rarr; review + approval &rarr; update from main &rarr; merge &rarr; delete branch.</li>
+<li>Merge strategies: <strong>merge commit</strong> (full history, noisy), <strong>squash</strong> (1 commit/PR, clean, loses granularity), <strong>rebase</strong> (linear, all commits, needs each to be good).</li>
+<li>Protect <code>main</code>: no direct push, required approvals, required status checks, up-to-date branch / merge queue, CODEOWNERS, optionally signed commits + linear history.</li>
+<li>Releases: annotated/signed tags, ideally CI-driven. Hotfix: branch from tag &rarr; fix &rarr; patch tag &rarr; merge forward.</li>
+<li>Commits: imperative &le;50-char subject, "why" in body, Conventional Commits for automated changelog/versioning, every commit builds.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>GitHub Flow vs Git Flow &mdash; when would you pick each?</dt>
+<dd>GitHub Flow (one always-deployable <code>main</code> + short feature branches + PRs) suits continuously-deployed web apps &mdash; it's simple and fast. Git Flow (separate <code>main</code>/<code>develop</code> plus <code>release/*</code> and <code>hotfix/*</code> branches) suits software with explicit versioned releases and multiple versions to support, where you need a stabilisation phase and formal release/hotfix handling. For most SaaS, Git Flow is unnecessary overhead.</dd>
+<dt>What is trunk-based development and what makes it possible?</dt>
+<dd>Everyone integrates into a single trunk (<code>main</code>) at least daily, using very short-lived branches or direct commits. Half-finished work is hidden behind <strong>feature flags</strong> rather than long branches. It's made possible by fast, reliable CI on every commit, small changes, and flag infrastructure. It minimises merge pain and is strongly correlated with high delivery performance.</dd>
+<dt>Squash-merge vs merge-commit vs rebase-merge for PRs?</dt>
+<dd>Squash: collapses the PR to one commit on <code>main</code> &mdash; clean linear history, easy revert, but you lose the individual commits. Merge commit: keeps every branch commit plus a merge node &mdash; complete record, groups the PR, but a busier graph. Rebase: replays each branch commit onto <code>main</code> with no merge node &mdash; linear <em>and</em> granular, but every commit must independently build and hashes change.</dd>
+<dt>What does "require branches to be up to date before merging" protect against?</dt>
+<dd>Semantic conflicts: two PRs that each pass CI in isolation but break <code>main</code> when combined because they changed different code with incompatible assumptions. Requiring the branch to be rebased/merged onto the latest <code>main</code> and re-run through CI (or using a merge queue) tests the actual combined result before it lands.</dd>
+<dt>How should a hotfix to production be handled so the fix isn't lost?</dt>
+<dd>Branch from the released tag/branch, make the fix, tag a patch release and deploy, then <strong>merge or cherry-pick the fix back into <code>main</code></strong> (and <code>develop</code> if you use Git Flow). Otherwise the next release from <code>main</code> silently regresses the bug.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>In GitHub Flow, what is always true of <code>main</code>?</summary><div class="answer-box">
+It is always in a deployable / releasable state.
+</div></details>
+<details class="answer-reveal"><summary>Which merge strategy leaves exactly one commit per PR on <code>main</code>?</summary><div class="answer-box">
+Squash and merge.
+</div></details>
+<details class="answer-reveal"><summary>What hides unfinished work on the trunk in trunk-based development?</summary><div class="answer-box">
+Feature flags (feature toggles).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A team of 8 on a continuously-deployed web service is using Git Flow and complains about constant painful merges of <code>develop</code> into feature branches and back. What would you change?</summary><div class="answer-box">
+Git Flow's <code>develop</code> layer and long-lived feature branches are the source of the pain for a CD web service. Move toward <strong>GitHub Flow or trunk-based</strong>: drop <code>develop</code> (deploy straight from <code>main</code>), make branches short-lived (merge within a day or two), keep PRs small, and require the branch to be up to date (or add a merge queue) so integration happens continuously in small increments instead of in big periodic lumps. Introduce <strong>feature flags</strong> so large features can be merged incrementally while incomplete. Strengthen CI so every PR is fully validated, enabling frequent safe merges. Keep a lightweight <code>release/*</code> branch only if you genuinely need to stabilise or support old versions; hotfixes branch from the release tag and merge forward. The net effect: fewer, smaller merges; less divergence; faster feedback.
+</div></details>
+<details class="answer-reveal"><summary>What branch-protection settings would you put on <code>main</code> for a 20-person repo, and what's the reasoning for each?</summary><div class="answer-box">
+(1) <strong>No direct pushes / require PR</strong> &mdash; every change gets review and CI; nobody bypasses. (2) <strong>Require &ge;1&ndash;2 approvals</strong>, and <strong>dismiss stale approvals on new commits</strong> &mdash; the approved code is the code that merges. (3) <strong>Require status checks</strong> (build, unit + integration tests, lint, type-check, coverage threshold, security/dependency scan) and mark them required &mdash; this is the actual quality gate. (4) <strong>Require branch up to date before merge</strong> or a <strong>merge queue</strong> &mdash; catches semantic conflicts between concurrently-green PRs. (5) <strong>CODEOWNERS review required</strong> for sensitive paths (auth, billing, infra) &mdash; domain experts see changes to their area. (6) <strong>Require linear history</strong> (if the team wants it) &mdash; forces squash/rebase merges, keeps <code>main</code> readable and bisectable. (7) <strong>Require signed commits</strong> for supply-chain assurance if the threat model warrants. (8) <strong>Restrict who can push/merge</strong> and <strong>block force-pushes and deletion</strong> of <code>main</code> &mdash; prevents accidental or malicious history rewrite. (9) <strong>Require conversation resolution</strong> &mdash; no merging over unaddressed review comments. Trade-off to acknowledge: too many required reviewers/checks slows delivery, so tune approval counts and check duration to keep PR cycle time low.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a branching + release strategy for a product shipped as (a) a continuously-deployed SaaS and (b) an on-prem package with 3 supported versions getting security backports. Address history policy, CI, and how a single security fix reaches all targets.</summary><div class="answer-box">
+<strong>Trunk</strong>: one <code>main</code>, trunk-based, always releasable; short-lived branches + feature flags; squash-or-rebase merges enforced for a linear, bisectable history; Conventional Commits so tooling derives changelogs and semver bumps. <strong>SaaS delivery</strong>: every merge to <code>main</code> triggers CI (build, full test matrix, security scan) and, on green, auto-deploys to staging then production (progressive rollout / canary). No release branch needed for SaaS; the deployed artifact is just "latest <code>main</code>". <strong>On-prem versioning</strong>: cut a <strong>release branch</strong> per minor version from <code>main</code> at release time &mdash; <code>release/2.3</code>, <code>release/2.4</code>, <code>release/2.5</code> &mdash; and tag releases on it (<code>v2.3.0</code>, signed annotated tags). These branches are long-lived but <em>closed to features</em>: only backports land. Drop the oldest when it leaves support. <strong>How one security fix reaches everything</strong>: fix is developed as a normal PR against <code>main</code> (so the mainline &mdash; and therefore the next SaaS deploy and the next minor &mdash; is covered), kept as a <em>single self-contained commit</em> where possible. After it merges, <code>git cherry-pick -x &lt;fix&gt;</code> it onto each supported <code>release/2.x</code> branch; resolve the inevitable context conflicts per branch; each branch's CI (the required checks run per-branch) must pass; tag a patch release on each (<code>v2.3.7</code>, <code>v2.4.4</code>, <code>v2.5.2</code>) and publish packages. Automate the fan-out: a bot opens the backport PRs (labelled <code>backport/2.3</code> etc.) so nothing is forgotten, and CI enforces that a PR labelled <code>security</code> has corresponding backport PRs before the advisory is published. <strong>History policy</strong>: <code>main</code> linear (squash/rebase), release branches also linear and protected against force-push; the cherry-picks carry <code>-x</code> provenance so you can audit which fix is where; a <code>git log --oneline release/2.3 ^v2.3.0</code> shows exactly the backports in a patch. <strong>Merge-forward discipline</strong>: because fixes originate on <code>main</code> and flow <em>down</em> to release branches (never up), <code>main</code> can't regress; if a fix ever must start on a release branch (emergency), immediately forward-port it to <code>main</code> and newer release branches, gated by CI. <strong>Verification</strong>: a scheduled job diffs each release branch against <code>main</code> for known-CVE commits / patch-ids and alerts if a supported branch is missing a security commit.
+</div></details>
+<details class="answer-reveal"><summary>Squash-merging is popular for a clean <code>main</code>, but list the concrete things it costs you and how each can be mitigated.</summary><div class="answer-box">
+Costs: (1) <strong>Loss of intra-PR commit granularity</strong> &mdash; a 15-commit PR becomes one commit, so <code>git blame</code> / <code>git log -p</code> can't show the step-by-step reasoning, and a later bisect that lands on that commit gives you a huge diff to inspect. Mitigation: keep PRs small (then squash loses little); write a thorough squash-commit body summarising the key changes; link the PR (GitHub keeps the original commits on the PR page). (2) <strong>The <code>main</code> commit matches no real commit that was ever tested in isolation</strong> &mdash; though it <em>is</em> the exact state that CI tested as the PR head, so bisect on <code>main</code> is still sound. (3) <strong>Cherry-pick/backport granularity</strong> &mdash; you can't backport just one commit of the PR; you take all or nothing. Mitigation: split into separate PRs when parts need independent backporting. (4) <strong>Co-authorship / attribution</strong> can be lost unless <code>Co-authored-by:</code> trailers are preserved (GitHub does aggregate them into the squash message). (5) <strong>Rebasing dependent branches</strong> &mdash; a branch started off the pre-squash feature branch now sees its base commits "disappear" (replaced by one squashed commit), forcing a messy rebase; <code>git rebase --onto main &lt;old-base&gt;</code> fixes it but people trip on it. Mitigation: don't stack branches off unmerged feature branches, or coordinate the squash. (6) <strong>Revert asymmetry</strong> &mdash; reverting the squash is easy (one commit), but you can't revert just part of the feature. (7) <strong>Signed-commit policies</strong> &mdash; the squash commit is created by the platform, so it's signed (if at all) by the platform's key, not the author's; teams requiring author signatures use rebase-merge instead. (8) <strong>Merge metadata</strong> &mdash; you lose the record of <em>when</em> the branch was integrated and the two-parent link, so tooling that reasons about merge structure (e.g. <code>--first-parent</code> release notes) sees a flat list. Overall: squash is a good default when PRs are small and history readability matters most; switch to rebase-merge when every commit is valuable and must be individually signed/bisectable, and to merge-commits when preserving the exact integration history matters (large features, audit requirements).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:workflows -->
+
 </main>
 
 <footer class="site-footer">
@@ -18054,24 +19332,23 @@ On send, always persist the message to the conversation store with its sequence 
       ["cdn-storage",     "CDNs, Blob Storage & Static Content", "Edge caching, cache keys, purge, object storage, presigned URLs, hot objects."],
       ["url-shortener",   "Design a URL Shortener",              "API, key generation, storage, redirect path, analytics, custom aliases, scale."],
       ["chat-feed",       "Design a News Feed / Chat System",    "Fan-out on write vs read, timeline, delivery, presence, ordering, celebrity problem."]
+    ],
+    git: [
+      ["object-model",       "The Object Model: Blob, Tree, Commit", "Content-addressed store, SHA-1/256, blobs vs trees vs commits vs tags, packfiles."],
+      ["three-trees",        "The Three Trees: Working Tree, Index, HEAD","How add/commit/checkout/reset move data between the working tree, index and HEAD."],
+      ["branches-head",      "Branches, HEAD & Fast-Forward",       "A branch is a movable pointer, HEAD, detached HEAD, fast-forward vs true merge."],
+      ["merge-vs-rebase",    "Merge vs Rebase",                     "Merge commits vs replayed commits, when each fits, the golden rule of rebase."],
+      ["interactive-rebase", "Interactive Rebase & Editing History","rebase -i: reword/edit/squash/fixup/drop/reorder, autosquash, splitting a commit."],
+      ["reflog-recovery",    "The Reflog & Recovering Lost Work",   "reflog as a safety net, recovering deleted branches & bad resets, gc & expiry."],
+      ["bisect",             "bisect for Regression Hunting",       "Binary search over history, good/bad, bisect run for automation, skip."],
+      ["cherry-pick-reset",  "cherry-pick, revert & reset",         "Copying a commit, safe undo on shared history, soft/mixed/hard reset."],
+      ["merge-conflicts",    "Resolving Merge Conflicts",           "Conflict markers, ours/theirs, rerere, tools, aborting, reducing conflicts."],
+      ["workflows",          "Branching Models & the PR Workflow",  "trunk-based vs git-flow vs GitHub flow, PRs, review, squash/rebase merge, CI gates."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
-  var PLANNED = {
-    git: [
-      "The object model (blob / tree / commit)",
-      "The three trees (working / index / HEAD)",
-      "Branches, HEAD & fast-forward",
-      "Merge vs rebase",
-      "Interactive rebase & editing history",
-      "The reflog & recovering lost work",
-      "bisect for regression hunting",
-      "cherry-pick, revert & reset",
-      "Resolving merge conflicts",
-      "Branching models & the PR workflow"
-    ]
-  };
+  var PLANNED = {};
 
   // ---- helpers ----
   function $(sel, root) { return (root || document).querySelector(sel); }
