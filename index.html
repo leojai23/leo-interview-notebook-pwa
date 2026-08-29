@@ -12469,6 +12469,14 @@ A suffix array is the sorted order of all <code>n</code> suffixes of <code>T</co
 <p>A <strong>relation</strong> (table) is a set of <strong>tuples</strong> (rows) over named, typed
 <strong>attributes</strong> (columns). Rows are unordered and, in the pure model, unique. SQL relaxes
 this (bag semantics &mdash; duplicates allowed unless a key forbids them).</p>
+<pre><code><span class="k">CREATE TABLE</span> employee (          <span class="c">-- a relation: typed, named columns</span>
+    id     <span class="k">INT</span>,
+    name   <span class="k">VARCHAR</span>(<span class="n">100</span>),
+    dept   <span class="k">VARCHAR</span>(<span class="n">50</span>)
+);
+<span class="k">INSERT INTO</span> employee <span class="k">VALUES</span> (<span class="n">1</span>,<span class="s">'Ann'</span>,<span class="s">'Eng'</span>), (<span class="n">1</span>,<span class="s">'Ann'</span>,<span class="s">'Eng'</span>); <span class="c">-- SQL allows the dup...</span>
+<span class="k">SELECT DISTINCT</span> * <span class="k">FROM</span> employee;   <span class="c">-- ...the pure relational model would not</span>
+<span class="c">-- no ORDER BY =&gt; row order is undefined; never rely on insertion order</span></code></pre>
 
 <h3>Keys</h3>
 <table>
@@ -12483,6 +12491,16 @@ this (bag semantics &mdash; duplicates allowed unless a key forbids them).</p>
 <p><strong>Natural</strong> key = meaningful data (email, ISBN). <strong>Surrogate</strong> key = a synthetic
 id (auto-increment, UUID) &mdash; stable, uniform, no business meaning. Most schemas use surrogates
 as primary keys and enforce natural keys with <code>UNIQUE</code> constraints.</p>
+<pre><code><span class="k">CREATE TABLE</span> users (
+    id    <span class="k">BIGINT</span> <span class="k">GENERATED ALWAYS AS IDENTITY</span> <span class="k">PRIMARY KEY</span>, <span class="c">-- surrogate key</span>
+    email <span class="k">VARCHAR</span>(<span class="n">255</span>) <span class="k">NOT NULL</span> <span class="k">UNIQUE</span>,          <span class="c">-- natural key kept as a UNIQUE constraint</span>
+    org_id <span class="k">BIGINT</span> <span class="k">REFERENCES</span> orgs(id)             <span class="c">-- foreign key -&gt; referential integrity</span>
+);
+<span class="c">-- composite key spans two columns:</span>
+<span class="k">CREATE TABLE</span> membership (
+    user_id <span class="k">BIGINT</span>, team_id <span class="k">BIGINT</span>,
+    <span class="k">PRIMARY KEY</span> (user_id, team_id)              <span class="c">-- one row per (user, team) pair</span>
+);</code></pre>
 
 <h3>Constraints</h3>
 <ul>
@@ -12490,11 +12508,25 @@ as primary keys and enforce natural keys with <code>UNIQUE</code> constraints.</
 <li><code>CHECK</code> (domain rules, e.g. <code>price &gt;= 0</code>), <code>DEFAULT</code>.</li>
 <li>Constraints move integrity rules into the DB so <em>every</em> writer obeys them, not just the app.</li>
 </ul>
+<pre><code><span class="k">CREATE TABLE</span> orders (
+    id        <span class="k">BIGINT</span> <span class="k">PRIMARY KEY</span>,
+    status    <span class="k">TEXT</span>    <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> <span class="s">'pending'</span>,
+    total     <span class="k">NUMERIC</span> <span class="k">CHECK</span> (total &gt;= <span class="n">0</span>),               <span class="c">-- domain rule, enforced for every writer</span>
+    customer  <span class="k">BIGINT</span>  <span class="k">REFERENCES</span> customers(id) <span class="k">ON DELETE</span> <span class="k">RESTRICT</span>  <span class="c">-- block deleting a customer with orders</span>
+);
+<span class="c">-- INSERT INTO orders(id,total) VALUES (1,-5);  =&gt; ERROR: violates check constraint</span></code></pre>
 
 <h3>NULL</h3>
 <p>Means "unknown / not applicable", not zero or empty string. Three-valued logic:
 <code>NULL = NULL</code> is <em>unknown</em> (not true); use <code>IS NULL</code>. Aggregates skip NULLs;
 <code>COUNT(*)</code> counts rows, <code>COUNT(col)</code> counts non-NULLs.</p>
+<pre><code><span class="k">SELECT</span> * <span class="k">FROM</span> t <span class="k">WHERE</span> bonus = <span class="k">NULL</span>;      <span class="c">-- 0 rows: `= NULL` is UNKNOWN, never TRUE</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> t <span class="k">WHERE</span> bonus <span class="k">IS NULL</span>;      <span class="c">-- correct</span>
+
+<span class="k">SELECT</span> <span class="k">COUNT</span>(*), <span class="k">COUNT</span>(bonus), <span class="k">AVG</span>(bonus) <span class="k">FROM</span> t;
+<span class="c">-- COUNT(*) = all rows;  COUNT(bonus) = rows where bonus IS NOT NULL;</span>
+<span class="c">-- AVG(bonus) divides by the non-NULL count, not by COUNT(*)</span>
+<span class="k">SELECT</span> <span class="k">COALESCE</span>(bonus, <span class="n">0</span>) <span class="k">FROM</span> t;         <span class="c">-- substitute a value for NULL</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -12576,10 +12608,26 @@ By default FK checks are <em>immediate</em> (checked at each statement), which c
 <li><strong>Insertion anomaly</strong> &mdash; can't record fact A without also knowing unrelated fact B.</li>
 <li><strong>Deletion anomaly</strong> &mdash; deleting a row loses an unrelated fact.</li>
 </ul>
+<pre><code><span class="c">-- UNNORMALISED: dept_name repeated on every employee row</span>
+<span class="c">-- emp(id, name, dept_id, dept_name)</span>
+<span class="k">UPDATE</span> emp <span class="k">SET</span> dept_name = <span class="s">'Engineering'</span> <span class="k">WHERE</span> dept_id = <span class="n">3</span>;
+<span class="c">--  ^ UPDATE anomaly: miss one row and dept 3 now has two names</span>
+<span class="c">--    INSERT anomaly: can't add a new empty dept without a fake employee</span>
+<span class="c">--    DELETE anomaly: remove the last employee of a dept -&gt; lose the dept's name</span>
+
+<span class="c">-- NORMALISED: the fact lives in exactly one place</span>
+<span class="c">-- emp(id, name, dept_id)  +  dept(dept_id, dept_name)</span></code></pre>
 
 <h3>Functional dependencies</h3>
 <p><code>X &rarr; Y</code>: X determines Y (same X always has the same Y). Normalization is about making every
 non-key attribute depend on <strong>the key, the whole key, and nothing but the key</strong>.</p>
+<pre><code><span class="c">-- table: enrollment(student_id, course_id, grade, student_name, course_title)</span>
+<span class="c">-- key = (student_id, course_id)</span>
+
+<span class="c">--   student_id, course_id -&gt; grade          OK: depends on the WHOLE key</span>
+<span class="c">--   student_id            -&gt; student_name   BAD: partial dependency (2NF violation)</span>
+<span class="c">--   course_id             -&gt; course_title   BAD: partial dependency (2NF violation)</span>
+<span class="c">-- fix: split into student(id,name), course(id,title), enrollment(sid,cid,grade)</span></code></pre>
 
 <h3>The normal forms</h3>
 <table>
@@ -12590,12 +12638,30 @@ non-key attribute depend on <strong>the key, the whole key, and nothing but the 
 <tr><td>BCNF</td><td>For every FD <code>X &rarr; Y</code>, X is a super key. Stricter than 3NF; matters when there are overlapping candidate keys.</td></tr>
 </table>
 <p>Higher: 4NF (multivalued dependencies), 5NF (join dependencies) &mdash; rarely cited in interviews.</p>
+<pre><code><span class="c">-- 1NF violation: a list crammed into one cell</span>
+<span class="c">--   student(id, name, courses='CS101,CS102')   -&gt;   student_course(student_id, course_id)</span>
+
+<span class="c">-- 3NF violation: transitive dependency (non-key -&gt; non-key)</span>
+<span class="c">--   emp(id, name, dept_id, dept_location)   where dept_id -&gt; dept_location</span>
+<span class="c">--   fix: emp(id, name, dept_id)  +  dept(dept_id, dept_location)</span>
+
+<span class="c">-- BCNF vs 3NF only differ with overlapping candidate keys, e.g.</span>
+<span class="c">--   booking(room, time_slot, teacher)  with  teacher -&gt; room  (teacher owns one room)</span>
+<span class="c">--   3NF-ok but not BCNF because `teacher` is not a super key</span></code></pre>
 
 <h3>Denormalization</h3>
 <p>Deliberately reintroducing redundancy (duplicated columns, precomputed aggregates, wide "read
 models") to cut join cost on read-heavy workloads &mdash; at the cost of write complexity and the
 anomalies you must now handle in application code or triggers. Common in reporting tables,
 caches, and NoSQL document design. Normalize first; denormalize with evidence.</p>
+<pre><code><span class="c">-- read-heavy: precompute the comment count instead of COUNT(*) joining every read</span>
+<span class="k">ALTER TABLE</span> posts <span class="k">ADD COLUMN</span> comment_count <span class="k">INT</span> <span class="k">NOT NULL</span> <span class="k">DEFAULT</span> <span class="n">0</span>;
+
+<span class="c">-- now the write path must keep it in sync (trigger, app code, or a job):</span>
+<span class="k">CREATE TRIGGER</span> bump_count <span class="k">AFTER INSERT ON</span> comments
+<span class="k">FOR EACH ROW</span> <span class="k">UPDATE</span> posts <span class="k">SET</span> comment_count = comment_count + <span class="n">1</span>
+             <span class="k">WHERE</span> id = <span class="k">NEW</span>.post_id;
+<span class="c">-- trade: 1 cheap read vs 1 extra write + a redundancy you now own</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -12707,12 +12773,31 @@ can in <code>ORDER BY</code>, and why aggregate filters go in <code>HAVING</code
 <li>Every non-aggregated <code>SELECT</code> column must be in <code>GROUP BY</code> (standard SQL; some engines relax this).</li>
 <li><code>HAVING COUNT(*) &gt; 1</code> to keep only groups meeting a condition.</li>
 </ul>
+<pre><code><span class="k">SELECT</span>   dept, <span class="k">COUNT</span>(*) <span class="k">AS</span> headcount, <span class="k">AVG</span>(salary) <span class="k">AS</span> avg_pay
+<span class="k">FROM</span>     employees
+<span class="k">WHERE</span>    active                       <span class="c">-- filters ROWS, before grouping</span>
+<span class="k">GROUP BY</span> dept                         <span class="c">-- one output row per dept</span>
+<span class="k">HAVING</span>   <span class="k">COUNT</span>(*) &gt;= <span class="n">5</span>                <span class="c">-- filters GROUPS, after aggregation</span>
+<span class="k">ORDER BY</span> avg_pay <span class="k">DESC</span>;
+<span class="c">-- SELECT dept, name, COUNT(*) ... GROUP BY dept  =&gt; ERROR: `name` is not grouped/aggregated</span></code></pre>
 
 <h3>Subqueries &amp; CTEs</h3>
 <ul>
 <li>Scalar subquery (returns one value), <code>IN (SELECT &hellip;)</code>, <code>EXISTS (SELECT 1 &hellip;)</code> (correlated, stops at first match &mdash; often faster than <code>IN</code>).</li>
 <li><strong>CTE</strong> (<code>WITH x AS (&hellip;)</code>) names a subquery for readability; <strong>recursive CTE</strong> walks hierarchies/graphs (org charts, bill of materials).</li>
 </ul>
+<pre><code><span class="c">-- EXISTS: correlated, short-circuits at the first match</span>
+<span class="k">SELECT</span> c.name <span class="k">FROM</span> customers c
+<span class="k">WHERE</span> <span class="k">EXISTS</span> (<span class="k">SELECT</span> <span class="n">1</span> <span class="k">FROM</span> orders o <span class="k">WHERE</span> o.customer_id = c.id);
+
+<span class="c">-- CTE for readability; recursive CTE walks a hierarchy</span>
+<span class="k">WITH RECURSIVE</span> sub <span class="k">AS</span> (
+    <span class="k">SELECT</span> id, manager_id, <span class="n">1</span> <span class="k">AS</span> depth <span class="k">FROM</span> emp <span class="k">WHERE</span> id = <span class="n">42</span>   <span class="c">-- anchor</span>
+    <span class="k">UNION ALL</span>
+    <span class="k">SELECT</span> e.id, e.manager_id, sub.depth + <span class="n">1</span>
+    <span class="k">FROM</span> emp e <span class="k">JOIN</span> sub <span class="k">ON</span> e.manager_id = sub.id           <span class="c">-- recurse down the tree</span>
+)
+<span class="k">SELECT</span> * <span class="k">FROM</span> sub;</code></pre>
 
 <h3>Window functions</h3>
 <pre><code>SELECT name, dept, salary,
@@ -12851,12 +12936,32 @@ The anchor selects the root; the recursive term joins children of the current le
 <tr><td>Semi join (<code>EXISTS</code>)</td><td>Left rows that have &ge; 1 match &mdash; no right columns, no duplication.</td></tr>
 <tr><td>Anti join (<code>NOT EXISTS</code>)</td><td>Left rows with no match.</td></tr>
 </table>
+<pre><code><span class="k">SELECT</span> c.name, o.id
+<span class="k">FROM</span>   customers c
+<span class="k">INNER JOIN</span> orders o <span class="k">ON</span> o.customer_id = c.id;   <span class="c">-- customers WITH orders only</span>
+
+<span class="k">FROM</span>   customers c
+<span class="k">LEFT JOIN</span> orders o <span class="k">ON</span> o.customer_id = c.id;    <span class="c">-- every customer; o.* is NULL if none</span>
+
+<span class="c">-- anti-join: customers who have never ordered</span>
+<span class="k">FROM</span>   customers c
+<span class="k">LEFT JOIN</span> orders o <span class="k">ON</span> o.customer_id = c.id
+<span class="k">WHERE</span>  o.id <span class="k">IS NULL</span>;</code></pre>
 
 <h3>NULL &amp; predicate placement</h3>
 <ul>
 <li>A condition in the <code>ON</code> clause of a <code>LEFT JOIN</code> filters the <em>right</em> table before joining (keeps unmatched left rows). The same condition in <code>WHERE</code> runs after the join and discards the NULL-extended left rows &mdash; effectively turning it into an inner join.</li>
 <li><code>col = NULL</code> never matches; joins compare with <code>=</code>, so NULL keys don't join.</li>
 </ul>
+<pre><code><span class="c">-- keeps every customer; only 2024 orders attach</span>
+<span class="k">FROM</span> customers c
+<span class="k">LEFT JOIN</span> orders o <span class="k">ON</span> o.customer_id = c.id <span class="k">AND</span> o.year = <span class="n">2024</span>;
+
+<span class="c">-- SAME predicate in WHERE: NULL-extended rows fail `o.year = 2024`</span>
+<span class="c">-- =&gt; customers with no 2024 order vanish -- silently an INNER JOIN</span>
+<span class="k">FROM</span> customers c
+<span class="k">LEFT JOIN</span> orders o <span class="k">ON</span> o.customer_id = c.id
+<span class="k">WHERE</span> o.year = <span class="n">2024</span>;</code></pre>
 
 <h3>Join algorithms (what the planner picks)</h3>
 <table>
@@ -12865,6 +12970,13 @@ The anchor selects the root; the recursive term joins children of the current le
 <tr><td>Hash join</td><td>build a hash table on the smaller side, probe with the larger</td><td>large unsorted inputs, equijoin, enough memory</td></tr>
 <tr><td>Merge join</td><td>sort both by the join key, walk in lockstep</td><td>inputs already sorted / indexed on the key, or range joins</td></tr>
 </table>
+<pre><code><span class="k">EXPLAIN</span> <span class="k">SELECT</span> * <span class="k">FROM</span> orders o <span class="k">JOIN</span> customers c <span class="k">ON</span> c.id = o.customer_id;
+<span class="c">--  Hash Join  (cost=...)                 &lt;- big unsorted equijoin</span>
+<span class="c">--    Hash Cond: (o.customer_id = c.id)</span>
+<span class="c">--    -&gt;  Seq Scan on orders o</span>
+<span class="c">--    -&gt;  Hash  -&gt;  Seq Scan on customers c   (build side = smaller table)</span>
+
+<span class="c">-- add WHERE o.id = 5  -&gt; planner switches to Nested Loop + Index Scan (1 outer row)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -12961,6 +13073,12 @@ A hash join needs to build the whole hash table on one input (blocking, memory-h
 <p>A separate, ordered data structure mapping key values to row locations, so the engine can
 <em>seek</em> instead of <em>scan</em>. Turns O(n) lookups into O(log n). Costs storage and slows
 <code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> (every index must be maintained).</p>
+<pre><code><span class="k">CREATE INDEX</span> idx_orders_customer <span class="k">ON</span> orders (customer_id);
+
+<span class="c">-- without the index: Seq Scan reads all N rows to find the matches</span>
+<span class="c">-- with the index:    Index Scan does ~log(N) page reads, then fetches only matches</span>
+<span class="k">EXPLAIN ANALYZE</span> <span class="k">SELECT</span> * <span class="k">FROM</span> orders <span class="k">WHERE</span> customer_id = <span class="n">42</span>;
+<span class="c">-- cost: every INSERT/UPDATE to orders.customer_id now also updates this B-tree</span></code></pre>
 
 <h3>Index types</h3>
 <table>
@@ -12970,6 +13088,10 @@ A hash join needs to build the whole hash table on one input (blocking, memory-h
 <tr><td>Bitmap</td><td>Low-cardinality columns in analytics (Oracle); cheap AND/OR of predicates.</td></tr>
 <tr><td>GiST / GIN / inverted</td><td>Full-text, arrays, JSON, geospatial.</td></tr>
 </table>
+<pre><code><span class="k">CREATE INDEX</span> idx_ts   <span class="k">ON</span> events (created_at);          <span class="c">-- B-tree: WHERE created_at &gt;= ... ORDER BY created_at</span>
+<span class="k">CREATE INDEX</span> idx_tags <span class="k">ON</span> docs <span class="k">USING GIN</span> (tags);          <span class="c">-- GIN: WHERE tags @&gt; ARRAY['sql']</span>
+<span class="k">CREATE INDEX</span> idx_body <span class="k">ON</span> docs <span class="k">USING GIN</span> (to_tsvector(<span class="s">'english'</span>, body)); <span class="c">-- full-text</span>
+<span class="c">-- a plain B-tree on `tags` or `body` would NOT serve those queries</span></code></pre>
 
 <h3>Clustered vs secondary</h3>
 <ul>
@@ -12977,17 +13099,33 @@ A hash join needs to build the whole hash table on one input (blocking, memory-h
 <li><strong>Secondary / non-clustered</strong>: separate structure pointing back to the row (via PK or row id).</li>
 <li><strong>Covering index</strong>: contains every column the query needs (<code>INCLUDE</code> columns), so the engine never touches the table &mdash; "index-only scan".</li>
 </ul>
+<pre><code><span class="c">-- secondary index needs a 2nd hop (index -&gt; PK -&gt; heap row) for `total`:</span>
+<span class="k">CREATE INDEX</span> idx_cust <span class="k">ON</span> orders (customer_id);
+<span class="k">SELECT</span> total <span class="k">FROM</span> orders <span class="k">WHERE</span> customer_id = <span class="n">42</span>;   <span class="c">-- Index Scan + heap fetch</span>
+
+<span class="c">-- COVERING index carries `total` too -&gt; index-only scan, no table access:</span>
+<span class="k">CREATE INDEX</span> idx_cust_cov <span class="k">ON</span> orders (customer_id) <span class="k">INCLUDE</span> (total);</code></pre>
 
 <h3>Composite index column order</h3>
 <p><code>INDEX(a, b, c)</code> serves <code>WHERE a = ?</code>, <code>a = ? AND b = ?</code>, <code>a = ? AND b = ? AND c = ?</code>,
 and <code>a = ? AND b &gt; ?</code> &mdash; a <strong>left-most prefix</strong>. It does <em>not</em> help
 <code>WHERE b = ?</code> alone. Put equality columns first, then the range/sort column.</p>
+<pre><code><span class="k">CREATE INDEX</span> idx <span class="k">ON</span> events (tenant_id, status, created_at);
+
+<span class="k">WHERE</span> tenant_id = <span class="n">7</span>                               <span class="c">-- uses idx (prefix)</span>
+<span class="k">WHERE</span> tenant_id = <span class="n">7</span> <span class="k">AND</span> status = <span class="s">'open'</span>             <span class="c">-- uses idx (prefix)</span>
+<span class="k">WHERE</span> tenant_id = <span class="n">7</span> <span class="k">AND</span> status = <span class="s">'open'</span> <span class="k">ORDER BY</span> created_at  <span class="c">-- uses idx incl. the sort</span>
+<span class="k">WHERE</span> status = <span class="s">'open'</span>                             <span class="c">-- CANNOT use idx: skips the leading column</span></code></pre>
 
 <h3>When NOT to index</h3>
 <p>Small tables, columns with very low cardinality (a boolean &mdash; unless combined), write-heavy
 tables where the index maintenance cost outweighs read benefit, columns wrapped in functions in
 the query (<code>WHERE UPPER(name) = ?</code> won't use a plain index &mdash; needs a functional/expression
 index), or leading-wildcard <code>LIKE '%x'</code>.</p>
+<pre><code><span class="c">-- these DEFEAT a plain index on `name` / `email`:</span>
+<span class="k">WHERE</span> <span class="k">UPPER</span>(name) = <span class="s">'ANN'</span>          <span class="c">-- fix: CREATE INDEX ... ON t (UPPER(name))</span>
+<span class="k">WHERE</span> email <span class="k">LIKE</span> <span class="s">'%@gmail.com'</span>     <span class="c">-- leading wildcard -&gt; full scan (try a reversed-string index)</span>
+<span class="k">WHERE</span> created_at + <span class="k">INTERVAL</span> <span class="s">'1 day'</span> &gt; now()  <span class="c">-- fix: rewrite as created_at &gt; now() - INTERVAL '1 day'</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -13069,6 +13207,17 @@ An index with a <code>WHERE</code> predicate, so it only contains rows matching 
 rewrite/normalize &rarr; <strong>cost-based optimization</strong> (enumerate plans, estimate cost) &rarr;
 <strong>physical plan</strong> (specific scan &amp; join operators). SQL says <em>what</em>; the planner
 decides <em>how</em>.</p>
+<pre><code><span class="c">-- you write WHAT:</span>
+<span class="k">SELECT</span> u.name, <span class="k">COUNT</span>(o.id)
+<span class="k">FROM</span> users u <span class="k">JOIN</span> orders o <span class="k">ON</span> o.user_id = u.id
+<span class="k">WHERE</span> u.country = <span class="s">'DE'</span>
+<span class="k">GROUP BY</span> u.name;
+
+<span class="c">-- the planner decides HOW (one possible physical plan):</span>
+<span class="c">--   HashAggregate</span>
+<span class="c">--     -&gt; Hash Join  (o.user_id = u.id)</span>
+<span class="c">--          -&gt; Seq Scan on orders o</span>
+<span class="c">--          -&gt; Hash -&gt; Index Scan on users_country_idx  (u.country = 'DE')</span></code></pre>
 
 <h3>Reading <code>EXPLAIN</code></h3>
 <ul>
@@ -13076,23 +13225,44 @@ decides <em>how</em>.</p>
 <li>Look for: <strong>Seq Scan / Full Table Scan</strong> on a big table (often a missing index), <strong>estimated vs actual rows</strong> far apart (stale statistics &rarr; bad plan), expensive <strong>Sort</strong> or <strong>Hash</strong> spilling to disk, <strong>nested loop</strong> over many outer rows.</li>
 <li>Cost is in arbitrary units; compare alternatives, don't read absolute values.</li>
 </ul>
+<pre><code><span class="k">EXPLAIN ANALYZE</span> <span class="k">SELECT</span> * <span class="k">FROM</span> orders <span class="k">WHERE</span> status = <span class="s">'open'</span>;
+<span class="c">--  Seq Scan on orders  (cost=0..18334 rows=500 width=64)</span>
+<span class="c">--                       (actual time=0.02..92.1 rows=480000 loops=1)   &lt;- est 500 vs actual 480k!</span>
+<span class="c">--  Rows Removed by Filter: 1520000</span>
+<span class="c">--  =&gt; stale stats + missing index. Fix: ANALYZE orders; CREATE INDEX ON orders(status);</span></code></pre>
 
 <h3>Cardinality estimation</h3>
 <p>The optimizer relies on <strong>statistics</strong> (row counts, column histograms, distinct-value
 estimates, correlation) to guess how many rows each operator produces. Bad estimates &rarr; wrong
 join algorithm/order. Keep stats fresh (<code>ANALYZE</code> / auto-stats); multi-column correlation
 often needs extended statistics.</p>
+<pre><code><span class="k">ANALYZE</span> orders;                         <span class="c">-- refresh row counts + histograms</span>
+
+<span class="c">-- correlated columns fool the independent-selectivity assumption:</span>
+<span class="c">--   WHERE city = 'Munich' AND country = 'DE'   (city implies country)</span>
+<span class="c">--   planner multiplies selectivities -&gt; underestimates by a lot</span>
+<span class="k">CREATE STATISTICS</span> s_city_country (dependencies) <span class="k">ON</span> city, country <span class="k">FROM</span> addresses;
+<span class="k">ANALYZE</span> addresses;</code></pre>
 
 <h3>Scan vs seek &amp; SARGability</h3>
 <ul>
 <li><strong>Index seek</strong>: navigate the B-tree to the matching range. <strong>Index/table scan</strong>: read everything.</li>
 <li>A predicate is <strong>SARGable</strong> (Search-ARGument-able) if it can drive an index seek: <code>col = ?</code>, <code>col &gt; ?</code>, <code>col LIKE 'x%'</code>. Non-SARGable: <code>func(col) = ?</code>, <code>col + 1 = ?</code>, <code>col LIKE '%x'</code>, implicit type casts, <code>OR</code> across different columns.</li>
 </ul>
+<pre><code><span class="c">-- NON-SARGable (forces a scan)          -- SARGable rewrite (allows a seek)</span>
+<span class="k">WHERE</span> <span class="k">YEAR</span>(created_at) = <span class="n">2024</span>            <span class="c">--&gt;  WHERE created_at &gt;= '2024-01-01' AND created_at &lt; '2025-01-01'</span>
+<span class="k">WHERE</span> price * <span class="n">1.2</span> &gt; <span class="n">100</span>                  <span class="c">--&gt;  WHERE price &gt; 100 / 1.2</span>
+<span class="k">WHERE</span> id_text = <span class="n">42</span>                     <span class="c">--&gt;  WHERE id_text = '42'   (avoid the implicit cast on the column)</span></code></pre>
 
 <h3>Common fixes</h3>
 <p>Add/adjust an index; rewrite non-SARGable predicates; update statistics; break a giant query
 into steps / temp tables; add <code>LIMIT</code>; avoid <code>SELECT *</code> (prevents covering indexes);
 watch for implicit conversions (<code>varchar</code> column vs <code>N'...'</code> parameter).</p>
+<pre><code><span class="c">-- keyset pagination beats OFFSET on deep pages (OFFSET still scans + discards):</span>
+<span class="c">-- slow:  ... ORDER BY id LIMIT 20 OFFSET 100000;</span>
+<span class="k">SELECT</span> * <span class="k">FROM</span> orders
+<span class="k">WHERE</span> id &gt; <span class="n">:last_seen_id</span>                   <span class="c">-- resume from the last row of the previous page</span>
+<span class="k">ORDER BY</span> id <span class="k">LIMIT</span> <span class="n">20</span>;                    <span class="c">-- index seek, constant cost per page</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -13176,6 +13346,12 @@ The number of possible join orders for n tables grows factorially (n! left-deep,
 <tr><td><strong>I</strong></td><td>Isolation</td><td>Concurrent transactions don't see each other's uncommitted (or, at higher levels, in-flight) changes.</td></tr>
 <tr><td><strong>D</strong></td><td>Durability</td><td>Once committed, the change survives crash / power loss (flushed to non-volatile storage).</td></tr>
 </table>
+<pre><code><span class="k">BEGIN</span>;
+  <span class="k">UPDATE</span> accounts <span class="k">SET</span> balance = balance - <span class="n">100</span> <span class="k">WHERE</span> id = <span class="n">1</span>;
+  <span class="k">UPDATE</span> accounts <span class="k">SET</span> balance = balance + <span class="n">100</span> <span class="k">WHERE</span> id = <span class="n">2</span>;
+  <span class="c">-- crash right here -&gt; ATOMICITY: neither UPDATE survives (rolled back on restart)</span>
+  <span class="c">-- CONSISTENCY: a CHECK (balance &gt;= 0) is verified before COMMIT succeeds</span>
+<span class="k">COMMIT</span>;   <span class="c">-- DURABILITY: after this returns, the transfer survives power loss</span></code></pre>
 
 <h3>How the engine delivers it</h3>
 <ul>
@@ -13183,6 +13359,13 @@ The number of possible join orders for n tables grows factorially (n! left-deep,
 <li><strong>Isolation</strong> &mdash; locking (2PL) or multi-version concurrency control (MVCC) &mdash; see the Locking topic.</li>
 <li><strong>Consistency</strong> &mdash; constraint checking + the app writing correct logic; the DB enforces the declared rules.</li>
 </ul>
+<pre><code><span class="c"># write-ahead logging in one line: log first, then apply</span>
+append_to_wal(record);  fsync(wal);      <span class="c"># durable BEFORE the data page changes</span>
+apply_change_to_page(record);            <span class="c"># may still be in memory</span>
+
+<span class="c"># crash recovery scans the WAL:</span>
+<span class="c">#   REDO   every change of a transaction that has a COMMIT record</span>
+<span class="c">#   UNDO   every change of a transaction with no COMMIT record</span></code></pre>
 
 <h3>Transaction control</h3>
 <pre><code>BEGIN;
@@ -13199,6 +13382,15 @@ resources (locks, old row versions) &mdash; keep them short.</p>
 which blocks if the coordinator fails. Many systems avoid it with the <strong>Saga pattern</strong>:
 a sequence of local transactions plus compensating actions to undo earlier steps on failure
 (eventual consistency, not atomic).</p>
+<pre><code><span class="c"># two-phase commit</span>
+<span class="c">#   PHASE 1  coordinator -&gt; all: PREPARE   each writes a durable "ready" record, votes yes/no</span>
+<span class="c">#   PHASE 2  all yes -&gt; COMMIT to all;  any no -&gt; ABORT to all</span>
+<span class="c">#   coordinator dies between phases -&gt; participants block holding locks</span>
+
+<span class="c"># Saga: local transactions + compensations, no global lock</span>
+book_flight()      <span class="c"># step 1</span>
+book_hotel()       <span class="c"># step 2 -- if this fails:</span>
+cancel_flight()    <span class="c">#   compensating action undoes step 1 (eventually consistent, not atomic)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -13293,6 +13485,15 @@ Atomicity (must not leave A debited without B credited &mdash; roll back on reco
 <tr><td>Lost update</td><td>Two transactions read-modify-write the same row; one overwrites the other's change.</td></tr>
 <tr><td>Write skew</td><td>Two transactions read an overlapping set, each makes a decision valid alone, but together they violate an invariant.</td></tr>
 </table>
+<pre><code><span class="c">-- non-repeatable read (T2's re-read changes)          -- lost update</span>
+<span class="c">-- T1: BEGIN                                            -- T1: SELECT qty -&gt; 10</span>
+<span class="c">--     SELECT price FROM p WHERE id=1;  -- 100          -- T2: SELECT qty -&gt; 10</span>
+<span class="c">--                    T2: UPDATE p SET price=120 ...;   -- T1: UPDATE qty = 10 - 1  -&gt; 9</span>
+<span class="c">--                        COMMIT;                        -- T2: UPDATE qty = 10 - 1  -&gt; 9  (T1's -1 lost)</span>
+<span class="c">--     SELECT price FROM p WHERE id=1;  -- 120 (!)</span>
+
+<span class="c">-- fix lost update: do the read-modify-write atomically</span>
+<span class="k">UPDATE</span> p <span class="k">SET</span> qty = qty - <span class="n">1</span> <span class="k">WHERE</span> id = <span class="n">1</span> <span class="k">AND</span> qty &gt;= <span class="n">1</span>;   <span class="c">-- or SELECT ... FOR UPDATE</span></code></pre>
 
 <h3>The SQL standard levels</h3>
 <table>
@@ -13302,6 +13503,11 @@ Atomicity (must not leave A debited without B credited &mdash; roll back on reco
 <tr><td>Repeatable Read</td><td>+ non-repeatable reads</td></tr>
 <tr><td>Serializable</td><td>+ phantoms; result equivalent to <em>some</em> serial order</td></tr>
 </table>
+<pre><code><span class="k">SET TRANSACTION ISOLATION LEVEL</span> <span class="k">SERIALIZABLE</span>;
+<span class="k">BEGIN</span>;
+  <span class="k">SELECT</span> <span class="k">SUM</span>(hours) <span class="k">FROM</span> shifts <span class="k">WHERE</span> day = <span class="s">'2024-06-01'</span>;
+  <span class="k">INSERT INTO</span> shifts <span class="k">VALUES</span> (...);
+<span class="k">COMMIT</span>;   <span class="c">-- may raise: could not serialize access (40001) -&gt; app retries the whole txn</span></code></pre>
 <p><strong>Reality check:</strong> the standard defines levels by which anomalies they forbid, but engines
 implement them differently. PostgreSQL "Read Committed" is the default; its "Repeatable Read" is
 actually snapshot isolation (also blocks phantoms but allows write skew); its "Serializable" adds
@@ -13313,6 +13519,16 @@ labelled "Serializable". Know your engine.</p>
 Committed and handles lost updates explicitly (<code>SELECT ... FOR UPDATE</code>, optimistic version
 columns, atomic <code>UPDATE ... SET x = x + 1</code>). Use Serializable for logic where correctness
 under concurrency is subtle and you'd rather retry than reason.</p>
+<pre><code><span class="c">-- Read Committed (default) + optimistic concurrency via a version column</span>
+<span class="k">SELECT</span> id, data, version <span class="k">FROM</span> doc <span class="k">WHERE</span> id = <span class="n">1</span>;      <span class="c">-- version = 7</span>
+<span class="c">-- ... app edits data ...</span>
+<span class="k">UPDATE</span> doc <span class="k">SET</span> data = <span class="s">'new'</span>, version = <span class="n">8</span>
+<span class="k">WHERE</span> id = <span class="n">1</span> <span class="k">AND</span> version = <span class="n">7</span>;                        <span class="c">-- 0 rows affected =&gt; someone else won, retry</span>
+
+<span class="c">-- Serializable: don't reason about anomalies, just retry on 40001</span>
+<span class="k">for</span> attempt <span class="k">in</span> range(<span class="n">3</span>):
+    <span class="k">try</span>: run_txn(); <span class="k">break</span>
+    <span class="k">except</span> SerializationFailure: <span class="k">continue</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -13394,6 +13610,12 @@ Under Read Committed, each <em>statement</em> sees a fresh snapshot. If an <code
 <li>Granularity: row &rarr; page &rarr; table. Fine locks = more concurrency but more overhead; the engine may <strong>escalate</strong> to a coarser lock under memory pressure.</li>
 <li><strong>Intent locks</strong> (IS/IX) on the table signal "I hold row locks below", so a table-level lock request can detect the conflict without scanning every row.</li>
 </ul>
+<pre><code><span class="k">BEGIN</span>;
+  <span class="k">SELECT</span> * <span class="k">FROM</span> account <span class="k">WHERE</span> id = <span class="n">1</span> <span class="k">FOR UPDATE</span>;   <span class="c">-- X lock on row 1; other writers wait</span>
+  <span class="k">SELECT</span> * <span class="k">FROM</span> account <span class="k">WHERE</span> id = <span class="n">2</span> <span class="k">FOR SHARE</span>;    <span class="c">-- S lock; other readers OK, writers wait</span>
+  <span class="k">UPDATE</span> account <span class="k">SET</span> balance = balance - <span class="n">50</span> <span class="k">WHERE</span> id = <span class="n">1</span>;
+<span class="k">COMMIT</span>;   <span class="c">-- strict 2PL: ALL locks released here, not before</span>
+<span class="c">-- inspect held locks:  SELECT * FROM pg_locks WHERE NOT granted;</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 128" role="img" aria-labelledby="d-dbmvcc-t">
@@ -13416,6 +13638,14 @@ readers see the version consistent with their snapshot. <strong>Readers never bl
 writers never block readers.</strong> Used by PostgreSQL, Oracle, MySQL/InnoDB, SQL Server (RCSI).
 Cost: old versions accumulate and must be cleaned up (<code>VACUUM</code> in Postgres, undo/purge in
 InnoDB); long transactions hold back cleanup and bloat storage.</p>
+<pre><code><span class="c">-- session A                          -- session B</span>
+<span class="k">BEGIN</span>;                                <span class="k">BEGIN</span>;
+<span class="k">SELECT</span> bal <span class="k">FROM</span> acct <span class="k">WHERE</span> id=<span class="n">1</span>;   -- 100
+                                     <span class="k">UPDATE</span> acct <span class="k">SET</span> bal=<span class="n">200</span> <span class="k">WHERE</span> id=<span class="n">1</span>;
+                                     <span class="k">COMMIT</span>;              <span class="c">-- writes v2, does NOT block A</span>
+<span class="k">SELECT</span> bal <span class="k">FROM</span> acct <span class="k">WHERE</span> id=<span class="n">1</span>;   -- still 100 (A's snapshot predates B's commit)
+<span class="k">COMMIT</span>;
+<span class="c">-- afterwards VACUUM reclaims the now-dead v1 row version</span></code></pre>
 
 <h3>Deadlocks</h3>
 <p>Two transactions each hold a lock the other needs &mdash; a cycle in the wait-for graph. The engine
@@ -13424,10 +13654,26 @@ app must retry.</p>
 <ul>
 <li>Prevent by <strong>acquiring locks in a consistent order</strong> everywhere, keeping transactions short, using lower isolation where safe, and adding indexes so updates lock fewer rows.</li>
 </ul>
+<pre><code><span class="c">-- DEADLOCK: opposite lock order</span>
+<span class="c">-- T1: UPDATE acct WHERE id=1;  then  UPDATE acct WHERE id=2;</span>
+<span class="c">-- T2: UPDATE acct WHERE id=2;  then  UPDATE acct WHERE id=1;   -&gt; cycle, engine kills one</span>
+
+<span class="c">-- FIX: always lock ids in ascending order</span>
+<span class="k">for</span> acct_id <span class="k">in</span> sorted([<span class="n">1</span>, <span class="n">2</span>]):
+    cur.execute(<span class="s">"UPDATE acct SET ... WHERE id = %s"</span>, (acct_id,))</code></pre>
 
 <h3>Explicit locking</h3>
 <p><code>SELECT ... FOR UPDATE</code> (X lock the read rows), <code>FOR SHARE</code>, <code>SKIP LOCKED</code> (job
 queues &mdash; grab the next unlocked row), <code>NOWAIT</code> (fail instead of wait), advisory locks.</p>
+<pre><code><span class="c">-- job-queue worker: each grabs a different row, no contention</span>
+<span class="k">BEGIN</span>;
+<span class="k">SELECT</span> id, payload <span class="k">FROM</span> jobs
+<span class="k">WHERE</span> status = <span class="s">'queued'</span>
+<span class="k">ORDER BY</span> created_at
+<span class="k">LIMIT</span> <span class="n">1</span>
+<span class="k">FOR UPDATE SKIP LOCKED</span>;              <span class="c">-- skip rows another worker already locked</span>
+<span class="k">UPDATE</span> jobs <span class="k">SET</span> status = <span class="s">'running'</span> <span class="k">WHERE</span> id = <span class="n">:id</span>;
+<span class="k">COMMIT</span>;</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -13512,6 +13758,18 @@ InnoDB's <em>next-key lock</em> = a lock on an index record plus the <em>gap</em
 <tr><td>Wide-column</td><td>rows with dynamic column families (Cassandra, HBase, Bigtable)</td><td>huge write volume, time-series, known query patterns, linear scale-out</td></tr>
 <tr><td>Graph</td><td>nodes + edges (Neo4j, Neptune)</td><td>relationship-heavy traversal: social, fraud, recommendations</td></tr>
 </table>
+<pre><code><span class="c"># key-value (Redis): O(1) get/set, TTL for sessions/cache</span>
+SET session:abc123 <span class="s">'{"uid":7}'</span> EX <span class="n">3600</span>
+GET session:abc123
+
+<span class="c">// document (MongoDB): the whole aggregate in one write, no schema migration</span>
+db.orders.insertOne({ _id: <span class="n">1</span>, customer: <span class="s">"Ann"</span>,
+                      items: [{ sku: <span class="s">"A1"</span>, qty: <span class="n">2</span> }], total: <span class="n">40</span> })
+db.orders.find({ <span class="s">"items.sku"</span>: <span class="s">"A1"</span> })
+
+<span class="c">-- wide-column (Cassandra): partition key chosen FOR the query you'll run</span>
+<span class="k">CREATE TABLE</span> events_by_user (user_id uuid, ts timestamp, kind text,
+  <span class="k">PRIMARY KEY</span> ((user_id), ts));   <span class="c">-- fast: WHERE user_id = ? AND ts &gt; ?</span></code></pre>
 
 <h3>SQL vs NoSQL, honestly</h3>
 <ul>
@@ -13519,6 +13777,13 @@ InnoDB's <em>next-key lock</em> = a lock on an index record plus the <em>gap</em
 <li>NoSQL: horizontal scale and high availability by design, flexible/denormalized schema, simple queries fast &mdash; but you <strong>model for your queries</strong> up front, joins/transactions are limited or absent, and consistency is often eventual.</li>
 <li>Modern SQL engines have JSON columns, and NoSQL engines have added transactions &mdash; the line is blurrier than "SQL vs NoSQL" implies. Choose by <strong>access pattern, scale, and consistency needs</strong>.</li>
 </ul>
+<pre><code><span class="c">-- SQL: normalise once, then join / filter / aggregate any way, later</span>
+<span class="k">SELECT</span> c.country, <span class="k">SUM</span>(o.total)
+<span class="k">FROM</span> customers c <span class="k">JOIN</span> orders o <span class="k">ON</span> o.customer_id = c.id
+<span class="k">GROUP BY</span> c.country;                <span class="c">-- ad-hoc; no pre-planning needed</span>
+
+<span class="c">// NoSQL: to serve "orders by country" you must design the key up front...</span>
+db.orders_by_country.find({ country: <span class="s">"DE"</span> })   <span class="c">// ...a new question = a new table + a backfill</span></code></pre>
 
 <h3>CAP theorem</h3>
 <p>In the presence of a network <strong>P</strong>artition, a distributed store must choose between
@@ -13532,6 +13797,11 @@ no partition, a system can offer both.</p>
 </ul>
 <p><strong>BASE</strong> (Basically Available, Soft state, Eventual consistency) is the AP-world counterpart
 to ACID.</p>
+<pre><code><span class="c"># Cassandra tunable consistency -- you pick per query where to sit on CAP</span>
+<span class="c">#   N = 3 replicas</span>
+<span class="c">#   W=1, R=1   -> AP: fast, may read stale                 (W + R &lt;= N)</span>
+<span class="c">#   W=QUORUM(2), R=QUORUM(2)  -> CP-ish: latest write seen  (W + R &gt; N)</span>
+<span class="c">#   partition isolates 1 node -> QUORUM still works on the 2-node side, the lone node errors</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
