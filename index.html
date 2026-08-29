@@ -28316,6 +28316,16 @@ Causes: (1) <strong>Alerting writes annotations on every state change</strong> &
 <tr><td><strong>Search Head (SH)</strong></td><td>Runs the UI and REST API, parses SPL, dispatches the search to indexers, merges their partial results, does the final transforming/reporting commands.</td></tr>
 <tr><td><strong>Cluster/Deployment managers</strong></td><td>Non-data control nodes: <em>Cluster Manager</em> (indexer cluster), <em>Deployer</em> (SH cluster app bundles), <em>Deployment Server</em> (pushes config to forwarders), <em>License Manager</em>, <em>Monitoring Console</em>.</td></tr>
 </table>
+<pre># on a Universal Forwarder host: point it at the indexers, tail a log
+# $SPLUNK_HOME/etc/system/local/outputs.conf
+[tcpout:primary]
+server = idx1:9997, idx2:9997, idx3:9997      # S2S; forwarder auto load-balances
+
+# inputs.conf
+[monitor:///var/log/app/*.log]
+sourcetype = app:json
+index = app_prod
+# UF forwards raw -> an indexer runs the parsing pipeline + stores + searches it</pre>
 
 <h3>Index-time vs search-time</h3>
 <ul>
@@ -28323,6 +28333,15 @@ Causes: (1) <strong>Alerting writes annotations on every state change</strong> &
 <li><strong>Indexing</strong>: events written into buckets; the only index-time index is <em>time</em> plus a keyword index of the raw text (for fast <code>TERM</code> lookup).</li>
 <li><strong>Search-time</strong>: field extraction, lookups, calculated fields, tags, event types &mdash; applied when you search, from knowledge objects. Flexible, changeable after the fact (<em>schema-on-read</em>).</li>
 </ul>
+<pre># INDEX-TIME (props.conf on the HF/indexer): fixed at ingest, reindex to change
+[app:json]
+TIME_PREFIX  = \"ts\":\"
+MAX_TIMESTAMP_LOOKAHEAD = 25
+LINE_BREAKER = ([\r\n]+)\{        # one JSON object per event
+SHOULD_LINEMERGE = false
+
+# SEARCH-TIME: add a field TODAY, it applies to data ingested YEARS ago
+... | rex "latency=(?<latency_ms>\d+)"   # ad-hoc, no reindex</pre>
 
 <h3>Buckets &amp; the data lifecycle</h3>
 <p>Events age through bucket states: <strong>hot</strong> (open, being written) &rarr;
@@ -28331,6 +28350,13 @@ Causes: (1) <strong>Alerting writes annotations on every state change</strong> &
 Controlled per index by size and time (<code>maxHotBuckets</code>,
 <code>maxWarmDBCount</code>, <code>frozenTimePeriodInSecs</code>, volume limits). Searchable
 retention = hot+warm+cold.</p>
+<pre># indexes.conf &mdash; per-index lifecycle
+[app_prod]
+homePath   = volume:primary/app_prod/db      # hot + warm (fast disk)
+coldPath   = volume:cold/app_prod/colddb     # cold (cheap disk)
+frozenTimePeriodInSecs = 7776000             # 90 days -> then frozen
+maxTotalDataSizeMB     = 500000              # size cap also rolls to frozen
+coldToFrozenDir        = /archive/app_prod   # set = archive; unset = DELETE on freeze</pre>
 
 <h3>Clustering</h3>
 <ul>
@@ -28338,16 +28364,38 @@ retention = hot+warm+cold.</p>
 <li><strong>Search head cluster</strong>: 3+ SHs share config, saved searches, and scheduled-search load via a captain; the Deployer pushes app bundles. (Old "SH pooling" is deprecated.)</li>
 <li>Forwarders <strong>load-balance</strong> across indexers (auto LB by time or volume) &mdash; no LB appliance needed for the S2S protocol.</li>
 </ul>
+<pre># indexer-cluster peer &mdash; server.conf
+[clustering]
+mode = slave
+manager_uri = https://cm.corp:8089
+replication_factor = 3      # RF: 3 copies of every bucket exist
+search_factor = 2           # SF: 2 of them carry the index files (searchable)
+# lose a peer -> Cluster Manager re-replicates to restore RF/SF from survivors</pre>
 
 <h3>Getting data in &mdash; entry points</h3>
 <p>Forwarders (files, Windows event logs, scripted/modular inputs), <strong>HEC</strong> (HTTP Event
 Collector &mdash; token-authenticated JSON/raw over HTTPS, for apps and cloud services),
 syslog into an HF/UF, and add-ons (TAs) that package inputs + parsing for a given technology.</p>
+<pre># HEC: token-authenticated JSON over HTTPS, ideal for apps/serverless
+curl -k https://hec.corp:8088/services/collector/event \
+  -H "Authorization: Splunk 3f8a1c9d-...-b2" \
+  -d '{"event": {"msg": "login ok", "user": "leo"}, "sourcetype": "app:auth", "index": "app_prod"}'
+
+# inputs.conf on the HEC receiver
+[http://app-auth]
+token = 3f8a1c9d-...-b2
+index = app_prod</pre>
 
 <h3>Splunk Cloud vs Enterprise</h3>
 <p>Cloud is Splunk-operated: you get SHs and indexers as a service, use the Universal
 Forwarder / HEC / cloud data managers to send in, and install vetted apps. On-prem
 Enterprise you run every tier yourself.</p>
+<pre># Cloud: you only operate the edge (forwarders/HEC) + author knowledge objects
+UF outputs.conf -> [tcpout] server = inputs.&lt;stack&gt;.splunkcloud.com:9997
+                   useACK = true                 # Cloud requires indexer ACK + TLS
+# no indexes.conf / server.conf clustering to manage; apps must be Cloud-vetted
+
+# Enterprise: the same data path, but YOU run indexes.conf, clustering, upgrades, capacity</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -28426,6 +28474,12 @@ Auto load balancing on the forwarder switches target indexers on an interval or 
 <li><strong>source</strong> &mdash; where it came from (file path, input name).</li>
 <li><strong>host</strong> &mdash; the originating machine.</li>
 </ul>
+<pre># set all four at the input (inputs.conf); everything downstream keys off them
+[monitor:///var/log/nginx/access.log]
+index      = web_prod          # retention + who can search it
+sourcetype = access_combined   # a KNOWN sourcetype -> parsing config already exists
+# source   -> defaults to the file path
+# host     -> defaults to the forwarder's hostname (override with host_segment / host =)</pre>
 
 <h3>Input types</h3>
 <table>
@@ -28437,6 +28491,16 @@ Auto load balancing on the forwarder switches target indexers on an interval or 
 <tr><td>Scripted / <strong>modular inputs</strong></td><td>Pull from APIs (packaged by Technology Add-ons: AWS, o365, etc.).</td></tr>
 <tr><td>HTTP/file via Ingest Actions / Edge Processor / Ingest Processor</td><td>Newer routing/masking/filtering before indexing.</td></tr>
 </table>
+<pre># file tail, handling rotation
+[monitor:///var/log/app]
+whitelist   = \.log$
+blacklist   = \.gz$
+crcSalt     = &lt;SOURCE&gt;            # treat rotated same-name files as distinct
+
+# raw syslog: don't listen on udp://514 directly &mdash; use SC4S -> file -> monitor
+[udp://514]
+sourcetype  = syslog
+no_appending_timestamp = true</pre>
 
 <h3>Key <code>props.conf</code> settings (per sourcetype)</h3>
 <pre>[my:sourcetype]
@@ -28460,6 +28524,13 @@ EVENT_BREAKER      = ([\r\n]+)</pre>
 if one is in the path (<em>not</em> a UF). Search-time settings live on the <strong>search
 heads</strong>. Ship them in <strong>Technology Add-ons (TAs)</strong> to the right tier
 (indexer cluster via Cluster Manager, SHC via Deployer, forwarders via Deployment Server).</p>
+<pre>TA-nginx/
+  default/
+    props.conf        # LINE_BREAKER, TIME_FORMAT   -> deploy to INDEXERS (+ any HF)
+    transforms.conf    # nullQueue / routing         -> INDEXERS
+    inputs.conf        # [monitor://...]             -> FORWARDERS (Deployment Server)
+    fields.conf        # EXTRACT-*, lookups          -> SEARCH HEADS
+# same app, three tiers: CM pushes to the indexer cluster, Deployer to the SHC</pre>
 
 <h3>Index-time transforms (<code>transforms.conf</code>)</h3>
 <pre>[drop_debug]
@@ -28486,6 +28557,11 @@ FORMAT = XXXX-XXXX-XXXX-$2  # SEDCMD/transform masking of sensitive data</pre>
 <li>Deploy the TA to indexers/HFs (index-time) and SHs (search-time).</li>
 <li>Validate: event count, no "line too long" / "outside MAX_DAYS_AGO", fields extract.</li>
 </ol>
+<pre># step 6 validation searches, run after onboarding
+index=web_prod earliest=-15m | stats count by sourcetype, host     # arriving?
+index=web_prod | eval lag=_indextime-_time | stats avg(lag) p95(lag) # timestamps sane?
+index=_internal source=*splunkd.log log_level=WARN "web_prod"       # breaking/time warnings
+| search "outside the acceptable time window" OR "line longer than"</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -28586,6 +28662,12 @@ applied left to right.</p>
 <li>Wildcards: trailing <code>fail*</code> is fine; <strong>leading</strong> <code>*fail</code> is slow (can't use the index).</li>
 <li>Quote phrases: <code>"connection refused"</code>. Escape with <code>\</code>.</li>
 </ul>
+<pre>index=web sourcetype=access_combined status&gt;=500 NOT uri="/health"
+    earliest=-1h latest=now                     # time = a first-class, indexed filter
+
+index=* error                                    # BAD: every index, leading breadth
+"*fail*"                                          # BAD: leading wildcard, can't use the lexicon
+index=web TERM(203.0.113.7) status=403           # GOOD: exact lexicon match, fast</pre>
 
 <h3>Fields</h3>
 <ul>
@@ -28593,6 +28675,12 @@ applied left to right.</p>
 <li>Search-time extracted fields appear automatically (<code>status</code>, <code>uri_path</code>&hellip;). <code>fields</code> command keeps/drops fields (do it early to speed things up).</li>
 <li><code>| eval</code> creates/overwrites fields; <code>| rename</code>; <code>| table</code> for a columnar view.</li>
 </ul>
+<pre>index=web sourcetype=access_combined
+| fields status uri_path bytes clientip          # trim early -> less data down the pipe
+| eval kb = round(bytes/1024, 1)                 # new/overwrite field
+| rename clientip AS src_ip
+| table _time src_ip uri_path status kb          # final columnar shape
+# _raw, _time, index, source, sourcetype, host, _indextime are always present</pre>
 
 <h3>Streaming vs transforming commands</h3>
 <table>
@@ -28602,6 +28690,11 @@ applied left to right.</p>
 </table>
 <p>The first transforming command is the "reduce" point. Do as much filtering/field work in
 streaming commands <em>before</em> it as possible.</p>
+<pre># SLOW: rex + where run on the SH over every event pulled back
+index=web | rex "status=(?&lt;st&gt;\d+)" | where st&gt;=500 | stats count by uri_path
+
+# FAST: filter in the base search (indexers, parallel), reduce once
+index=web status&gt;=500 | stats count by uri_path        # <- single transforming cmd = reduce point</pre>
 
 <h3>Search modes</h3>
 <ul>
@@ -28609,6 +28702,11 @@ streaming commands <em>before</em> it as possible.</p>
 <li><strong>Smart</strong> (default): fast for transforming searches, verbose-ish for event searches.</li>
 <li><strong>Verbose</strong>: discover all fields for every event &mdash; slow; use only when exploring.</li>
 </ul>
+<pre># set per search (or via the mode dropdown)
+index=web status&gt;=500 | timechart count    # Fast   -> only fields the SPL needs
+index=web error                             # Smart  -> event view + discovered fields
+index=web error | fields - *                # Verbose-like exploration: every field, slow
+# rule of thumb: reporting -> Fast; hunting an unknown field -> Verbose briefly</pre>
 
 <h3>Subsearches</h3>
 <pre>index=web [ search index=threat action=block | fields src_ip | format ]</pre>
@@ -28702,6 +28800,16 @@ Subsearch: <code>index=web [ search index=threat earliest=-1d@d | stats count by
 <tr><td><code>timechart</code></td><td><code>stats</code> with <code>_time</code> as the implicit X axis. <code>BY &lt;field&gt;</code> makes one column per value of that field. Single split field only.</td></tr>
 <tr><td><code>chart</code></td><td>Like <code>timechart</code> but you choose the X axis: <code>chart count OVER host BY status</code>. Two dimensions (<code>OVER</code> + <code>BY</code>).</td></tr>
 </table>
+<pre>... | stats count by status
+#  status  count
+#  200     41022
+#  500       317          <- one row per group, no time
+
+... | timechart span=1h count by status
+#  _time                200    500      <- _time is the X axis, one col per value
+#  2026-08-29 09:00    1710      12
+
+... | chart count over host by status   <- you pick BOTH axes</pre>
 
 <h3>stats functions</h3>
 <pre>count, count(field), dc(field)           # distinct count
@@ -28735,6 +28843,15 @@ index=web | timechart span=1d count BY uri_path limit=10 useother=t usenull=f
 <li><code>streamstats</code>: running/windowed aggregates in event order &mdash; running totals, deltas (<code>streamstats current=f last(x) as prev | eval d = x - prev</code>), rolling averages (<code>window=10</code>), per-group sequence numbers.</li>
 <li><code>bin</code> (aka <code>bucket</code>): quantise a field into ranges (<code>bin _time span=1h</code>, <code>bin bytes span=1000</code>) &mdash; what <code>timechart</code> does to <code>_time</code> internally.</li>
 </ul>
+<pre># eventstats: keep every row, ATTACH the aggregate for comparison
+index=web | eventstats avg(response_ms) AS avg_all
+| where response_ms &gt; 2*avg_all                 # outliers vs the global mean
+
+# streamstats: running values in event order
+index=orders | sort _time
+| streamstats sum(amount) AS running_total
+| streamstats current=f last(amount) AS prev | eval delta = amount - prev
+| streamstats window=10 avg(latency) AS moving_avg</pre>
 
 <h3>tstats &mdash; the fast one</h3>
 <pre>| tstats count WHERE index=web BY _time span=1h, status
@@ -28750,6 +28867,14 @@ fields.</p>
 <li>Aggregating a rate: <code>stats</code> gives totals; divide by the window yourself, or use <code>timechart per_second(count)</code>.</li>
 <li><code>stats</code> drops <code>_raw</code> and all fields not named &mdash; put <code>eval</code>/<code>rex</code> before it.</li>
 </ul>
+<pre># WRONG: rex after stats -> _raw is already gone, nothing to extract from
+index=web | stats count by uri | rex field=_raw "..."      # no-op
+
+# WRONG: first() when you want newest -> gives whatever came back first
+| stats first(status) by session      # use latest(status) for "by _time"
+
+# rate: stats gives a total, not a per-second value
+| timechart span=1m per_second(count) AS rps    # this is the rate</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -28844,6 +28969,11 @@ Sort ascending by user then time, then use <code>streamstats</code> to reach bac
 <li><code>where &lt;boolean expr&gt;</code> &mdash; keep rows where the expression is true (uses eval syntax, so <code>where response&gt;avg</code> compares fields, unlike <code>search</code>).</li>
 <li><code>fieldformat f = expr</code> &mdash; change only the <em>display</em> of <code>f</code>; the underlying value (used by sort/stats) is unchanged.</li>
 </ul>
+<pre>| eval over = if(response_ms &gt; avg_ms, 1, 0)     # ASSIGN: boolean -> 1/0/null field
+| where response_ms &gt; avg_ms                     # FILTER: compares two FIELDS (search can't)
+| stats sum(bytes) AS total
+| fieldformat total = tostring(total, "commas")  # "1,048,576" shown; sort still uses 1048576
+# use eval to change the value, fieldformat to change only how it looks</pre>
 
 <h3>Calculated fields (<code>props.conf</code>)</h3>
 <pre>[api:access]
@@ -28883,6 +29013,13 @@ and dashboards.</p>
 <li><code>eval</code> null propagates: any null operand often makes the whole expression null &mdash; guard with <code>coalesce</code>/<code>if(isnull(...))</code>.</li>
 <li>String vs number: <code>"10" &lt; "9"</code> is true (lexical). <code>tonumber()</code> first.</li>
 </ul>
+<pre>| eval total = price + tax            # tax null on some rows -> total null on those rows
+| eval total = price + coalesce(tax, 0)      # guard nulls
+
+| where "10" &lt; "9"                    # TRUE: lexical compare
+| where tonumber(qty) &lt; 9             # numeric compare
+
+| lookup big.csv id OUTPUT owner      # 2M-row CSV reloaded each search -> use KV Store</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -28960,6 +29097,15 @@ Use a KV Store collection (better than CSV for continual growth and concurrent w
 <tr><td>Cost</td><td>CPU at search time</td><td>Storage (bigger tsidx) + slower indexing</td></tr>
 <tr><td>Use for</td><td>Almost everything</td><td>Fields you must filter on at massive scale, or need for routing; segmenting punctuation</td></tr>
 </table>
+<pre># SEARCH-TIME: define it today, it works on 2-year-old events, no reindex
+# props.conf (search head)
+[app:log]
+EXTRACT-lat = latency=(?&lt;latency_ms&gt;\d+)
+
+# INDEX-TIME: only when you must filter on it at huge scale (bigger tsidx, permanent)
+# props.conf (indexer) + transforms.conf with WRITE_META = true
+[app:log]
+TRANSFORMS-tag = add_tenant_indexed_field</pre>
 
 <h3>Automatic search-time extraction</h3>
 <ul>
@@ -28967,6 +29113,11 @@ Use a KV Store collection (better than CSV for continual growth and concurrent w
 <li><strong>Indexed extractions</strong> &mdash; for pure JSON/CSV/TSV, <code>INDEXED_EXTRACTIONS=JSON</code> at ingest gives structured fields cheaply.</li>
 <li>The <strong>Field Extractor (FX)</strong> UI: pick sample events, highlight values, it generates a regex or delimiter rule &rarr; saved as an <code>EXTRACT-</code> or <code>REPORT-</code>/<code>transforms</code> stanza.</li>
 </ul>
+<pre># raw: 2026-08-29 ts=... user=leo action=login result=ok
+... | table user action result          # auto-extracted: key=value pairs just appear
+
+# raw JSON: {"user":"leo","geo":{"country":"IN"}}   with KV_MODE=json in props.conf
+... | table user geo.country            # nested -> dotted field names, no rex needed</pre>
 
 <h3><code>rex</code> &mdash; inline extraction</h3>
 <pre>| rex field=_raw "user=(?&lt;user&gt;\w+)\s+ip=(?&lt;src_ip&gt;\d+\.\d+\.\d+\.\d+)"
@@ -29007,6 +29158,15 @@ MV_ADD = true</pre>
 <li>More specific sourcetype/source/host stanza wins; <code>local</code> over <code>default</code>; app priority via <code>ASCII</code> order unless set.</li>
 <li>Debug: Job Inspector, <code>| extract</code> to force, <code>erex</code> to generate a regex from examples, and test regex in the FX or <code>rex</code> before persisting.</li>
 </ul>
+<pre># which stage set a field? later stages see earlier fields:
+#   indexed -> EXTRACT/REPORT -> KV auto -> FIELDALIAS -> EVAL- -> LOOKUP- -> eventtype/tag
+
+# generate a regex from example values instead of hand-writing it
+index=app | erex latency_ms examples="123, 4501, 88"
+#   -> Splunk prints the EXTRACT- regex it inferred; paste into props.conf
+
+# force re-run of automatic KV extraction to debug
+index=app | extract kvdelim="=" pairdelim=" "</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -29081,6 +29241,13 @@ No &mdash; it applies to existing data immediately.
 <li><strong>Selective terms in the base search</strong> &mdash; put the most distinctive keyword/field=value <em>before</em> the first <code>|</code>, so the lexicon narrows candidate events. <code>status=500</code> beats <code>| where status=500</code>.</li>
 <li><strong>Reduce before the first transforming command</strong> &mdash; <code>| fields</code> to keep only needed fields, filter with <code>where</code>/<code>search</code>, extract only what you need. The first <code>stats</code>/<code>timechart</code> is the map&rarr;reduce boundary.</li>
 </ol>
+<pre># SLOW
+index=* earliest=-30d | rex "code=(?&lt;code&gt;\d+)" | where code&gt;=500 | stats count by uri
+
+# FAST: tighter time, named index, selective term in base, trim, then reduce
+index=web sourcetype=access_combined status&gt;=500 earliest=-24h
+| fields status uri _time
+| stats count by uri</pre>
 
 <h3>Dense vs sparse vs rare vs "needle in haystack"</h3>
 <table>
@@ -29090,6 +29257,12 @@ No &mdash; it applies to existing data immediately.
 <tr><td>Rare</td><td>&lt; ~0.01%</td><td>I/O to seek matching events; lexicon helps a lot</td></tr>
 <tr><td>Needle-in-haystack</td><td>1 in millions</td><td>Pure seek; make the term indexed/<code>TERM()</code></td></tr>
 </table>
+<pre># DENSE (most events match) -> CPU-bound: cut fields, use tstats/acceleration
+index=web | timechart span=1m count                # ~every event counts
+
+# RARE / needle (1 in millions) -> seek-bound: give the lexicon an exact token
+index=web "a3f9c1e0-7b21-4d55-9f0a-1c2e3d4b5a6f"   # slow: substring scan
+index=web TERM(a3f9c1e0-7b21-4d55-9f0a-1c2e3d4b5a6f)   # fast: exact lexicon lookup</pre>
 
 <h3>Fast wins</h3>
 <ul>
@@ -29102,6 +29275,13 @@ No &mdash; it applies to existing data immediately.
 <li>Run reporting searches in <strong>Fast mode</strong>; avoid Verbose.</li>
 <li><code>| tstats</code> against indexed fields or an accelerated data model &mdash; skips raw reads entirely.</li>
 </ul>
+<pre># join/subsearch -> stats
+index=web | join user [ search index=crm | fields user tier ]     # 10k/60s cap, centralises
+index=web OR index=crm | stats values(tier) AS tier count(eval(index="web")) AS hits by user
+
+# transaction -> stats (transaction holds raw events on the SH)
+... | transaction session maxpause=30m
+... | stats range(_time) AS dur count earliest(_time) AS start by session</pre>
 
 <h3>Acceleration options</h3>
 <table>
@@ -29111,6 +29291,14 @@ No &mdash; it applies to existing data immediately.
 <tr><td><strong>Summary indexing</strong> (<code>collect</code> / <code>si*</code> commands)</td><td>Custom rollups you control; historical aggregates; when built-in acceleration doesn't fit.</td></tr>
 <tr><td><strong>Scheduled search + <code>loadjob</code></strong></td><td>Share one result set across users/panels instead of everyone re-running.</td></tr>
 </table>
+<pre># accelerated data model: query the tsidx summaries, not raw events
+| tstats summariesonly=t count FROM datamodel=Web
+    WHERE Web.status&gt;=500 BY Web.uri_path, _time span=1h
+
+# summary indexing: nightly rollup you control
+index=web sourcetype=access_combined earliest=-1d@d latest=@d
+| stats count sum(bytes) AS bytes by uri_path
+| collect index=summary_web marker="daily_uri"        # later: index=summary_web daily_uri</pre>
 
 <h3>Diagnosing with the Job Inspector</h3>
 <ul>
@@ -29120,6 +29308,15 @@ No &mdash; it applies to existing data immediately.
 <li><code>index=_audit action=search</code> / <code>index=_internal</code> for skipped/deferred scheduled searches and concurrency limits.</li>
 <li>The <strong>Monitoring Console</strong> for indexer load, search concurrency, and skipped searches org-wide.</li>
 </ul>
+<pre># Job Inspector numbers that tell the story
+scanCount   = 8,200,000     # events read from disk
+eventCount  =    12,400     # events that matched
+resultCount =        37     # rows returned
+#   scanCount &gt;&gt; eventCount  -> base search not selective (add index/term/time)
+
+command.search.rawdata  6.10s   # bucket reads dominate -> too much time range / not rare
+command.search.index    0.20s   # lexicon lookups (cheap)
+command.stats           0.05s</pre>
 
 <h3>Concurrency &amp; scheduling</h3>
 <ul>
@@ -29127,6 +29324,14 @@ No &mdash; it applies to existing data immediately.
 <li>Stagger schedules (avoid every :00), lengthen intervals, use <code>schedule_window</code>, and move heavy scheduled work to a dedicated SH.</li>
 <li>Real-time searches are expensive (a persistent search per) &mdash; use indexed real-time or short historical instead where possible.</li>
 </ul>
+<pre># savedsearches.conf: stagger + widen so the scheduler doesn't skip
+[High error rate]
+cron_schedule       = 3,18,33,48 * * * *     # not on the :00 stampede
+dispatch.earliest_time = -15m
+schedule_window     = 5                        # scheduler may delay up to 5 min to fit
+# find skips:
+index=_internal sourcetype=scheduler status=skipped
+| stats count by savedsearch_name reason</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -29201,6 +29406,15 @@ The time range.
 <li>Fields are typed and can be auto-extracted, calculated, or lookup-based &mdash; the model is where you normalise messy events into a clean shape.</li>
 <li>Consumed by <strong>Pivot</strong> (GUI reporting, no SPL), by <code>| datamodel</code>, and by <code>| tstats &hellip; FROM datamodel=&hellip;</code>.</li>
 </ul>
+<pre># a dataset tree, each node = a constraint + fields, children narrow the parent
+Web                     constraint: (sourcetype=access_* OR tag=web)
+  fields: action, status, uri_path, bytes, src, dest, http_method
+  |- Web.Errors         constraint: status &gt;= 400          # inherits all Web fields
+       |- Web.Errors.Client   constraint: status &lt; 500
+
+# use it without SPL knowledge of the raw data:
+| datamodel Web Errors search | stats count by status
+| from datamodel:"Web.Errors"</pre>
 
 <h3>Acceleration</h3>
 <ul>
@@ -29209,6 +29423,19 @@ The time range.
 <li><code>summariesonly=t</code> &rarr; only return accelerated data (fast, but misses very recent un-summarised events); <code>summariesonly=f</code> (default) fills the gap by searching raw for the unsummarised tail (slower but complete). <code>allow_old_summaries=t</code> to tolerate schema drift.</li>
 <li>Costs: extra disk on indexers, a background summarisation workload, and rebuilds if you change the model. Only accelerate models people actually query a lot.</li>
 </ul>
+<pre># datamodels.conf
+[Web]
+acceleration = 1
+acceleration.earliest_time = -30d           # summary window
+acceleration.backfill_time  = -7d
+
+# summariesonly: fast but blind to the un-summarised last few minutes
+| tstats summariesonly=t count FROM datamodel=Web BY _time span=1h   # fast, may miss tail
+| tstats summariesonly=f count FROM datamodel=Web BY _time span=1h   # complete, reads raw tail
+
+# check the summary is healthy
+| tstats count FROM datamodel=Web WHERE _index_earliest=-1h | ...
+# or: Settings > Data models > Web > acceleration status (should be ~100%)</pre>
 
 <h3><code>tstats</code> against a model</h3>
 <pre>| tstats summariesonly=t count
@@ -29228,12 +29455,33 @@ The time range.
 <li>You make a data source "CIM-compliant" by writing a <strong>Technology Add-on</strong> that: extracts/aliases fields to the CIM names, adds the required tags/eventtypes, and sets any needed evals &mdash; so the vendor's <code>usr</code> becomes <code>user</code>, <code>act</code> becomes <code>action</code>, etc.</li>
 <li>Payoff: any content written against the CIM (Enterprise Security correlation searches, dashboards, community apps) works on <em>your</em> data with no rework &mdash; <code>| tstats &hellip; FROM datamodel=Authentication</code> spans every auth source you've normalised.</li>
 </ul>
+<pre># TA that maps a vendor's auth log to the CIM Authentication model
+# props.conf
+[vendor:vpn]
+FIELDALIAS-cim_user = usr AS user
+FIELDALIAS-cim_src  = client_ip AS src
+EVAL-action = case(res=="OK","success", res=="FAIL","failure", 1==1,"unknown")
+# eventtypes.conf: [vendor_vpn_auth]  search = sourcetype=vendor:vpn
+# tags.conf: [eventtype=vendor_vpn_auth]  authentication = enabled
+
+# now one query spans EVERY normalised auth source:
+| tstats count FROM datamodel=Authentication WHERE Authentication.action=failure
+    BY Authentication.src, Authentication.user</pre>
 
 <h3>Enterprise Security &amp; the CIM</h3>
 <p>ES ships hundreds of correlation searches, dashboards, and risk rules that all query the
 accelerated CIM data models via <code>tstats</code>. Onboarding a new log source into ES =
 CIM-normalise it with a TA + confirm the relevant data model is accelerated + validate the
 events appear via <code>| datamodel &hellip; search</code>.</p>
+<pre># ES onboarding validation for a new source
+| datamodel Authentication Authentication search
+| search sourcetype=vendor:vpn
+| stats count by action, app         # events show up + action is CIM-valued?
+
+# an ES correlation search is just this shape over the accelerated model:
+| tstats summariesonly=t count FROM datamodel=Authentication
+    WHERE Authentication.action=failure BY Authentication.src, _time span=1h
+| where count &gt; 20        # -> creates a notable event / bumps risk score</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -29305,6 +29553,17 @@ Data model structure and field names (and tags) across data sources.
 <p>A <strong>report</strong> = a saved search you re-run/share. Add a <strong>schedule</strong> and it
 runs on a cron; add a <strong>trigger condition</strong> + <strong>alert actions</strong> and it's an
 <strong>alert</strong>. Same object (<code>savedsearches.conf</code>), different toggles.</p>
+<pre># savedsearches.conf &mdash; one stanza, toggles decide report vs alert
+[High 5xx rate]
+search              = index=web status&gt;=500 | stats count
+dispatch.earliest_time = -5m
+dispatch.latest_time   = now
+enableSched         = 1                 # + schedule  -> scheduled report
+cron_schedule       = 2,7,12,17,22,27,32,37,42,47,52,57 * * * *
+counttype           = number of events  # + trigger   -> alert
+relation            = greater than
+quantity            = 100
+action.email        = 1                  # + action</pre>
 
 <h3>Scheduled vs real-time alerts</h3>
 <table>
@@ -29314,6 +29573,16 @@ runs on a cron; add a <strong>trigger condition</strong> + <strong>alert actions
 <tr><td>Detection latency = schedule interval</td><td>Near-instant</td></tr>
 <tr><td>Use <strong>indexed real-time</strong> if you need RT-ish without the cost</td><td>Reserve for a handful of truly time-critical alerts</td></tr>
 </table>
+<pre># scheduled (default): cron + relative window, detection latency = interval
+cron_schedule = */5 * * * *
+dispatch.earliest_time = -6m@m       # slight overlap to survive indexing lag
+dispatch.latest_time   = -1m@m
+
+# real-time: continuous, near-instant, but burns a search slot the whole time
+dispatch.earliest_time = rt-5m
+dispatch.latest_time   = rt
+# cheaper middle ground: "indexed real-time"
+dispatch.indexedRealtime = 1</pre>
 
 <h3>Trigger conditions</h3>
 <ul>
@@ -29321,6 +29590,14 @@ runs on a cron; add a <strong>trigger condition</strong> + <strong>alert actions
 <li><strong>Number of hosts / sources</strong>, or a <strong>custom condition</strong>: a secondary search over the results (<code>search count &gt; 100</code>, <code>where avg_latency &gt; 500</code>).</li>
 <li><strong>Per-result</strong> triggering: fire the action <em>once per row</em> (e.g. a ticket per offending host) vs once per search.</li>
 </ul>
+<pre># "any results" trigger
+counttype = number of events   relation = greater than   quantity = 0
+
+# custom condition: a secondary search over the result set
+alert_condition = search avg_latency &gt; 500
+
+# per-result: one action invocation per row (a ticket per offending host)
+alert.digest_mode = 0          # 0 = per-result, 1 = one rollup per fire</pre>
 
 <h3>Throttling &amp; scheduling controls</h3>
 <ul>
@@ -29330,12 +29607,31 @@ runs on a cron; add a <strong>trigger condition</strong> + <strong>alert actions
 <li><strong>Cron</strong>: <code>*/5 * * * *</code>; stagger off <code>0</code>/<code>*/5</code> boundaries to avoid herds (<code>3,8,13,... * * * *</code>).</li>
 <li><strong>Time range</strong> should slightly overlap the interval (run every 5m over <code>-6m</code> to <code>-1m</code>) to avoid gaps from indexing lag; or use <code>_index_earliest</code>/<code>_index_latest</code>.</li>
 </ul>
+<pre># throttle: after firing, stay quiet 1h &mdash; but PER host, not globally
+alert.suppress          = 1
+alert.suppress.period   = 3600s
+alert.suppress.fields   = host          # one alert per host per hour
+
+# spread scheduler load; never for time-critical alerts
+schedule_window         = 5             # may start up to 5 min late
+schedule_priority       = higher        # wins a contended slot</pre>
 
 <h3>Alert actions</h3>
 <ul>
 <li>Email (with results inline / CSV / PDF), webhook, run a script, log an event (<code>| collect</code> to a summary/notable index), add to a lookup (<code>outputlookup</code>), Slack/PagerDuty/ServiceNow via add-ons, and in ES: <strong>create a notable event</strong> / apply a <strong>risk modifier</strong> (adaptive response).</li>
 <li>Actions can chain; a webhook payload includes the search results / a results link.</li>
 </ul>
+<pre># multiple actions on one alert
+action.email = 1
+action.email.to = soc@corp
+action.email.sendcsv = 1
+action.webhook = 1
+action.webhook.param.url = https://hooks.corp/splunk
+# in ES, "adaptive response": create a notable + bump risk
+action.notable = 1
+action.risk = 1
+action.risk.param._risk_score = 40
+action.risk.param._risk_object_field = src</pre>
 
 <h3>Summary indexing</h3>
 <pre>index=web earliest=-1h@h latest=@h
@@ -29352,6 +29648,12 @@ runs on a cron; add a <strong>trigger condition</strong> + <strong>alert actions
 <code>status=deferred</code>, run duration, lag. Alert on skip rate. The <strong>Monitoring
 Console</strong> has scheduler dashboards. Skips = concurrency exhaustion (see Search
 Performance).</p>
+<pre>index=_internal sourcetype=scheduler (status=skipped OR status=deferred)
+| stats count by savedsearch_name, reason
+| sort - count                           # which searches lose their slot, and why
+
+index=_internal sourcetype=scheduler status=completed
+| stats avg(run_time) p95(run_time) max(dispatch_time) by savedsearch_name  # slow/laggy ones</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -29427,6 +29729,19 @@ Real-time.
 <tr><td>Mature, scriptable, huge ecosystem, SplunkJS extensions</td><td>Better design control, images/shapes, defaults going forward</td></tr>
 <tr><td>Tokens via <code>$token$</code>, <code>&lt;set&gt;</code>/<code>&lt;eval&gt;</code>, drilldown</td><td>Tokens via <code>$token$</code>, interactions, defaults; fewer custom hooks</td></tr>
 </table>
+<pre>&lt;!-- Classic / Simple XML --&gt;
+&lt;form&gt;
+  &lt;fieldset&gt;&lt;input type="time" token="tr"/&gt;&lt;/fieldset&gt;
+  &lt;row&gt;&lt;panel&gt;&lt;chart&gt;
+    &lt;search&gt;&lt;query&gt;index=web | timechart count&lt;/query&gt;
+      &lt;earliest&gt;$tr.earliest$&lt;/earliest&gt;&lt;latest&gt;$tr.latest$&lt;/latest&gt;&lt;/search&gt;
+  &lt;/chart&gt;&lt;/panel&gt;&lt;/row&gt;
+&lt;/form&gt;
+
+// Dashboard Studio: same idea, JSON + a layout grid
+{ "visualizations": { "viz_1": { "type": "splunk.line", "dataSources": {"primary": "ds_1"} } },
+  "dataSources": { "ds_1": { "type": "ds.search",
+                             "options": {"query": "index=web | timechart count"} } } }</pre>
 
 <h3>Searches in a dashboard</h3>
 <ul>
@@ -29434,6 +29749,12 @@ Real-time.
 <li>Search modes: real-time (avoid), scheduled (shared cached results across viewers via the saved search), on-demand.</li>
 <li><code>&lt;earliest&gt;/&lt;latest&gt;</code> per search, or bound to a time input.</li>
 </ul>
+<pre>&lt;!-- base + post-process: retrieve ONCE, 3 panels slice it (no 3x scan) --&gt;
+&lt;search id="base"&gt;&lt;query&gt;index=web sourcetype=access_combined&lt;/query&gt;&lt;/search&gt;
+
+&lt;chart&gt;&lt;search base="base"&gt;&lt;query&gt;| timechart count by status&lt;/query&gt;&lt;/search&gt;&lt;/chart&gt;
+&lt;table&gt;&lt;search base="base"&gt;&lt;query&gt;| top uri_path&lt;/query&gt;&lt;/search&gt;&lt;/table&gt;
+&lt;!-- post-process must be STREAMING-friendly; base is capped (default 500k events) --&gt;</pre>
 
 <h3>Tokens</h3>
 <pre>&lt;input type="dropdown" token="env"&gt; ... &lt;/input&gt;
@@ -29454,6 +29775,15 @@ Real-time.
 tokens (<code>&lt;link&gt;.../app/x/detail?form.host=$row.host$&amp;earliest=$earliest$&lt;/link&gt;</code>),
 or set tokens that reveal hidden panels. Contextual drilldown = the core of
 overview&rarr;detail dashboards.</p>
+<pre>&lt;table&gt;
+  &lt;search&gt;&lt;query&gt;index=web | stats count by host, status&lt;/query&gt;&lt;/search&gt;
+  &lt;drilldown&gt;
+    &lt;!-- click a row -> open the host detail dashboard, carry host + time --&gt;
+    &lt;link&gt;/app/ops/host_detail?form.host=$row.host$&amp;earliest=$earliest$&amp;latest=$latest$&lt;/link&gt;
+  &lt;/drilldown&gt;
+&lt;/table&gt;
+&lt;!-- or set a token to reveal a hidden panel instead of navigating --&gt;
+&lt;drilldown&gt;&lt;set token="sel_host"&gt;$row.host$&lt;/set&gt;&lt;/drilldown&gt;</pre>
 
 <h3>RBAC model</h3>
 <table>
@@ -29463,12 +29793,29 @@ overview&rarr;detail dashboards.</p>
 <tr><td><strong>Capability</strong></td><td>A specific permission (<code>schedule_search</code>, <code>rtsearch</code>, <code>rest_apps_management</code>, <code>edit_user</code>, <code>list_storage_passwords</code>&hellip;).</td></tr>
 <tr><td>Built-in roles</td><td><code>user</code>, <code>power</code> (scheduled + RT search, shared object edit), <code>admin</code>, <code>can_delete</code> (separate, for <code>| delete</code>).</td></tr>
 </table>
+<pre># authorize.conf &mdash; a role is capabilities + index scope + limits, and inherits
+[role_soc_analyst]
+importRoles          = user               # inherit user's capabilities
+srchIndexesAllowed   = security;web;auth   # what it may search
+srchIndexesDefault   = security
+srchJobsQuota        = 10                  # concurrent historical searches
+rtSrchJobsQuota      = 0                   # no real-time searches
+srchFilter           = index!=hr_pii       # row-level: appended to every search
+# capabilities granted separately: [capability::schedule_search] lists this role</pre>
 
 <h3>Index-level &amp; row-level security</h3>
 <ul>
 <li><strong>Index</strong> is the main data boundary: a role's <code>srchIndexesAllowed</code> lists which indexes it can search. Put sensitive data in its own index and grant narrowly.</li>
 <li><strong>Row-level</strong>: <code>srchFilter</code> on a role appends a filter to every search (<code>srchFilter = sourcetype!=pii OR user_role=hr</code>), or use search filters via a lookup. Field-level masking is done at index time (SEDCMD) or with a role-aware calculated field.</li>
 </ul>
+<pre># index = the real boundary: sensitive data in its own index, granted narrowly
+[role_web_support]  srchIndexesAllowed = web            # cannot even name index=auth
+
+# row-level: this role only ever sees its own region's events
+[role_emea_ops]     srchFilter = region=emea           # ANDed into every search
+
+# field masking at index time (props.conf on the indexer)
+SEDCMD-mask_ssn = s/\d{3}-\d{2}-(\d{4})/XXX-XX-\1/g</pre>
 
 <h3>Knowledge object permissions</h3>
 <ul>
@@ -29476,11 +29823,30 @@ overview&rarr;detail dashboards.</p>
 <li>Stored in <code>&lt;app&gt;/local.meta</code> (or <code>metadata/default.meta</code>). "Orphaned" objects (owner deleted) need reassignment.</li>
 <li>App context matters: an object shared only to app <code>X</code> is invisible from app <code>Y</code> even if global search would use it.</li>
 </ul>
+<pre># etc/apps/my_app/metadata/local.meta
+[savedsearches/High%20error%20rate]
+export = system                 # Global: visible from every app
+owner  = leo
+
+[views/exec_dashboard]
+export = none                   # App-only (default): visible only inside my_app
+access = read : [ * ], write : [ admin, power ]
+
+# private = no export stanza at all -> owner only; orphaned if owner is deleted</pre>
 
 <h3>Apps</h3>
 <p>An <strong>app</strong> is a namespace + bundle of config, knowledge objects, dashboards, and
 nav. TAs (add-ons) are apps with no UI that carry inputs/parsing. Deploy to the right tier
 (Deployer for SHC, Cluster Manager for indexers, Deployment Server for forwarders).</p>
+<pre>my_app/
+  default/         app.conf, savedsearches.conf, data/ui/views/*.xml   # shipped defaults
+  local/           per-instance overrides (wins over default; not in the package)
+  metadata/        default.meta / local.meta   # sharing + permissions
+  bin/, lookups/, static/appIcon.png
+# app.conf
+[ui]      label = Ops Console
+[package] id = my_app
+[install] is_configured = 1</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
