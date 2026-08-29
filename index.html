@@ -21790,6 +21790,20 @@ Costs: (1) <strong>Loss of intra-PR commit granularity</strong> &mdash; a 15-com
 <p class="subtitle">Grafana stores almost nothing about your metrics &mdash; it queries other systems and draws the result.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 96" role="img" aria-labelledby="d-grafarch-t">
+<title id="d-grafarch-t">Grafana queries data sources at render time; it stores almost nothing</title>
+<rect class="d-box-soft" x="14" y="34" width="80" height="28" rx="6"/><text class="d-t-sm" x="54" y="52" text-anchor="middle">browser</text>
+<rect class="d-box" x="160" y="26" width="110" height="44" rx="6"/><text class="d-t-sm" x="215" y="44" text-anchor="middle">Grafana server</text><text class="d-t-sm" x="215" y="60" text-anchor="middle">(proxy)</text>
+<rect class="d-box-alt" x="350" y="6" width="150" height="22"/><text class="d-t-sm" x="425" y="21" text-anchor="middle">Prometheus / Loki / SQL</text>
+<rect class="d-box-alt" x="350" y="66" width="150" height="22"/><text class="d-t-sm" x="425" y="81" text-anchor="middle">Grafana DB: dashboards, users</text>
+<path class="d-line" d="M94 48 L158 48" marker-end="url(#grafarch-ah)"/>
+<path class="d-line" d="M270 40 L348 20" marker-end="url(#grafarch-ah)"/><text class="d-t-sm" x="285" y="30">query per panel</text>
+<path class="d-line" d="M270 56 L348 74" marker-end="url(#grafarch-ah)"/>
+<defs><marker id="grafarch-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Grafana is a visualization + alerting layer. The time series live in the data sources; Grafana's own DB holds only dashboards, users, data-source configs, and alert rules. Panels reference a data source by <strong>UID</strong> for portability.</figcaption>
+</figure>
 <h3>What Grafana is (and isn't)</h3>
 <p>Grafana is a <strong>visualization and alerting layer</strong>, not a database. It holds
 dashboards, users, data source definitions, alert rules, and annotations in its own small
@@ -22483,6 +22497,19 @@ Causes: (1) <strong>Timestamp misalignment</strong> &mdash; Prometheus emits poi
 <p class="subtitle">Rules produce alert instances; notification policies route them; contact points deliver them.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 84" role="img" aria-labelledby="d-grafalert-t">
+<title id="d-grafalert-t">Alerting flow: rule -> instances -> notification policy -> contact point</title>
+<rect class="d-box" x="8" y="28" width="90" height="28" rx="5"/><text class="d-t-sm" x="53" y="45" text-anchor="middle">alert rule</text>
+<rect class="d-box" x="120" y="28" width="110" height="28" rx="5"/><text class="d-t-sm" x="175" y="45" text-anchor="middle">instances (per series)</text>
+<rect class="d-box-soft" x="252" y="28" width="120" height="28" rx="5"/><text class="d-t-sm" x="312" y="45" text-anchor="middle">notification policy</text>
+<rect class="d-box" x="394" y="28" width="118" height="28" rx="5"/><text class="d-t-sm" x="453" y="45" text-anchor="middle">contact point</text>
+<path class="d-line" d="M98 42 L118 42" marker-end="url(#grafalert-ah)"/><path class="d-line" d="M230 42 L250 42" marker-end="url(#grafalert-ah)"/><path class="d-line" d="M372 42 L392 42" marker-end="url(#grafalert-ah)"/>
+<defs><marker id="grafalert-ah" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path class="d-fill" d="M0 0 L7 3.5 L0 7 Z"/></marker></defs>
+<text class="d-t-sm" x="8" y="76">States: Normal &rarr; Pending (during <tspan class="d-t-mono">for</tspan>) &rarr; Firing. Policy routes by labels; grouping batches related alerts into one notification.</text>
+</svg>
+<figcaption>A rule evaluates queries + expressions and emits one <em>instance</em> per dimension. Silences and mute timings suppress delivery; the policy tree matches labels first-match-wins.</figcaption>
+</figure>
 <h3>The pieces</h3>
 <table>
 <tr><th>Object</th><th>Role</th></tr>
@@ -22956,6 +22983,19 @@ Causes: (1) <strong>Alerting writes annotations on every state change</strong> &
 <p class="subtitle">Forwarders collect, indexers store and search, search heads coordinate &mdash; and clustering makes each tier resilient.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 90" role="img" aria-labelledby="d-splarch-t">
+<title id="d-splarch-t">Splunk tiers: forwarders collect, indexers store+search, search heads coordinate</title>
+<rect class="d-box-alt" x="10" y="30" width="90" height="30" rx="6"/><text class="d-t-sm" x="55" y="42" text-anchor="middle">forwarders</text><text class="d-t-sm" x="55" y="55" text-anchor="middle">(on hosts)</text>
+<rect class="d-box-soft" x="160" y="24" width="120" height="42" rx="6"/><text class="d-t-sm" x="220" y="40" text-anchor="middle">indexers</text><text class="d-t-sm" x="220" y="55" text-anchor="middle">parse + store (buckets)</text>
+<rect class="d-box" x="360" y="30" width="120" height="30" rx="6"/><text class="d-t-sm" x="420" y="42" text-anchor="middle">search head</text><text class="d-t-sm" x="420" y="55" text-anchor="middle">SPL, merge</text>
+<path class="d-line" d="M100 45 L158 45" marker-end="url(#splarch-ah)"/><text class="d-t-sm" x="105" y="38">raw (S2S)</text>
+<path class="d-line" d="M360 40 L282 40" marker-end="url(#splarch-ah)"/><text class="d-t-sm" x="290" y="30">map (search)</text>
+<path class="d-line" d="M282 52 L358 52" marker-end="url(#splarch-ah)"/><text class="d-t-sm" x="290" y="66">partial results</text>
+<defs><marker id="splarch-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Index-time = line-break, timestamp, host/source/sourcetype, keyword index. Search-time = field extraction, lookups, tags (schema-on-read). Buckets age hot &rarr; warm &rarr; cold &rarr; frozen.</figcaption>
+</figure>
 <h3>The processing tiers</h3>
 <table>
 <tr><th>Component</th><th>Role</th></tr>
@@ -23213,7 +23253,18 @@ Order of precedence per event: (1) If <code>DATETIME_CONFIG = CURRENT</code>, us
 <p>Everything before the first <code>|</code> is the <strong>base search</strong> that pulls
 events from indexes. Each <code>|</code> pipes results into the next command. Commands are
 applied left to right.</p>
-
+<figure class="diagram">
+<svg viewBox="0 0 520 84" role="img" aria-labelledby="d-splspl-t">
+<title id="d-splspl-t">SPL: retrieve events, then transform them command by command</title>
+<rect class="d-box-soft" x="10" y="30" width="150" height="26" rx="5"/><text class="d-t-sm" x="85" y="47" text-anchor="middle">index=web status=500</text>
+<rect class="d-box" x="200" y="30" width="120" height="26" rx="5"/><text class="d-t-sm" x="260" y="47" text-anchor="middle">stats count by uri</text>
+<rect class="d-box" x="360" y="30" width="90" height="26" rx="5"/><text class="d-t-sm" x="405" y="47" text-anchor="middle">sort - count</text>
+<path class="d-line" d="M160 43 L198 43" marker-end="url(#splspl-ah)"/><path class="d-line" d="M320 43 L358 43" marker-end="url(#splspl-ah)"/>
+<defs><marker id="splspl-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="10" y="76"><tspan class="d-t-b">streaming</tspan> commands run on the indexers (parallel); the first <tspan class="d-t-b">transforming</tspan> command (<tspan class="d-t-mono">stats</tspan>) reduces on the search head.</text>
+</svg>
+<figcaption>Always set <code>index=</code> and a tight time range; filter with the base search (uses the index) not <code>| where</code> (runs on already-retrieved events).</figcaption>
+</figure>
 <h3>The base search</h3>
 <ul>
 <li><strong>Implied AND</strong>: <code>error timeout host=web01</code> = all three must match.</li>
@@ -24186,6 +24237,19 @@ Private, App, and Global.
 <p class="subtitle">Three signal types with different strengths &mdash; know which question each one answers cheaply.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 100" role="img" aria-labelledby="d-mon3p-t">
+<title id="d-mon3p-t">Metrics detect, traces localise, logs explain</title>
+<rect class="d-box-soft" x="14" y="20" width="150" height="40" rx="6"/><text class="d-t-b" x="89" y="38" text-anchor="middle">Metrics</text><text class="d-t-sm" x="89" y="53" text-anchor="middle">cheap, aggregatable</text>
+<rect class="d-box-soft" x="185" y="20" width="150" height="40" rx="6"/><text class="d-t-b" x="260" y="38" text-anchor="middle">Traces</text><text class="d-t-sm" x="260" y="53" text-anchor="middle">one request's span tree</text>
+<rect class="d-box-soft" x="356" y="20" width="150" height="40" rx="6"/><text class="d-t-b" x="431" y="38" text-anchor="middle">Logs</text><text class="d-t-sm" x="431" y="53" text-anchor="middle">per-event detail</text>
+<path class="d-line" d="M164 40 L183 40" marker-end="url(#mon3p-ah)"/><path class="d-line" d="M335 40 L354 40" marker-end="url(#mon3p-ah)"/>
+<defs><marker id="mon3p-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="82">"is it healthy?" &rarr; metrics. "which hop is slow?" &rarr; traces. "why did <tspan class="d-t-b">this</tspan> request fail?" &rarr; logs.</text>
+<text class="d-t-sm" x="14" y="96">Link them by a shared <tspan class="d-t-mono">trace_id</tspan>: exemplar &rarr; trace &rarr; logs.</text>
+</svg>
+<figcaption>Cost model: metrics are priced per series (cardinality), logs and traces per event volume. Put aggregatable health signals in metrics; per-event IDs and messages in logs/span attributes.</figcaption>
+</figure>
 <h3>The three pillars</h3>
 <table>
 <tr><th></th><th>Metrics</th><th>Logs</th><th>Traces</th></tr>
@@ -24505,6 +24569,17 @@ Saturation.
 <p class="subtitle">Turn "is it working?" into a number, a target, and a budget you can spend.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 100" role="img" aria-labelledby="d-monslo-t">
+<title id="d-monslo-t">SLO 99.9% -> a small error budget you spend on releases and incidents</title>
+<rect class="d-box-alt" x="14" y="26" width="480" height="24"/>
+<rect class="d-box-soft" x="14" y="26" width="432" height="24"/><text class="d-t-sm" x="230" y="43" text-anchor="middle">good events (99.9% target)</text>
+<text class="d-t-accent" x="470" y="43" text-anchor="middle">budget</text>
+<text class="d-t-sm" x="14" y="72">28-day window &rarr; 0.1% &asymp; ~40 min of "allowed badness". Burn rate = (1&minus;SLI)/(1&minus;SLO).</text>
+<text class="d-t-sm" x="14" y="88">Budget healthy &rarr; ship features. Budget spent &rarr; freeze &amp; fix reliability. Alert on multi-window burn rate.</text>
+</svg>
+<figcaption><strong>SLI</strong> = good/valid events (a %). <strong>SLO</strong> = target over a rolling window. <strong>SLA</strong> = contractual, looser than the SLO. 100% is the wrong target &mdash; it leaves no room to change anything.</figcaption>
+</figure>
 <h3>Definitions</h3>
 <table>
 <tr><th>Term</th><th>Meaning</th></tr>
@@ -25074,6 +25149,17 @@ Service-level batch/cron jobs that exit before Prometheus can scrape them.
 <p class="subtitle">Follow one request as a tree of timed spans across every service it touches.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 110" role="img" aria-labelledby="d-montr-t">
+<title id="d-montr-t">A trace is a waterfall of timed spans across services</title>
+<rect class="d-box-soft" x="14" y="20" width="460" height="16"/><text class="d-t-sm" x="480" y="32">gateway (root)</text>
+<rect class="d-box" x="60" y="40" width="200" height="14"/><text class="d-t-sm" x="270" y="51">auth service</text>
+<rect class="d-box" x="270" y="58" width="180" height="14"/><text class="d-t-sm" x="456" y="69">order service</text>
+<rect class="d-box-alt" x="300" y="76" width="120" height="14"/><text class="d-t-sm" x="426" y="87">db query (slow)</text>
+<text class="d-t-sm" x="14" y="104">Each span: <tspan class="d-t-mono">span_id</tspan>, <tspan class="d-t-mono">parent_span_id</tspan>, start/end. Context (<tspan class="d-t-mono">traceparent</tspan> header) propagates across every hop, incl. queues.</text>
+</svg>
+<figcaption>Sampling: <strong>head-based</strong> decides at the root before the outcome is known (cheap); <strong>tail-based</strong> decides at a collector after the trace finishes, so it can keep all errors and slow traces.</figcaption>
+</figure>
 <h3>The model</h3>
 <ul>
 <li>A <strong>trace</strong> = all the work done for one logical request, identified by a <code>trace_id</code>.</li>
@@ -25404,6 +25490,19 @@ An ordered list of fields shown for a particular operation (Create, Edit, View, 
 <p class="subtitle">A workflow is a state machine for issues &mdash; and the Resolution field is the part everyone gets wrong.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 96" role="img" aria-labelledby="d-jirawf-t">
+<title id="d-jirawf-t">A workflow is a state machine; transitions carry conditions/validators/post-functions</title>
+<rect class="d-box" x="14" y="34" width="80" height="26" rx="6"/><text class="d-t-sm" x="54" y="51" text-anchor="middle">To Do</text>
+<rect class="d-box" x="150" y="34" width="90" height="26" rx="6"/><text class="d-t-sm" x="195" y="51" text-anchor="middle">In Progress</text>
+<rect class="d-box" x="300" y="34" width="80" height="26" rx="6"/><text class="d-t-sm" x="340" y="51" text-anchor="middle">In Review</text>
+<rect class="d-box-soft" x="436" y="34" width="70" height="26" rx="6"/><text class="d-t-sm" x="471" y="51" text-anchor="middle">Done</text>
+<path class="d-line" d="M94 47 L148 47" marker-end="url(#jirawf-ah)"/><path class="d-line" d="M240 47 L298 47" marker-end="url(#jirawf-ah)"/><path class="d-line" d="M380 47 L434 47" marker-end="url(#jirawf-ah)"/>
+<path class="d-line" d="M300 54 C 250 70, 200 70, 195 62" marker-end="url(#jirawf-ah)"/><text class="d-t-sm" x="215" y="82">reopen &rarr; must clear Resolution</text>
+<defs><marker id="jirawf-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption><strong>Status</strong> = where the issue is; <strong>Resolution</strong> = why it left the process. Set Resolution on transitions into Done; <em>clear</em> it on reopen, or the issue vanishes from open-issue filters and burndown.</figcaption>
+</figure>
 <h3>Anatomy</h3>
 <ul>
 <li>A <strong>workflow</strong> = a set of <strong>statuses</strong> (states) + <strong>transitions</strong> (directed edges) an issue can take.</li>
@@ -25505,6 +25604,20 @@ To Do, In Progress, Done.
 <p class="subtitle">A board is a saved filter plus a column layout &mdash; not a container of issues.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 100" role="img" aria-labelledby="d-jiraboard-t">
+<title id="d-jiraboard-t">A board = a saved filter (JQL) + columns mapped to statuses</title>
+<rect class="d-box-alt" x="14" y="20" width="150" height="24"/><text class="d-t-sm" x="89" y="36" text-anchor="middle">filter: project = X ...</text>
+<path class="d-line" d="M89 44 L89 54" marker-end="url(#jiraboard-ah)"/>
+<defs><marker id="jiraboard-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="200" y="54" width="90" height="40"/><text class="d-t-sm" x="245" y="70" text-anchor="middle">To Do</text>
+<rect class="d-box" x="300" y="54" width="90" height="40"/><text class="d-t-sm" x="345" y="70" text-anchor="middle">In Progress</text>
+<rect class="d-box" x="400" y="54" width="90" height="40"/><text class="d-t-sm" x="445" y="70" text-anchor="middle">Done</text>
+<text class="d-t-sm" x="14" y="70">issues that</text><text class="d-t-sm" x="14" y="84">match the filter</text>
+<path class="d-line" d="M164 44 C 180 50, 190 52, 198 56" marker-end="url(#jiraboard-ah)"/>
+</svg>
+<figcaption>Issues aren't "on" a board &mdash; they <em>match its filter</em>. Dragging a card runs the workflow transition for the target column's status. Card missing? Check the filter, then the column&rarr;status mapping.</figcaption>
+</figure>
 <h3>What a board actually is</h3>
 <ul>
 <li>A board = <strong>a filter</strong> (the JQL that selects which issues appear) + <strong>configuration</strong> (columns, swimlanes, quick filters, card layout, estimation, working days).</li>
@@ -26400,6 +26513,20 @@ Fix Version/s.
 <p class="subtitle">Push copies of content close to users, and route each user to the nearest copy.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 100" role="img" aria-labelledby="d-cdnfund-t">
+<title id="d-cdnfund-t">Users hit a nearby edge PoP; a miss fetches from origin and caches it</title>
+<rect class="d-box-alt" x="14" y="36" width="70" height="26"/><text class="d-t-sm" x="49" y="53" text-anchor="middle">user</text>
+<rect class="d-box-soft" x="160" y="30" width="90" height="38" rx="6"/><text class="d-t-sm" x="205" y="46" text-anchor="middle">edge PoP</text><text class="d-t-sm" x="205" y="60" text-anchor="middle">cache</text>
+<rect class="d-box" x="400" y="36" width="90" height="26" rx="6"/><text class="d-t-sm" x="445" y="53" text-anchor="middle">origin</text>
+<path class="d-line" d="M84 49 L158 49" marker-end="url(#cdnfund-ah)"/>
+<path class="d-line" d="M158 40 C 120 34, 110 60, 90 58" marker-end="url(#cdnfund-ah)"/><text class="d-t-accent" x="95" y="72">HIT: served here</text>
+<path class="d-line" d="M250 49 L398 49" marker-end="url(#cdnfund-ah)"/><text class="d-t-sm" x="270" y="42">MISS: fetch + cache</text>
+<defs><marker id="cdnfund-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="94">Routing to the nearest PoP: anycast (one IP, BGP picks) and/or DNS steering (geo/health/RUM-aware).</text>
+</svg>
+<figcaption>Wins: lower latency (nearby PoP), <strong>origin offload</strong> (fewer requests reach you), spike absorption, TLS termination close to the user, and a DDoS/WAF perimeter.</figcaption>
+</figure>
 <h3>The core idea</h3>
 <ul>
 <li>A <strong>CDN</strong> is a globally distributed set of caching servers (<strong>edge</strong> servers) in many <strong>Points of Presence (PoPs)</strong> near end users.</li>
@@ -26620,6 +26747,20 @@ The proportion of traffic served from cache without reaching the origin.
 <p class="subtitle">The headers that tell every cache how long to reuse a response and what to do when it goes stale.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 96" role="img" aria-labelledby="d-cdncc-t">
+<title id="d-cdncc-t">Freshness lifecycle of a cached response</title>
+<rect class="d-box-soft" x="14" y="30" width="120" height="26" rx="5"/><text class="d-t-sm" x="74" y="47" text-anchor="middle">FRESH (age &lt; TTL)</text>
+<rect class="d-box-alt" x="200" y="30" width="120" height="26" rx="5"/><text class="d-t-sm" x="260" y="47" text-anchor="middle">STALE (age &ge; TTL)</text>
+<rect class="d-box" x="386" y="14" width="120" height="24" rx="5"/><text class="d-t-sm" x="446" y="30" text-anchor="middle">304 &rarr; refresh age</text>
+<rect class="d-box" x="386" y="48" width="120" height="24" rx="5"/><text class="d-t-sm" x="446" y="64" text-anchor="middle">200 &rarr; replace</text>
+<path class="d-line" d="M134 43 L198 43" marker-end="url(#cdncc-ah)"/><text class="d-t-sm" x="140" y="26">TTL expires</text>
+<path class="d-line" d="M320 40 L384 26" marker-end="url(#cdncc-ah)"/><path class="d-line" d="M320 46 L384 58" marker-end="url(#cdncc-ah)"/>
+<text class="d-t-sm" x="325" y="86">revalidate with ETag / If-None-Match</text>
+<defs><marker id="cdncc-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption><code>stale-while-revalidate</code> serves the stale copy instantly and refreshes in the background; <code>stale-if-error</code> serves stale if the origin fails. Use <code>s-maxage</code> for the edge + small <code>max-age</code> for the browser so purges propagate fast.</figcaption>
+</figure>
 <h3><code>Cache-Control</code> response directives</h3>
 <table>
 <tr><th>Directive</th><th>Meaning</th></tr>
@@ -26859,6 +27000,22 @@ No &mdash; only versioned URLs or short browser TTLs address that.
 <li>Origin config: hostname(s), ports, TLS (verify cert, SNI, min version), host header to send, path rewrites, timeouts, retry policy, and which request headers to forward.</li>
 </ul>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 96" role="img" aria-labelledby="d-cdnshield-t">
+<title id="d-cdnshield-t">An origin shield collapses misses from all PoPs into one origin request</title>
+<rect class="d-box" x="14" y="14" width="70" height="18"/><text class="d-t-sm" x="49" y="27" text-anchor="middle">edge PoP</text>
+<rect class="d-box" x="14" y="40" width="70" height="18"/><text class="d-t-sm" x="49" y="53" text-anchor="middle">edge PoP</text>
+<rect class="d-box" x="14" y="66" width="70" height="18"/><text class="d-t-sm" x="49" y="79" text-anchor="middle">edge PoP</text>
+<rect class="d-box-soft" x="200" y="36" width="110" height="28" rx="6"/><text class="d-t-sm" x="255" y="54" text-anchor="middle">shield (1 PoP)</text>
+<rect class="d-box-alt" x="400" y="36" width="90" height="28" rx="6"/><text class="d-t-sm" x="445" y="54" text-anchor="middle">origin</text>
+<path class="d-line" d="M84 24 L198 44" marker-end="url(#cdnshield-ah)"/>
+<path class="d-line" d="M84 49 L198 50" marker-end="url(#cdnshield-ah)"/>
+<path class="d-line" d="M84 74 L198 56" marker-end="url(#cdnshield-ah)"/>
+<path class="d-line" d="M310 50 L398 50" marker-end="url(#cdnshield-ah)"/><text class="d-t-sm" x="320" y="44">1 request per object</text>
+<defs><marker id="cdnshield-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Place the shield near the origin. Cost: one extra hop on a miss. Benefit: request collapsing across the whole CDN, so a purge or cold cache doesn't hammer the origin from dozens of PoPs. Lock the origin to CDN traffic only (IP allowlist / mTLS).</figcaption>
+</figure>
 <h3>Origin shield / mid-tier</h3>
 <ul>
 <li>Without a shield: a miss at any of dozens/hundreds of PoPs goes straight to origin. A cold cache, a purge, or a new asset can hit origin from many PoPs at once.</li>
