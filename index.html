@@ -5208,6 +5208,1039 @@ You can write the object parameter explicitly: <code>template&lt;class Self&gt; 
 </section>
 <!-- /TOPIC:cpp:modern-cpp -->
 
+<!-- ============================== OOPS TOPICS ============================== -->
+<!-- TOPIC:oops:four-pillars -->
+<section class="view topic" id="v-oops-four-pillars" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>The Four Pillars</h1>
+<p class="subtitle">Everyone can name them. The interview is whether you can distinguish abstraction from encapsulation.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Abstraction</h3>
+<p>Exposing <em>what</em> something does, hiding <em>how</em>. You model a problem with the relevant
+essentials and ignore the rest. A <code>List</code> interface (<code>add</code>, <code>get</code>, <code>size</code>) is an
+abstraction; whether it's an array or linked nodes is an implementation detail. Achieved with
+interfaces, abstract classes, and well-named public methods.</p>
+
+<h3>Encapsulation</h3>
+<p>Bundling data with the methods that operate on it, and <em>restricting direct access</em> to the
+data so the object controls its own invariants. Private fields + public methods, validated
+setters, no leaking internal references. Abstraction is about the <em>design view</em>;
+encapsulation is the <em>enforcement mechanism</em> (access control) that protects it.</p>
+
+<h3>Inheritance</h3>
+<p>A new class reuses and extends an existing one (an <strong>is-a</strong> relationship):
+<code>Manager is-a Employee</code>. Gives code reuse and a subtype for polymorphism &mdash; but tight
+coupling to the base, so use it only for genuine subtype relationships; otherwise compose.</p>
+
+<h3>Polymorphism</h3>
+<p>"Many forms" &mdash; one interface, many implementations. <strong>Runtime</strong> (a base reference calls
+a method, the derived override runs) and <strong>compile-time</strong> (overloading, generics/templates).
+Lets you write code against the abstraction and drop in new types without changing callers.</p>
+
+<h3>The one-liner distinctions</h3>
+<table>
+<tr><th>Pair</th><th>Difference</th></tr>
+<tr><td>Abstraction vs Encapsulation</td><td>Abstraction = hide complexity in the design; Encapsulation = hide data behind access control to protect invariants.</td></tr>
+<tr><td>Inheritance vs Composition</td><td>is-a vs has-a. Inheritance couples to a base; composition delegates to a member.</td></tr>
+<tr><td>Overloading vs Overriding</td><td>Same name different params, resolved at compile time; vs same signature in a subclass, resolved at runtime.</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Abstraction</strong>: model the essentials, hide the mechanism. Interfaces / abstract classes.</li>
+<li><strong>Encapsulation</strong>: data + behaviour together, private state, controlled access, protected invariants.</li>
+<li>Abstraction = design intent; encapsulation = the access-control enforcement.</li>
+<li><strong>Inheritance</strong>: is-a, reuse + subtype, but tight coupling &mdash; use sparingly.</li>
+<li><strong>Polymorphism</strong>: one interface, many types. Runtime (virtual/override) + compile-time (overload/generics).</li>
+<li>Encapsulation violated by public fields, leaking mutable internals, "getter/setter for everything".</li>
+<li>Prefer composition + interfaces to deep inheritance trees.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Abstraction vs encapsulation in one sentence each?</dt>
+<dd>Abstraction: expose a simple model and hide the complicated implementation. Encapsulation: keep an object's data private and force all access through methods that maintain its invariants.</dd>
+<dt>Is a class with all-public fields and no methods encapsulated?</dt>
+<dd>No. Anyone can put it into an invalid state; there's no invariant protection. It's just a data bag (sometimes fine as a DTO, but not "encapsulated").</dd>
+<dt>Name the two kinds of polymorphism.</dt>
+<dd>Runtime/dynamic (method overriding via a base reference, dispatched by the object's actual type) and compile-time/static (method overloading, generics/templates).</dd>
+<dt>Why is inheritance considered risky?</dt>
+<dd>The subclass depends on the base's implementation details; a base change can silently break subclasses (fragile base class), and you inherit everything whether you want it or not. Composition exposes only what you delegate.</dd>
+<dt>Which pillar does a Java <code>interface</code> most directly express?</dt>
+<dd>Abstraction (a pure contract), and it enables polymorphism. It contributes to encapsulation only indirectly.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>List the four pillars.</summary><div class="answer-box">
+Abstraction, encapsulation, inheritance, polymorphism.
+</div></details>
+<details class="answer-reveal"><summary>How is encapsulation implemented in most OOP languages?</summary><div class="answer-box">
+Access modifiers (<code>private</code>/<code>protected</code>/<code>public</code>) plus accessor methods, so external code can't touch internal state directly.
+</div></details>
+<details class="answer-reveal"><summary>Give an everyday example of abstraction.</summary><div class="answer-box">
+Driving a car: you use the steering wheel and pedals (interface) without knowing about the engine's combustion cycle (implementation).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Can you have abstraction without encapsulation, or vice versa?</summary><div class="answer-box">
+Yes both ways. A well-named interface backed by a class with public mutable fields is abstract-but-not-encapsulated. A class with private fields and getters/setters exposing every field 1:1 is encapsulated in mechanism but has no real abstraction (it just mirrors its data). Good design needs both.</div></details>
+<details class="answer-reveal"><summary>Why do "getters and setters for every field" undermine encapsulation?</summary><div class="answer-box">
+They reproduce direct field access with extra ceremony: callers still manipulate individual pieces of state, and the object no longer owns its invariants (e.g. <code>setStart</code>/<code>setEnd</code> lets a caller create an interval with start &gt; end). Better: expose intent-level operations (<code>moveBy</code>, <code>withEnd</code>) that keep the object consistent.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Some argue OOP's "four pillars" is a weak framing. What's the critique?</summary><div class="answer-box">
+Inheritance is arguably not a fundamental building block but one (often overused) reuse mechanism; the genuinely load-bearing ideas are encapsulation (message-passing, protected invariants) and polymorphism (substitutability). Abstraction isn't OOP-specific at all. Alternative framings emphasise <em>subtype polymorphism + encapsulation</em> as the core, with inheritance demoted, which is why modern guidance is "prefer composition" and why languages like Go and Rust give you polymorphism (interfaces/traits) without implementation inheritance.
+</div></details>
+<details class="answer-reveal"><summary>How does the Liskov Substitution Principle connect the pillars?</summary><div class="answer-box">
+Inheritance creates subtypes; polymorphism relies on being able to use a subtype wherever the base is expected. LSP is the correctness condition for that: a subtype must honour the base's contract (no strengthened preconditions, no weakened postconditions, preserved invariants). If a subclass violates LSP, polymorphic code that was correct against the base breaks &mdash; so "inheritance" is only safe when it produces true behavioural subtypes, not just code reuse.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:four-pillars -->
+
+<!-- TOPIC:oops:class-object-access -->
+<section class="view topic" id="v-oops-class-object-access" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>Class vs Object &amp; Access Specifiers</h1>
+<p class="subtitle">Blueprint vs instance, and who is allowed to touch what.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Class vs object</h3>
+<p>A <strong>class</strong> is a type &mdash; a blueprint describing state (fields) and behaviour (methods).
+An <strong>object</strong> (instance) is a concrete value of that type occupying memory, with its own copy
+of the instance fields. <code>Car</code> is a class; <code>myCar</code> and <code>yourCar</code> are objects. <code>this</code>
+(or <code>self</code>) inside a method refers to the instance it was called on.</p>
+
+<h3>Instance vs static members</h3>
+<ul>
+<li><strong>Instance</strong> members belong to each object; accessed via a reference.</li>
+<li><strong>Static</strong> (class) members belong to the class itself &mdash; one shared copy, accessed via the class name. Used for constants, counters, factory methods, utility functions. Static methods can't use <code>this</code> or instance members directly.</li>
+</ul>
+
+<h3>Access specifiers</h3>
+<table>
+<tr><th>Specifier</th><th>Visible to</th></tr>
+<tr><td><code>public</code></td><td>Everyone.</td></tr>
+<tr><td><code>protected</code></td><td>The class and its subclasses (and, in Java, the same package).</td></tr>
+<tr><td><code>private</code></td><td>Only the declaring class.</td></tr>
+<tr><td>package/internal/default</td><td>Same package (Java) / assembly (C#) / no modifier.</td></tr>
+</table>
+<p>Default to <code>private</code>; widen only when needed. <code>protected</code> is a real coupling point &mdash;
+it becomes part of your subclassing contract.</p>
+
+<h3><code>friend</code> (C++) / internal access</h3>
+<p>C++ <code>friend</code> grants one specific external function or class access to private members &mdash;
+used sparingly for tightly-coupled pairs (e.g. an iterator and its container, <code>operator&lt;&lt;</code>).
+It's a deliberate, named exception to encapsulation, not a loophole to overuse.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Class = type/blueprint; object = instance with its own state. <code>this</code>/<code>self</code> = the current instance.</li>
+<li>Instance member &rarr; per object. Static member &rarr; one per class, no <code>this</code>.</li>
+<li><code>private</code> (declaring class) &sub; <code>protected</code> (+ subclasses) &sub; <code>public</code> (everyone).</li>
+<li>Start <code>private</code>; expose the minimum. <code>protected</code> is part of the subclass contract.</li>
+<li>Static methods: utilities, factories, no access to instance fields.</li>
+<li>C++ <code>friend</code> = targeted access grant for a coupled function/class; use rarely.</li>
+<li>Java: no modifier = package-private; C#: <code>internal</code> = assembly.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between a class and an object?</dt>
+<dd>A class is the definition/type; an object is a runtime instance of it with its own field values. One class, many objects.</dd>
+<dt>What can a static method <em>not</em> do?</dt>
+<dd>Use <code>this</code> or access instance (non-static) fields/methods directly, because it isn't called on any particular object.</dd>
+<dt><code>protected</code> vs <code>private</code>?</dt>
+<dd><code>private</code>: only the class that declares the member. <code>protected</code>: that class plus its subclasses (and same package in Java). <code>protected</code> members are part of the inheritance API and constrain future changes.</dd>
+<dt>When is a static field appropriate?</dt>
+<dd>For state genuinely shared by all instances or by no instance &mdash; constants, an instance counter, a cache, configuration. Beware: static mutable state is global state and hurts testability and thread-safety.</dd>
+<dt>What does C++ <code>friend</code> do?</dt>
+<dd>Lets a named external function or class access the private/protected members of the class granting friendship. It's not transitive or inherited.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How many copies of an instance field exist for 100 objects?</summary><div class="answer-box">
+100 &mdash; one per object. A <code>static</code> field would have just one, shared.
+</div></details>
+<details class="answer-reveal"><summary>Which access level should fields default to?</summary><div class="answer-box">
+<code>private</code>. Expose behaviour through methods, not raw fields.
+</div></details>
+<details class="answer-reveal"><summary>Can you call a static method without creating an object?</summary><div class="answer-box">
+Yes &mdash; <code>ClassName.method()</code>. That's the point of static.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Why is a <code>public static</code> mutable field a design smell?</summary><div class="answer-box">
+It's global mutable state: any code anywhere can change it, creating hidden dependencies and order-of-execution bugs; it's not thread-safe without extra work; and tests can't isolate from it. If shared state is truly needed, hide it behind an object with a controlled API, or inject it.
+</div></details>
+<details class="answer-reveal"><summary>A subclass in another package can't see a <code>protected</code> field of its base in Java in some cases. Explain.</summary><div class="answer-box">
+A subclass can access an inherited <code>protected</code> member only through references of its own type (or subtypes), not through a reference of the base type from another package. This prevents one package's subclass from poking at <code>protected</code> state of unrelated instances of the base.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Is encapsulation about objects or about classes? Consider that in C++/Java one object can access another same-class object's privates.</summary><div class="answer-box">
+It's <em>class</em>-level, not instance-level: access control is checked against the type of the code doing the access, not the identity of the object. So <code>Foo::bar(Foo other) { other.privateField; }</code> compiles &mdash; useful for copy constructors, <code>equals</code>, comparisons. Languages differ: Ruby and Smalltalk enforce per-object privacy (a private method can only be called on <code>self</code>). The class-level model trades a little theoretical purity for practical implementability of binary operations.
+</div></details>
+<details class="answer-reveal"><summary>What are the trade-offs of the "nested class can see the outer class's privates" rule?</summary><div class="answer-box">
+Nested/inner classes (Java, C++, C#) can access the enclosing class's private members, which is how iterators, builders, and event handlers stay cohesive with their owner without widening visibility for everyone. The cost: the nested type is tightly coupled to the outer's internals, so it must evolve together; and in Java a non-static inner class holds an implicit reference to the outer instance, a classic memory-leak source (e.g. an inner <code>Runnable</code> outliving its Activity). Prefer <code>static</code> nested classes unless you need the outer instance.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:class-object-access -->
+
+<!-- TOPIC:oops:lifecycle -->
+<section class="view topic" id="v-oops-lifecycle" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>Constructors, Destructors &amp; Object Lifecycle</h1>
+<p class="subtitle">Creation, initialisation, and clean-up &mdash; and when each actually happens.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Kinds of constructor</h3>
+<ul>
+<li><strong>Default</strong> &mdash; no arguments. Often compiler-generated; suppressed once you declare any other constructor.</li>
+<li><strong>Parameterised</strong> &mdash; takes arguments to set initial state.</li>
+<li><strong>Copy</strong> &mdash; build a new object from an existing one of the same type (<code>T(const T&amp;)</code>).</li>
+<li><strong>Move</strong> (C++11) &mdash; build from an rvalue by stealing its resources.</li>
+<li><strong>Delegating</strong> &mdash; one constructor calls another to avoid duplication (<code>this(...)</code> / <code>: T(...)</code>).</li>
+</ul>
+
+<h3>Initialisation order</h3>
+<p>Base class &rarr; members (in declaration order) &rarr; the constructor body. Destruction is the exact
+reverse. Assigning members in the body instead of an initialiser list means default-construct-then-
+overwrite, and can't initialise <code>const</code>/reference members at all.</p>
+
+<h3>Destructors / finalisers</h3>
+<ul>
+<li><strong>C++</strong>: <code>~T()</code> runs deterministically at scope exit / <code>delete</code>. Make it <code>virtual</code> in a polymorphic base.</li>
+<li><strong>Java/C#</strong>: no deterministic destructor. <code>finalize()</code> (deprecated) / GC is non-deterministic; use <code>try-with-resources</code> / <code>using</code> + <code>AutoCloseable</code>/<code>IDisposable</code> for cleanup.</li>
+<li><strong>Python</strong>: <code>__del__</code> runs when the refcount hits zero (usually prompt) but not guaranteed on interpreter exit or in cycles; prefer context managers (<code>with</code>).</li>
+</ul>
+
+<h3>The lifecycle</h3>
+<pre><code>allocate memory  -&gt;  run base + member init  -&gt;  run constructor body
+      ...object is alive, methods callable...
+run destructor body  -&gt;  destroy members (reverse)  -&gt;  destroy base  -&gt;  free memory</code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Constructors: default, parameterised, copy, move (C++), delegating.</li>
+<li>Declaring any constructor removes the implicit default one.</li>
+<li>Init order: base &rarr; members (declaration order) &rarr; body. Destruction reverses it.</li>
+<li>Use initialiser lists, not body assignment (needed for <code>const</code>/reference/no-default members).</li>
+<li>C++ dtor is deterministic; make it <code>virtual</code> for polymorphic bases.</li>
+<li>Java/C#: no deterministic dtor &mdash; use <code>AutoCloseable</code>/<code>IDisposable</code> + try-with-resources/<code>using</code>.</li>
+<li>Python: <code>__del__</code> is unreliable for cycles/exit &mdash; use <code>with</code> / context managers.</li>
+<li>Don't call overridable methods from a constructor &mdash; the subclass part isn't built yet.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does declaring a parameterised constructor remove the default one?</dt>
+<dd>The compiler only synthesises a default constructor if you declare <em>no</em> constructors, on the assumption that if you're specifying how to build the object you'll specify the no-arg case too if you want it. Add <code>T() = default;</code> (C++) or an explicit no-arg constructor.</dd>
+<dt>What's a copy constructor for?</dt>
+<dd>Creating a new object as a duplicate of an existing one &mdash; invoked on pass-by-value, return-by-value, and explicit copies. For classes owning resources you must define it to deep-copy (or delete it).</dd>
+<dt>Java has no destructors &mdash; how do you release a file handle deterministically?</dt>
+<dd>Implement <code>AutoCloseable</code> and use try-with-resources: <code>try (var f = new Resource()) { ... }</code> calls <code>close()</code> automatically at block exit, even on exception.</dd>
+<dt>In what order are members destroyed?</dt>
+<dd>Reverse of construction: constructor body's effects unwind, then members in reverse declaration order, then base classes.</dd>
+<dt>Why avoid calling virtual methods from a constructor?</dt>
+<dd>During the base constructor the object is only a base (the derived part and its overrides aren't set up), so the call resolves to the base version &mdash; in Java/C# it dispatches to the override but sees uninitialised subclass fields. Either way it's a bug magnet.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>When does a destructor run for a stack object in C++?</summary><div class="answer-box">
+When the enclosing scope ends &mdash; closing brace, <code>return</code>, or an exception unwinding through it.
+</div></details>
+<details class="answer-reveal"><summary>What is a delegating constructor?</summary><div class="answer-box">
+A constructor that forwards to another constructor of the same class to reuse initialisation logic, e.g. <code>Foo() : Foo(defaultValue) {}</code>.
+</div></details>
+<details class="answer-reveal"><summary>Does Java guarantee <code>finalize()</code> runs?</summary><div class="answer-box">
+No. It may run late, or never (e.g. on JVM exit). It's deprecated. Use explicit <code>close()</code> via <code>AutoCloseable</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Members declared <code>a, b</code>; constructor initialiser list is <code>: b(compute()), a(b)</code>. Bug?</summary><div class="answer-box">
+Yes &mdash; members initialise in <em>declaration</em> order, so <code>a</code> is built from <code>b</code> before <code>b</code> is initialised. <code>a</code> gets garbage. Reorder declarations or remove the dependency.
+</div></details>
+<details class="answer-reveal"><summary>Why is deterministic destruction (C++/RAII) often easier to reason about than GC finalisation?</summary><div class="answer-box">
+You know exactly <em>when</em> cleanup happens (scope exit), so ordering of releases is predictable and resource lifetimes compose. GC finalisers run at an unknown time on an unknown thread, can resurrect objects, and don't run in a defined order &mdash; so non-memory resources (files, sockets, locks) need a separate explicit disposal protocol anyway.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>An exception is thrown from a constructor after some members are initialised. What is destroyed?</summary><div class="answer-box">
+Only the sub-objects that were fully constructed &mdash; base classes and members initialised before the throw &mdash; are destroyed, in reverse order. The object's own destructor does <em>not</em> run because the object never finished construction. If it was heap-allocated with <code>new</code>, the matching <code>operator delete</code> frees the raw storage. This is why RAII members make constructors exception-safe automatically.
+</div></details>
+<details class="answer-reveal"><summary>How does object construction differ under a language with two-phase init (e.g. some frameworks / Objective-C <code>alloc</code>/<code>init</code>)?</summary><div class="answer-box">
+Allocation and initialisation are separate calls, so between them there's a valid-but-uninitialised object. Risks: methods called on a half-initialised instance, <code>init</code> returning a <em>different</em> object than <code>alloc</code> produced (must always use the return value), and forgetting to call <code>init</code>. The single-phase constructor model (C++/Java/C#) avoids the zombie window but forces you to throw for failure. Frameworks that need two-phase (e.g. deserialization, DI) usually add an explicit "is-fully-constructed" contract or a post-construct callback.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:lifecycle -->
+
+<!-- TOPIC:oops:inheritance-diamond -->
+<section class="view topic" id="v-oops-inheritance-diamond" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>Inheritance Types &amp; the Diamond Problem</h1>
+<p class="subtitle">is-a done right, and why multiple inheritance of state is a minefield.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Forms of inheritance</h3>
+<table>
+<tr><th>Form</th><th>Shape</th></tr>
+<tr><td>Single</td><td><code>B : A</code></td></tr>
+<tr><td>Multilevel</td><td><code>C : B : A</code></td></tr>
+<tr><td>Hierarchical</td><td><code>B : A</code>, <code>C : A</code></td></tr>
+<tr><td>Multiple</td><td><code>C : A, B</code> (C++, Python; not Java/C# for classes)</td></tr>
+<tr><td>Hybrid / diamond</td><td><code>D : B, C</code> where <code>B : A</code> and <code>C : A</code></td></tr>
+</table>
+
+<h3>The diamond problem</h3>
+<pre><code>    A
+   / \
+  B   C
+   \ /
+    D</code></pre>
+<p>If <code>B</code> and <code>C</code> each inherit <code>A</code>, then <code>D</code> has <strong>two</strong> <code>A</code> subobjects &mdash;
+which <code>A::x</code> does <code>d.x</code> mean? Ambiguous.</p>
+<ul>
+<li><strong>C++</strong> solution: <code>virtual</code> inheritance &mdash; <code>class B : virtual A</code>, <code>class C : virtual A</code>. Now <code>D</code> has a single shared <code>A</code>. Costs an extra indirection and complicates construction (the most-derived class initialises the virtual base).</li>
+<li><strong>Java/C#</strong>: no multiple inheritance of classes. Multiple <em>interfaces</em> are allowed (no state), and default methods can still collide &mdash; the compiler forces you to override and disambiguate with <code>Interface.super.method()</code>.</li>
+<li><strong>Python</strong>: allows it; resolves via <strong>MRO</strong> (C3 linearisation), a deterministic order you can inspect with <code>Cls.__mro__</code>.</li>
+</ul>
+
+<h3>Guidance</h3>
+<p>Prefer single inheritance + interfaces + composition. Use multiple inheritance only for mixins
+that add behaviour without state, or well-understood interface combinations.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Inheritance models <strong>is-a</strong>; if it's really <strong>has-a</strong>, compose instead.</li>
+<li>Forms: single, multilevel, hierarchical, multiple, diamond/hybrid.</li>
+<li>Diamond = two paths to a common base &rarr; duplicated base subobject &rarr; ambiguity.</li>
+<li>C++ fix: <code>virtual</code> inheritance &rarr; one shared base; most-derived class constructs it.</li>
+<li>Java/C#: single class inheritance; multiple interfaces OK; default-method clashes must be overridden explicitly.</li>
+<li>Python: allowed; MRO (C3 linearisation), check <code>__mro__</code>; call up with <code>super()</code>.</li>
+<li>Favour interfaces + composition; reserve MI for stateless mixins.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is the diamond problem?</dt>
+<dd>With multiple inheritance, a class <code>D</code> derived from two classes that share a common base <code>A</code> ends up with two copies of <code>A</code>'s members, making references to those members ambiguous.</dd>
+<dt>How does C++ solve it?</dt>
+<dd>Virtual inheritance: <code>B</code> and <code>C</code> inherit <code>A</code> <code>virtual</code>ly, so <code>D</code> gets a single shared <code>A</code> subobject. The most-derived class is responsible for constructing that virtual base.</dd>
+<dt>Why doesn't Java have the diamond problem for classes?</dt>
+<dd>It forbids multiple class inheritance. Interfaces carry no fields, so there's no duplicated state; if two interfaces provide the same default method, the implementing class must override it and can pick with <code>A.super.m()</code>.</dd>
+<dt>What is Python's MRO?</dt>
+<dd>Method Resolution Order &mdash; the linear sequence Python searches for attributes/methods, computed by the C3 linearisation algorithm, guaranteeing a consistent, monotonic order for cooperative <code>super()</code> calls.</dd>
+<dt>When is multiple inheritance reasonable?</dt>
+<dd>For orthogonal, stateless mixins (e.g. <code>Comparable</code> + <code>Serializable</code> behaviour), or combining pure interfaces. Avoid it for combining two stateful implementations.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What relationship does inheritance model?</summary><div class="answer-box">
+"is-a" &mdash; a <code>Dog</code> is an <code>Animal</code>. If the honest phrasing is "has-a", use composition.
+</div></details>
+<details class="answer-reveal"><summary>Does Java allow a class to extend two classes?</summary><div class="answer-box">
+No. One <code>extends</code>, but any number of <code>implements</code> (interfaces).
+</div></details>
+<details class="answer-reveal"><summary>What keyword gives C++ a single shared base in a diamond?</summary><div class="answer-box">
+<code>virtual</code> &mdash; <code>class B : virtual public A</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two interfaces both declare <code>default void log()</code>. A class implements both. What must it do?</summary><div class="answer-box">
+The class won't compile until it overrides <code>log()</code>. Inside, it can delegate to a specific one with <code>InterfaceA.super.log();</code> or provide its own implementation.
+</div></details>
+<details class="answer-reveal"><summary>Why does C++ virtual inheritance move base construction to the most-derived class?</summary><div class="answer-box">
+So the single shared virtual base is constructed exactly once. If <code>B</code> and <code>C</code> each tried to construct <code>A</code>, it'd be built twice. The most-derived object (<code>D</code>) names the virtual base in <em>its</em> initialiser list; <code>B</code>'s and <code>C</code>'s attempts to initialise <code>A</code> are ignored when they're not the most-derived.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how C3 linearisation resolves a non-trivial diamond, and what "monotonicity" guarantees.</summary><div class="answer-box">
+C3 produces an ordering of all ancestors such that: a class always precedes its parents; the relative order of parents from a <code>bases</code> list is preserved; and the result is <em>monotonic</em> &mdash; the MRO of a subclass is consistent with the MRO of each of its bases (no base's ancestor order is reversed). For <code>D(B, C)</code>, <code>B(A)</code>, <code>C(A)</code> it yields <code>D, B, C, A</code>: <code>A</code> comes after <em>both</em> <code>B</code> and <code>C</code>, so a cooperative <code>super().__init__()</code> chain visits each class exactly once. If no consistent order exists, Python raises <code>TypeError</code> at class-creation time.
+</div></details>
+<details class="answer-reveal"><summary>What's the memory/vtable cost of virtual inheritance in C++?</summary><div class="answer-box">
+Each object with a virtual base stores a hidden pointer (or offset in the vtable) to locate the shared base subobject, because its position relative to the derived object isn't fixed across the hierarchy. Accessing a virtual base member costs an extra indirection to find it. Casts to/from the virtual base can't be simple pointer adjustments. Construction/destruction is more complex (the most-derived class drives virtual-base init). This is why interfaces (pure virtual, no data) are the recommended way to get multiple supertypes without paying for virtual inheritance of state.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:inheritance-diamond -->
+
+<!-- TOPIC:oops:polymorphism -->
+<section class="view topic" id="v-oops-polymorphism" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>Compile-time vs Runtime Polymorphism</h1>
+<p class="subtitle">Static binding, dynamic binding, and where the decision is made.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Compile-time (static) polymorphism</h3>
+<ul>
+<li><strong>Function/operator overloading</strong> &mdash; the compiler picks an overload from the argument types.</li>
+<li><strong>Generics / templates</strong> &mdash; one source, many concrete types generated at compile time.</li>
+<li>Resolved before the program runs &rarr; no runtime cost, fully inlinable.</li>
+</ul>
+
+<h3>Runtime (dynamic) polymorphism</h3>
+<ul>
+<li>A call through a base reference/pointer to a <code>virtual</code>/overridable method dispatches to the <em>object's actual type</em> at runtime.</li>
+<li>Implemented via a per-class table of method pointers (vtable) + a per-object pointer to it.</li>
+<li>Cost: one indirection, not inlinable across the boundary. Benefit: open extension &mdash; new subtypes work with existing code.</li>
+</ul>
+
+<h3>Static vs dynamic binding</h3>
+<pre><code>Animal a = new Dog();
+a.speak();     <span class="c">// dynamic: Dog.speak() runs (overridden)</span>
+a.legs;        <span class="c">// static: fields/hidden methods use the declared type (Animal)</span></code></pre>
+<p>Overridden methods bind late (by object type); fields, <code>static</code> methods, <code>private</code>
+methods, and non-virtual methods bind early (by reference type). This is the source of many
+"why did the base version run?" bugs.</p>
+
+<h3>Ad hoc vs parametric vs subtype</h3>
+<table>
+<tr><th>Kind</th><th>Mechanism</th></tr>
+<tr><td>Ad hoc</td><td>Overloading &mdash; different code per type combination.</td></tr>
+<tr><td>Parametric</td><td>Generics/templates &mdash; same code, any type.</td></tr>
+<tr><td>Subtype</td><td>Overriding &mdash; a subtype substituted for its supertype.</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Compile-time: overloading + generics/templates. No runtime cost, inlinable.</li>
+<li>Runtime: virtual/override dispatch via vtable; one indirection; enables open extension.</li>
+<li>Overridden methods &rarr; late binding (object's dynamic type). Fields, <code>static</code>/<code>private</code>/non-virtual &rarr; early binding (reference's static type).</li>
+<li>Java methods are virtual by default; C++/C# need <code>virtual</code>.</li>
+<li>Three flavours: ad hoc (overload), parametric (generics), subtype (override).</li>
+<li>Downcast safely with <code>dynamic_cast</code>/<code>instanceof</code>/<code>is</code>; overuse signals a missing virtual method.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Overloading vs overriding &mdash; which is which kind of polymorphism?</dt>
+<dd>Overloading is compile-time (ad hoc) polymorphism &mdash; the compiler chooses by static argument types. Overriding is runtime (subtype) polymorphism &mdash; the running object's type chooses.</dd>
+<dt>Given <code>Base b = new Derived();</code>, does <code>b.field</code> use Base's or Derived's <code>field</code>?</dt>
+<dd>Base's. Field access is not polymorphic &mdash; it's resolved by the static type of the reference. Only overridden method calls dispatch dynamically.</dd>
+<dt>How is runtime polymorphism implemented?</dt>
+<dd>Each polymorphic class has a vtable (array of function pointers to its versions of the virtual methods); each object stores a pointer to its class's vtable; a virtual call reads that pointer and jumps through the right slot.</dd>
+<dt>Is template/generic code polymorphic?</dt>
+<dd>Yes &mdash; parametric polymorphism. The same written code works for many types, with the concrete versions produced at compile time (C++ instantiation) or via type erasure (Java generics).</dd>
+<dt>Why can excessive <code>instanceof</code>/<code>dynamic_cast</code> be a smell?</dt>
+<dd>It often means behaviour that should be a polymorphic method has leaked into callers as a type switch. Move the behaviour into the classes and call it virtually.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which is resolved at compile time: overloading or overriding?</summary><div class="answer-box">
+Overloading. Overriding is resolved at runtime by the object's actual type.
+</div></details>
+<details class="answer-reveal"><summary>What data structure backs runtime method dispatch?</summary><div class="answer-box">
+A virtual method table (vtable) per class, plus a vtable pointer per object.
+</div></details>
+<details class="answer-reveal"><summary>Are C++ member functions polymorphic by default?</summary><div class="answer-box">
+No &mdash; you must mark them <code>virtual</code>. Java methods are virtual unless <code>final</code>/<code>static</code>/<code>private</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Explain the output: a base-class method calls <code>this.helper()</code>; a subclass overrides <code>helper()</code>. Which runs when you call the base method on a subclass instance?</summary><div class="answer-box">
+The subclass's <code>helper()</code>. The call dispatches on the dynamic type of <code>this</code>, which is the subclass. This "template method" behaviour is intentional &mdash; but it also means a base method can call into not-yet-initialised subclass state if invoked from a constructor.
+</div></details>
+<details class="answer-reveal"><summary>Why is field access not polymorphic, and what bug does that cause?</summary><div class="answer-box">
+Fields are bound by the reference's declared type for performance and predictability (no vtable for data). Bug: shadowing a base field with a same-named subclass field means <code>((Base)obj).x</code> and <code>((Sub)obj).x</code> see <em>different</em> values on the same object. Don't shadow fields; use accessor methods if you need overridable data.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Compare the trade-offs of subtype polymorphism (virtual) vs parametric polymorphism (templates/generics) for a container library.</summary><div class="answer-box">
+Virtual: one compiled implementation, heterogeneous storage (<code>List&lt;Shape&gt;</code> holding any <code>Shape</code>), runtime extensibility &mdash; but an indirection per operation, no inlining, and elements must be reference types (boxing in Java). Templates/C++ generics: monomorphised per type, fully inlined, value semantics, no boxing &mdash; but code bloat (one instantiation each), slower compiles, worse error messages pre-concepts, and no single binary that works for types unknown at build time. Java erased generics sit in between: no bloat, but type info lost at runtime and everything is a reference. The STL chose templates for zero-overhead value semantics; GUI frameworks choose virtual for open extension.
+</div></details>
+<details class="answer-reveal"><summary>How does double dispatch / the visitor pattern get around single dispatch?</summary><div class="answer-box">
+Most OO languages dispatch on one receiver only. When behaviour depends on <em>two</em> runtime types (e.g. <code>collide(Asteroid, Ship)</code> vs <code>collide(Ship, Ship)</code>), you chain two virtual calls: <code>a.accept(v)</code> dispatches on <code>a</code>'s type and calls <code>v.visit(this)</code>, which dispatches on <code>v</code>'s type &mdash; the pair of dynamic dispatches selects the right combination. Cost: every element type needs an <code>accept</code>, and adding a new element type forces changes to every visitor (the visitor pattern trades "easy to add operations" for "hard to add types").
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:polymorphism -->
+
+<!-- TOPIC:oops:overload-override -->
+<section class="view topic" id="v-oops-overload-override" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>Overloading vs Overriding vs Hiding</h1>
+<p class="subtitle">Three similar-looking things with completely different resolution rules.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Overloading</h3>
+<p>Same method name, <strong>different parameter list</strong> (count or types), in the <em>same</em> scope.
+Chosen at <strong>compile time</strong> by the static types of the arguments. Return type alone can't
+distinguish overloads.</p>
+
+<h3>Overriding</h3>
+<p>A subclass provides a new body for an inherited <strong>virtual method with the same signature</strong>.
+Chosen at <strong>runtime</strong> by the object's actual type. Rules: same name and parameters;
+return type must be the same or <em>covariant</em> (a subtype); access can't be narrower; can't throw
+broader checked exceptions (Java); mark with <code>override</code> / <code>@Override</code>.</p>
+
+<h3>Hiding (shadowing)</h3>
+<p>A subclass declares a member with the same name as a <em>non-virtual</em> base member (or a
+<code>static</code> method, or a field). It doesn't override &mdash; it <strong>hides</strong>. Which one you get
+depends on the reference's static type. Almost always a mistake.</p>
+<pre><code><span class="k">struct</span> A { <span class="k">void</span> f() { puts(<span class="s">"A"</span>); } };          <span class="c">// not virtual</span>
+<span class="k">struct</span> B : A { <span class="k">void</span> f() { puts(<span class="s">"B"</span>); } };      <span class="c">// hides A::f</span>
+B b; A&amp; a = b;
+a.f();   <span class="c">// "A"  -- static type wins, no dynamic dispatch</span>
+b.f();   <span class="c">// "B"</span></code></pre>
+
+<h3>Quick comparison</h3>
+<table>
+<tr><th></th><th>Overloading</th><th>Overriding</th><th>Hiding</th></tr>
+<tr><td>Where</td><td>same class</td><td>subclass</td><td>subclass</td></tr>
+<tr><td>Signature</td><td>differs</td><td>identical</td><td>identical name, base not virtual</td></tr>
+<tr><td>Bound</td><td>compile time</td><td>runtime</td><td>compile time (ref type)</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Overload = same name, different params, same class, compile-time pick.</li>
+<li>Override = same signature, subclass, base method virtual/overridable, runtime pick.</li>
+<li>Hide = same name over a non-virtual/static/field base member &rarr; resolved by reference type. Avoid.</li>
+<li>Return type alone can't overload; covariant returns are allowed on override.</li>
+<li>Override can't reduce visibility or add broader checked exceptions.</li>
+<li>Always annotate overrides (<code>@Override</code> / <code>override</code>) &mdash; catches signature typos that would silently overload or hide.</li>
+<li>C++: forgetting <code>virtual</code> in the base &rarr; you get hiding, not overriding.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Can two methods differing only in return type be overloads?</dt>
+<dd>No. The parameter list must differ. (Covariant return types are only relevant when <em>overriding</em>.)</dd>
+<dt>What is a covariant return type?</dt>
+<dd>An override may return a subtype of what the base method returns &mdash; e.g. base <code>Animal clone()</code>, override <code>Dog clone()</code>. Callers using the base type still see <code>Animal</code>; callers with the derived type get the narrower type.</dd>
+<dt>What's the difference between overriding and hiding in C++?</dt>
+<dd>Overriding requires the base method to be <code>virtual</code>; the call dispatches on the object's dynamic type. If it's not <code>virtual</code>, a same-signature method in the derived class merely <em>hides</em> the base one, and calls resolve by the pointer/reference's static type.</dd>
+<dt>Why annotate every override?</dt>
+<dd>If your signature doesn't actually match (wrong parameter type, missing <code>const</code>), <code>@Override</code>/<code>override</code> turns a silent "you created a new unrelated method" into a compile error.</dd>
+<dt>Are <code>static</code> methods overridden?</dt>
+<dd>No &mdash; they're hidden. A <code>static</code> method call is bound at compile time to the class named (or the reference's type), not dispatched on an instance.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Two methods <code>area(int)</code> and <code>area(double)</code> in one class &mdash; what is that?</summary><div class="answer-box">
+Overloading &mdash; same name, different parameter types, resolved at compile time by the argument type.
+</div></details>
+<details class="answer-reveal"><summary>What must match for an override?</summary><div class="answer-box">
+Method name and parameter list; return type same or covariant; access not narrower; the base method must be overridable (virtual / non-final).
+</div></details>
+<details class="answer-reveal"><summary>Does overriding happen at compile time or runtime?</summary><div class="answer-box">
+Runtime &mdash; the JVM/CLR/vtable picks the implementation based on the object's actual class.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>In C++, base <code>void f()</code> (non-virtual), derived <code>void f()</code>. <code>Base* p = new Derived; p-&gt;f();</code> &mdash; which runs, and how do you fix it?</summary><div class="answer-box">
+<code>Base::f</code> runs &mdash; it's hiding, not overriding, and the call binds to the static type. Fix: declare <code>virtual void f();</code> in <code>Base</code> and <code>void f() override;</code> in <code>Derived</code>.
+</div></details>
+<details class="answer-reveal"><summary>Java: overriding a method, you widen a thrown checked exception from <code>IOException</code> to <code>Exception</code>. Result?</summary><div class="answer-box">
+Compile error. An override may throw the same or narrower checked exceptions, or none &mdash; never broader &mdash; because callers coded against the base signature only handle what the base declared.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Overload resolution with implicit conversions can pick a "surprising" overload. Give an example and the principle.</summary><div class="answer-box">
+<code>f(long)</code> and <code>f(const std::string&amp;)</code>; call <code>f(0)</code> or <code>f("x")</code> &mdash; <code>f(0)</code> matches <code>long</code> via integral conversion, but <code>f(NULL)</code> (defined as <code>0</code>) also picks <code>f(long)</code>, not the pointer overload people expect. Principle: the compiler ranks candidates by conversion sequence quality (exact &gt; promotion &gt; standard conversion &gt; user-defined), and picks the best; ambiguity is an error. Adding a seemingly-unrelated overload can change which one an existing call binds to. <code>nullptr</code>, <code>explicit</code>, and named functions instead of overloads reduce these traps.
+</div></details>
+<details class="answer-reveal"><summary>Why does adding an override in a subclass sometimes "hide" the base class's overloads of the same name?</summary><div class="answer-box">
+In C++ (and similarly Java for a different reason), declaring <em>any</em> member function named <code>f</code> in the derived class hides <em>all</em> base <code>f</code> overloads for unqualified lookup &mdash; name lookup stops at the first scope that has the name. So <code>Base</code> with <code>f(int)</code> and <code>f(double)</code>, and <code>Derived</code> overriding only <code>f(int)</code>, makes <code>d.f(3.14)</code> fail or narrow to <code>int</code>. Fix: bring them in with <code>using Base::f;</code> in the derived class, then override the ones you need.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:overload-override -->
+
+<!-- TOPIC:oops:abstract-interface -->
+<section class="view topic" id="v-oops-abstract-interface" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>Abstract Classes &amp; Interfaces</h1>
+<p class="subtitle">Two ways to say "implement this" &mdash; and when each is the right tool.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Abstract class</h3>
+<ul>
+<li>Can't be instantiated; may hold state, constructors, concrete methods, <em>and</em> abstract (unimplemented) methods.</li>
+<li>Expresses an <strong>is-a</strong> with shared implementation. A subclass gets one abstract base.</li>
+<li>Use for a partial implementation / template-method skeleton where subclasses fill in specifics.</li>
+</ul>
+
+<h3>Interface</h3>
+<ul>
+<li>A pure contract: method signatures, constants; historically no state or bodies.</li>
+<li>A class can implement <strong>many</strong> interfaces &mdash; the way to get multiple supertypes without MI of state.</li>
+<li>Modern languages blur the line: Java 8+ <code>default</code> methods, C# 8+ default interface members, so interfaces can carry behaviour &mdash; but still no instance fields.</li>
+</ul>
+
+<h3>Choosing</h3>
+<table>
+<tr><th>Want to&hellip;</th><th>Use</th></tr>
+<tr><td>share code + fields among related types</td><td>abstract class</td></tr>
+<tr><td>define a capability many unrelated types can have</td><td>interface</td></tr>
+<tr><td>allow a type to have several of these roles</td><td>interfaces (multiple)</td></tr>
+<tr><td>evolve the contract later without breaking implementers</td><td>interface + default methods (carefully)</td></tr>
+</table>
+<p>Rule of thumb: <strong>program to interfaces</strong> for the public API; use an abstract base internally
+if there's real shared implementation.</p>
+
+<h3>C++ note</h3>
+<p>C++ has no <code>interface</code> keyword &mdash; an interface is just an abstract class with only pure
+virtual functions and no data members (<code>= 0</code> on every method, <code>virtual</code> destructor).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Abstract class: no instances, can have state + constructors + concrete + abstract methods; single inheritance.</li>
+<li>Interface: contract only (+ constants, + default methods in modern langs); no instance state; implement many.</li>
+<li>Abstract class = "is-a + shared code". Interface = "can-do capability".</li>
+<li>Need multiple supertypes &rarr; interfaces.</li>
+<li>Program to interfaces in public APIs; abstract base for internal code reuse.</li>
+<li>C++ "interface" = abstract class, all methods pure virtual, virtual dtor, no data.</li>
+<li>Adding a method to an interface breaks implementers unless it has a <code>default</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Key difference between an abstract class and an interface?</dt>
+<dd>An abstract class can hold state and concrete implementation and you can only extend one; an interface is (primarily) a contract with no instance state and a class can implement many.</dd>
+<dt>When would you pick an abstract class?</dt>
+<dd>When several closely-related subtypes share fields and method implementations, and you want to provide a skeleton with a few "fill in the blank" abstract methods (template method pattern).</dd>
+<dt>Can an interface have method bodies now?</dt>
+<dd>Yes &mdash; Java <code>default</code> methods (8+) and C# default interface members (8+). Still no instance fields, so no per-object state.</dd>
+<dt>How do you model an interface in C++?</dt>
+<dd>An abstract class with only pure virtual functions (<code>= 0</code>), no data members, and a <code>virtual</code> (or protected) destructor.</dd>
+<dt>What's the cost of adding a method to a published interface?</dt>
+<dd>Every existing implementer breaks (must implement it) unless the language lets you provide a <code>default</code> body. This is why interfaces should be small and stable.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Can you instantiate an abstract class?</summary><div class="answer-box">
+No. You instantiate a concrete subclass that implements all its abstract methods.
+</div></details>
+<details class="answer-reveal"><summary>How many interfaces can a class implement?</summary><div class="answer-box">
+Any number.
+</div></details>
+<details class="answer-reveal"><summary>What makes a C++ class abstract?</summary><div class="answer-box">
+Having at least one pure virtual function (<code>virtual void f() = 0;</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You have <code>Bird</code> and <code>Airplane</code>. Both can <code>fly()</code> but share no ancestry. Model it.</summary><div class="answer-box">
+An interface <code>Flyable { void fly(); }</code> that both implement. An abstract class would force an artificial common base. Interfaces express orthogonal capabilities across unrelated hierarchies.
+</div></details>
+<details class="answer-reveal"><summary>When do default interface methods cause trouble?</summary><div class="answer-box">
+Diamond-style conflicts (two interfaces provide the same default &rarr; implementer must override and disambiguate), and API evolution surprises (a new default silently changes behaviour of existing implementers that had their own method resolved differently). They also tempt you to put logic in interfaces that really wants state, which they can't hold.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Java added default methods primarily for one reason. What was it, and what did it cost?</summary><div class="answer-box">
+To let <code>java.util.Collection</code> etc. gain methods like <code>stream()</code>, <code>forEach()</code>, <code>removeIf()</code> in Java 8 <em>without</em> breaking the millions of existing classes implementing those interfaces. The cost: interfaces are no longer pure contracts, resolution rules got more complex (class wins over interface; more-specific interface wins; otherwise you must override), and "interface vs abstract class" is now a fuzzier decision. It was a pragmatic backward-compatibility trade, not a design ideal.
+</div></details>
+<details class="answer-reveal"><summary>Discuss "interface segregation" as it applies to designing an abstract base with many methods.</summary><div class="answer-box">
+A fat abstract class (or interface) forces every subclass to deal with methods it doesn't need &mdash; often by throwing <code>UnsupportedOperationException</code> (an LSP violation) or writing empty overrides. Splitting into small role interfaces (<code>Readable</code>, <code>Writable</code>, <code>Seekable</code>) lets each type implement exactly what it supports, callers depend only on what they use, and you avoid the "read-only view still has <code>write()</code>" problem. The cost is more types and sometimes an adapter to combine them.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:abstract-interface -->
+
+<!-- TOPIC:oops:composition -->
+<section class="view topic" id="v-oops-composition" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>Association, Aggregation &amp; Composition</h1>
+<p class="subtitle">has-a relationships, ownership, and why "favour composition over inheritance" is the default advice.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The three has-a strengths</h3>
+<table>
+<tr><th>Relationship</th><th>Meaning</th><th>Lifetime</th><th>UML</th></tr>
+<tr><td>Association</td><td>One object uses/knows another.</td><td>Independent.</td><td>plain line</td></tr>
+<tr><td>Aggregation</td><td>"has-a", shared &mdash; the part can exist without the whole and be shared.</td><td>Independent; whole doesn't own part.</td><td>hollow diamond</td></tr>
+<tr><td>Composition</td><td>"owns-a", exclusive &mdash; the part's lifetime is bound to the whole.</td><td>Whole creates and destroys the part.</td><td>filled diamond</td></tr>
+</table>
+<pre><code><span class="c">// composition: Engine created and owned by Car</span>
+<span class="k">class</span> Car { Engine engine_; };            <span class="c">// value member -> destroyed with Car</span>
+<span class="c">// aggregation: Team holds Players it doesn't own</span>
+<span class="k">class</span> Team { std::vector&lt;Player*&gt; roster_; }; <span class="c">// players outlive/precede the team</span></code></pre>
+
+<h3>Composition over inheritance</h3>
+<ul>
+<li>Inheritance is compile-time, fixed, exposes the whole base API, and couples you to base internals (fragile base class).</li>
+<li>Composition delegates to a member; you expose only what you choose, can swap the member (even at runtime via an interface), and stay decoupled.</li>
+<li>Use inheritance only for genuine, stable <strong>is-a</strong> subtype relationships you'll use polymorphically. Otherwise hold the other object and delegate.</li>
+</ul>
+
+<h3>Delegation</h3>
+<pre><code><span class="k">class</span> Stack {
+    std::vector&lt;<span class="k">int</span>&gt; data_;                 <span class="c">// composition, not "class Stack : vector"</span>
+<span class="k">public</span>:
+    <span class="k">void</span> push(<span class="k">int</span> x) { data_.push_back(x); } <span class="c">// expose only stack operations</span>
+    <span class="k">void</span> pop()        { data_.pop_back(); }
+};</code></pre>
+<p>Deriving <code>Stack</code> from <code>vector</code> would leak <code>insert</code>, <code>operator[]</code>, iterators &mdash;
+letting callers violate stack semantics.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Association: "uses". Aggregation: "has, shared, independent lifetime" (hollow diamond). Composition: "owns, exclusive, shared lifetime" (filled diamond).</li>
+<li>Composition &rArr; the whole constructs and destroys the part; no external references to it.</li>
+<li>Aggregation &rArr; part is passed in, may be shared, outlives/precedes the whole.</li>
+<li>Favour composition + delegation over inheritance for code reuse.</li>
+<li>Inheritance couples to base internals, is fixed at compile time, exposes the full base API.</li>
+<li>Composition + an interface member = swappable behaviour at runtime (Strategy).</li>
+<li>Only inherit for real, stable is-a used polymorphically.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Aggregation vs composition?</dt>
+<dd>Both are "has-a". Composition is exclusive ownership with a shared lifetime &mdash; destroy the whole, the part goes too (a house and its rooms). Aggregation is a looser "has", where the part can be shared and outlives or precedes the whole (a playlist and its songs).</dd>
+<dt>Why "favour composition over inheritance"?</dt>
+<dd>Composition gives looser coupling (you depend on a small interface, not a base class's internals), runtime flexibility (swap the component), and a controlled surface (expose only what you delegate). Inheritance is rigid and drags in the whole base contract.</dd>
+<dt>Give a classic misuse of inheritance.</dt>
+<dd>Deriving <code>Stack</code> from <code>ArrayList</code>/<code>vector</code> (Java's <code>java.util.Stack</code> did this) &mdash; now callers can <code>add(index, e)</code> or index arbitrarily, breaking LIFO semantics. Should be composition + delegation.</dd>
+<dt>How does composition enable the Strategy pattern?</dt>
+<dd>The class holds a reference to an interface (<code>Comparator</code>, <code>CompressionAlgorithm</code>) and delegates to it; you inject different implementations, even swapping them at runtime, without subclassing.</dd>
+<dt>Is "association" a code construct?</dt>
+<dd>It's the weakest UML relationship &mdash; usually just one object holding a reference to, or receiving as a parameter, another. No ownership implied.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Car and Engine &mdash; composition or aggregation?</summary><div class="answer-box">
+Composition &mdash; the engine is created with and destroyed with the car (in a typical model). University&ndash;Department is composition; Department&ndash;Professor is aggregation.
+</div></details>
+<details class="answer-reveal"><summary>What does "has-a" indicate?</summary><div class="answer-box">
+An association/aggregation/composition relationship &mdash; one object contains or refers to another &mdash; as opposed to "is-a" (inheritance).
+</div></details>
+<details class="answer-reveal"><summary>Name one advantage of composition over inheritance.</summary><div class="answer-box">
+You can change the composed object (or swap its implementation via an interface) without touching the containing class, and you only expose the operations you choose to delegate.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Refactor <code>class LoggingList extends ArrayList</code> (which overrides <code>add</code> to log) to composition. Why is the inheritance version buggy?</summary><div class="answer-box">
+<code>addAll()</code> in <code>ArrayList</code> calls <code>add()</code> internally on some JDKs, so overriding both double-logs (self-use dependency). Composition: <code>class LoggingList { private final List&lt;T&gt; inner; void add(T x){ log(x); inner.add(x); } ... }</code> &mdash; you control exactly which calls log, with no reliance on the base's internal call graph.
+</div></details>
+<details class="answer-reveal"><summary>When is inheritance genuinely the right call over composition?</summary><div class="answer-box">
+When there's a true subtype relationship you exploit polymorphically (client code holds <code>Shape</code> and calls <code>area()</code> on any subtype), the base is designed and documented for extension, and the "is-a" holds for the whole base contract (LSP). Framework hook classes, sealed hierarchies of variants, and ADT-like designs fit.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Composition has a cost too. What are the downsides versus inheritance?</summary><div class="answer-box">
+Boilerplate: forwarding methods for everything you want to expose (mitigated by language features &mdash; Kotlin <code>by</code> delegation, C++ private inheritance, Lombok <code>@Delegate</code>). An extra indirection and object. You lose automatic polymorphic substitutability &mdash; the wrapper isn't a subtype of what it wraps unless it also implements a shared interface. And "flat" delegation can obscure a genuine type hierarchy that would communicate intent better. The guidance is "favour", not "always".
+</div></details>
+<details class="answer-reveal"><summary>How do mixins / traits sit between inheritance and composition?</summary><div class="answer-box">
+A mixin/trait bundles behaviour (and sometimes requires certain abstract members) that gets <em>mixed into</em> a class &mdash; giving reuse like inheritance but composably, without a single rigid base chain. Scala traits, Rust trait default methods, Ruby modules, and Python cooperative multiple inheritance all do this. They avoid the "one base class" limit and the fragile deep hierarchy, but reintroduce resolution-order questions (which trait's method wins) and can still create implicit coupling if a trait assumes state it doesn't own.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:composition -->
+
+<!-- TOPIC:oops:solid -->
+<section class="view topic" id="v-oops-solid" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>SOLID, Coupling &amp; Cohesion</h1>
+<p class="subtitle">Five principles for classes that stay changeable, plus the two metrics they optimise.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>SOLID</h3>
+<table>
+<tr><th></th><th>Principle</th><th>In practice</th></tr>
+<tr><td><strong>S</strong></td><td>Single Responsibility</td><td>A class should have one reason to change &mdash; one actor/concern it serves. Split "parses <em>and</em> formats <em>and</em> persists".</td></tr>
+<tr><td><strong>O</strong></td><td>Open/Closed</td><td>Open for extension, closed for modification &mdash; add behaviour via new types/plug-ins, not by editing existing tested code (polymorphism, strategy).</td></tr>
+<tr><td><strong>L</strong></td><td>Liskov Substitution</td><td>A subtype must be usable anywhere its base is, honouring the base's contract (no strengthened preconditions, weakened postconditions, or surprise exceptions).</td></tr>
+<tr><td><strong>I</strong></td><td>Interface Segregation</td><td>Many small role interfaces &gt; one fat one; clients shouldn't depend on methods they don't use.</td></tr>
+<tr><td><strong>D</strong></td><td>Dependency Inversion</td><td>Depend on abstractions, not concretions. High-level policy and low-level detail both depend on an interface; inject the implementation.</td></tr>
+</table>
+
+<h3>Coupling &amp; cohesion</h3>
+<ul>
+<li><strong>Coupling</strong> &mdash; how much one module depends on another's internals. <em>Low</em> is good: change one thing without a ripple. Reduce it with interfaces, DI, events, small APIs.</li>
+<li><strong>Cohesion</strong> &mdash; how focused a module is on one job. <em>High</em> is good: everything in the class relates to its single purpose. Low cohesion = "utils grab-bag".</li>
+<li>Goal: <strong>high cohesion, low coupling</strong>.</li>
+</ul>
+
+<h3>Law of Demeter</h3>
+<p>"Only talk to your immediate friends." Avoid <code>a.getB().getC().doThing()</code> (train wrecks) &mdash;
+it couples you to <code>a</code>'s whole object graph. Ask <code>a</code> to do the thing, or pass <code>C</code> in.</p>
+
+<h3>DRY / KISS / YAGNI</h3>
+<p>Don't Repeat Yourself (one source of truth per piece of knowledge &mdash; but don't over-abstract
+coincidental duplication); Keep It Simple; You Aren't Gonna Need It (don't build for speculative
+requirements).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>SRP</strong>: one reason to change. <strong>OCP</strong>: extend, don't modify. <strong>LSP</strong>: subtypes honour the base contract. <strong>ISP</strong>: small focused interfaces. <strong>DIP</strong>: depend on abstractions, inject concretions.</li>
+<li>Aim for <strong>high cohesion</strong> (class does one thing) + <strong>low coupling</strong> (few, abstract dependencies).</li>
+<li>Coupling reducers: interfaces, dependency injection, events/pub-sub, facades, small APIs.</li>
+<li>Law of Demeter: don't chain through objects you were handed; tell, don't ask.</li>
+<li>DRY = single source of truth (not "delete all similar-looking code").</li>
+<li>KISS, YAGNI &mdash; simplest thing that works; don't pre-build for maybe-futures.</li>
+<li>Symptoms of violation: shotgun surgery (SRP), <code>if type ==</code> ladders (OCP), <code>throw NotSupported</code> in overrides (LSP/ISP), <code>new ConcreteThing()</code> deep in business logic (DIP).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>State the Single Responsibility Principle precisely.</dt>
+<dd>A module should have exactly one reason to change &mdash; it should be responsible to a single actor/stakeholder. If billing rules and report layout both live in one class, two different teams' changes collide there.</dd>
+<dt>What does the Open/Closed Principle ask you to do when a new payment type appears?</dt>
+<dd>Add a new class implementing the payment interface, not edit a <code>switch</code> in existing, tested code. The system is "closed" to modification of what works, "open" to extension by new types.</dd>
+<dt>Give a Liskov violation.</dt>
+<dd>The classic: <code>Square extends Rectangle</code>, but <code>setWidth</code> on a <code>Square</code> also changes height, breaking code that assumes <code>setWidth(5); setHeight(4); assert area()==20</code> for any <code>Rectangle</code>. Or a <code>ReadOnlyList</code> subtype whose <code>add()</code> throws.</dd>
+<dt>Coupling vs cohesion &mdash; which do you want high?</dt>
+<dd>High cohesion (a class's parts all serve one purpose), low coupling (minimal, abstract dependencies between classes).</dd>
+<dt>What's a "train wreck" and which principle addresses it?</dt>
+<dd><code>order.getCustomer().getAddress().getCity()</code> &mdash; a chain that couples you to the internal structure of several objects. The Law of Demeter says depend only on direct collaborators; add <code>order.shippingCity()</code> instead.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does the D in SOLID stand for and mean?</summary><div class="answer-box">
+Dependency Inversion: high-level modules and low-level modules should both depend on abstractions (interfaces), not on each other's concrete classes; concrete implementations are injected.
+</div></details>
+<details class="answer-reveal"><summary>You want high ___ and low ___.</summary><div class="answer-box">
+High cohesion, low coupling.
+</div></details>
+<details class="answer-reveal"><summary>What does YAGNI advise?</summary><div class="answer-box">
+Don't implement functionality until it's actually needed &mdash; speculative generality adds cost and rarely fits the real future requirement.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A <code>Report</code> class reads from the DB, computes totals, and renders HTML. Which principle is violated and how do you fix it?</summary><div class="answer-box">
+SRP &mdash; three reasons to change (schema, business rules, presentation). Split into <code>ReportRepository</code> (data), <code>ReportCalculator</code> (rules), <code>ReportRenderer</code> (HTML), coordinated by a thin service. Now a layout change doesn't risk the query logic.
+</div></details>
+<details class="answer-reveal"><summary>How does Dependency Injection support the Open/Closed Principle?</summary><div class="answer-box">
+The class receives its collaborators through an interface (constructor/parameter), so you extend behaviour by passing a different implementation &mdash; no edit to the class. Combined with a DI container or factory, new strategies/adapters plug in via configuration rather than code changes to consumers.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>SOLID is sometimes criticised as leading to over-engineering. What's the balanced view?</summary><div class="answer-box">
+Each principle is a response to a real pain (ripple changes, edit-to-extend, broken substitutability), but applied dogmatically they explode class counts, add indirection that obscures flow, and create interfaces with one implementation "for testing". The pragmatic reading: apply them <em>where change is actually happening or expected</em>. A stable, simple class doesn't need five collaborator interfaces. Refactor toward SOLID when a second reason to change appears (rule of three), not pre-emptively. "Make it work, make it right, make it fast" &mdash; SOLID is mostly about the "right" step, driven by evidence.
+</div></details>
+<details class="answer-reveal"><summary>Explain the LSP conditions (preconditions, postconditions, invariants, history) with an example each.</summary><div class="answer-box">
+<strong>Preconditions can't be strengthened</strong>: base <code>withdraw(amount)</code> accepts any positive amount; a subtype that rejects amounts over 100 breaks callers. <strong>Postconditions can't be weakened</strong>: base guarantees the list is sorted after <code>insert</code>; a subtype that sometimes doesn't sort breaks readers. <strong>Invariants preserved</strong>: base keeps <code>balance &gt;= 0</code>; subtype must too. <strong>History constraint</strong>: base is immutable after construction; a "mutable subtype" lets state change in ways base clients never expect (this is why <code>MutablePoint extends Point</code> is a trap). Violating any means polymorphic code correct against the base can fail on the subtype.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:solid -->
+
+<!-- TOPIC:oops:design-patterns -->
+<section class="view topic" id="v-oops-design-patterns" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>Common Design Patterns</h1>
+<p class="subtitle">The handful that actually come up &mdash; what problem each solves, and how each is misused.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Creational</h3>
+<table>
+<tr><th>Pattern</th><th>Solves</th><th>Watch out</th></tr>
+<tr><td><strong>Singleton</strong></td><td>Exactly one instance, global access.</td><td>It's global mutable state &mdash; hurts testing, hides dependencies, thread-safety pitfalls. Prefer DI of a single instance.</td></tr>
+<tr><td><strong>Factory Method / Abstract Factory</strong></td><td>Create objects without naming concrete classes; pick the type at runtime.</td><td>Over-applied &mdash; a plain constructor is fine when there's no variation.</td></tr>
+<tr><td><strong>Builder</strong></td><td>Construct a complex object step by step; avoid telescoping constructors.</td><td>Overkill for 2&ndash;3 fields; named args / a config struct may do.</td></tr>
+</table>
+
+<h3>Structural</h3>
+<table>
+<tr><th>Pattern</th><th>Solves</th></tr>
+<tr><td><strong>Adapter</strong></td><td>Make an existing class fit a different interface the client expects.</td></tr>
+<tr><td><strong>Decorator</strong></td><td>Add responsibilities to an object dynamically by wrapping it &mdash; same interface, layered behaviour (streams, middleware).</td></tr>
+<tr><td><strong>Facade</strong></td><td>One simple interface over a complex subsystem.</td></tr>
+<tr><td><strong>Proxy</strong></td><td>Stand-in that controls access &mdash; lazy loading, caching, remote, access checks.</td></tr>
+<tr><td><strong>Composite</strong></td><td>Treat individual objects and trees of objects uniformly (files/folders, UI widgets).</td></tr>
+</table>
+
+<h3>Behavioural</h3>
+<table>
+<tr><th>Pattern</th><th>Solves</th></tr>
+<tr><td><strong>Strategy</strong></td><td>Swappable algorithm behind an interface, chosen at runtime (compression, sorting comparator).</td></tr>
+<tr><td><strong>Observer</strong></td><td>One-to-many notification when state changes (events, pub/sub, reactive UI).</td></tr>
+<tr><td><strong>Template Method</strong></td><td>Fixed skeleton in a base method, subclasses fill in steps.</td></tr>
+<tr><td><strong>Command</strong></td><td>Wrap a request as an object &mdash; queue, log, undo.</td></tr>
+<tr><td><strong>Iterator</strong></td><td>Traverse a collection without exposing its structure.</td></tr>
+<tr><td><strong>State</strong></td><td>Object changes behaviour when its internal state changes (state machine without giant switches).</td></tr>
+</table>
+<p>Many "patterns" are just idioms in languages with first-class functions (Strategy = pass a
+lambda; Command = a closure; Observer = a list of callbacks). Reach for the full class-based
+version only when you need the extra structure (naming, serialization, multiple methods).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Creational</strong>: Singleton (one instance &mdash; prefer DI), Factory (create by abstraction), Builder (step-by-step complex object), Prototype (clone).</li>
+<li><strong>Structural</strong>: Adapter (interface translation), Decorator (wrap to add behaviour), Facade (simplify), Proxy (control access), Composite (tree = leaf).</li>
+<li><strong>Behavioural</strong>: Strategy (swappable algorithm), Observer (notify many), Template Method (skeleton + hooks), Command (request as object, undo), State (behaviour per state), Iterator, Visitor (double dispatch), Chain of Responsibility.</li>
+<li>Strategy vs Template Method: composition/runtime vs inheritance/compile-time.</li>
+<li>Adapter vs Decorator vs Proxy: change interface / add behaviour same interface / control access same interface.</li>
+<li>With lambdas, Strategy/Command/Observer often collapse to functions.</li>
+<li>Singleton is usually an anti-pattern in disguise (global state).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Strategy vs Template Method?</dt>
+<dd>Both vary an algorithm. Strategy uses composition &mdash; the varying part is a separate object you plug in (and can swap at runtime). Template Method uses inheritance &mdash; the base defines the skeleton, subclasses override the hook steps (fixed at compile time).</dd>
+<dt>Adapter vs Decorator?</dt>
+<dd>Adapter <em>changes</em> an object's interface to match what a client needs. Decorator <em>keeps</em> the same interface but adds behaviour by wrapping. Adapter is about compatibility; Decorator is about layered features.</dd>
+<dt>Why is Singleton often called an anti-pattern?</dt>
+<dd>It's global mutable state with hidden coupling: any code can reach it, tests can't isolate from it, lifecycle is unclear, and thread-safety needs care. Usually better to create one instance at the composition root and inject it.</dd>
+<dt>What problem does Observer solve and what's its main hazard?</dt>
+<dd>Decoupled one-to-many change notification. Hazards: memory leaks if observers don't unsubscribe (listener lapsing), unclear/ cyclic update ordering, and cascades of updates. Modern reactive libraries address these.</dd>
+<dt>When is a Builder worth it?</dt>
+<dd>When an object has many optional parameters, needs step-wise construction with validation at the end, or you want an immutable result without a huge constructor. For a couple of fields, don't bother.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which pattern gives swappable algorithms behind a common interface?</summary><div class="answer-box">
+Strategy.
+</div></details>
+<details class="answer-reveal"><summary>Which pattern wraps an object to add behaviour while keeping its interface?</summary><div class="answer-box">
+Decorator (e.g. <code>BufferedInputStream</code> wrapping a <code>FileInputStream</code>).
+</div></details>
+<details class="answer-reveal"><summary>What does a Facade provide?</summary><div class="answer-box">
+A single, simplified interface to a larger, more complex subsystem.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You have a <code>PaymentProcessor</code> with a growing <code>switch(type)</code> for card/PayPal/crypto. Which patterns help?</summary><div class="answer-box">
+Strategy (each payment type implements a <code>PaymentMethod</code> interface) plus a Factory to instantiate the right one from the type. New methods = new class + registry entry, no edits to the processor &mdash; Open/Closed satisfied.
+</div></details>
+<details class="answer-reveal"><summary>Implement thread-safe lazy Singleton without a lock on every access (Java).</summary><div class="answer-box">
+The initialisation-on-demand holder idiom: a private static nested class holds the instance; the JVM initialises it lazily and thread-safely on first reference to the holder.
+<pre><code><span class="k">class</span> Cfg {
+  <span class="k">private</span> Cfg() {}
+  <span class="k">private static class</span> H { <span class="k">static final</span> Cfg I = <span class="k">new</span> Cfg(); }
+  <span class="k">static</span> Cfg get() { <span class="k">return</span> H.I; }
+}</code></pre>
+Or just an <code>enum</code> singleton. (Still consider whether you want a singleton at all.)
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>"Patterns are a sign of missing language features." Discuss with examples.</summary><div class="answer-box">
+Peter Norvig's observation: in languages with first-class functions, Strategy/Command/Observer/Template-Method largely vanish &mdash; you pass a function, store a closure, keep a list of callbacks. Iterator is built into <code>for-each</code>/generators. Singleton is a module in Python/JS. The GoF patterns were partly workarounds for C++/Java circa 1994 lacking closures, mixins, and reflection. What remains genuinely useful is the shared <em>vocabulary</em> ("this is a Decorator") and the patterns that address structural problems functions don't (Composite, Visitor for double dispatch, Facade). So: know them for communication and for the cases they still solve, but don't scaffold a class hierarchy where a lambda suffices.
+</div></details>
+<details class="answer-reveal"><summary>Compare the State pattern with a plain enum + switch state machine.</summary><div class="answer-box">
+Enum + switch: all transitions visible in one place, trivial to serialize the state (it's just a value), low ceremony &mdash; but the switch grows with every event&times;state combination and each state's behaviour is scattered across many switches. State pattern: one class per state, each encapsulating that state's behaviour and its outgoing transitions; adding a state is a new class (Open/Closed), and behaviour is cohesive &mdash; but more classes, the "current state" is now an object (serialization needs mapping), and shared data must be passed to each state. Rule: few states / simple logic &rarr; enum+switch; many states with rich per-state behaviour &rarr; State pattern (or a table-driven FSM).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:design-patterns -->
+
 </main>
 
 <footer class="site-footer">
@@ -5291,27 +6324,23 @@ You can write the object parameter explicitly: <code>template&lt;class Self&gt; 
       ["exceptions",       "Exception Handling & Safety Guarantees",     "throw/catch, stack unwinding, noexcept, RAII cleanup, the 3 guarantees."],
       ["constexpr",        "constexpr, consteval & Compile-time",        "constexpr functions/vars, consteval, constinit, compile-time containers."],
       ["modern-cpp",       "Modern C++: C++11 to C++23",                 "auto, range-for, structured bindings, optional/variant/expected, ranges, modules."]
+    ],
+    oops: [
+      ["four-pillars",       "The Four Pillars",                          "Abstraction, encapsulation, inheritance, polymorphism — with real distinctions."],
+      ["class-object-access","Class vs Object & Access Specifiers",       "Instances, this, static members, public/protected/private, friend."],
+      ["lifecycle",          "Constructors, Destructors & Object Lifecycle","Default/param/copy ctors, init order, dtor, when each runs."],
+      ["inheritance-diamond","Inheritance Types & the Diamond Problem",   "is-a, single/multiple/multilevel, virtual/diamond inheritance, ambiguity."],
+      ["polymorphism",       "Compile-time vs Runtime Polymorphism",      "Overloading/templates vs virtual dispatch, dynamic binding, vtable idea."],
+      ["overload-override",  "Overloading vs Overriding vs Hiding",       "Signatures, covariant returns, name hiding, virtual, early vs late binding."],
+      ["abstract-interface", "Abstract Classes & Interfaces",             "Pure virtual, interface vs abstract class, when to use each, ABCs."],
+      ["composition",        "Association, Aggregation & Composition",    "has-a vs owns-a lifetimes, 'favour composition over inheritance'."],
+      ["solid",              "SOLID, Coupling & Cohesion",                "SRP/OCP/LSP/ISP/DIP, coupling vs cohesion, Law of Demeter, DRY/KISS/YAGNI."],
+      ["design-patterns",    "Common Design Patterns",                    "Singleton, Factory, Builder, Adapter, Decorator, Observer, Strategy, and misuse."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    oops: [
-      "The four pillars",
-      "Class vs object & access specifiers",
-      "Constructors, destructors & object lifecycle",
-      "Inheritance types & the diamond problem",
-      "Compile-time vs runtime polymorphism",
-      "Overloading vs overriding",
-      "Abstract classes & interfaces",
-      "Association, aggregation & composition",
-      "SOLID principles",
-      "Coupling, cohesion & the Law of Demeter",
-      "Creational patterns (Singleton, Factory, Builder, Prototype)",
-      "Structural patterns (Adapter, Decorator, Proxy, Facade, Composite)",
-      "Behavioural patterns (Observer, Strategy, State, Command, Iterator)",
-      "Anti-patterns & refactoring"
-    ],
     ds: [
       "Complexity analysis & Big-O",
       "Arrays & dynamic arrays",
