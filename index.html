@@ -10494,6 +10494,1048 @@ CSRF: a malicious page causes the victim's browser to send a state-changing requ
 </section>
 <!-- /TOPIC:net:web-app -->
 
+<!-- ============================== OS TOPICS ============================== -->
+<!-- TOPIC:os:processes -->
+<section class="view topic" id="v-os-processes" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>Processes, the PCB &amp; Lifecycle</h1>
+<p class="subtitle">A program is a file; a process is that program running, with its own everything.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Process = program + execution context</h3>
+<p>A process has its own <strong>virtual address space</strong> (text, data, heap, stack), open file
+descriptors, registers, and kernel bookkeeping. Two runs of the same program are two processes,
+isolated from each other.</p>
+
+<h3>The Process Control Block (PCB)</h3>
+<p>The kernel's per-process record: PID, process state, saved registers/program counter, memory
+map (page-table pointer), open-file table, scheduling info (priority, CPU time used), parent PID,
+signal handlers, accounting. On a context switch the running process's state is saved into its
+PCB and the next process's is restored from its PCB.</p>
+
+<h3>States</h3>
+<pre><code>NEW -&gt; READY &lt;-&gt; RUNNING -&gt; TERMINATED
+              |        ^
+              v        |
+           WAITING (blocked on I/O / event)</code></pre>
+<p>Ready = runnable, waiting for a CPU. Running = on a CPU. Waiting/Blocked = can't proceed until
+some event (I/O completion, lock, child exit).</p>
+
+<h3><code>fork()</code> and <code>exec()</code></h3>
+<ul>
+<li><code>fork()</code> creates a near-identical child (copy of the address space, usually copy-on-write). Returns the child's PID to the parent, <code>0</code> to the child.</li>
+<li><code>exec()</code> replaces the current process image with a new program (keeps PID, fds unless close-on-exec).</li>
+<li>Shell pattern: <code>fork()</code>, child <code>exec()</code>s the command, parent <code>wait()</code>s.</li>
+</ul>
+
+<h3>Zombies &amp; orphans</h3>
+<ul>
+<li><strong>Zombie</strong>: child has exited but the parent hasn't <code>wait()</code>ed &mdash; the exit status and PID slot linger. A parent that never reaps leaks zombies.</li>
+<li><strong>Orphan</strong>: parent exited first &mdash; the child is re-parented to <code>init</code>/PID 1 (or a subreaper), which reaps it. Harmless; deliberately created for daemons.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Program = passive file; process = running instance with its own address space, fds, registers.</li>
+<li>PCB = kernel struct per process: PID, state, saved registers/PC, page-table ptr, fd table, priority, parent PID.</li>
+<li>States: new &rarr; ready &harr; running &rarr; terminated; running &rarr; waiting (blocked) &rarr; ready.</li>
+<li><code>fork()</code> = COW copy of the process (returns child PID to parent, 0 to child). <code>exec()</code> = replace image, keep PID.</li>
+<li>Zombie = exited, not yet <code>wait()</code>ed (holds PID slot). Orphan = parent died first &rarr; adopted by PID 1, which reaps it.</li>
+<li>COW means <code>fork</code> is cheap until either side writes a page.</li>
+<li>Each process's fds and memory are private; sharing needs IPC.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between a program and a process?</dt>
+<dd>A program is the executable file on disk (passive). A process is a program in execution &mdash; it has its own address space, register state, open files, and a PCB. One program can back many processes.</dd>
+<dt>What does <code>fork()</code> return?</dt>
+<dd>The child's PID in the parent, and <code>0</code> in the child (and <code>-1</code> on failure). That's how each side knows which it is.</dd>
+<dt>What is a zombie process?</dt>
+<dd>A child that has terminated but whose parent hasn't called <code>wait()</code>/<code>waitpid()</code>. The kernel keeps its PID and exit status until the parent reaps it. Many un-reaped zombies exhaust the PID table.</dd>
+<dt>What happens to a child whose parent exits first?</dt>
+<dd>It becomes an orphan and is re-parented to PID 1 (init/systemd) or the nearest subreaper, which will <code>wait()</code> for it when it dies. This is intentional for daemonising.</dd>
+<dt>Why is <code>fork()</code> cheap despite "copying" the address space?</dt>
+<dd>Copy-on-write: parent and child share the same physical pages, marked read-only. A page is actually duplicated only when one side writes to it. If the child immediately <code>exec()</code>s, almost nothing is copied.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What structure does the kernel use to track a process?</summary><div class="answer-box">
+The Process Control Block (PCB) &mdash; PID, state, saved registers, memory map, open files, scheduling info, parent PID.
+</div></details>
+<details class="answer-reveal"><summary>Which state is a process in while waiting for disk I/O?</summary><div class="answer-box">
+Blocked / waiting &mdash; not runnable until the I/O completes.
+</div></details>
+<details class="answer-reveal"><summary>What call replaces a process's memory image with a new program?</summary><div class="answer-box">
+<code>exec()</code> (the <code>execve</code> family).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>How does a shell run <code>ls | wc -l</code>?</summary><div class="answer-box">
+Create a pipe. <code>fork()</code> twice. In the first child: redirect stdout to the pipe's write end (<code>dup2</code>), close both pipe fds, <code>exec("ls")</code>. In the second child: redirect stdin from the pipe's read end, <code>exec("wc", "-l")</code>. The parent closes both pipe ends and <code>wait()</code>s for both children. The pipe couples <code>ls</code>'s output to <code>wc</code>'s input.
+</div></details>
+<details class="answer-reveal"><summary>How do you prevent zombie processes in a long-running server that spawns children?</summary><div class="answer-box">
+Reap them: call <code>wait()</code>/<code>waitpid(-1, ..., WNOHANG)</code> in a loop from a <code>SIGCHLD</code> handler, or install <code>signal(SIGCHLD, SIG_IGN)</code> / set <code>SA_NOCLDWAIT</code> so the kernel auto-reaps, or double-fork so the grandchild is orphaned to PID 1. Container init systems (<code>tini</code>, <code>--init</code>) exist specifically to reap orphaned zombies for PID 1.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is <code>fork()</code> considered problematic in modern multithreaded programs, and what's the alternative?</summary><div class="answer-box">
+<code>fork()</code> duplicates only the calling thread &mdash; all other threads vanish in the child, but any mutexes they held stay locked forever, and any invariant they were mid-updating is now broken in the child's copy. Between <code>fork()</code> and <code>exec()</code> the child may only call async-signal-safe functions; <code>malloc</code>, <code>printf</code>, most of libc are off-limits because they may take locks. Pthread <code>atfork</code> handlers try to paper over this but are fragile. Alternatives: <code>posix_spawn()</code> (a single call that does fork+exec safely, often via <code>vfork</code>/<code>clone</code> internally, avoiding the danger window), or on Linux <code>clone()</code> with the exact sharing flags you want, or spawn helper processes early before starting threads. This is why "fork a threaded server to daemonise" is discouraged &mdash; daemonise first, thread later.
+</div></details>
+<details class="answer-reveal"><summary>Walk through what the kernel does on <code>execve()</code>.</summary><div class="answer-box">
+Validate the path and permissions; read the file header (ELF, or <code>#!</code> interpreter &rarr; restart with the interpreter). Tear down the old address space (unmap all regions, drop the old page tables) &mdash; the point of no return; a failure here kills the process. Create new memory regions from the ELF program headers: map the text segment (read+exec, file-backed, shared), data (read+write, copy-on-write from file), zero-fill the BSS, set up a fresh stack with <code>argv</code>, <code>envp</code>, and the auxiliary vector. Load the dynamic linker (<code>ld.so</code>) if the binary is dynamically linked and transfer control to it (it maps shared libraries, does relocations, runs init functions), otherwise jump straight to the entry point. Preserve PID, parent, open fds (minus those marked close-on-exec), and reset signal handlers to default (kept dispositions for ignored signals). Registers are cleared; execution begins at <code>_start</code>.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:processes -->
+
+<!-- TOPIC:os:threads -->
+<section class="view topic" id="v-os-threads" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>Threads vs Processes</h1>
+<p class="subtitle">Shared memory and cheap creation &mdash; at the cost of shared blast radius.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What threads share vs own</h3>
+<table>
+<tr><th>Shared by all threads in a process</th><th>Private per thread</th></tr>
+<tr><td>Address space (code, heap, globals)</td><td>Stack</td></tr>
+<tr><td>Open file descriptors</td><td>Registers &amp; program counter</td></tr>
+<tr><td>Signal dispositions, PID, cwd</td><td>Thread-local storage, <code>errno</code></td></tr>
+<tr><td></td><td>Scheduling priority, kernel thread state</td></tr>
+</table>
+
+<h3>Threads vs processes</h3>
+<ul>
+<li><strong>Threads</strong>: cheap to create/switch, communicate via shared memory (fast, but needs synchronisation), a crash or memory corruption in one thread takes down the whole process. No isolation.</li>
+<li><strong>Processes</strong>: isolated (a crash is contained), communicate via IPC (slower), heavier to create. Preferred when you want fault isolation or run untrusted code (browsers use a process per site).</li>
+</ul>
+
+<h3>Threading models</h3>
+<table>
+<tr><th>Model</th><th>Mapping</th></tr>
+<tr><td>1:1 (kernel threads)</td><td>each user thread = one kernel thread. True parallelism, kernel schedules them. Linux/Windows default.</td></tr>
+<tr><td>N:1 (user threads / green)</td><td>many user threads on one kernel thread. Fast switching, but one blocking syscall stalls all, no multicore.</td></tr>
+<tr><td>M:N (hybrid)</td><td>M user threads over N kernel threads. Best of both, complex; Go's goroutines, old Solaris.</td></tr>
+</table>
+
+<h3>When to use threads</h3>
+<p>CPU-bound parallel work on shared data (parallel matrix ops), or keeping a UI/event loop
+responsive while background work runs. For pure I/O concurrency, async/event loops often beat
+thread-per-connection. For isolation or scaling across machines, use processes.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Threads share: address space, heap, globals, fds, PID. Threads own: stack, registers, TLS, <code>errno</code>.</li>
+<li>Thread pros: cheap create/switch, shared-memory comms. Cons: no isolation &mdash; one thread's crash/corruption kills all.</li>
+<li>Process pros: fault isolation, security boundary. Cons: heavier, IPC needed.</li>
+<li>Models: 1:1 (kernel threads, real parallelism, Linux/Windows), N:1 (user/green, no multicore, blocks all), M:N (hybrid, e.g. Go).</li>
+<li>Context switch: thread&rarr;thread in same process is cheaper (no page-table/TLB swap) than process&rarr;process.</li>
+<li>Use threads for CPU-parallel shared-data work; processes for isolation; async loops for I/O concurrency.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What do threads in a process share, and what is private?</dt>
+<dd>Shared: the address space (code, heap, globals), file descriptors, PID, signal handlers. Private: each thread's stack, register set/PC, thread-local storage, and <code>errno</code>.</dd>
+<dt>Why is a thread context switch cheaper than a process one?</dt>
+<dd>Threads of the same process share the page tables, so switching between them doesn't require loading a new address space or flushing the TLB &mdash; just saving/restoring registers and the stack pointer.</dd>
+<dt>1:1 vs M:N threading?</dt>
+<dd>1:1 maps each user thread to a kernel thread &mdash; simple, true multicore, but creation and switching go through the kernel. M:N multiplexes many user threads over fewer kernel threads &mdash; ultra-cheap user-level switching and huge thread counts, at the cost of a complex runtime scheduler that must handle blocking syscalls (Go's runtime does this for goroutines).</dd>
+<dt>When would you choose multiple processes over multiple threads?</dt>
+<dd>When you need fault isolation (a crash shouldn't kill everything), a security boundary (sandboxing untrusted code &mdash; browser tabs, plugins), or to scale beyond one machine. Also when the language/runtime has a global lock (CPython's GIL) that limits threaded CPU parallelism.</dd>
+<dt>Does creating a thread give you a new address space?</dt>
+<dd>No &mdash; it runs in the same address space as its process. Only <code>fork()</code>/a new process gets a separate address space.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Do two threads in one process share the heap?</summary><div class="answer-box">
+Yes. They also share globals and file descriptors. Each has its own stack.
+</div></details>
+<details class="answer-reveal"><summary>If one thread segfaults, what happens to the others?</summary><div class="answer-box">
+The whole process is killed &mdash; there's no isolation between threads.
+</div></details>
+<details class="answer-reveal"><summary>Which threading model gives true multicore parallelism for CPU-bound work?</summary><div class="answer-box">
+1:1 (kernel-level threads). Pure N:1 user threads can't use more than one core.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your Python program uses threads for CPU-heavy number crunching and sees no speedup on 8 cores. Why?</summary><div class="answer-box">
+CPython's Global Interpreter Lock allows only one thread to execute Python bytecode at a time, so CPU-bound threads run serially. Use <code>multiprocessing</code> (separate processes, separate GILs), a C extension / <code>numpy</code> that releases the GIL, or the no-GIL builds. Threads still help Python for I/O-bound work (the GIL is released during blocking I/O).
+</div></details>
+<details class="answer-reveal"><summary>Why do web browsers use a process per site/tab rather than threads?</summary><div class="answer-box">
+Isolation and security. A crash or a memory-corruption exploit in one tab's renderer is contained &mdash; it can't read another site's data or bring down the browser. The OS process boundary + sandboxing (seccomp, restricted tokens) enforces the same-origin trust boundary. The cost is higher memory (per-process overhead), which browsers manage by consolidating tabs from the same site and limiting process count on low-memory devices.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does an M:N runtime (e.g. Go) keep a blocking syscall in one goroutine from stalling the others?</summary><div class="answer-box">
+The runtime has P (logical processors, = GOMAXPROCS), M (OS threads), and G (goroutines). Normally each M runs goroutines from a P's run queue. When a goroutine is about to make a <em>blocking</em> syscall, the runtime detaches the P from that M (hands it off to a spare or new M) so other goroutines keep running on other cores while this M is parked in the kernel. When the syscall returns, the M tries to reacquire a P; if none is free, its goroutine is put back on a global queue and the M sleeps. For <em>non-blocking</em> I/O the runtime uses an integrated network poller (epoll/kqueue): the goroutine is parked, the M moves on, and the poller reschedules the goroutine when the fd is ready. Plus a preemption mechanism (async signals / safepoints) stops a CPU-bound goroutine from monopolising its M. This is why you can have a million goroutines with a handful of OS threads.
+</div></details>
+<details class="answer-reveal"><summary>What is <code>clone()</code> on Linux and how does it unify threads and processes?</summary><div class="answer-box">
+Linux doesn't have separate "create process" and "create thread" primitives at the lowest level &mdash; both are <code>clone()</code> with a set of flags controlling exactly what the new task shares with its creator: <code>CLONE_VM</code> (share address space), <code>CLONE_FILES</code> (share fd table), <code>CLONE_FS</code> (share cwd/root/umask), <code>CLONE_SIGHAND</code>/<code>CLONE_THREAD</code> (share signal handling and appear in the same thread group / PID), <code>CLONE_NEWNS</code>/<code>NEWPID</code>/<code>NEWNET</code>&hellip; (new namespaces &mdash; the basis of containers). A POSIX thread is <code>clone()</code> with VM+FILES+FS+SIGHAND+THREAD; a plain <code>fork()</code> is <code>clone()</code> with almost nothing shared (COW address space). Containers are <code>clone()</code> with the namespace flags. So "process vs thread" is really just a point on a spectrum of what a task shares.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:threads -->
+
+<!-- TOPIC:os:scheduling -->
+<section class="view topic" id="v-os-scheduling" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>CPU Scheduling Algorithms</h1>
+<p class="subtitle">Deciding which ready process runs next &mdash; and what metric you're optimising.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Metrics</h3>
+<ul>
+<li><strong>Throughput</strong> &mdash; jobs completed per unit time.</li>
+<li><strong>Turnaround</strong> &mdash; completion time &minus; arrival time.</li>
+<li><strong>Waiting time</strong> &mdash; time spent in the ready queue.</li>
+<li><strong>Response time</strong> &mdash; arrival to first CPU (matters for interactivity).</li>
+<li><strong>Fairness</strong> / no <strong>starvation</strong>.</li>
+</ul>
+<p>You can't maximise all at once &mdash; batch systems favour throughput/turnaround, interactive
+systems favour response time.</p>
+
+<h3>The classic algorithms</h3>
+<table>
+<tr><th>Algorithm</th><th>Rule</th><th>Note</th></tr>
+<tr><td>FCFS</td><td>run in arrival order, non-preemptive</td><td>simple; <strong>convoy effect</strong> &mdash; one long job delays everyone</td></tr>
+<tr><td>SJF</td><td>shortest next CPU burst first</td><td>provably minimum average waiting time; needs burst prediction; can starve long jobs</td></tr>
+<tr><td>SRTF</td><td>preemptive SJF</td><td>even better average wait; more context switches</td></tr>
+<tr><td>Round Robin</td><td>each gets a time quantum, then rotate</td><td>fair, good response time; quantum too small = switch overhead, too big = FCFS</td></tr>
+<tr><td>Priority</td><td>highest priority first</td><td>starvation of low priority &rarr; fix with <strong>ageing</strong></td></tr>
+<tr><td>MLFQ</td><td>multiple RR queues; jobs demoted for using full quantum, promoted if I/O-bound</td><td>approximates SJF without knowing burst lengths; what real OSes use</td></tr>
+</table>
+
+<h3>Real schedulers</h3>
+<p>Linux <strong>CFS</strong> (Completely Fair Scheduler): tracks per-task "virtual runtime", always
+runs the task with the least vruntime &mdash; approximates giving every task an equal share,
+weighted by <code>nice</code>. Its successor <strong>EEVDF</strong> (2023) adds latency-sensitivity. Also:
+real-time classes (<code>SCHED_FIFO</code>, <code>SCHED_RR</code>) that preempt normal tasks.</p>
+
+<h3>Preemptive vs cooperative</h3>
+<p>Preemptive: the OS can interrupt a running task (timer interrupt) &mdash; needed for
+responsiveness and to contain runaway tasks. Cooperative: tasks must yield voluntarily &mdash;
+simpler, but one bad task freezes the system (old Windows/Mac, some coroutine runtimes).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Metrics: throughput, turnaround, waiting, response time, fairness/no starvation &mdash; trade-offs, can't win all.</li>
+<li>FCFS: arrival order, non-preemptive, convoy effect.</li>
+<li>SJF/SRTF: shortest burst (preemptive = SRTF); optimal average wait; starves long jobs; needs prediction.</li>
+<li>Round Robin: fixed quantum, fair, good response; tune the quantum.</li>
+<li>Priority: highest first; add ageing to avoid starvation.</li>
+<li>MLFQ: multi-level feedback queues, demote CPU hogs / favour I/O-bound &mdash; approximates SJF without knowing bursts.</li>
+<li>Linux CFS: least virtual-runtime task runs; <code>nice</code> weights the share. EEVDF adds latency targets.</li>
+<li>Preemptive (timer-driven) beats cooperative for responsiveness and containing runaway tasks.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is the convoy effect?</dt>
+<dd>Under FCFS, a long CPU-bound job at the head of the queue makes all the short jobs behind it wait, tanking average waiting/turnaround time even though the short jobs would finish almost instantly.</dd>
+<dt>Why is SJF optimal, and why can't we just use it?</dt>
+<dd>Running the shortest job first provably minimises average waiting time. The catch: the OS doesn't know future burst lengths. It's approximated by predicting from history (exponential average) or by MLFQ, which lets behaviour reveal the burst pattern.</dd>
+<dt>How does round-robin's quantum size matter?</dt>
+<dd>Too small &rarr; the scheduler spends a large fraction of time context-switching (overhead). Too large &rarr; it degenerates toward FCFS and response time suffers. A typical quantum is 10&ndash;100&thinsp;ms &mdash; a few times the context-switch cost.</dd>
+<dt>How do you stop low-priority processes from starving?</dt>
+<dd>Ageing: gradually raise the priority of processes that have waited a long time, so they eventually run. MLFQ also periodically boosts all jobs back to the top queue.</dd>
+<dt>What does Linux's CFS actually equalise?</dt>
+<dd>Virtual runtime &mdash; CPU time each task has received, scaled by its weight (from <code>nice</code>). It always picks the task with the smallest vruntime, so over time every task gets a fair, weight-proportional share.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which algorithm minimises average waiting time in theory?</summary><div class="answer-box">
+Shortest Job First (and its preemptive form, SRTF).
+</div></details>
+<details class="answer-reveal"><summary>What problem does ageing solve?</summary><div class="answer-box">
+Starvation of low-priority processes under priority scheduling &mdash; their priority is boosted the longer they wait.
+</div></details>
+<details class="answer-reveal"><summary>Preemptive vs non-preemptive scheduling &mdash; one-line difference?</summary><div class="answer-box">
+Preemptive: the OS can forcibly take the CPU from a running task. Non-preemptive: the task keeps the CPU until it blocks or exits.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Compute average waiting time for FCFS with bursts arriving at t=0: P1=24, P2=3, P3=3.</summary><div class="answer-box">
+P1 waits 0, P2 waits 24, P3 waits 27 &rarr; average (0+24+27)/3 = 17. In SJF order (P2, P3, P1): 0 + 3 + 6 = 9/3 = 3. Same jobs, the convoy effect costs ~14 units of average wait.
+</div></details>
+<details class="answer-reveal"><summary>How does MLFQ approximate SJF without knowing burst lengths?</summary><div class="answer-box">
+New jobs start in the highest-priority (shortest-quantum) queue. A job that uses its <em>entire</em> quantum is likely CPU-bound / long, so it's demoted to a lower queue with a longer quantum. A job that yields early (I/O-bound, interactive) stays high. So short/interactive jobs run first with low latency, long jobs sink and run in the background &mdash; the SJF ordering emerges from observed behaviour. Periodic priority boosts prevent long jobs starving forever and adapt to phase changes.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is priority inversion and how do real-time schedulers handle it? (Mars Pathfinder)</summary><div class="answer-box">
+A high-priority task <code>H</code> blocks waiting for a lock held by a low-priority task <code>L</code>; a medium-priority task <code>M</code> preempts <code>L</code> (it doesn't need the lock), so <code>L</code> never runs to release it, and <code>H</code> is indirectly blocked by <code>M</code> &mdash; the priority ordering is inverted. The 1997 Mars Pathfinder rover kept resetting because of exactly this. Fixes: <strong>priority inheritance</strong> &mdash; while <code>L</code> holds a lock that <code>H</code> wants, <code>L</code> temporarily runs at <code>H</code>'s priority so it finishes and releases quickly; or <strong>priority ceiling</strong> &mdash; a lock has a priority equal to the highest of any task that can acquire it, and a task holding it runs at that ceiling. Pathfinder was fixed by enabling priority inheritance on the mutex (a flag that shipped disabled).
+</div></details>
+<details class="answer-reveal"><summary>How does multicore scheduling differ from single-core, and what are the key concerns?</summary><div class="answer-box">
+Now you're placing tasks across N run queues (usually per-CPU, to avoid a global lock). Concerns: <strong>load balancing</strong> &mdash; periodically migrate tasks from busy to idle CPUs, but not too eagerly. <strong>Cache affinity</strong> &mdash; a task rebuilds its L1/L2 working set after migrating, so schedulers prefer to keep a task on its last CPU ("sticky"); Linux tracks this per-domain. <strong>NUMA</strong> &mdash; migrating a task away from the node holding its memory makes every access a remote (slower) access; the scheduler and memory allocator cooperate to keep tasks near their pages. <strong>Power</strong> &mdash; consolidating work onto fewer cores lets others enter deep sleep (race-to-idle), but hurts latency and thermals; big.LITTLE / P+E cores add "which <em>kind</em> of core" to the decision. <strong>Scalability</strong> &mdash; per-CPU queues + work stealing / periodic balancing rather than one contended global queue.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:scheduling -->
+
+<!-- TOPIC:os:context-switch -->
+<section class="view topic" id="v-os-context-switch" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>Context Switches &amp; Mode Switches</h1>
+<p class="subtitle">The cost of multitasking, and the two different "switches" people conflate.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Mode switch vs context switch</h3>
+<ul>
+<li><strong>Mode switch</strong>: user mode &harr; kernel mode, <em>same</em> process (a syscall, an interrupt handler, a page fault). Save/restore a few registers; no scheduler involved. Cheap (~tens&ndash;hundreds of ns).</li>
+<li><strong>Context switch</strong>: the scheduler swaps one thread/process off the CPU and another on. Includes a mode switch <em>plus</em> saving/restoring the full register set into the PCB/TCB and (for a different process) switching the address space.</li>
+</ul>
+
+<h3>What a context switch costs</h3>
+<ol>
+<li>Save the outgoing task's registers (GP, PC, SP, FP/SIMD state &mdash; sometimes lazily) into its control block.</li>
+<li>Run the scheduler to pick the next task.</li>
+<li>Restore the incoming task's registers.</li>
+<li>If it's a <em>different process</em>: load the new page-table base register &rarr; the <strong>TLB is flushed</strong> (or partially, with tagged TLBs / PCIDs). Subsequent memory accesses miss the TLB and must walk page tables &mdash; the real hidden cost.</li>
+<li>Cache pollution: the new task evicts the old task's cache lines; both suffer misses afterward.</li>
+</ol>
+<p>Direct cost ~1&ndash;5&thinsp;&micro;s; indirect (TLB + cache refill) can be much more for cache-heavy workloads.
+Thread&rarr;thread <em>within</em> a process skips step 4 (shared address space) &mdash; noticeably cheaper.</p>
+
+<h3>What triggers one</h3>
+<ul>
+<li>Time-slice expiry (timer interrupt).</li>
+<li>The running task blocks (I/O, lock, <code>sleep</code>).</li>
+<li>A higher-priority task becomes runnable (preemption).</li>
+<li>Voluntary <code>yield()</code>; process exit.</li>
+</ul>
+
+<h3>Traps vs interrupts</h3>
+<p><strong>Trap / exception</strong>: synchronous, caused by the current instruction (syscall via a <code>trap</code>/<code>syscall</code> instruction, divide-by-zero, page fault). <strong>Interrupt</strong>: asynchronous, from hardware (timer, NIC, disk). Both enter the kernel via a vectored handler; both are mode switches, and either may lead to a context switch.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Mode switch = user&harr;kernel, same task (syscall/interrupt/fault). Cheap. No scheduler.</li>
+<li>Context switch = scheduler swaps tasks: mode switch + full register save/restore + (cross-process) address-space swap.</li>
+<li>Cross-process switch flushes the TLB (unless PCID/ASID tags it) &rarr; page-table walks afterward = the big hidden cost.</li>
+<li>Also pollutes caches; new task starts cold.</li>
+<li>Thread&rarr;thread in the same process is cheaper (shared page tables, no TLB flush).</li>
+<li>Triggers: quantum expiry, blocking, preemption by higher priority, yield, exit.</li>
+<li>Trap = synchronous (syscall, fault); interrupt = asynchronous (hardware). Both enter kernel via a handler.</li>
+<li>Reduce switches: bigger quanta, batching syscalls, async I/O, pinning threads, fewer runnable threads than cores.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Mode switch vs context switch?</dt>
+<dd>A mode switch changes privilege level (user&harr;kernel) within the <em>same</em> process &mdash; e.g. entering the kernel for a syscall. A context switch changes which <em>task</em> is on the CPU and involves the scheduler, saving/restoring full state, and (across processes) swapping the address space.</dd>
+<dt>Why is switching between processes more expensive than between threads of one process?</dt>
+<dd>Different processes have different page tables, so the switch loads a new page-table base and flushes the TLB; memory accesses then miss and require page-table walks. Threads share the address space, so that whole step is skipped.</dd>
+<dt>What's the "hidden" cost of a context switch beyond saving registers?</dt>
+<dd>TLB flush (on cross-process switches) and cache pollution &mdash; the incoming task runs with a cold TLB and cold caches, causing a burst of misses that can dwarf the direct save/restore cost.</dd>
+<dt>Is a page fault a context switch?</dt>
+<dd>Not by itself &mdash; it's a trap (mode switch into the kernel's fault handler). If the fault requires disk I/O (a major fault), the faulting process blocks and the scheduler then does a context switch to something else.</dd>
+<dt>Trap vs interrupt?</dt>
+<dd>A trap is synchronous, produced by executing an instruction (syscall, divide-by-zero, invalid memory access). An interrupt is asynchronous, raised by hardware independent of the current instruction (timer tick, packet arrival, key press).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Does a system call require a context switch?</summary><div class="answer-box">
+No &mdash; only a mode switch (user &rarr; kernel) in the same process. A context switch happens only if the syscall blocks or the scheduler decides to run something else.
+</div></details>
+<details class="answer-reveal"><summary>Name two events that cause a context switch.</summary><div class="answer-box">
+Time-slice expiry, the task blocking on I/O, preemption by a higher-priority task, voluntary yield, process exit &mdash; any two.
+</div></details>
+<details class="answer-reveal"><summary>Where is a task's register state saved during a context switch?</summary><div class="answer-box">
+In its PCB / thread control block (kernel memory).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A latency-sensitive service degrades when co-located with many other processes. Scheduling-level fixes?</summary><div class="answer-box">
+Pin (affinity) its threads to dedicated CPUs and <code>isolcps</code> those cores from the general scheduler so nothing else runs there (no context-switch/cache eviction). Raise its scheduling class (<code>SCHED_FIFO</code>/<code>chrt</code>) so it preempts noise. Reduce the number of runnable threads it has to below the core count. Disable deep C-states / frequency scaling on those cores. Use NUMA-local memory. Together these cut both the direct switch cost and the cache/TLB pollution from neighbours.
+</div></details>
+<details class="answer-reveal"><summary>How do PCIDs / ASIDs reduce context-switch cost?</summary><div class="answer-box">
+They tag each TLB entry with an address-space identifier. On a process switch the CPU just changes the "current ASID" instead of flushing the whole TLB, so entries for the previous process stay cached and are still valid when you switch back. This makes frequent switching between a small set of processes much cheaper. (The Meltdown mitigation KPTI reintroduced some flush cost by splitting user/kernel page tables, partly offset by PCID.)
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why did async / event-loop servers (nginx, Node) win over thread-per-connection, in context-switch terms?</summary><div class="answer-box">
+Thread-per-connection at 10k+ connections means 10k threads, most blocked; every time a socket becomes ready the kernel wakes a thread &rarr; a context switch, with register save/restore, possible cache/TLB disturbance, and scheduler work &mdash; and threads' stacks (often 1&ndash;8&thinsp;MB each) blow the cache and RAM. An event loop runs a handful of threads (ideally one per core), stays on-CPU processing many ready fds returned by a single <code>epoll_wait</code>, and only context-switches when it genuinely has nothing to do. It trades kernel-managed blocking for user-space state machines, amortising one syscall over many connections and keeping the working set hot. The cost is code complexity (callbacks/async) and that one slow CPU-bound handler stalls everything on that loop &mdash; hence hybrid designs (event loop + a small worker thread pool for blocking/CPU work).
+</div></details>
+<details class="answer-reveal"><summary>Estimate the throughput ceiling imposed by context-switch overhead. Show the reasoning.</summary><div class="answer-box">
+Suppose a context switch (direct + amortised indirect: TLB refill, cache misses) effectively costs ~5&thinsp;&micro;s of otherwise-usable CPU. If a workload forces a switch every 50&thinsp;&micro;s of real work (e.g. tiny time slices, or every request blocks immediately), you lose 5/(50+5) &asymp; 9% of the CPU to switching. Push the quantum / work-between-switches to 500&thinsp;&micro;s and the loss drops to ~1%. Conversely, a pathological pattern &mdash; two threads ping-ponging a lock, each doing 1&thinsp;&micro;s of work then switching &mdash; spends 5/6 &asymp; 83% of CPU on switching, so effective throughput collapses to ~1/6. This is why "reduce lock ping-pong", "batch work between yields", and "fewer runnable threads than cores" matter: the ceiling is roughly <code>work_per_slice / (work_per_slice + switch_cost)</code>.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:context-switch -->
+
+<!-- TOPIC:os:virtual-memory -->
+<section class="view topic" id="v-os-virtual-memory" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>Virtual Memory &amp; Address Translation</h1>
+<p class="subtitle">Every process thinks it owns a huge, private, contiguous memory. The MMU keeps up the illusion.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Why virtual memory</h3>
+<ul>
+<li><strong>Isolation</strong> &mdash; a process can't name another's memory.</li>
+<li><strong>Illusion of abundance</strong> &mdash; a 64-bit address space far larger than RAM; unused pages cost nothing.</li>
+<li><strong>Simple layout</strong> &mdash; each process sees the same predictable map (code low, stack high) regardless of where its pages physically sit.</li>
+<li>Enables demand paging, copy-on-write, memory-mapped files, shared libraries.</li>
+</ul>
+
+<h3>Paging &amp; translation</h3>
+<p>Memory is divided into fixed <strong>pages</strong> (typically 4&thinsp;KB) and physical <strong>frames</strong>.
+A <strong>page table</strong> per process maps virtual page &rarr; physical frame + permission bits
+(present, writable, user/kernel, dirty, accessed, no-execute). The <strong>MMU</strong> does the lookup on
+every access; on x86-64 it's a 4- or 5-level radix tree walk (a "page walk").</p>
+
+<h3>The TLB</h3>
+<p>A small associative cache of recent virtual&rarr;physical translations. A hit avoids the multi-level
+page walk. TLB miss &rarr; hardware (or OS) walks the page table and fills the TLB. A process switch
+that isn't tagged (no PCID) flushes it. <strong>Huge pages</strong> (2&thinsp;MB/1&thinsp;GB) cover more memory
+per TLB entry &mdash; big win for large-heap, memory-bound apps.</p>
+
+<h3>Segmentation</h3>
+<p>An older/alternate scheme: variable-length segments (code, data, stack) each with a base+limit.
+Gives logical structure and protection but suffers external fragmentation. Modern x86-64 mostly
+retired it (flat model); the concept survives in "segmentation fault" (an access outside any
+valid region).</p>
+
+<h3><code>mmap</code></h3>
+<p>Maps a file (or anonymous memory) into the address space. File reads become page faults that
+pull in file pages on demand; writes go to the page cache and back to disk lazily.
+<code>malloc</code> uses anonymous <code>mmap</code> for large allocations; shared libraries and executables
+are file-backed shared mappings.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Virtual memory: per-process private address space, translated to physical by the MMU via page tables.</li>
+<li>Page (4&thinsp;KB) &harr; frame; page-table entry = frame number + present/writable/user/dirty/accessed/NX bits.</li>
+<li>x86-64: 4&ndash;5 level page-table walk on a TLB miss.</li>
+<li>TLB = translation cache; hit avoids the walk; untagged process switch flushes it; huge pages stretch its reach.</li>
+<li>Benefits: isolation, over-commit, COW, mmap'd files, shared libs, ASLR.</li>
+<li>Segmentation = base+limit variable regions (mostly historical on x86-64); "segfault" = access outside any mapping.</li>
+<li><code>mmap</code>: file-backed (demand-load pages) or anonymous (used by <code>malloc</code> for big blocks).</li>
+<li>Page-table memory itself is per-process; multi-level tables keep it sparse.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does the MMU do on every memory access?</dt>
+<dd>Translates the virtual address to a physical one using the TLB (fast path) or a page-table walk (slow path), and checks the permission bits &mdash; raising a fault if the page isn't present or the access violates permissions.</dd>
+<dt>What is the TLB and why does it matter?</dt>
+<dd>A cache of recent virtual&rarr;physical translations. Without it, every load/store would need a multi-level page walk (several extra memory accesses). TLB hit rate is a major performance factor for memory-heavy code; huge pages and good locality improve it.</dd>
+<dt>Why does a multi-level page table use less memory than a single flat one?</dt>
+<dd>A flat table needs an entry for every possible virtual page whether used or not (huge for 64-bit). A multi-level tree only allocates lower-level tables for regions of the address space that are actually mapped, so the sparse, mostly-empty address space costs little.</dd>
+<dt>What causes a "segmentation fault"?</dt>
+<dd>Accessing a virtual address that isn't in any valid mapping, or violating a mapping's permissions (writing read-only memory, executing non-executable memory) &mdash; the MMU raises a fault the kernel turns into <code>SIGSEGV</code>.</dd>
+<dt>How does <code>mmap</code>'ing a file avoid explicit <code>read()</code> calls?</dt>
+<dd>The mapping is lazy: the file's pages aren't loaded until you touch them, at which point a page fault pulls the needed page from the page cache (or disk). You just dereference pointers into the mapped region.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Typical page size?</summary><div class="answer-box">
+4&thinsp;KB (with optional huge pages of 2&thinsp;MB or 1&thinsp;GB).
+</div></details>
+<details class="answer-reveal"><summary>What hardware performs virtual-to-physical translation?</summary><div class="answer-box">
+The MMU (Memory Management Unit), accelerated by the TLB.
+</div></details>
+<details class="answer-reveal"><summary>Two processes both have a valid pointer with value <code>0x400000</code>. Do they point to the same physical memory?</summary><div class="answer-box">
+Not necessarily &mdash; that's a virtual address, and each process's page table can map it to a different physical frame (or the same one, if shared).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A memory-bound program speeds up 20% after enabling transparent huge pages. Why?</summary><div class="answer-box">
+Each TLB entry now covers 2&thinsp;MB instead of 4&thinsp;KB, so the same TLB reaches 512&times; more memory &mdash; far fewer TLB misses and page-table walks for a large working set. Page-table depth is also shorter. Downsides that sometimes bite: internal fragmentation, higher latency on COW/fault of a 2&thinsp;MB page, and allocation stalls from THP compaction (some workloads disable THP for latency predictability).
+</div></details>
+<details class="answer-reveal"><summary>How does copy-on-write use the page-table permission bits?</summary><div class="answer-box">
+After <code>fork()</code>, parent and child page tables both point at the same physical frames, marked <em>read-only</em> (even for originally writable pages). A write triggers a protection fault; the kernel allocates a fresh frame, copies the page, updates the faulting process's PTE to point at the copy with write permission, and resumes. Pages neither side writes are never duplicated.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain the page-table walk on x86-64 and why 5-level paging was added.</summary><div class="answer-box">
+A 48-bit virtual address is split into four 9-bit indices plus a 12-bit page offset. The CPU reads <code>CR3</code> (physical address of the top-level table, PML4), indexes it with bits 47&ndash;39 to get the PDPT base, indexes that with bits 38&ndash;30, then the PD with 29&ndash;21, then the PT with 20&ndash;12; the PT entry gives the physical frame, combined with the 12-bit offset. So a TLB miss costs up to 4 dependent memory reads (mitigated by a page-walk cache). 4-level paging caps usable virtual address space at 2^48 = 256&thinsp;TB and physical at ~64&thinsp;TB. <strong>5-level paging</strong> (Intel Ice Lake+, opt-in) adds a PML5 level, extending virtual to 2^57 = 128&thinsp;PB and physical to 4&thinsp;PB &mdash; needed by huge in-memory databases, large NUMA machines, and to give more room for ASLR / sandboxing. Cost: one extra walk level on a TLB miss, so it's enabled only when the memory size justifies it.
+</div></details>
+<details class="answer-reveal"><summary>What is memory over-commit and the OOM killer, and how do you reason about it?</summary><div class="answer-box">
+Linux by default lets processes <code>malloc</code>/<code>mmap</code> more virtual memory than physical RAM + swap, betting that not all of it will be touched (sparse allocations, forked COW pages, large arenas). Backing is allocated lazily on first write (page fault). If actual usage does exceed RAM+swap, the kernel can't fault in a page and invokes the <strong>OOM killer</strong>, which picks a victim by an <code>oom_score</code> (roughly proportional to RSS, adjustable via <code>oom_score_adj</code>) and SIGKILLs it &mdash; abrupt, no cleanup. Implications: a successful <code>malloc</code> is not a guarantee you can use the memory; long-tail latency spikes from reclaim/swap thrash precede the kill; and one leaky process can get an innocent bystander killed. Controls: <code>vm.overcommit_memory</code> (2 = strict accounting, refuse over-commit at allocation time &mdash; safer for servers, but breaks fork-heavy and sparse-allocation software), cgroup memory limits (contain the blast radius, trigger per-cgroup OOM), disabling swap for predictability, and setting <code>oom_score_adj</code> to protect critical processes.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:virtual-memory -->
+
+<!-- TOPIC:os:paging -->
+<section class="view topic" id="v-os-paging" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>Paging, Page Faults &amp; Replacement</h1>
+<p class="subtitle">Loading pages only when touched &mdash; and deciding what to evict when RAM is full.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Demand paging</h3>
+<p>Pages aren't loaded until first accessed. Starting a program maps its executable but faults in
+code pages as execution reaches them &mdash; fast startup, only the working set is resident.</p>
+
+<h3>Page fault types</h3>
+<table>
+<tr><th>Type</th><th>Cause</th><th>Cost</th></tr>
+<tr><td>Minor (soft)</td><td>page is in RAM (page cache, COW, zero page) but not in this PTE yet</td><td>&micro;s &mdash; just fix the mapping</td></tr>
+<tr><td>Major (hard)</td><td>page must be read from disk / swap</td><td>ms &mdash; the process blocks; scheduler switches away</td></tr>
+<tr><td>Invalid</td><td>address in no mapping / bad permission</td><td><code>SIGSEGV</code></td></tr>
+</table>
+
+<h3>Replacement algorithms</h3>
+<table>
+<tr><th>Algo</th><th>Evicts</th><th>Note</th></tr>
+<tr><td>OPT</td><td>page used furthest in the future</td><td>optimal but unimplementable (needs the future); a benchmark</td></tr>
+<tr><td>FIFO</td><td>oldest loaded</td><td>simple; suffers <strong>Belady's anomaly</strong> (more frames &rarr; more faults)</td></tr>
+<tr><td>LRU</td><td>least recently used</td><td>good approximation of OPT; true LRU is too costly (per-access bookkeeping)</td></tr>
+<tr><td>Clock / Second-chance</td><td>scan a circular list; skip pages with the "accessed" bit set (clearing it)</td><td>cheap LRU approximation &mdash; what real kernels use</td></tr>
+</table>
+<p>Linux uses <strong>active/inactive LRU lists</strong> with reference bits, plus aging and per-cgroup
+reclaim.</p>
+
+<h3>Thrashing &amp; the working set</h3>
+<p>If the sum of processes' <strong>working sets</strong> (pages actively used in a recent window) exceeds
+RAM, the system spends nearly all its time paging in/out &mdash; CPU utilisation collapses,
+disk saturates. Fixes: reduce multiprogramming level (suspend/swap out whole processes), add RAM,
+use working-set / page-fault-frequency control to give each process enough frames.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Demand paging: load a page on first access &rarr; fast start, only working set resident.</li>
+<li>Minor fault = page in RAM, fix PTE (&micro;s). Major fault = fetch from disk/swap (ms, process blocks). Invalid = SIGSEGV.</li>
+<li>Replacement: OPT (ideal, needs future), FIFO (simple, Belady's anomaly), LRU (good, expensive exact), Clock/second-chance (cheap LRU approx &mdash; used in practice).</li>
+<li>Belady's anomaly: FIFO can fault <em>more</em> with more frames; stack algorithms (LRU, OPT) never do.</li>
+<li>Working set = pages used in a recent time window. &Sigma; working sets &gt; RAM &rarr; <strong>thrashing</strong>.</li>
+<li>Thrashing fix: lower multiprogramming (swap out processes), add RAM, PFF/working-set frame allocation.</li>
+<li>Dirty pages must be written back before eviction; clean pages just dropped.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Minor vs major page fault?</dt>
+<dd>Minor: the page is already in physical memory (page cache, a shared/COW page, the zero page) and the kernel just needs to add the mapping &mdash; microseconds. Major: the page must be read from disk or swap &mdash; milliseconds, and the process blocks meanwhile.</dd>
+<dt>What is Belady's anomaly?</dt>
+<dd>With FIFO replacement, giving a process <em>more</em> frames can sometimes <em>increase</em> the page-fault count &mdash; counterintuitive. "Stack" algorithms like LRU and OPT are provably immune.</dd>
+<dt>Why isn't true LRU used?</dt>
+<dd>It would require updating a timestamp or moving a list node on <em>every</em> memory access &mdash; far too expensive in hardware/software. Clock (second-chance) approximates it using just the hardware "accessed" bit, scanned periodically.</dd>
+<dt>What is thrashing?</dt>
+<dd>When the combined working sets of running processes exceed physical memory, so the system is constantly evicting a page it will need again immediately. Page-in/out I/O saturates, CPU sits idle waiting, throughput collapses.</dd>
+<dt>How does the working-set model prevent thrashing?</dt>
+<dd>The OS estimates each process's working set (pages referenced in the last &Delta; time) and only admits a process to run if enough free frames exist to hold its working set. If not, it suspends a process to free frames.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What is demand paging?</summary><div class="answer-box">
+Loading a page into RAM only when it's first accessed (via a page fault), rather than loading the whole program up front.
+</div></details>
+<details class="answer-reveal"><summary>Which replacement algorithm is optimal but impossible to implement?</summary><div class="answer-box">
+OPT / MIN &mdash; it evicts the page that won't be used for the longest time, which requires knowing the future.
+</div></details>
+<details class="answer-reveal"><summary>What real algorithm approximates LRU cheaply?</summary><div class="answer-box">
+Clock (second-chance), using the hardware reference/accessed bit.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Trace FIFO with 3 frames on the reference string 1 2 3 4 1 2 5 1 2 3 4 5. Count faults, then try 4 frames.</summary><div class="answer-box">
+3 frames: faults on 1,2,3,4,1,2,5,3,4 = 9 faults (hits on the second 1,2 after 5 is loaded... actually 9). 4 frames: 1,2,3,4 (4 faults), 1,2 hit, 5 evicts 1 (fault), 1 evicts 2 (fault), 2 evicts 3 (fault), 3 evicts 4 (fault), 4 evicts 5 (fault), 5 evicts 1 (fault) = 10 faults. More frames, more faults &mdash; <strong>Belady's anomaly</strong>.
+</div></details>
+<details class="answer-reveal"><summary>Server latency spikes badly under memory pressure though CPU is low. Diagnosis?</summary><div class="answer-box">
+Likely thrashing / heavy swap: major page faults are serialising on disk, so processes block for milliseconds each, CPU idles waiting on I/O. Check <code>vmstat</code> (<code>si</code>/<code>so</code> swap columns), <code>/proc/PID/stat</code> majflt, <code>pgmajfault</code>. Fixes: add RAM, reduce per-process footprint or concurrency, set cgroup memory limits to contain the offender, tune <code>vm.swappiness</code>, or disable swap and let the OOM killer act decisively rather than degrade everything.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why does Linux keep two LRU lists (active/inactive) per memory zone instead of one?</summary><div class="answer-box">
+A single LRU list is vulnerable to <strong>scan resistance</strong> failure: a one-time sequential read of a huge file (a backup, a <code>grep</code> over a big log) would touch every page once, pushing the genuinely hot working set out of the list &mdash; "cache pollution". The two-list scheme requires a page to be referenced <em>while on the inactive list</em> before it's promoted to the active list; pages that are touched once and never again stay on inactive and are reclaimed first. Reclaim pulls from the tail of inactive; the kernel also periodically ages the active list (moving unreferenced pages to inactive) to keep roughly a balanced ratio. Anonymous and file-backed pages have separate list pairs so the kernel can bias reclaim (<code>vm.swappiness</code>) toward dropping clean file pages vs swapping anon pages. This gives approximate LRU-2 behaviour cheaply and resists streaming workloads trashing the cache.
+</div></details>
+<details class="answer-reveal"><summary>Compare page-fault-frequency (PFF) control with the working-set model for allocating frames.</summary><div class="answer-box">
+Both aim to give each process "enough" frames to avoid thrashing without wasting memory. <strong>Working-set model</strong>: define a window &Delta;; a process's working set W(t, &Delta;) is the distinct pages referenced in the last &Delta;; allocate that many frames, and only run the process if &Sigma;|W| &le; total frames. Accurate in principle but needs per-reference tracking (approximated with periodic reference-bit sampling), and picking &Delta; is workload-dependent. <strong>PFF</strong>: measure the process's page-fault <em>rate</em>. If it's above an upper threshold, give the process more frames; if below a lower threshold, take some away. It's a simple feedback loop using an easily-measured signal (fault count) and self-tunes to the phase behaviour of the program. PFF is closer to what real systems do (it's essentially what per-cgroup memory reclaim + pressure stall information implement); the working-set model is the cleaner theoretical framework that explains <em>why</em> it works and predicts thrashing onset.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:paging -->
+
+<!-- TOPIC:os:sync-primitives -->
+<section class="view topic" id="v-os-sync-primitives" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>Synchronization Primitives</h1>
+<p class="subtitle">Mutex, semaphore, condition variable, spinlock &mdash; what each is for.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The critical section problem</h3>
+<p>When threads share mutable state, concurrent access must be serialised. A correct solution needs
+<strong>mutual exclusion</strong> (one at a time), <strong>progress</strong> (no unnecessary blocking), and
+<strong>bounded waiting</strong> (no starvation).</p>
+
+<h3>The primitives</h3>
+<table>
+<tr><th>Primitive</th><th>Use</th></tr>
+<tr><td><strong>Mutex</strong></td><td>Mutual exclusion for a critical section. Has an owner; only the locker unlocks. Blocks (sleeps) if contended.</td></tr>
+<tr><td><strong>Spinlock</strong></td><td>Busy-waits instead of sleeping. Only worthwhile when the critical section is very short and you can't sleep (interrupt context). Wastes CPU under contention.</td></tr>
+<tr><td><strong>Semaphore</strong></td><td>A counter with <code>wait</code>(P, decrement/block) and <code>signal</code>(V, increment). Counting semaphore = "N units of a resource"; binary semaphore &asymp; mutex (but no ownership).</td></tr>
+<tr><td><strong>Condition variable</strong></td><td>Wait for a <em>predicate</em> to become true. Always used with a mutex: <code>wait</code> atomically releases the mutex and sleeps; <code>signal</code>/<code>broadcast</code> wakes waiters. Re-check the predicate in a <code>while</code> loop (spurious wakeups).</td></tr>
+<tr><td><strong>Monitor</strong></td><td>Language construct bundling a mutex + condition variables with the data (Java <code>synchronized</code> + <code>wait/notify</code>).</td></tr>
+<tr><td><strong>RW lock</strong></td><td>Many readers or one writer. Helps read-heavy data; risk of writer starvation.</td></tr>
+</table>
+
+<h3>Mutex vs semaphore</h3>
+<p>A mutex is for <em>locking</em> (ownership, released by the same thread). A semaphore is for
+<em>signalling</em> / counting resources (any thread can post). Using a binary semaphore as a lock
+loses ownership checks and priority-inheritance support.</p>
+
+<h3>The producer&ndash;consumer pattern</h3>
+<pre><code>mutex m; condvar not_full, not_empty; queue q; int cap;
+produce(x): lock(m); while q.size==cap: wait(not_full, m); q.push(x); signal(not_empty); unlock(m)
+consume():  lock(m); while q.empty():   wait(not_empty, m); x=q.pop();  signal(not_full);  unlock(m); return x</code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Correct critical section = mutual exclusion + progress + bounded waiting.</li>
+<li><strong>Mutex</strong>: owned lock, sleeps on contention, unlock by locker. Default choice.</li>
+<li><strong>Spinlock</strong>: busy-wait; only for ultra-short sections / interrupt context / uniprocessor-with-preempt-off. Burns CPU otherwise.</li>
+<li><strong>Semaphore</strong>: counter, <code>wait</code>/<code>signal</code>, no ownership; counting = resource pool, binary &asymp; mutex/signal.</li>
+<li><strong>Condition variable</strong>: wait for a predicate; pair with a mutex; <code>wait</code> releases+sleeps atomically; always re-check in a <code>while</code> (spurious wakeups).</li>
+<li>Mutex = lock (ownership). Semaphore = signal/count (no ownership).</li>
+<li>RW lock for read-heavy shared data (watch writer starvation).</li>
+<li>Prefer higher-level constructs (channels, concurrent collections, <code>atomic</code>) over hand-rolled locking.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Mutex vs binary semaphore?</dt>
+<dd>Both allow one holder, but a mutex has an <em>owner</em> (only the locking thread may unlock, enabling priority inheritance and error checking), while a semaphore is just a counter any thread can post to. Use a mutex for protecting a critical section; a semaphore for signalling between threads or limiting a resource count.</dd>
+<dt>Why must a condition-variable wait be inside a <code>while</code> loop?</dt>
+<dd>Because of spurious wakeups (the thread can wake without a signal) and because another thread may have changed the state back between the signal and this thread reacquiring the mutex. Re-checking the predicate makes it robust.</dd>
+<dt>When is a spinlock the right choice?</dt>
+<dd>When the critical section is only a handful of instructions, contention is rare, and you cannot sleep (e.g. holding it in an interrupt handler), on a multiprocessor. On a single CPU with preemption, spinning is pointless &mdash; the holder can't run to release it.</dd>
+<dt>What does a condition variable's <code>wait</code> do atomically?</dt>
+<dd>Releases the associated mutex and puts the thread to sleep as a single atomic step, so it can't miss a signal that happens between "check predicate" and "go to sleep". On wakeup it reacquires the mutex before returning.</dd>
+<dt>What's a monitor?</dt>
+<dd>A synchronisation construct that encapsulates shared data together with a mutex and condition variables, so all access is automatically mutually exclusive. Java's <code>synchronized</code> methods + <code>wait()</code>/<code>notify()</code> are a monitor.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which primitive would you use to limit access to a pool of 5 database connections?</summary><div class="answer-box">
+A counting semaphore initialised to 5.
+</div></details>
+<details class="answer-reveal"><summary>What must a condition variable always be paired with?</summary><div class="answer-box">
+A mutex.
+</div></details>
+<details class="answer-reveal"><summary>Does a spinlock put the waiting thread to sleep?</summary><div class="answer-box">
+No &mdash; it busy-waits (spins), repeatedly checking the lock.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Implement a bounded blocking queue with a mutex and condition variables.</summary><div class="answer-box">
+One mutex, two condition variables (<code>notFull</code>, <code>notEmpty</code>). <code>put</code>: lock; <code>while (size == capacity) notFull.wait(lock)</code>; enqueue; <code>notEmpty.signal()</code>; unlock. <code>take</code>: lock; <code>while (size == 0) notEmpty.wait(lock)</code>; dequeue; <code>notFull.signal()</code>; unlock; return. The <code>while</code> loops handle spurious wakeups and multiple waiters; signalling the <em>other</em> condition after each operation wakes a blocked counterpart.
+</div></details>
+<details class="answer-reveal"><summary>Why can <code>notify()</code> (signal one) instead of <code>notifyAll()</code> cause a deadlock in some designs?</summary><div class="answer-box">
+If threads wait on the same condition variable for <em>different</em> predicates (e.g. a bounded buffer where producers and consumers share one condvar), <code>notify()</code> might wake a thread whose predicate is still false; it re-checks, goes back to sleep, and the thread that <em>could</em> have proceeded was never woken &mdash; the system stalls with work available. Fixes: use separate condition variables per predicate, or always <code>notifyAll()</code> (correct but can cause a thundering herd).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does a futex-based mutex avoid a syscall in the uncontended case?</summary><div class="answer-box">
+The lock is a plain integer in shared user memory. <strong>Lock</strong>: atomically CAS it from 0&rarr;1 in userspace; if that succeeds (uncontended), you're done &mdash; <em>no kernel involvement at all</em>. Only if the CAS fails (someone holds it) does the thread call <code>futex(FUTEX_WAIT)</code>, passing the address and expected value; the kernel double-checks the value (avoiding a lost-wakeup race) and, if it still matches, sleeps the thread on a kernel wait queue keyed by that address. <strong>Unlock</strong>: atomically set to 0; if the old value indicated waiters, call <code>futex(FUTEX_WAKE)</code> to wake one. So the fast path (the overwhelmingly common case) is a single atomic instruction, and the kernel is touched only under real contention. glibc's mutex uses a 3-state variant (0 free, 1 locked-no-waiters, 2 locked-with-waiters) so the unlock fast path also skips the syscall when there are no waiters.
+</div></details>
+<details class="answer-reveal"><summary>Compare lock-based synchronisation with RCU (read-copy-update) for a read-mostly data structure.</summary><div class="answer-box">
+A reader/writer lock still has readers taking and releasing the lock (atomic ops, cache-line bouncing on the lock word across cores) and can starve writers or readers. <strong>RCU</strong>: readers take <em>no</em> lock and pay essentially nothing &mdash; they just mark a lightweight "read-side critical section" (on Linux, often just disabling preemption) and dereference the pointer. Writers make a <em>copy</em> of the node, modify the copy, then atomically swap the pointer; old readers keep using the old version. The writer then waits for a <strong>grace period</strong> &mdash; until every CPU has passed through a quiescent state (context switch / idle / user mode), guaranteeing no reader still holds the old pointer &mdash; before freeing the old node. Wins: near-zero reader overhead, perfect reader scalability, no reader/writer contention. Costs: writers are more expensive and serialised among themselves (still need a lock), reclamation is deferred (memory lingers for a grace period), and it only suits structures where readers can tolerate seeing a slightly stale but consistent version (linked lists, routing tables, config). It's heavily used in the Linux kernel.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:sync-primitives -->
+
+<!-- TOPIC:os:deadlock -->
+<section class="view topic" id="v-os-deadlock" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>Deadlock: Conditions, Prevention, Avoidance</h1>
+<p class="subtitle">When everyone is waiting for everyone else &mdash; the four conditions and the four responses.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The four Coffman conditions (all needed for deadlock)</h3>
+<ol>
+<li><strong>Mutual exclusion</strong> &mdash; a resource is held by at most one process.</li>
+<li><strong>Hold and wait</strong> &mdash; a process holds resources while waiting for more.</li>
+<li><strong>No preemption</strong> &mdash; a resource can't be forcibly taken; only released voluntarily.</li>
+<li><strong>Circular wait</strong> &mdash; a cycle of processes each waiting for a resource the next holds.</li>
+</ol>
+<p>Break <em>any one</em> and deadlock is impossible.</p>
+
+<h3>The four strategies</h3>
+<table>
+<tr><th>Strategy</th><th>How</th></tr>
+<tr><td><strong>Prevention</strong></td><td>Structurally negate a condition: acquire all resources at once (no hold-and-wait); impose a global lock order (no circular wait); allow preemption / rollback.</td></tr>
+<tr><td><strong>Avoidance</strong></td><td>Grant a request only if the resulting state is "safe" (there exists an order in which all processes can finish). <strong>Banker's algorithm</strong> &mdash; needs max-claims up front.</td></tr>
+<tr><td><strong>Detection &amp; recovery</strong></td><td>Let deadlocks happen; periodically look for a cycle in the wait-for graph; recover by killing a victim or rolling back.</td></tr>
+<tr><td><strong>Ostrich</strong></td><td>Ignore it &mdash; deadlocks are rare, and the cost of prevention isn't worth it. What general-purpose OSes (and most apps) actually do.</td></tr>
+</table>
+
+<h3>In practice</h3>
+<p>The overwhelmingly common real-world fix is <strong>consistent lock ordering</strong>: number your
+locks and always acquire them in increasing order. Also: keep critical sections short, use
+<code>try_lock</code> with backoff, avoid calling out to unknown code while holding a lock, and use
+a single coarse lock where the concurrency isn't worth the risk. Databases use detection
+(wait-for graph) + victim abort.</p>
+
+<h3>Livelock &amp; starvation</h3>
+<p><strong>Livelock</strong>: processes keep changing state in response to each other but make no progress
+(two people stepping aside in a corridor). <strong>Starvation</strong>: a process is perpetually
+denied a resource (always lower priority, or unlucky in lock acquisition).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Coffman conditions (need all 4): mutual exclusion, hold-and-wait, no preemption, circular wait.</li>
+<li>Prevention = negate one structurally (all-at-once acquisition; global lock ordering; allow preemption).</li>
+<li>Avoidance = only grant if the new state is safe; Banker's algorithm (needs max claims).</li>
+<li>Detection = find a cycle in the wait-for graph, then kill/roll back a victim (databases do this).</li>
+<li>Ostrich = ignore; what general-purpose OSes do.</li>
+<li>Practical fix: <strong>consistent global lock order</strong>; short critical sections; <code>try_lock</code> + backoff; don't call unknown code under a lock.</li>
+<li>Livelock = active but no progress. Starvation = perpetually denied (fix with ageing/fair locks).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>List the four conditions necessary for deadlock.</dt>
+<dd>Mutual exclusion, hold-and-wait, no preemption, and circular wait. All four must hold simultaneously.</dd>
+<dt>What's the simplest practical way to prevent deadlock among multiple locks?</dt>
+<dd>Impose a total order on the locks and always acquire them in that order everywhere. A cycle in the wait-for graph then becomes impossible, so circular wait is broken.</dd>
+<dt>Deadlock avoidance vs prevention?</dt>
+<dd>Prevention removes the <em>possibility</em> by design (negating a Coffman condition). Avoidance allows the conditions but checks each allocation request at runtime and only grants it if the system stays in a "safe" state where all processes can still complete (Banker's algorithm).</dd>
+<dt>What does the "ostrich algorithm" mean and why is it common?</dt>
+<dd>Ignoring deadlocks entirely. Prevention/avoidance impose real costs (resource under-utilisation, up-front declarations, overhead), and deadlocks in practice are rare and often recoverable by killing a process. So most general-purpose OSes just don't handle it.</dd>
+<dt>Livelock vs deadlock?</dt>
+<dd>In deadlock, processes are blocked and doing nothing. In livelock, they're actively running and changing state in response to each other but never making forward progress &mdash; e.g. two threads that both back off and retry in lockstep forever.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which Coffman condition does "acquire all locks at once, or none" eliminate?</summary><div class="answer-box">
+Hold-and-wait.
+</div></details>
+<details class="answer-reveal"><summary>What does the Banker's algorithm require processes to declare?</summary><div class="answer-box">
+Their maximum possible resource needs, up front.
+</div></details>
+<details class="answer-reveal"><summary>How do databases typically deal with deadlock?</summary><div class="answer-box">
+Detection &mdash; they build a wait-for graph, find cycles, and abort a victim transaction (which is then retried).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two threads: T1 locks A then B; T2 locks B then A. Show the deadlock and two fixes.</summary><div class="answer-box">
+Interleaving: T1 locks A, T2 locks B, T1 waits for B (held by T2), T2 waits for A (held by T1) &mdash; circular wait, both stuck. Fix 1: consistent order &mdash; make T2 also lock A then B. Fix 2: <code>try_lock</code> B after locking A; if it fails, release A, back off a random interval, retry (breaks "no preemption"). Fix 3: a single lock covering both A and B if the extra concurrency isn't needed.
+</div></details>
+<details class="answer-reveal"><summary>Why is deadlock avoidance rarely used in real systems?</summary><div class="answer-box">
+It needs every process's maximum resource claim declared in advance, which is often unknown or wildly conservative; the safety check runs on every allocation (overhead); and it under-utilises resources by refusing requests that would <em>probably</em> be fine. It fits constrained, well-characterised systems (some embedded/real-time), not general-purpose ones.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain "lock ordering" enforcement tools like Linux's lockdep.</summary><div class="answer-box">
+Lockdep builds, at runtime, a graph of observed lock-acquisition orders: whenever lock B is taken while lock A is held, it records an edge A&rarr;B for the lock <em>classes</em> (not instances &mdash; e.g. "inode&rarr;mutex" as a class). If it ever sees the reverse order (B held, A taken) it reports a <em>potential</em> deadlock immediately, even if the actual timing that triggers it never occurs in this run &mdash; because the two orderings existing anywhere in the codebase means an interleaving can deadlock. It also validates rules like "no sleeping lock taken in IRQ context", recursive locking, and irq-safe/irq-unsafe consistency. This shifts deadlock discovery from rare production hangs to CI/testing. The cost is significant runtime overhead (it's a debug-kernel feature), and it needs correct "lock class" annotations to avoid false positives/negatives when the same code path legitimately locks two instances of the same class in a defined order (handled with nesting subclasses).
+</div></details>
+<details class="answer-reveal"><summary>Dining philosophers: give a solution that is deadlock-free <em>and</em> starvation-free, and explain why each property holds.</summary><div class="answer-box">
+One clean solution: a central "waiter"/arbitrator (a mutex or semaphore initialised to N&minus;1) that limits the number of philosophers <em>simultaneously trying to eat</em> to N&minus;1. <strong>Deadlock-free</strong>: with at most N&minus;1 philosophers contending for N forks, at least one philosopher can always get both forks (pigeonhole) &mdash; circular wait is broken because the cycle can't fully form. <strong>Starvation-free</strong> if the arbitrator and the fork mutexes use FIFO / fair queuing, so every philosopher's request is eventually served. Alternative: asymmetric ordering &mdash; odd philosophers pick up the left fork first, even philosophers the right first; this breaks the uniform circular wait (deadlock-free) but needs fair mutexes to also be starvation-free. The resource-hierarchy solution (number the forks, always pick up the lower-numbered first) is deadlock-free but the highest-numbered philosopher can be starved without additional fairness.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:deadlock -->
+
+<!-- TOPIC:os:ipc -->
+<section class="view topic" id="v-os-ipc" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>Inter-Process Communication</h1>
+<p class="subtitle">Isolated processes need channels &mdash; and each channel makes a different speed/scope trade.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The mechanisms</h3>
+<table>
+<tr><th>Mechanism</th><th>Shape</th><th>Notes</th></tr>
+<tr><td><strong>Pipe</strong> (anonymous)</td><td>unidirectional byte stream</td><td>related processes only (shared fd via <code>fork</code>); the shell's <code>|</code></td></tr>
+<tr><td><strong>Named pipe / FIFO</strong></td><td>byte stream via a filesystem path</td><td>unrelated processes on the same host</td></tr>
+<tr><td><strong>Message queue</strong></td><td>discrete messages, optionally prioritised</td><td>preserves boundaries; POSIX (<code>mq_*</code>) or SysV</td></tr>
+<tr><td><strong>Shared memory</strong></td><td>a region mapped into multiple processes</td><td><em>fastest</em> (no copy through the kernel); needs your own synchronisation (semaphore/mutex)</td></tr>
+<tr><td><strong>Unix domain socket</strong></td><td>stream or datagram, bidirectional</td><td>local, fast, supports passing fds and credentials; same API as network sockets</td></tr>
+<tr><td><strong>Signal</strong></td><td>a single async notification (number)</td><td>no payload (bar <code>sigqueue</code>); for events/termination, not data</td></tr>
+<tr><td><strong>Memory-mapped file</strong></td><td>shared memory backed by a file</td><td>persistent, and OS syncs to disk</td></tr>
+<tr><td><strong>eventfd / futex / pidfd</strong></td><td>lightweight kernel-assisted signalling</td><td>modern Linux building blocks</td></tr>
+</table>
+
+<h3>Choosing</h3>
+<ul>
+<li>Need max throughput / big data &rarr; <strong>shared memory</strong> (+ a lock or lock-free ring).</li>
+<li>Need message boundaries and simple flow &rarr; <strong>message queue</strong> or datagram socket.</li>
+<li>Local RPC, fd passing, auth &rarr; <strong>Unix domain socket</strong>.</li>
+<li>Simple parent&rarr;child stream &rarr; <strong>pipe</strong>.</li>
+<li>Across machines &rarr; TCP/UDP sockets (only option).</li>
+<li>Just "wake up" / "please stop" &rarr; <strong>signal</strong> / eventfd.</li>
+</ul>
+
+<h3>Gotchas</h3>
+<p>Pipes have limited buffer (default 64&thinsp;KB) &mdash; a full pipe blocks the writer; a reader closing
+early makes the writer get <code>SIGPIPE</code>/<code>EPIPE</code>. Shared memory has <em>no</em> built-in
+synchronisation &mdash; races are on you. SysV IPC objects leak if not removed (<code>ipcrm</code>).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Pipe: unidirectional stream, related processes (shell <code>|</code>). FIFO: same via a pathname, unrelated processes.</li>
+<li>Message queue: discrete, boundary-preserving, prioritised messages.</li>
+<li>Shared memory: fastest (zero-copy); <strong>you</strong> provide the synchronisation.</li>
+<li>Unix domain socket: local, bidirectional, fast, can pass fds + peer credentials.</li>
+<li>Signal: async notification, essentially no payload; for events/termination.</li>
+<li>mmap'd file: shared memory that persists and syncs to disk.</li>
+<li>Cross-machine &rarr; network sockets only.</li>
+<li>Watch: pipe buffer full &rarr; writer blocks; reader gone &rarr; <code>SIGPIPE</code>; SysV objects persist until <code>ipcrm</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is shared memory the fastest IPC?</dt>
+<dd>Data isn't copied into and out of the kernel &mdash; both processes map the same physical pages and read/write directly. Other mechanisms copy through kernel buffers (at least once, often twice).</dd>
+<dt>What's the catch with shared memory?</dt>
+<dd>It provides no synchronisation. Concurrent access is a data race unless you add your own mutex/semaphore (often placed <em>in</em> the shared region) or use a lock-free structure.</dd>
+<dt>Anonymous pipe vs named pipe (FIFO)?</dt>
+<dd>An anonymous pipe exists only as file descriptors shared via <code>fork()</code> &mdash; only related processes can use it. A FIFO has a name in the filesystem, so any process that can open that path can connect, related or not.</dd>
+<dt>What can a Unix domain socket do that a TCP socket to localhost can't?</dt>
+<dd>Pass open file descriptors between processes (<code>SCM_RIGHTS</code>) and the peer's verified credentials (<code>SO_PEERCRED</code>), with lower overhead (no TCP/IP stack, checksums, or loopback routing).</dd>
+<dt>Can you send data with a signal?</dt>
+<dd>Barely &mdash; a plain signal carries only its number. <code>sigqueue()</code> with a real-time signal can attach one integer/pointer value. Signals are for notification ("child exited", "please reload config", "terminate"), not data transfer.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What IPC mechanism does the shell's <code>|</code> use?</summary><div class="answer-box">
+An anonymous pipe.
+</div></details>
+<details class="answer-reveal"><summary>Which IPC needs you to add your own locking?</summary><div class="answer-box">
+Shared memory.
+</div></details>
+<details class="answer-reveal"><summary>Which IPC works across different machines?</summary><div class="answer-box">
+Network sockets (TCP/UDP). The others are host-local.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two processes exchange millions of small records per second on one host. Design the IPC.</summary><div class="answer-box">
+A shared-memory ring buffer (SPSC: single-producer, single-consumer) with atomic head/tail indices and acquire/release ordering &mdash; no locks, no per-message syscall. Use a semaphore or <code>eventfd</code> only for "wake the consumer when it was idle" (with a batched/coalesced signal) to avoid busy-waiting. Pad head and tail to separate cache lines to prevent false sharing. Fall back to a Unix domain socket if you need boundary framing and flow control without writing the ring yourself.
+</div></details>
+<details class="answer-reveal"><summary>A writer process hangs when its pipe reader is slow. Why, and options?</summary><div class="answer-box">
+The pipe's kernel buffer (default 64&thinsp;KB) filled up, so <code>write()</code> blocks until the reader drains it &mdash; this is backpressure, often desirable. Options: make the writer's pipe fd non-blocking and handle <code>EAGAIN</code> (drop or buffer in userspace); increase the pipe capacity with <code>fcntl(F_SETPIPE_SZ)</code>; use a larger-buffered mechanism (socket with a big <code>SO_SNDBUF</code>, or a message queue); or fix the real problem &mdash; the slow reader.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does passing a file descriptor over a Unix socket actually work, and why is it useful?</summary><div class="answer-box">
+You send a normal message with <code>sendmsg()</code> that carries an <em>ancillary data</em> block of type <code>SCM_RIGHTS</code> containing one or more fd numbers. The kernel intercepts this: on the receiving side it <em>installs new fd entries in the receiver's fd table</em> that refer to the same underlying open-file description (same offset, same file, incremented refcount) &mdash; the numeric fd value differs, but it's the "same handle". This lets a privileged process open a resource the unprivileged one can't (a low port, a device, a file outside a sandbox) and hand it over; lets a listener process accept connections and distribute the connected sockets to worker processes (systemd socket activation, some load balancers); and underpins privilege-separation designs where one tiny trusted process owns all the dangerous opens. The security model: the receiver gets exactly the access the sender had on that description, nothing more.
+</div></details>
+<details class="answer-reveal"><summary>Compare the copy costs of pipe, Unix socket, and shared memory for a 1&thinsp;MB transfer, and how zero-copy techniques change it.</summary><div class="answer-box">
+<strong>Pipe / Unix socket</strong>: <code>write()</code> copies from the sender's buffer into a kernel buffer (copy 1); <code>read()</code> copies from the kernel buffer into the receiver's buffer (copy 2) &mdash; ~2&thinsp;MB of memory traffic plus two syscalls, for 1&thinsp;MB of payload. <strong>Shared memory</strong>: the sender writes 1&thinsp;MB into the shared region (copy 1, unavoidable unless it produced the data there directly), the receiver reads it in place (copy 0) &mdash; ~1&thinsp;MB traffic, no per-transfer syscall. <strong>Zero-copy paths</strong>: <code>splice()</code>/<code>vmsplice()</code> move pages between a pipe and a file/socket by reference (page "stealing"), avoiding the userspace bounce; <code>sendfile()</code> streams a file to a socket entirely in the kernel; <code>MSG_ZEROCOPY</code> lets the kernel DMA directly from user pages for large socket sends (with an async completion notification, since the buffer must stay stable). For local bulk transfer the winning designs are: put the producer's output directly in shared memory (true zero-copy), or use <code>memfd</code> + fd-passing so the receiver <code>mmap</code>s the sender's buffer.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:ipc -->
+
+<!-- TOPIC:os:syscalls-kernel -->
+<section class="view topic" id="v-os-syscalls-kernel" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>System Calls &amp; the Kernel Boundary</h1>
+<p class="subtitle">How user code asks the kernel for something &mdash; and why crossing that line costs.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>User space vs kernel space</h3>
+<p>The CPU runs at a privilege level. <strong>User mode</strong> can't touch hardware, other processes'
+memory, or privileged instructions. <strong>Kernel mode</strong> can. A <strong>system call</strong> is the
+controlled doorway: user code executes a special instruction (<code>syscall</code> on x86-64,
+<code>svc</code> on ARM) that traps into a fixed kernel entry point.</p>
+
+<h3>What happens on a syscall</h3>
+<ol>
+<li>libc wrapper puts the syscall number in a register and arguments in others, executes <code>syscall</code>.</li>
+<li>CPU switches to kernel mode, jumps to the kernel's entry handler, switches to the kernel stack.</li>
+<li>Handler validates the number, <strong>copies/validates user pointers</strong> (<code>copy_from_user</code> &mdash; never trust a user address), dispatches via the syscall table.</li>
+<li>Does the work (maybe blocking &rarr; scheduler runs something else).</li>
+<li>Puts the return value / <code>-errno</code> in a register, switches back to user mode.</li>
+</ol>
+<p>Cost: ~100&ndash;500&thinsp;ns direct, more with mitigations (Spectre/Meltdown page-table isolation). Not
+free &mdash; hence batching (<code>readv</code>, <code>io_uring</code>, <code>sendmmsg</code>) and the <strong>vDSO</strong>.</p>
+
+<h3>vDSO</h3>
+<p>A small shared library the kernel maps into every process so hot, read-only calls like
+<code>gettimeofday()</code>/<code>clock_gettime()</code> can be served <em>in user space</em> from a
+kernel-updated memory page &mdash; no mode switch at all.</p>
+
+<h3>Kernel architectures</h3>
+<table>
+<tr><th></th><th>Monolithic</th><th>Microkernel</th></tr>
+<tr><td>In-kernel</td><td>scheduler, MM, drivers, filesystems, network stack</td><td>only scheduler, MM, IPC; drivers/FS are user-space servers</td></tr>
+<tr><td>Speed</td><td>fast (direct calls)</td><td>slower (IPC between servers)</td></tr>
+<tr><td>Reliability</td><td>a driver bug can crash the kernel</td><td>a driver crash is a restartable service</td></tr>
+<tr><td>Examples</td><td>Linux, *BSD (modular monolithic)</td><td>QNX, seL4, MINIX 3; macOS/Windows are hybrids</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>User mode = restricted; kernel mode = privileged. Syscall = the guarded transition (a trap instruction).</li>
+<li>Flow: set syscall number + args &rarr; <code>syscall</code>/<code>svc</code> traps &rarr; kernel entry, validate, <code>copy_from_user</code> &rarr; dispatch via syscall table &rarr; return value/<code>-errno</code> &rarr; back to user mode.</li>
+<li>Cost ~100&ndash;500&thinsp;ns (+ KPTI overhead) &rarr; batch calls (<code>io_uring</code>, <code>readv</code>/<code>writev</code>, <code>sendmmsg</code>).</li>
+<li>vDSO serves <code>clock_gettime</code>/<code>getpid</code>-class calls in user space &mdash; no mode switch.</li>
+<li>Kernel must never trust user pointers &mdash; always validate + copy.</li>
+<li>Monolithic (Linux): everything in kernel, fast, driver bug = crash. Microkernel: minimal core + user-space servers, robust, IPC overhead.</li>
+<li>Interrupts/exceptions also enter kernel mode but aren't syscalls.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why can't user code just call kernel functions directly?</dt>
+<dd>They run at different privilege levels in separate address spaces. The only way in is a trap instruction that switches the CPU to kernel mode and jumps to a <em>fixed, validated</em> entry point &mdash; so the kernel controls exactly what user code can trigger and can check every argument.</dd>
+<dt>What is the vDSO and why does it exist?</dt>
+<dd>A kernel-provided shared object mapped into every process. It lets frequently-called, safe, read-only operations (getting the time, the PID) run entirely in user space against a kernel-maintained data page &mdash; eliminating the mode-switch cost for the hottest "syscalls".</dd>
+<dt>Why must the kernel copy user-supplied buffers with <code>copy_from_user</code>?</dt>
+<dd>A user pointer might be invalid, unmapped, point into kernel memory, or be concurrently unmapped by another thread. <code>copy_from_user</code> checks the address range is legitimately user memory and handles faults gracefully, preventing a malicious or buggy program from making the kernel read/write arbitrary memory.</dd>
+<dt>Monolithic vs microkernel &mdash; core trade-off?</dt>
+<dd>Monolithic keeps drivers, filesystems, and the network stack in kernel space: fast (plain function calls) but a bug anywhere can take down the whole system. Microkernel runs those as isolated user-space servers: a crash is contained and restartable, at the cost of IPC overhead on every cross-component interaction.</dd>
+<dt>How does <code>io_uring</code> reduce syscall overhead?</dt>
+<dd>It sets up shared submission and completion ring buffers between user space and the kernel. The app writes many I/O requests into the submission ring and can process many completions from the completion ring, amortising or eliminating per-operation syscalls (with <code>SQPOLL</code>, a kernel thread polls the ring so the app makes no syscall at all).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What CPU state change does a system call cause?</summary><div class="answer-box">
+A switch from user mode to kernel (privileged) mode, via a trap, and back on return.
+</div></details>
+<details class="answer-reveal"><summary>Is <code>printf</code> a system call?</summary><div class="answer-box">
+No &mdash; it's a libc function that <em>may</em> eventually invoke the <code>write</code> system call (after formatting and buffering).
+</div></details>
+<details class="answer-reveal"><summary>Where do device drivers live in a microkernel?</summary><div class="answer-box">
+In user space, as separate server processes; the kernel only mediates IPC and basic scheduling/memory.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A program reading a file byte-by-byte with <code>read(fd, &amp;c, 1)</code> is extremely slow. Why and fix?</summary><div class="answer-box">
+Every byte is a full syscall (mode switch + kernel work) &mdash; hundreds of ns each, millions of times. Fix: read in large blocks (<code>read(fd, buf, 65536)</code>) and parse from the buffer, or use buffered stdio (<code>fread</code>/<code>getc</code> over a <code>FILE*</code>, which does big <code>read()</code>s under the hood), or <code>mmap</code> the file and access it as memory.
+</div></details>
+<details class="answer-reveal"><summary>Why did Meltdown/Spectre mitigations make syscalls measurably slower?</summary><div class="answer-box">
+Kernel Page-Table Isolation (KPTI) gives user mode and kernel mode <em>separate</em> page tables, so a syscall/interrupt must switch <code>CR3</code> on entry and exit &mdash; adding TLB flushes (partly mitigated by PCID) and page-table reloads that a syscall previously didn't need. Retpolines / IBRS for Spectre add indirect-branch overhead in the kernel. Net effect: syscall-heavy workloads (databases, high-connection servers) saw single-digit to ~30% regressions depending on call rate, which is why syscall batching (<code>io_uring</code>) got more important.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Trace a <code>write(fd, buf, n)</code> from the instruction to the return, including the security checks.</summary><div class="answer-box">
+The libc wrapper loads the syscall number for <code>write</code> into <code>rax</code>, <code>fd</code>&rarr;<code>rdi</code>, <code>buf</code>&rarr;<code>rsi</code>, <code>n</code>&rarr;<code>rdx</code>, and executes <code>syscall</code>. The CPU saves the user <code>rip</code>/<code>rflags</code>, switches to ring 0, and jumps to the address in the <code>LSTAR</code> MSR &mdash; the kernel's entry stub. The stub switches to the kernel stack for this thread, saves the full user register set, (with KPTI) switches to the kernel page tables, and runs any entry-time mitigations. It bounds-checks <code>rax</code> against the syscall table size and calls <code>sys_write</code>. That resolves <code>fd</code> through the process's fd table to a <code>struct file</code> (returns <code>-EBADF</code> if invalid or not opened for writing), checks the file's write permission and any LSM (SELinux/AppArmor) hook, then calls the file's <code>write</code> operation. For a regular file that means <code>copy_from_user(kernel_page, buf, n)</code> &mdash; which verifies <code>[buf, buf+n)</code> lies in user address range and handles a fault by returning <code>-EFAULT</code> rather than oopsing &mdash; then copies into the page cache, marks pages dirty, updates the file offset, and returns the byte count. Back in the stub: the return value goes in <code>rax</code>, mitigations run, page tables/stack switch back, registers restore, <code>sysret</code> returns to just after the <code>syscall</code> instruction in user mode. libc checks for a negative value in <code>[-4095, -1]</code>, and if so sets <code>errno = -rax</code> and returns <code>-1</code>.
+</div></details>
+<details class="answer-reveal"><summary>Why are hybrid kernels (macOS XNU, Windows NT) neither purely monolithic nor microkernel, and what did they keep from each?</summary><div class="answer-box">
+Both started with microkernel ambitions (XNU wraps the Mach microkernel; NT was influenced by microkernel design) but found the IPC cost of running performance-critical subsystems &mdash; the filesystem, network stack, and especially the graphics/window server &mdash; as separate user-space servers unacceptable for a desktop OS. So they pulled those back <em>into kernel space</em> for speed, while keeping microkernel-style structure and interfaces internally: XNU keeps Mach's message-passing, ports, and memory-object abstractions and layers a BSD "personality" (POSIX syscalls, sockets, VFS) on top, all in one kernel address space; NT keeps a layered "executive" of subsystems communicating through well-defined interfaces, with the microkernel-ish core ("kernel layer") handling scheduling and synchronisation, but drivers and file systems run in kernel mode. The result: the modularity, portability, and clean internal APIs of a microkernel, with the in-address-space call performance of a monolith &mdash; and the monolith's downside that a bad kernel-mode driver can still crash the system (hence Windows' driver signing and, later, moving some drivers back to user mode via UMDF).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:syscalls-kernel -->
+
 </main>
 
 <footer class="site-footer">
@@ -10637,26 +11679,23 @@ CSRF: a malicious page causes the victim's browser to send a state-changing requ
       ["sockets",       "Sockets & the Client/Server Lifecycle","socket/bind/listen/accept/connect, blocking vs non-blocking, TIME_WAIT, ports."],
       ["web-infra",     "NAT, Proxies, Load Balancers & CDNs", "Forward vs reverse proxy, L4 vs L7 LB, health checks, sticky sessions, CDN edge caching."],
       ["web-app",       "Cookies, Sessions, CORS & WebSockets","Cookie attributes, session vs token auth, same-origin policy, CORS preflight, WS upgrade, polling."]
+    ],
+    os: [
+      ["processes",       "Processes, the PCB & Lifecycle",       "Process vs program, PCB, states, fork/exec, zombies & orphans, address space."],
+      ["threads",         "Threads vs Processes",                 "Shared vs private state, user vs kernel threads, models, when to use each."],
+      ["scheduling",      "CPU Scheduling Algorithms",            "FCFS, SJF, RR, priority, MLFQ, preemptive vs not, turnaround/response/starvation."],
+      ["context-switch",  "Context Switches & Mode Switches",     "What's saved, TLB flush cost, user/kernel mode, traps vs interrupts, cost."],
+      ["virtual-memory",  "Virtual Memory & Address Translation", "Virtual vs physical, page tables, MMU, TLB, segmentation, protection, mmap."],
+      ["paging",          "Paging, Page Faults & Replacement",    "Demand paging, minor/major faults, LRU/clock/second-chance, thrashing, working set."],
+      ["sync-primitives", "Synchronization Primitives",           "Mutex, semaphore, condition variable, spinlock, monitor, when each fits."],
+      ["deadlock",        "Deadlock: Conditions, Prevention",     "Coffman conditions, prevention vs avoidance (banker's) vs detection vs ostrich."],
+      ["ipc",             "Inter-Process Communication",          "Pipes, FIFOs, message queues, shared memory, sockets, signals, trade-offs."],
+      ["syscalls-kernel", "System Calls & the Kernel Boundary",   "Trap instruction, user vs kernel space, syscall cost, vDSO, monolithic vs micro."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    os: [
-      "Processes, the PCB & the lifecycle",
-      "Threads vs processes",
-      "CPU scheduling algorithms",
-      "Context switches & mode switches",
-      "Virtual memory & address translation",
-      "Paging, page faults & replacement",
-      "Segmentation & memory protection",
-      "Synchronization primitives",
-      "Deadlock: conditions, prevention, avoidance",
-      "Inter-process communication",
-      "System calls & the kernel boundary",
-      "File systems & I/O",
-      "Demand paging, thrashing & the working set"
-    ],
     concurrency: [
       "Threads, races & the critical section",
       "Mutexes & lock granularity",
