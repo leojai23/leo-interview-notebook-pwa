@@ -8055,6 +8055,26 @@ Enum + switch: all transitions visible in one place, trivial to serialize the st
 <li>Big-O describes <em>asymptotic</em> behaviour &mdash; for small <code>n</code>, constants can dominate (which is why <code>std::sort</code> switches to insertion sort for tiny ranges).</li>
 </ul>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 200" role="img" aria-labelledby="d-dsbo-t">
+<title id="d-dsbo-t">How the common complexity classes grow as n increases</title>
+<line class="d-line-soft" x1="40" y1="170" x2="490" y2="170"/>
+<line class="d-line-soft" x1="40" y1="20" x2="40" y2="170"/>
+<text class="d-t-sm" x="250" y="192" text-anchor="middle">input size n &rarr;</text>
+<text class="d-t-sm" x="12" y="24">ops</text>
+<path class="d-line-soft" d="M40 160 L490 155"/>
+<text class="d-t-sm" x="495" y="156">O(1), O(log n)</text>
+<path class="d-line" d="M40 168 L490 60"/>
+<text class="d-t-sm" x="495" y="60">O(n)</text>
+<path class="d-line" d="M40 168 C 250 150, 380 60, 460 24"/>
+<text class="d-t-accent" x="420" y="20">O(n log n)</text>
+<path class="d-line" d="M40 168 C 160 160, 210 40, 240 22"/>
+<text class="d-t-accent" x="150" y="30">O(n&sup2;)</text>
+<path class="d-line" d="M40 168 C 90 160, 100 40, 110 22"/>
+<text class="d-t-accent" x="70" y="18">O(2&#8319;)</text>
+</svg>
+<figcaption>Practical rule of thumb per second on a laptop: <code>O(n&sup2;)</code> is fine to ~10&#8308;, <code>O(n log n)</code> to ~10&#8309;&ndash;10&#8310;, <code>O(n)</code> to ~10&#8312;, <code>O(2&#8319;)</code>/<code>O(n!)</code> only for n &lt; ~25/12.</figcaption>
+</figure>
 <h3>The common growth rates</h3>
 <table>
 <tr><th>Class</th><th>Name</th><th>Example</th></tr>
@@ -8158,6 +8178,21 @@ Average case assumes a benign input distribution. An attacker who controls input
 <p class="subtitle">Contiguous vs pointer-chased &mdash; the trade-off that decides most container choices.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 156" role="img" aria-labelledby="d-dsal-t">
+<title id="d-dsal-t">Array = one contiguous block indexed by arithmetic; list = scattered nodes with pointers</title>
+<text class="d-t-b" x="14" y="16">array &mdash; addr(i) = base + i &times; elemsize  &rarr; O(1) random access</text>
+<rect class="d-box-soft" x="14" y="24" width="55" height="24"/><rect class="d-box-soft" x="69" y="24" width="55" height="24"/><rect class="d-box-soft" x="124" y="24" width="55" height="24"/><rect class="d-box-soft" x="179" y="24" width="55" height="24"/><rect class="d-box-alt" x="234" y="24" width="90" height="24"/>
+<text class="d-t-sm" x="279" y="40" text-anchor="middle">spare cap</text>
+<text class="d-t-sm" x="14" y="62">insert in the middle &rarr; shift the tail: O(n). Full &rarr; allocate 2&times;, copy: amortised O(1) push.</text>
+<text class="d-t-b" x="14" y="98">linked list &mdash; each node holds data + next; no index math</text>
+<rect class="d-box" x="14" y="106" width="60" height="26"/><rect class="d-box" x="114" y="106" width="60" height="26"/><rect class="d-box" x="214" y="106" width="60" height="26"/>
+<path class="d-line" d="M74 119 L112 119" marker-end="url(#dsal-ah)"/><path class="d-line" d="M174 119 L212 119" marker-end="url(#dsal-ah)"/>
+<defs><marker id="dsal-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="290" y="123">O(1) insert given the node; O(n) to find it; poor cache locality</text>
+</svg>
+<figcaption>Default to a dynamic array (<code>vector</code>/<code>ArrayList</code>). A linked list only wins when you splice frequently and already hold the node.</figcaption>
+</figure>
 <h3>Static &amp; dynamic arrays</h3>
 <ul>
 <li>Contiguous memory; <code>O(1)</code> index by address arithmetic; excellent cache locality and prefetching.</li>
@@ -8275,6 +8310,26 @@ Each node holds a small array of elements (say 16&ndash;64) plus the next pointe
 <p class="subtitle">LIFO and FIFO &mdash; simple structures that power parsing, scheduling, and traversal.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 132" role="img" aria-labelledby="d-dssq-t">
+<title id="d-dssq-t">Stack: push/pop the same end. Queue: add at the rear, remove from the front.</title>
+<text class="d-t-b" x="14" y="16">stack (LIFO)</text>
+<rect class="d-box-soft" x="30" y="80" width="70" height="20"/><text class="d-t-sm" x="65" y="94" text-anchor="middle">A</text>
+<rect class="d-box-soft" x="30" y="58" width="70" height="20"/><text class="d-t-sm" x="65" y="72" text-anchor="middle">B</text>
+<rect class="d-box" x="30" y="36" width="70" height="20"/><text class="d-t-sm" x="65" y="50" text-anchor="middle">C  &larr; top</text>
+<path class="d-line" d="M130 46 L104 46" marker-end="url(#dssq-ah)"/><text class="d-t-sm" x="135" y="42">push</text>
+<path class="d-line" d="M104 30 L130 30" marker-end="url(#dssq-ah)"/><text class="d-t-sm" x="135" y="26">pop</text>
+<defs><marker id="dssq-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-b" x="280" y="16">queue (FIFO)</text>
+<rect class="d-box" x="290" y="40" width="45" height="24"/><text class="d-t-sm" x="312" y="56" text-anchor="middle">A</text>
+<rect class="d-box-soft" x="335" y="40" width="45" height="24"/><text class="d-t-sm" x="357" y="56" text-anchor="middle">B</text>
+<rect class="d-box-soft" x="380" y="40" width="45" height="24"/><text class="d-t-sm" x="402" y="56" text-anchor="middle">C</text>
+<path class="d-line" d="M290 78 L290 66" marker-end="url(#dssq-ah)"/><text class="d-t-sm" x="270" y="90">dequeue (front)</text>
+<path class="d-line" d="M455 52 L427 52" marker-end="url(#dssq-ah)"/><text class="d-t-sm" x="430" y="80">enqueue (rear)</text>
+<text class="d-t-sm" x="14" y="124">Both are O(1) per op. Array-backed uses a top index / a circular buffer (head, tail mod capacity) so no shifting.</text>
+</svg>
+<figcaption>Stack &rarr; DFS, undo, expression eval, call frames. Queue &rarr; BFS, task buffers, producer/consumer. A <strong>deque</strong> allows O(1) at both ends.</figcaption>
+</figure>
 <h3>Stack (LIFO)</h3>
 <ul>
 <li><code>push</code>, <code>pop</code>, <code>peek/top</code>, <code>isEmpty</code> &mdash; all O(1).</li>
@@ -8377,6 +8432,26 @@ Let &Phi; = size of <code>inStack</code>. <code>push</code>: real cost 1, &Delta
 <p class="subtitle">O(1) average lookup &mdash; and everything that has to go right for that to hold.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 148" role="img" aria-labelledby="d-dsht-t">
+<title id="d-dsht-t">A hash table maps a key through a hash function to a bucket index</title>
+<rect class="d-box-alt" x="14" y="30" width="90" height="24"/><text class="d-t-mono" x="59" y="46" text-anchor="middle">"apple"</text>
+<rect class="d-box-soft" x="150" y="24" width="90" height="36" rx="6"/><text class="d-t-sm" x="195" y="46" text-anchor="middle">hash() % N</text>
+<path class="d-line" d="M104 42 L148 42" marker-end="url(#dsht-ah)"/>
+<defs><marker id="dsht-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="300" y="18" width="40" height="18"/><text class="d-t-sm" x="320" y="32" text-anchor="middle">0</text>
+<rect class="d-box" x="300" y="36" width="40" height="18"/><text class="d-t-sm" x="320" y="50" text-anchor="middle">1</text>
+<rect class="d-box" x="300" y="54" width="40" height="18"/><text class="d-t-sm" x="320" y="68" text-anchor="middle">2</text>
+<rect class="d-box" x="300" y="72" width="40" height="18"/><text class="d-t-sm" x="320" y="86" text-anchor="middle">3</text>
+<path class="d-line" d="M240 42 L298 45" marker-end="url(#dsht-ah)"/>
+<rect class="d-box-soft" x="360" y="36" width="60" height="18"/><rect class="d-box-soft" x="430" y="36" width="60" height="18"/>
+<path class="d-line-soft" d="M340 45 L358 45"/><path class="d-line-soft" d="M420 45 L428 45"/>
+<text class="d-t-sm" x="360" y="72">collision &rarr; chain (or probe to the next slot)</text>
+<text class="d-t-sm" x="14" y="118">load factor &alpha; = entries / buckets. Past ~0.7&ndash;0.75, <tspan class="d-t-b">resize</tspan> (rehash every key into a bigger table).</text>
+<text class="d-t-sm" x="14" y="136">Good hash: fast, deterministic, uniform, avalanche. Bad hash &rarr; one hot bucket &rarr; O(n) lookups.</text>
+</svg>
+<figcaption>Average O(1) get/put/erase; worst case O(n) if the hash clusters or an adversary forces collisions. No ordered iteration &mdash; use a tree map for that.</figcaption>
+</figure>
 <h3>The idea</h3>
 <p>Map a key to a bucket index with <code>hash(key) % capacity</code>. Good average-case O(1) for
 insert/find/delete, at the cost of no ordering and a worst case of O(n).</p>
@@ -8490,6 +8565,23 @@ Techniques: <strong>lock striping</strong> (Java 7 <code>ConcurrentHashMap</code
 (node to deepest leaf), subtree. A binary tree: each node has &le; 2 children. Complete, full,
 perfect, balanced are distinct shapes.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 158" role="img" aria-labelledby="d-dsbst-t">
+<title id="d-dsbst-t">BST invariant: left subtree &lt; node &lt; right subtree, everywhere</title>
+<rect class="d-box-soft" x="220" y="14" width="40" height="24" rx="4"/><text class="d-t-b" x="240" y="31" text-anchor="middle">8</text>
+<rect class="d-box" x="120" y="60" width="40" height="24" rx="4"/><text class="d-t-b" x="140" y="77" text-anchor="middle">3</text>
+<rect class="d-box" x="330" y="60" width="40" height="24" rx="4"/><text class="d-t-b" x="350" y="77" text-anchor="middle">12</text>
+<rect class="d-box" x="70" y="110" width="40" height="24" rx="4"/><text class="d-t-b" x="90" y="127" text-anchor="middle">1</text>
+<rect class="d-box" x="170" y="110" width="40" height="24" rx="4"/><text class="d-t-b" x="190" y="127" text-anchor="middle">6</text>
+<rect class="d-box" x="380" y="110" width="40" height="24" rx="4"/><text class="d-t-b" x="400" y="127" text-anchor="middle">14</text>
+<path class="d-line-soft" d="M230 38 L150 58"/><path class="d-line-soft" d="M252 38 L340 58"/>
+<path class="d-line-soft" d="M132 84 L98 108"/><path class="d-line-soft" d="M150 84 L184 108"/>
+<path class="d-line-soft" d="M352 84 L396 108"/>
+<text class="d-t-accent" x="14" y="152">in-order traversal &rarr; 1 3 6 8 12 14  (sorted)</text>
+<text class="d-t-sm" x="270" y="152">search / insert / delete: O(h). Balanced h = log n; a sorted-insert list &rarr; h = n.</text>
+</svg>
+<figcaption>Traversals: <strong>in-order</strong> (L,node,R) gives sorted order; <strong>pre-order</strong> (node,L,R) copies/serialises; <strong>post-order</strong> (L,R,node) frees/evaluates; <strong>level-order</strong> is BFS with a queue.</figcaption>
+</figure>
 <h3>Traversals</h3>
 <table>
 <tr><th>Order</th><th>Visit</th><th>Use</th></tr>
@@ -8600,6 +8692,26 @@ Choose a traversal and <em>explicitly mark null children</em> (e.g. pre-order wi
 queries, floor/ceil, sorted iteration). Balance is restored by <strong>rotations</strong> (local
 O(1) pointer rewires) after an insert/delete.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 148" role="img" aria-labelledby="d-dsheap-t">
+<title id="d-dsheap-t">A binary heap is a complete tree stored in an array; index math gives parent/child</title>
+<rect class="d-box-soft" x="230" y="12" width="36" height="22" rx="4"/><text class="d-t-b" x="248" y="28" text-anchor="middle">9</text>
+<rect class="d-box" x="150" y="48" width="36" height="22" rx="4"/><text class="d-t-b" x="168" y="64" text-anchor="middle">7</text>
+<rect class="d-box" x="310" y="48" width="36" height="22" rx="4"/><text class="d-t-b" x="328" y="64" text-anchor="middle">6</text>
+<rect class="d-box" x="110" y="84" width="36" height="22" rx="4"/><text class="d-t-b" x="128" y="100" text-anchor="middle">3</text>
+<rect class="d-box" x="190" y="84" width="36" height="22" rx="4"/><text class="d-t-b" x="208" y="100" text-anchor="middle">4</text>
+<path class="d-line-soft" d="M240 34 L172 46"/><path class="d-line-soft" d="M256 34 L324 46"/>
+<path class="d-line-soft" d="M160 70 L132 82"/><path class="d-line-soft" d="M176 70 L204 82"/>
+<rect class="d-box-alt" x="20" y="120" width="30" height="20"/><text class="d-t-mono" x="35" y="134" text-anchor="middle">9</text>
+<rect class="d-box-alt" x="50" y="120" width="30" height="20"/><text class="d-t-mono" x="65" y="134" text-anchor="middle">7</text>
+<rect class="d-box-alt" x="80" y="120" width="30" height="20"/><text class="d-t-mono" x="95" y="134" text-anchor="middle">6</text>
+<rect class="d-box-alt" x="110" y="120" width="30" height="20"/><text class="d-t-mono" x="125" y="134" text-anchor="middle">3</text>
+<rect class="d-box-alt" x="140" y="120" width="30" height="20"/><text class="d-t-mono" x="155" y="134" text-anchor="middle">4</text>
+<text class="d-t-sm" x="185" y="118">array:  index 0..4</text>
+<text class="d-t-sm" x="185" y="134">children of i: 2i+1, 2i+2 &middot; parent: (i&minus;1)/2</text>
+</svg>
+<figcaption>Max-heap: every parent &ge; its children (so the max is at the root). <code>push</code>/<code>pop</code> = O(log n) sift up/down; <code>heapify</code> a whole array = O(n). Powers <code>priority_queue</code> and heapsort.</figcaption>
+</figure>
 <h3>Binary heap</h3>
 <ul>
 <li>A <strong>complete</strong> binary tree stored in an array: node <code>i</code>'s children are <code>2i+1</code>, <code>2i+2</code>; parent is <code>(i-1)/2</code>. No pointers.</li>
@@ -8692,6 +8804,28 @@ Heapsort's sift-down repeatedly jumps between array positions <code>i</code> and
 <p class="subtitle">Adjacency list vs matrix, BFS vs DFS, and the problems each traversal unlocks.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-dsgraph-t">
+<title id="d-dsgraph-t">Adjacency list vs matrix, and BFS (queue) vs DFS (stack)</title>
+<text class="d-t-b" x="14" y="16">adjacency list &mdash; O(V+E) space</text>
+<text class="d-t-mono" x="20" y="34">A: B, C</text>
+<text class="d-t-mono" x="20" y="50">B: A, D</text>
+<text class="d-t-mono" x="20" y="66">C: A</text>
+<text class="d-t-sm" x="20" y="84">good for sparse graphs (most real ones)</text>
+<text class="d-t-b" x="230" y="16">adjacency matrix &mdash; O(V&sup2;)</text>
+<text class="d-t-mono" x="236" y="34">&nbsp;&nbsp;A B C D</text>
+<text class="d-t-mono" x="236" y="50">A 0 1 1 0</text>
+<text class="d-t-mono" x="236" y="66">B 1 0 0 1</text>
+<text class="d-t-sm" x="236" y="84">O(1) edge test; good for dense graphs</text>
+<line class="d-line-soft" x1="14" y1="98" x2="506" y2="98"/>
+<text class="d-t-accent" x="14" y="118">BFS</text>
+<text class="d-t-sm" x="60" y="118">FIFO <tspan class="d-t-mono">queue</tspan> &rarr; visits by distance; shortest path in an unweighted graph.</text>
+<text class="d-t-accent" x="14" y="140">DFS</text>
+<text class="d-t-sm" x="60" y="140">LIFO <tspan class="d-t-mono">stack</tspan> / recursion &rarr; goes deep first; cycle detection, topological sort, components.</text>
+<text class="d-t-sm" x="14" y="158">Both are O(V+E) with an adjacency list and a visited set.</text>
+</svg>
+<figcaption>Directed vs undirected, weighted vs not, cyclic vs acyclic (a DAG) &mdash; these choices decide which algorithm applies (Dijkstra needs non-negative weights; topological sort needs a DAG).</figcaption>
+</figure>
 <h3>Representations</h3>
 <table>
 <tr><th></th><th>Adjacency list</th><th>Adjacency matrix</th></tr>
@@ -8806,6 +8940,28 @@ During DFS it assigns each node a discovery index and tracks <code>low[v]</code>
 <p class="subtitle">Two specialised structures: near-O(1) connectivity, and prefix-indexed strings.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 138" role="img" aria-labelledby="d-dsuf-t">
+<title id="d-dsuf-t">Union-Find: a forest of trees; path compression flattens on find</title>
+<text class="d-t-b" x="14" y="16">before find(4)</text>
+<rect class="d-box-soft" x="60" y="24" width="30" height="20" rx="4"/><text class="d-t-b" x="75" y="39" text-anchor="middle">1</text>
+<rect class="d-box" x="60" y="54" width="30" height="20" rx="4"/><text class="d-t-b" x="75" y="69" text-anchor="middle">2</text>
+<rect class="d-box" x="60" y="84" width="30" height="20" rx="4"/><text class="d-t-b" x="75" y="99" text-anchor="middle">3</text>
+<rect class="d-box" x="60" y="114" width="30" height="20" rx="4"/><text class="d-t-b" x="75" y="129" text-anchor="middle">4</text>
+<path class="d-line" d="M75 54 L75 46" marker-end="url(#dsuf-ah)"/><path class="d-line" d="M75 84 L75 76" marker-end="url(#dsuf-ah)"/><path class="d-line" d="M75 114 L75 106" marker-end="url(#dsuf-ah)"/>
+<defs><marker id="dsuf-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-b" x="280" y="16">after find(4)</text>
+<rect class="d-box-soft" x="330" y="60" width="30" height="20" rx="4"/><text class="d-t-b" x="345" y="75" text-anchor="middle">1</text>
+<rect class="d-box" x="270" y="110" width="30" height="20" rx="4"/><text class="d-t-b" x="285" y="125" text-anchor="middle">2</text>
+<rect class="d-box" x="330" y="110" width="30" height="20" rx="4"/><text class="d-t-b" x="345" y="125" text-anchor="middle">3</text>
+<rect class="d-box" x="390" y="110" width="30" height="20" rx="4"/><text class="d-t-b" x="405" y="125" text-anchor="middle">4</text>
+<path class="d-line" d="M290 110 C 310 95, 330 88, 342 82" marker-end="url(#dsuf-ah)"/>
+<path class="d-line" d="M345 110 L345 82" marker-end="url(#dsuf-ah)"/>
+<path class="d-line" d="M400 110 C 385 95, 360 88, 350 82" marker-end="url(#dsuf-ah)"/>
+<text class="d-t-sm" x="14" y="138">Union by rank/size keeps trees shallow; path compression repoints every node on the path straight to the root.</text>
+</svg>
+<figcaption>With both optimisations, <code>union</code> and <code>find</code> run in near-constant amortised time (inverse-Ackermann, &alpha;(n) &le; 4 for any practical n). Used for Kruskal's MST, connected components, cycle detection.</figcaption>
+</figure>
 <h3>Disjoint Set Union (Union-Find)</h3>
 <p>Maintains a partition of elements into disjoint sets, supporting:</p>
 <ul>
@@ -9042,6 +9198,26 @@ lead to a solution. Template:</p>
 <p>Uses: permutations/combinations/subsets, N-Queens, Sudoku, word search, generating valid
 parentheses, graph colouring. Worst case is exponential; pruning is what makes it tractable.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-dsdp-t">
+<title id="d-dsdp-t">fib(5) recursion tree has repeated subproblems; a memo table computes each once</title>
+<text class="d-t-b" x="14" y="16">naive recursion &mdash; O(&phi;&#8319;)</text>
+<text class="d-t-mono" x="20" y="34">fib(5)</text>
+<text class="d-t-mono" x="40" y="52">fib(4)&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;fib(3)</text>
+<text class="d-t-mono" x="60" y="70">fib(3)&nbsp;&nbsp;fib(2)&nbsp;&nbsp;fib(2)&nbsp;&nbsp;fib(1)</text>
+<text class="d-t-accent" x="60" y="88">fib(3), fib(2) computed again and again</text>
+<line class="d-line-soft" x1="14" y1="100" x2="506" y2="100"/>
+<text class="d-t-b" x="14" y="120">memoised &mdash; O(n)</text>
+<rect class="d-box-soft" x="20" y="128" width="44" height="22"/><text class="d-t-mono" x="42" y="143" text-anchor="middle">0</text>
+<rect class="d-box-soft" x="64" y="128" width="44" height="22"/><text class="d-t-mono" x="86" y="143" text-anchor="middle">1</text>
+<rect class="d-box-soft" x="108" y="128" width="44" height="22"/><text class="d-t-mono" x="130" y="143" text-anchor="middle">1</text>
+<rect class="d-box-soft" x="152" y="128" width="44" height="22"/><text class="d-t-mono" x="174" y="143" text-anchor="middle">2</text>
+<rect class="d-box-soft" x="196" y="128" width="44" height="22"/><text class="d-t-mono" x="218" y="143" text-anchor="middle">3</text>
+<rect class="d-box-soft" x="240" y="128" width="44" height="22"/><text class="d-t-mono" x="262" y="143" text-anchor="middle">5</text>
+<text class="d-t-sm" x="300" y="143">each dp[i] filled once from dp[i&minus;1] + dp[i&minus;2]</text>
+</svg>
+<figcaption>DP applies when a problem has <strong>optimal substructure</strong> (answer built from sub-answers) <em>and</em> <strong>overlapping subproblems</strong> (the same sub-answers recur). Memoisation = recursion + cache (top-down); tabulation = fill the table in dependency order (bottom-up).</figcaption>
+</figure>
 <h3>Dynamic programming</h3>
 <p>Applies when a problem has <strong>optimal substructure</strong> (optimal answer built from optimal
 sub-answers) and <strong>overlapping subproblems</strong> (the same sub-answers recur). Two styles:</p>
