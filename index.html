@@ -70,6 +70,7 @@
 .theme-containers  { --accent-raw:#2a8f8f; }
 .theme-docker      { --accent-raw:#1d74c4; }
 .theme-k8s         { --accent-raw:#3f5ecc; }
+.theme-debug       { --accent-raw:#8c4a4a; }
 [class*="theme-"] {
   --accent:      var(--accent-raw);
   --accent-soft: color-mix(in srgb, var(--accent) 20%, var(--mix-base));
@@ -40005,6 +40006,1220 @@ Revert the commit in git (<code>git revert</code>); the GitOps controller reconc
 </section>
 <!-- /TOPIC:k8s:helm-gitops -->
 
+<!-- ============================== DEBUG & PROFILING TOOLS ============================== -->
+
+<!-- TOPIC:debug:gdb -->
+<section class="view topic" id="v-debug-gdb" data-skill="debug">
+<div class="layout">
+<nav class="sidebar" data-sidebar="debug"></nav>
+<div class="topic-body">
+<h1>gdb: The GNU Debugger</h1>
+<p class="subtitle">Stop a program anywhere, inspect and change its state, and walk the call stack &mdash; on a running process or a core dump.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 170" role="img" aria-labelledby="d-dbg-gdb-t">
+<title id="d-dbg-gdb-t">gdb drives the inferior via ptrace; also attaches to a PID, a core file, or a remote gdbserver</title>
+<rect class="d-box-alt" x="14" y="20" width="110" height="26" rx="6"/><text class="d-t-b" x="69" y="37" text-anchor="middle">you (commands)</text>
+<rect class="d-box-soft" x="200" y="20" width="110" height="26" rx="6"/><text class="d-t-b" x="255" y="37" text-anchor="middle">gdb</text>
+<rect class="d-box" x="390" y="14" width="120" height="20"/><text class="d-t-sm" x="450" y="28" text-anchor="middle">inferior process</text>
+<rect class="d-box" x="390" y="40" width="120" height="18"/><text class="d-t-sm" x="450" y="53" text-anchor="middle">core file (post-mortem)</text>
+<rect class="d-box" x="390" y="64" width="120" height="18"/><text class="d-t-sm" x="450" y="77" text-anchor="middle">gdbserver :1234 (remote)</text>
+<path class="d-line" d="M124 33 L198 33" marker-end="url(#dbg-gdb-ah)"/>
+<path class="d-line" d="M310 30 L388 24" marker-end="url(#dbg-gdb-ah)"/><text class="d-t-sm" x="316" y="20">ptrace()</text>
+<path class="d-line" d="M310 34 L388 49" marker-end="url(#dbg-gdb-ah)"/>
+<path class="d-line" d="M310 40 L388 73" marker-end="url(#dbg-gdb-ah)"/>
+<defs><marker id="dbg-gdb-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="112">gdb uses <tspan class="d-t-mono">ptrace(2)</tspan> to set traps, read/write registers &amp; memory, and single-step. Build with <tspan class="d-t-mono">-g</tspan> (and <tspan class="d-t-mono">-O0</tspan> while debugging).</text>
+<text class="d-t-sm" x="14" y="130">Same commands whether the target is live, attached by PID, replaying a core, or on another machine.</text>
+<text class="d-t-sm" x="14" y="148">First move on any crash: <tspan class="d-t-mono">run</tspan> then <tspan class="d-t-mono">bt</tspan> (backtrace) &mdash; it tells you the failing line and how you got there.</text>
+</svg>
+<figcaption>The program being debugged is the "inferior". gdb never runs your code in a sandbox &mdash; it runs the real process and freezes it at breakpoints, so timing-sensitive bugs can shift or vanish.</figcaption>
+</figure>
+
+<h3>Starting gdb and getting a backtrace</h3>
+<p><strong>What.</strong> Load a program, run it, and when it stops (crash, breakpoint, signal) ask <code>bt</code> for the call stack. <strong>Why.</strong> 90% of debugging sessions are "where did it crash and with what arguments" &mdash; <code>bt full</code> answers both. Build with <code>-g</code> for symbols and line numbers; add <code>-O0</code> so variables aren't optimised away and lines map 1:1.</p>
+<pre>$ gcc -g -O0 -o app app.c            # -g = debug info; -O0 = no optimisation while debugging
+$ gdb ./app                          # or: gdb --args ./app --port 8080 file.txt
+(gdb) run                            # start it; 'r' for short. args persist across runs
+Program received signal SIGSEGV, Segmentation fault.
+0x0000555555555199 in parse (s=0x0) at app.c:42
+42          return s[0];             # <-- the faulting line
+(gdb) bt                             # backtrace: the call chain
+#0  parse (s=0x0) at app.c:42
+#1  0x00005555555551f0 in main () at app.c:11
+(gdb) bt full                        # + every frame's local variables
+(gdb) frame 1                        # hop to main's frame to inspect its state
+(gdb) list                           # show source around the current line
+
+# attach to something already running, or debug a core:
+$ gdb -p $(pgrep myserver)           # attach to a live PID (needs ptrace permission)
+$ gdb ./app core                     # post-mortem from a core dump</pre>
+
+<h3>Breakpoints, watchpoints, catchpoints</h3>
+<p><strong>What.</strong> A <strong>breakpoint</strong> stops at a location; a <strong>watchpoint</strong> stops when an expression's value changes; a <strong>catchpoint</strong> stops on an event (C++ throw, <code>exec</code>, a syscall). <strong>Why.</strong> Watchpoints find "who is corrupting this variable" without guessing; conditional breakpoints skip the 9,999 boring iterations and stop on the one that matters.</p>
+<pre>(gdb) break app.c:42                  # by file:line
+(gdb) break parse                    # by function
+(gdb) break parse if s == 0          # conditional: only when the guard is true
+(gdb) tbreak main                    # temporary: auto-deleted after it hits once
+(gdb) watch total                    # stop when 'total' changes (hardware watchpoint if possible)
+(gdb) rwatch cfg.flags               # stop when it is READ
+(gdb) catch throw                    # stop on any C++ exception being thrown
+(gdb) catch syscall openat           # stop on a specific syscall
+(gdb) info breakpoints               # list them, with hit counts
+(gdb) condition 2 i > 1000           # add/replace a condition on breakpoint #2
+(gdb) commands 2                     # run these gdb commands each time bp #2 hits
+ > silent
+ > printf "i=%d ptr=%p\n", i, ptr
+ > continue
+ > end
+(gdb) delete 2      |  disable 2  |  ignore 2 50   # remove / mute / skip next 50 hits</pre>
+
+<h3>Stepping and moving around the stack</h3>
+<p><strong>What / how.</strong> Advance execution at source or instruction granularity, run out of the current function, or jump between stack frames to read their locals. <strong>Why.</strong> <code>step</code> descends into calls, <code>next</code> steps over them, <code>finish</code> runs the rest of the current function and prints its return value &mdash; the fast way to "let this call complete and show me what it gave back".</p>
+<pre>(gdb) next        # 'n' - execute one source line, stepping OVER calls
+(gdb) step        # 's' - one source line, stepping INTO calls
+(gdb) stepi       # 'si' - one machine instruction
+(gdb) finish      # run until the current function returns; prints the return value
+(gdb) until 58    # run until line 58 (handy to skip past a loop)
+(gdb) continue    # 'c' - resume until the next stop
+(gdb) return 0    # force the current function to return now with value 0
+
+(gdb) bt                  # the frames
+(gdb) frame 2  |  up  |  down   # select a frame by number / one out / one in
+(gdb) info args          # the selected frame's parameters
+(gdb) info locals        # its local variables
+(gdb) info frame         # saved PC, caller, where args live</pre>
+
+<h3>Inspecting and modifying data</h3>
+<p><strong>What.</strong> <code>print</code> evaluates any C/C++ expression (including calling functions); <code>x</code> dumps raw memory in a chosen format; <code>set var</code> writes into the inferior. <strong>Why.</strong> You can test a fix live &mdash; patch a variable, <code>call</code> a repair routine, or skip a bad branch &mdash; before touching the source.</p>
+<pre>(gdb) print cfg              # pretty-prints structs/containers (with pretty-printers)
+(gdb) p/x flags             # hex; also /d /u /t(binary) /c /f /a(addr)
+(gdb) p arr[3]              /  p *p@10        # 'p *ptr@N' = show N elements from ptr
+(gdb) p (int)strlen(name)   # call a function in the inferior
+(gdb) display total         # auto-print 'total' after every stop
+(gdb) x/16xw &amp;buf           # examine: 16 words, hex   (x/8xb bytes, x/s string, x/4i $pc)
+(gdb) ptype cfg   |  whatis p   # type of an expression / a symbol
+(gdb) info registers  |  p $rdi $rsi     # CPU registers / individual ones
+(gdb) set var retries = 0   # change a live variable
+(gdb) set $pc = &amp;recover    # even redirect execution (advanced)</pre>
+
+<h3>Core dumps and post-mortem debugging</h3>
+<p><strong>What / why.</strong> A core dump is the process's memory image written at the moment it died. With the <em>matching</em> binary (same build, ideally with <code>-g</code> or separate debug info) you get a full backtrace of a crash that happened on a server hours ago &mdash; no reproduction needed.</p>
+<pre>$ ulimit -c unlimited                       # allow cores in this shell (or set a hard limit)
+$ cat /proc/sys/kernel/core_pattern         # where cores go; often piped to systemd-coredump
+$ coredumpctl gdb myapp                      # systemd: opens the latest core in gdb
+#   or, with a plain file:
+$ gdb ./myapp /var/lib/coredump/core.myapp.1234
+
+(gdb) bt                                     # the crash stack
+(gdb) thread apply all bt                    # every thread's stack (deadlocks, races)
+(gdb) info sharedlibrary                     # which .so's were loaded
+(gdb) set solib-search-path /path/to/libs    # if libraries aren't found
+# Debug info can live in a separate file: 'objcopy --only-keep-debug' + a .build-id link,
+# or a distro's -dbg / debuginfod (set DEBUGINFOD_URLS to auto-download symbols).</pre>
+
+<h3>Threads, forks, signals, remote, and scripting</h3>
+<p><strong>What / why.</strong> Real programs fork, spawn threads, and take signals; gdb controls all of it. It also runs headless for CI (<code>-batch</code>), attaches over the network (<code>gdbserver</code>), and is fully scriptable via <code>.gdbinit</code> and a Python API.</p>
+<pre># threads
+(gdb) info threads                         # list; * marks the current
+(gdb) thread 3                             # switch
+(gdb) thread apply all bt                  # backtrace every thread (classic deadlock view)
+(gdb) set scheduler-locking on             # while stepping, freeze the other threads
+
+# forks & signals
+(gdb) set follow-fork-mode child           # follow the child on fork() (default: parent)
+(gdb) set detach-on-fork off               # keep BOTH under control
+(gdb) handle SIGPIPE nostop noprint pass   # stop ignoring / spamming on a signal
+(gdb) catch signal SIGABRT
+
+# remote (embedded / container / another host)
+target$  gdbserver :1234 ./app
+host$    gdb ./app -ex 'target remote target-host:1234'
+
+# non-interactive & scripted
+$ gdb -q -batch -ex run -ex bt -ex quit --args ./app input   # crash + backtrace, then exit
+$ gdb -x debug.gdb ./app                                      # run a command script
+# ~/.gdbinit or ./.gdbinit: default settings, 'define' custom commands, load pretty-printers.
+# TUI: 'gdb -tui' or (gdb) layout src   |   Reverse: (gdb) record; reverse-next / reverse-continue</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Build <code>-g -O0</code>. Start: <code>gdb ./app</code>, <code>gdb --args ./app a b</code>, <code>gdb -p PID</code>, <code>gdb ./app core</code>.</li>
+<li>Crash triage: <code>run</code> &rarr; <code>bt</code> / <code>bt full</code> &rarr; <code>frame N</code> &rarr; <code>info args</code>/<code>info locals</code>.</li>
+<li>Breakpoints: <code>break f:line</code>, <code>break fn if cond</code>, <code>tbreak</code>, <code>watch v</code> (change), <code>rwatch</code> (read), <code>catch throw</code>/<code>catch syscall</code>. <code>info breakpoints</code>, <code>condition</code>, <code>commands</code>, <code>ignore</code>.</li>
+<li>Step: <code>next</code> (over), <code>step</code> (into), <code>stepi</code>, <code>finish</code> (out, shows return), <code>until N</code>, <code>continue</code>.</li>
+<li>Data: <code>p expr</code>, <code>p/x</code>, <code>p *ptr@N</code>, <code>p fn(args)</code>, <code>display</code>, <code>x/16xw addr</code>, <code>ptype</code>/<code>whatis</code>, <code>info registers</code>, <code>set var x=…</code>.</li>
+<li>Cores: <code>ulimit -c unlimited</code>, check <code>/proc/sys/kernel/core_pattern</code>, <code>coredumpctl gdb</code>, need the matching binary + debug info (debuginfod).</li>
+<li>Threads: <code>info threads</code>, <code>thread N</code>, <code>thread apply all bt</code>, <code>set scheduler-locking on</code>. Forks: <code>set follow-fork-mode child</code>.</li>
+<li>Headless: <code>gdb -q -batch -ex run -ex bt --args ./app</code>. Remote: <code>gdbserver :PORT ./app</code> + <code>target remote host:PORT</code>. Scripts: <code>.gdbinit</code>, <code>-x file.gdb</code>, Python API.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>A release binary crashes but gdb shows <code>&lt;optimized out&gt;</code> for the variables you need. What now?</dt>
+<dd>The compiler removed or coalesced them at <code>-O2</code>. Options: rebuild the translation unit with <code>-g -O0</code> (or <code>-Og</code>, which keeps debuggability while optimising lightly) and reproduce; read the values from registers/stack with <code>info registers</code> and <code>x/</code> using the disassembly (<code>disassemble</code>, <code>layout asm</code>) and the calling convention; or add targeted logging. For production, ship with <code>-O2 -g</code> and keep separate debug-info files so at least line numbers and the backtrace survive.</dd>
+<dt>What's the difference between <code>step</code> and <code>next</code>, and between <code>finish</code> and <code>until</code>?</dt>
+<dd><code>step</code> enters function calls on the line; <code>next</code> executes them without stopping inside. <code>finish</code> runs until the <em>current</em> function returns and prints its return value; <code>until</code> (with no arg) runs until a line greater than the current is reached (so it exits a loop), and <code>until N</code> runs until line N. Use <code>next</code> to stay at your level, <code>finish</code> to get a call's result fast, <code>until</code> to escape a loop you don't care about.</dd>
+<dt>How do you find which code is scribbling over a struct field?</dt>
+<dd>A <strong>watchpoint</strong>: <code>watch cfg.flags</code> (hardware-assisted if the size/arch allow, so it's cheap). gdb stops the instant the value changes and <code>bt</code> shows the writer. If the address changes (the object is on the heap and re-allocated), set the watch after the object exists, or watch <code>*(int*)0xADDR</code>. For "corrupted much later" bugs, combine with AddressSanitizer or Valgrind, which flag the out-of-bounds write at its source.</dd>
+<dt>gdb can't attach: "ptrace: Operation not permitted". Why?</dt>
+<dd>The Yama LSM restricts <code>ptrace</code> to descendants by default (<code>/proc/sys/kernel/yama/ptrace_scope = 1</code>). Fixes: run gdb as root or with <code>CAP_SYS_PTRACE</code>; start the target from within gdb instead of attaching; temporarily <code>echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope</code>; or in containers add <code>--cap-add=SYS_PTRACE</code> and (often) <code>--security-opt seccomp=unconfined</code>.</dd>
+<dt>The backtrace is full of <code>??</code> and wrong function names. What went wrong?</dt>
+<dd>Symbol/binary mismatch or a corrupted stack. Check you loaded the <em>exact</em> binary that produced the core (same build id), that debug info matches (<code>build-id</code>, debuginfod, or the right <code>-dbg</code> package), and that shared-library paths resolve (<code>info sharedlibrary</code>, <code>set solib-search-path</code>). If the binary is right but the stack is garbage, you likely have stack corruption (buffer overflow, use-after-return) &mdash; switch to ASan/Valgrind to catch the overwrite.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which compiler flags do you add to debug comfortably with gdb, and why?</summary><div class="answer-box">
+<code>-g</code> to emit DWARF debug info (line numbers, variable names, types) and <code>-O0</code> so nothing is optimised away and each source line maps to a contiguous run of instructions. <code>-Og</code> is a middle ground for cases where <code>-O0</code> is too slow or hides an optimisation-only bug.
+</div></details>
+<details class="answer-reveal"><summary>Your program segfaults. Give the three gdb commands that usually pinpoint it.</summary><div class="answer-box">
+<code>run</code> (reproduce under gdb &mdash; it stops at the fault), <code>bt</code> (the call stack and faulting line), then <code>frame N</code> + <code>info locals</code>/<code>print</code> to inspect the bad pointer or index in the relevant frame.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A bug only appears on the 50,000th request. How do you stop exactly there without stepping 50,000 times?</summary><div class="answer-box">
+A <strong>conditional breakpoint</strong>: <code>break handle_request if req_id == 50000</code>. If there's no handy counter, break on the function and use <code>ignore &lt;bpnum&gt; 49999</code> to skip the first N hits, or attach a <code>commands</code> block that <code>printf</code>s state and <code>continue</code>s while a guard is false. For "the Nth time some condition is true", keep a static counter or set a <code>watch</code> on the condition. If each iteration is expensive, prefer logging + a data breakpoint over interactive stepping.
+</div></details>
+<details class="answer-reveal"><summary>Walk through post-mortem debugging of a crash that happened on a production server.</summary><div class="answer-box">
+(1) Ensure cores are enabled and captured (<code>ulimit -c</code>, <code>core_pattern</code>/<code>systemd-coredump</code>) and that the service ships with <code>-O2 -g</code> or separate debug-info. (2) Get the core and the <em>exact</em> binary (match by build-id). (3) <code>gdb ./app core</code> (or <code>coredumpctl gdb</code>). (4) <code>bt full</code> for the crashing thread; <code>thread apply all bt</code> to see every thread (deadlock/race context). (5) Inspect the offending frame &mdash; <code>frame N</code>, <code>print</code> the pointer/index, <code>p *obj</code>, <code>x/</code> around it; check <code>$_siginfo</code> for the fault address. (6) Resolve libraries (<code>info sharedlibrary</code>, <code>set solib-search-path</code>, debuginfod). (7) If the stack is corrupt, the crash is a symptom &mdash; reproduce under ASan/Valgrind to find the real overwrite. (8) Turn the finding into a regression test.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a debugging strategy for an intermittent multi-threaded corruption that disappears under gdb ("heisenbug").</summary><div class="answer-box">
+The probe changes timing, so lean on low-perturbation and record/replay tools. (1) <strong>Sanitizers first</strong>: build with <code>-fsanitize=thread</code> (TSan) to catch the data race directly, and separately <code>-fsanitize=address</code> for the memory error; these report the two racing accesses / the bad write with stacks, often without needing to "catch it live". (2) <strong>Deterministic replay</strong>: run under <code>rr</code> (<code>rr record ./app</code> then <code>rr replay</code>) &mdash; you get a gdb session you can run <em>backwards</em> (<code>reverse-continue</code>, <code>reverse-next</code>) from the failure to the cause, with identical timing every replay. gdb's own <code>record</code> works for smaller windows. (3) <strong>Hardware watchpoints</strong> on the corrupted address in the rr replay pinpoint the writer without slowing the original run. (4) <strong>Reduce nondeterminism</strong> to reproduce: pin to fewer cores (<code>taskset</code>), add scheduling stress (<code>stress-ng</code>, <code>rr</code>'s chaos mode, or a <code>sched_yield</code>/usleep fuzz build), disable ASLR (<code>setarch -R</code>) for stable addresses. (5) <strong>Instrument, don't step</strong>: ring-buffer logging of the suspect operations with thread id + timestamp; a <code>commands</code> block on a breakpoint that logs and continues (no human in the loop, minimal stall); or a checksum/guard-page around the object (<code>mprotect</code>, or ASan's <code>__asan_poison_memory_region</code>) so the offending access faults immediately. (6) <strong>Post-mortem</strong>: if it does crash, <code>thread apply all bt</code> on the core plus the ring-buffer log usually shows the interleaving. (7) Once understood, add a TSan CI job and a stress test so it can't regress. Net: TSan/ASan to name the race, <code>rr</code> for reverse debugging with stable timing, watchpoints in replay to find the writer, and low-perturbation logging/guard pages instead of interactive stepping.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:debug:gdb -->
+
+<!-- TOPIC:debug:valgrind -->
+<section class="view topic" id="v-debug-valgrind" data-skill="debug">
+<div class="layout">
+<nav class="sidebar" data-sidebar="debug"></nav>
+<div class="topic-body">
+<h1>Valgrind: Memory &amp; Thread Errors</h1>
+<p class="subtitle">Runs your program on a synthetic CPU and checks every memory access &mdash; leaks, invalid reads/writes, use of uninitialised values, bad frees &mdash; with no recompilation.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-dbg-val-t">
+<title id="d-dbg-val-t">Valgrind core JITs the program onto a synthetic CPU; a tool instruments every operation</title>
+<rect class="d-box-alt" x="14" y="24" width="130" height="24" rx="6"/><text class="d-t-b" x="79" y="40" text-anchor="middle">your binary</text>
+<rect class="d-box-soft" x="190" y="18" width="150" height="36" rx="6"/><text class="d-t-b" x="265" y="33" text-anchor="middle">Valgrind core (JIT)</text><text class="d-t-sm" x="265" y="47" text-anchor="middle">synthetic CPU</text>
+<rect class="d-box" x="386" y="14" width="124" height="16"/><text class="d-t-sm" x="392" y="26">memcheck &mdash; addr/def bits</text>
+<rect class="d-box" x="386" y="32" width="124" height="16"/><text class="d-t-sm" x="392" y="44">helgrind / DRD &mdash; races</text>
+<rect class="d-box" x="386" y="50" width="124" height="16"/><text class="d-t-sm" x="392" y="62">cachegrind / callgrind</text>
+<rect class="d-box" x="386" y="68" width="124" height="16"/><text class="d-t-sm" x="392" y="80">massif &mdash; heap over time</text>
+<path class="d-line" d="M144 36 L188 36" marker-end="url(#dbg-val-ah)"/>
+<path class="d-line" d="M340 30 L384 22" marker-end="url(#dbg-val-ah)"/>
+<path class="d-line" d="M340 38 L384 58" marker-end="url(#dbg-val-ah)"/>
+<defs><marker id="dbg-val-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="108">Every byte has an <tspan class="d-t-b">A bit</tspan> (addressable?) and every value has <tspan class="d-t-b">V bits</tspan> (defined?). Memcheck checks them on every load, store, and branch.</text>
+<text class="d-t-sm" x="14" y="126">Cost: ~10&ndash;30&times; slower, ~2&times; memory. No recompile needed, but <tspan class="d-t-mono">-g</tspan> gives file:line in reports.</text>
+<text class="d-t-sm" x="14" y="144">Linux/macOS, x86-64/ARM. Not for Windows native. For hot paths, prefer compiler sanitizers (ASan/TSan).</text>
+</svg>
+<figcaption>Valgrind is a dynamic-analysis framework; <strong>Memcheck</strong> is the default tool. It finds bugs on the paths your run actually exercised &mdash; coverage matters, so run it over your test suite.</figcaption>
+</figure>
+
+<h3>Memcheck: the errors it catches</h3>
+<p><strong>What.</strong> Invalid reads/writes (out of bounds, after free, wrong stack frame), use of uninitialised values in a decision or syscall, <code>free</code>/<code>delete</code> mismatches, double frees, overlapping <code>memcpy</code>, and memory leaks at exit. <strong>Why.</strong> These are the bugs that either crash randomly much later or silently corrupt data; Memcheck flags them <em>at the instruction that does the bad thing</em>, with a stack trace.</p>
+<pre>$ gcc -g -O0 -o app app.c                 # -g for line numbers; -O1 max (higher can confuse it)
+$ valgrind ./app                          # Memcheck is the default tool
+
+==12345== Invalid write of size 4
+==12345==    at 0x1091AA: store (app.c:14)      # <-- exact line
+==12345==    by 0x1091E7: main (app.c:23)
+==12345==  Address 0x4a8b064 is 0 bytes after a block of size 40 alloc'd
+==12345==    at 0x484A2A3: malloc (vg_replace_malloc.c:381)
+==12345==    by 0x109180: main (app.c:20)       # <-- where the too-small block came from
+
+==12345== Conditional jump or move depends on uninitialised value(s)
+==12345==    at 0x109233: main (app.c:29)       # you branched on garbage
+
+==12345== HEAP SUMMARY:
+==12345==     definitely lost: 40 bytes in 1 blocks</pre>
+
+<h3>Leak checking and origin tracking</h3>
+<p><strong>What / why.</strong> <code>--leak-check=full</code> lists every leaked block with the allocation stack; <code>--show-leak-kinds=all</code> also reports <em>still reachable</em> (referenced at exit &mdash; often fine) and <em>indirectly lost</em>. <code>--track-origins=yes</code> tells you <em>where</em> an uninitialised value was born (2&times; slower, worth it).</p>
+<pre>$ valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes \
+           --error-exitcode=1 --log-file=vg.%p.txt ./app
+
+# leak categories:
+#   definitely lost  -> a real leak: no pointer to the block remains        (fix these)
+#   indirectly lost  -> leaked only because its owner was leaked
+#   possibly lost    -> only an interior pointer remains (custom allocators, some C++)
+#   still reachable   -> pointer exists at exit; usually a global/cache, low priority
+
+# make CI fail on any error/leak:
+$ valgrind --leak-check=full --errors-for-leak-kinds=definite --error-exitcode=1 ./tests</pre>
+
+<h3>Suppressions and reducing noise</h3>
+<p><strong>What / why.</strong> Third-party libraries (glibc, OpenSSL, the dynamic loader, GUI toolkits) trip Memcheck for benign reasons. A <strong>suppression file</strong> silences <em>specific</em> known reports so real bugs stand out. Generate them, don't hand-write.</p>
+<pre>$ valgrind --gen-suppressions=all --log-file=vg.txt ./app    # prints a suppression per error
+# paste the ones you trust into project.supp:
+{
+   glibc_dlopen_false_positive
+   Memcheck:Leak
+   fun:malloc
+   ...
+   obj:*/ld-*.so
+}
+$ valgrind --suppressions=project.supp --suppressions=/usr/lib/valgrind/default.supp ./app
+# tip: also run with 'G_SLICE=always-malloc' / disable custom pools so the checker sees real malloc.</pre>
+
+<h3>The other tools</h3>
+<p><strong>What / why.</strong> Same framework, different instrumentation &mdash; select with <code>--tool=</code>.</p>
+<pre># Cachegrind: cache-miss + branch-misprediction model (deterministic, good for A/B)
+$ valgrind --tool=cachegrind --branch-sim=yes ./app
+$ cg_annotate cachegrind.out.12345          # per-line I1/D1/LL misses
+
+# Callgrind: call graph + instruction counts -> visualise in KCachegrind
+$ valgrind --tool=callgrind --dump-instr=yes ./app
+$ callgrind_annotate callgrind.out.12345 ; kcachegrind callgrind.out.12345
+
+# Massif: heap usage over time (find the growth / the peak allocator)
+$ valgrind --tool=massif --time-unit=B ./app
+$ ms_print massif.out.12345      # ASCII graph + snapshots with allocation stacks
+
+# Helgrind / DRD: data races, lock-order violations, misuse of pthreads/std::thread
+$ valgrind --tool=helgrind ./app
+$ valgrind --tool=drd --check-stack-var=yes ./app     # DRD: lower overhead, different heuristics</pre>
+
+<h3>Valgrind vs compiler sanitizers</h3>
+<p><strong>What / why.</strong> ASan/TSan/UBSan (<code>-fsanitize=…</code>) instrument at <em>compile</em> time: far faster (2&ndash;3&times;), so usable in CI on the whole suite and even some prod canaries. Valgrind needs <em>no rebuild</em>, catches uninitialised-read and leak cases ASan doesn't, and works on binaries you can't recompile &mdash; but it's slow and doesn't see custom-allocator internals well.</p>
+<pre>            Valgrind Memcheck            AddressSanitizer (-fsanitize=address)
+recompile   no                          yes
+slowdown    10-30x                      ~2x
+uninit reads yes (killer feature)       no (that's MemorySanitizer, needs full rebuild)
+leaks       yes                         yes (LeakSanitizer, on by default)
+races       yes (Helgrind, slow)        yes (ThreadSanitizer, faster)  -- can't combine ASan+TSan
+overflow detail  heap; limited stack    heap + stack + global, redzones, quarantine
+use it when  can't rebuild; need uninit;  fast feedback; CI on every test; stack/global overflows
+             one-off deep audit</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Default tool = <strong>Memcheck</strong>. Build <code>-g</code> (and no more than <code>-O1</code>). <code>valgrind ./app</code>.</li>
+<li>Full run: <code>valgrind --leak-check=full --show-leak-kinds=all --track-origins=yes --error-exitcode=1 ./app</code>.</li>
+<li>Leak kinds: <strong>definitely lost</strong> (fix), indirectly lost, possibly lost (interior pointers), <strong>still reachable</strong> (usually OK).</li>
+<li>Key errors: <em>Invalid read/write of size N</em>, <em>Conditional jump depends on uninitialised value</em>, <em>Invalid free / mismatched free/delete</em>, <em>N bytes lost</em>.</li>
+<li>Noise: <code>--gen-suppressions=all</code> &rarr; curate a <code>.supp</code> file; pass with <code>--suppressions=</code>.</li>
+<li>Other tools via <code>--tool=</code>: <strong>cachegrind</strong> (cache/branch model), <strong>callgrind</strong> (call graph &rarr; KCachegrind), <strong>massif</strong> (heap over time), <strong>helgrind</strong>/<strong>drd</strong> (data races, lock order).</li>
+<li>CI: <code>--error-exitcode=1</code> (+ <code>--errors-for-leak-kinds=definite</code>) so any finding fails the build; <code>--log-file=vg.%p.txt</code>.</li>
+<li>~10&ndash;30&times; slow, ~2&times; RAM. For fast/CI-wide checking prefer <code>-fsanitize=address/thread/undefined</code>; use Valgrind when you can't recompile or need uninitialised-read/leak detection.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Memcheck reports "Conditional jump or move depends on uninitialised value(s)" but points at a line deep in a library. How do you find the real cause?</dt>
+<dd>Re-run with <code>--track-origins=yes</code> &mdash; it adds a second stack showing where the uninitialised bytes were created (the <code>malloc</code> that wasn't zeroed, the struct field never set, the buffer passed to a syscall). The reported line is only where the tainted value was <em>used</em>; the origin is the bug. If it's genuinely inside a trusted library on defined-but-padded data, add a targeted suppression.</dd>
+<dt>What's the difference between "definitely lost", "still reachable", and "possibly lost"?</dt>
+<dd><strong>Definitely lost</strong>: at exit, no pointer anywhere points into the block &mdash; a genuine leak, fix it. <strong>Still reachable</strong>: a pointer (often a global or singleton cache) still references it; the memory would be freed by the OS at exit anyway, so it's usually low priority (though it hides real leaks in long-running processes &mdash; clean up if you can). <strong>Possibly lost</strong>: only a pointer to the <em>middle</em> of the block remains &mdash; common with custom allocators, <code>std::string</code> small-buffer tricks, or pointer arithmetic; investigate but it's often benign.</dd>
+<dt>Your program runs fine normally but Valgrind makes it 20&times; slower and it times out. What are your options?</dt>
+<dd>Reduce the workload under Valgrind (smaller input, fewer iterations, a targeted test rather than the whole suite); raise timeouts in CI for the Valgrind job; use <code>--tool=memcheck</code> without <code>--track-origins</code> for a first pass; scope with client requests (<code>VALGRIND_DO_LEAK_CHECK</code>) around the region of interest; or switch to <strong>AddressSanitizer</strong> (~2&times;) for the CI-wide gate and keep Valgrind for periodic deep audits and for the uninitialised-read checks ASan lacks.</dd>
+<dt>Can you run AddressSanitizer and Valgrind together? ASan and ThreadSanitizer?</dt>
+<dd>Don't run ASan under Valgrind &mdash; ASan's shadow memory and interceptors confuse Memcheck and vice versa; pick one. ASan and TSan can't be combined in the same build (both own the allocator/shadow); build separate binaries. A typical matrix: one binary with <code>-fsanitize=address,undefined</code>, one with <code>-fsanitize=thread</code>, and an occasional plain-build Valgrind run for uninitialised values and leaks in third-party code.</dd>
+<dt>Why does Valgrind sometimes miss a stack buffer overflow that AddressSanitizer catches?</dt>
+<dd>Memcheck tracks addressability precisely for the <em>heap</em> (with red-zones around each <code>malloc</code>) but has limited visibility into stack and global layout &mdash; a small overrun into adjacent stack space may still be "addressable" from its point of view. ASan inserts red-zones around stack and global objects too and poisons them, so it flags those overflows. Use ASan for stack/global overflow coverage; use Memcheck for heap errors, uninitialised reads, and leaks without recompiling.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which Valgrind tool runs by default, and what does it check?</summary><div class="answer-box">
+<strong>Memcheck</strong>. It validates every memory access: reads/writes must be to allocated, addressable memory; values used in branches or syscalls must be initialised; frees must match allocations and happen once; and it reports blocks still allocated (leaked) at exit.
+</div></details>
+<details class="answer-reveal"><summary>What single option set do you use for a thorough leak report?</summary><div class="answer-box">
+<code>--leak-check=full --show-leak-kinds=all --track-origins=yes</code> (and <code>--error-exitcode=1</code> to fail CI). Build with <code>-g</code> so each leak has a source location.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your test suite is clean under Valgrind but a leak still grows in production over days. Why might Valgrind not see it?</summary><div class="answer-box">
+Valgrind only checks the code paths your run exercises, and only reports what's outstanding <em>at process exit</em>. Reasons it can miss a prod leak: (1) the leaking path isn't hit by the tests (rare error handling, a specific request type, a config only used in prod); (2) it's classified as "still reachable" because a growing container/cache keeps a pointer &mdash; technically not "lost" but unbounded growth all the same; (3) it's not C heap at all &mdash; fd leaks, mmap regions, thread stacks, kernel-side buffers, or a language runtime's own allocator that Memcheck sees as one big block; (4) the process never exits, so run <code>VALGRIND_DO_LEAK_CHECK</code> periodically via the client request API. Fixes: add tests covering the prod path, run Valgrind against a soak/load test, track "still reachable" growth, and use Massif to see <em>which</em> allocation site grows over time.</dd>
+</div></details>
+<details class="answer-reveal"><summary>How would you use Callgrind and Massif to investigate a service that's slow and memory-hungry under load?</summary><div class="answer-box">
+<strong>Callgrind</strong> for CPU: run a representative workload under <code>valgrind --tool=callgrind --dump-instr=yes --collect-jumps=yes</code>, then open <code>callgrind.out.*</code> in KCachegrind. It gives an exact (deterministic) call graph with inclusive/exclusive instruction counts and, with <code>--cache-sim=yes</code>, modelled cache misses &mdash; so you see which functions and which call paths dominate, and whether the cost is compute or memory-stall. Because it's deterministic it's great for before/after comparisons of an optimisation. Caveat: it measures instructions/modelled cycles, not wall-clock, and the 20&times; slowdown changes contention &mdash; validate the win with a real profiler (perf) afterwards. <strong>Massif</strong> for memory: run <code>valgrind --tool=massif --time-unit=B --detailed-freq=1</code>, then <code>ms_print</code>. It shows heap size over "time" (bytes allocated) with periodic snapshots, each broken down by allocation call stack &mdash; so you see the peak, what's resident at the peak, and which call site is responsible for growth. Use it to distinguish "big transient buffers" from "steady leak/accumulation" and to find the specific allocation to pool, cap, or free earlier. Combine: Massif finds the allocation sites to fix, Callgrind confirms whether allocation/copy cost is also on the hot path.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a memory-safety verification pipeline for a C/C++ codebase: what tools, at what stages, with what gates.</summary><div class="answer-box">
+<strong>Layered, fast-to-slow.</strong> (1) <strong>Compile-time</strong>: <code>-Wall -Wextra -Werror</code>, <code>-Wformat=2</code>, <code>-fstack-protector-strong</code>, <code>-D_FORTIFY_SOURCE=3</code>; static analysis (clang-tidy, <code>clang --analyze</code>, Coverity/CodeQL) on every PR with a no-new-findings gate. (2) <strong>Per-PR dynamic</strong>: build the test suite three ways and run it in CI &mdash; <code>-fsanitize=address,undefined</code> (heap/stack/global overflow, UAF, UB) with <code>-fno-sanitize-recover</code> so any hit fails; <code>-fsanitize=thread</code> for the concurrent tests; if you can afford the full rebuild, an MSan build for uninitialised reads. All with <code>-g -O1</code>, symbolized stacks, and <code>ASAN_OPTIONS=detect_leaks=1:strict_string_checks=1:detect_stack_use_after_return=1</code>. Gate: zero sanitizer errors. (3) <strong>Fuzzing</strong>: libFuzzer/AFL++ targets for every parser/deserialiser/protocol boundary, run in CI for a few minutes per PR and continuously (OSS-Fuzz style) on main; new crashes/ASan reports block or page. Corpus + regression tests from past bugs. (4) <strong>Nightly deep check</strong>: full suite (and a soak/load scenario) under <strong>Valgrind Memcheck</strong> with <code>--leak-check=full --track-origins=yes --error-exitcode=1</code> and a curated suppressions file &mdash; catches uninitialised reads and leaks in third-party/uninstrumented code and doesn't need the sanitizer rebuild; plus <strong>Massif</strong> on the soak test with an alert if peak/steady heap regresses beyond a threshold. (5) <strong>Pre-release</strong>: Helgrind/DRD or a longer TSan run over concurrency-heavy scenarios; a Valgrind pass on the exact release artifact. (6) <strong>Production</strong>: ship with <code>-O2 -g</code> + separate debug-info and frame pointers; keep core dumps + <code>coredumpctl</code>/debuginfod so any crash gets a real backtrace; optional hardened allocator (scudo) or GWP-ASan sampling in canaries to catch rare heap bugs in the field at near-zero cost. <strong>Gates</strong>: PR blocked on static analysis, all sanitizer test runs, and fuzz-regression; merge to main blocked additionally on the nightly Valgrind/Massif being green (or an approved suppression/threshold change); release blocked on the concurrency and release-artifact passes. <strong>Hygiene</strong>: every fixed bug adds a regression test and, if found by fuzzing, a corpus entry; suppressions are reviewed and expire. Net: cheap compiler + static checks on every commit, ASan/TSan/UBSan + fuzzing per PR as the primary gate, Valgrind/Massif nightly for the gaps sanitizers leave, and crash-grade observability in production.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:debug:valgrind -->
+
+<!-- TOPIC:debug:strace -->
+<section class="view topic" id="v-debug-strace" data-skill="debug">
+<div class="layout">
+<nav class="sidebar" data-sidebar="debug"></nav>
+<div class="topic-body">
+<h1>strace: System Call Tracing</h1>
+<p class="subtitle">Shows every system call a process makes &mdash; the arguments, the return value, the errno &mdash; so you can see exactly where it talks to the kernel and where it fails.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbg-str-t">
+<title id="d-dbg-str-t">strace intercepts the user/kernel boundary via ptrace and logs each syscall</title>
+<rect class="d-box-alt" x="30" y="26" width="150" height="70" rx="6"/><text class="d-t-b" x="105" y="44" text-anchor="middle">process (user space)</text>
+<text class="d-t-sm" x="40" y="64">read() write() openat()</text><text class="d-t-sm" x="40" y="82">connect() mmap() ...</text>
+<rect class="d-box" x="250" y="34" width="90" height="54" rx="4"/><text class="d-t-b" x="295" y="55" text-anchor="middle">strace</text><text class="d-t-sm" x="295" y="72" text-anchor="middle">ptrace</text>
+<rect class="d-box-soft" x="400" y="34" width="100" height="54" rx="6"/><text class="d-t-b" x="450" y="58" text-anchor="middle">kernel</text><text class="d-t-sm" x="450" y="74" text-anchor="middle">syscalls</text>
+<path class="d-line" d="M180 52 L248 46" marker-end="url(#dbg-str-ah)"/><text class="d-t-sm" x="184" y="42">trap</text>
+<path class="d-line" d="M340 60 L398 60" marker-end="url(#dbg-str-ah)"/><text class="d-t-sm" x="344" y="52">then resume</text>
+<path class="d-line" d="M398 78 L342 78" marker-end="url(#dbg-str-ah)"/><text class="d-t-sm" x="344" y="94">return + errno</text>
+<defs><marker id="dbg-str-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="118">You don't need source or symbols. Great for "which file/socket, and why did it fail" &mdash; the errno is right there.</text>
+<text class="d-t-sm" x="14" y="136">Cost: every syscall traps twice; a syscall-heavy process can run 10&ndash;100&times; slower. Filter with <tspan class="d-t-mono">-e</tspan>.</text>
+</svg>
+<figcaption>strace sees the <em>kernel</em> boundary only &mdash; not pure-userspace CPU work, not library calls that don't syscall. For library calls use ltrace; for in-process logic use gdb/perf.</figcaption>
+</figure>
+
+<h3>Running it: launch, attach, follow</h3>
+<p><strong>What / how.</strong> Start a command under strace, or attach to a running PID with <code>-p</code>. <code>-f</code> follows <code>fork</code>/<code>clone</code> so you also trace children and threads. <code>-o</code> writes to a file (keeps strace's output off the program's stderr).</p>
+<pre>$ strace ./app arg1                       # trace a fresh run
+$ strace -f -o trace.txt ./app            # follow children/threads, log to a file
+$ strace -p 4242                          # attach to a running process (Ctrl-C detaches)
+$ strace -f -p 4242 -e trace=network      # attach + only network syscalls
+$ strace -ff -o out ./app                 # -ff: one file per PID -> out.4242, out.4243 ...
+
+# common combo for "what is this daemon doing right now":
+$ sudo strace -f -p $(pgrep -n nginx) -e trace=%file,%network -T -tt -s 200</pre>
+
+<h3>Filtering: <code>-e trace=</code> and friends</h3>
+<p><strong>What / why.</strong> Full traces are a firehose. <code>-e trace=</code> restricts to syscalls or predefined classes; this both cuts noise and cuts overhead. <code>-e signal=</code>, <code>-e status=</code>, and <code>-P path</code> narrow further.</p>
+<pre>$ strace -e trace=openat,read,write ./app        # explicit list
+$ strace -e trace=%file ./app                    # class: anything that takes a filename
+$ strace -e trace=%network ./app                 # socket/connect/bind/accept/send/recv
+$ strace -e trace=%process ./app                 # fork/exec/exit/wait
+$ strace -e trace=%memory ./app                  # mmap/mprotect/brk
+$ strace -e trace=!futex,clock_nanosleep ./app   # everything EXCEPT these (noise removal)
+$ strace -P /etc/myapp/config.yaml ./app         # only syscalls touching this exact path
+$ strace -e signal=none ./app                    # hide signal lines
+$ strace -e status=failed ./app                  # (newer strace) only calls that returned an error</pre>
+
+<h3>Making the output useful: timing, strings, fds</h3>
+<p><strong>What / why.</strong> Defaults truncate strings and hide time. These flags turn a raw trace into a readable diagnostic.</p>
+<pre>-t / -tt / -ttt     # wall-clock timestamp per line (-tt = with microseconds)
+-r                  # relative time since the previous syscall (spot the long gaps)
+-T                  # time spent IN each syscall  <0.000123>  (find the slow one)
+-s 4096             # show up to 4096 bytes of string args (default 32 - too short)
+-y                  # annotate fds with the file/socket they refer to:  read(3&lt;/etc/hosts&gt;, ...)
+-yy                 # + protocol/inode details for sockets
+-v                  # unabbreviated structs (full stat/rlimit/... instead of "...")
+-x / -xx            # non-printable bytes as hex
+-k                  # print a user-space stack trace for each syscall (needs libunwind)
+-i                  # instruction pointer at the time of the call</pre>
+
+<h3>The summary mode: <code>-c</code></h3>
+<p><strong>What / why.</strong> <code>-c</code> suppresses the per-call log and prints a table at the end: call count, total time, average time, and error count per syscall. It's the fastest way to answer "is this process spending its time in the kernel, and doing what?".</p>
+<pre>$ strace -c -f ./app
+% time     seconds  usecs/call     calls    errors syscall
+------ ----------- ----------- --------- --------- ----------------
+ 61.2    0.451203         220      2050        18 read
+ 24.7    0.182050          89      2044           write
+  8.1    0.059700        1990        30           connect
+  4.0    0.029410          14      2000       970 stat        # 970 failed stat() = a bad search path
+------ ----------- ----------- --------- --------- ----------------
+100.0    0.722363                  8600      1041 total
+$ strace -c -w ./app        # -w: measure wall-clock time in syscalls (incl. time blocked), not CPU</pre>
+
+<h3>What strace is for &mdash; the four questions it answers</h3>
+<ul>
+<li><strong>"Why does it fail?"</strong> Find the failing syscall and its errno: <code>openat(&hellip;"/etc/app.conf", O_RDONLY) = -1 ENOENT</code> &mdash; wrong path. <code>EACCES</code> &mdash; permissions. <code>ECONNREFUSED</code> &mdash; nothing listening.</li>
+<li><strong>"Which files/hosts does it touch?"</strong> <code>-e trace=%file</code> / <code>%network -y</code> &mdash; discover the real config path, the library it loads, the endpoint it calls, without docs.</li>
+<li><strong>"Why is it slow / hung?"</strong> <code>-T -r</code> &mdash; a lone <code>read(4&hellip;)</code> or <code>futex(&hellip;)</code> or <code>poll(&hellip;)</code> taking 30s is your stall. <code>-c -w</code> shows if kernel time dominates.</li>
+<li><strong>"What's it doing at all?"</strong> Attach with <code>-p</code> to a wedged daemon &mdash; is it spinning on <code>EAGAIN</code>, stuck in <code>accept()</code>, or fork-bombing?</li>
+</ul>
+<pre># classic one-liners
+$ strace -f -e trace=%file ./app 2&gt;&amp;1 | grep -E 'ENOENT|EACCES'   # missing/denied files
+$ strace -f -e trace=execve -e status=successful ./script.sh       # what did the script exec?
+$ strace -p PID -e trace=%network -T -tt                           # live network activity + latency
+$ strace -c -f -p PID                                              # then Ctrl-C for the summary
+# NB strace slows the target a lot; on prod prefer 'perf trace', bpftrace, or a short sample.</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Run: <code>strace ./app</code>, attach: <code>strace -p PID</code>, children/threads: <code>-f</code> (or <code>-ff -o pre</code> for per-PID files), log: <code>-o file</code>.</li>
+<li>Filter: <code>-e trace=openat,connect</code>, classes <code>%file</code> / <code>%network</code> / <code>%process</code> / <code>%memory</code> / <code>%signal</code>, negate with <code>!</code>; <code>-P /path</code> for one path; <code>-e status=failed</code>.</li>
+<li>Readability: <code>-tt</code> (timestamps), <code>-r</code> (delta), <code>-T</code> (time in call), <code>-s 4096</code> (string length), <code>-y</code>/<code>-yy</code> (fd &rarr; path/socket), <code>-v</code> (full structs), <code>-k</code> (stack).</li>
+<li>Summary: <code>-c</code> (count/time/errors per syscall), <code>-c -w</code> (wall-clock, includes blocked time).</li>
+<li>Failure hunt: <code>strace -f -e trace=%file ./app 2&gt;&amp;1 | grep -E 'ENOENT|EACCES'</code>.</li>
+<li>Slow/hung: <code>strace -p PID -T -r</code> &mdash; look for the one syscall eating the time.</li>
+<li>Sees the <strong>kernel boundary only</strong> &mdash; no pure-CPU work, no non-syscalling library calls (use ltrace / perf / gdb for those).</li>
+<li>Heavy overhead (ptrace, 2 traps/call). On production prefer <code>perf trace</code>, <code>bpftrace</code>, or audit &mdash; or trace briefly.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>A program prints "cannot open config" and exits. How does strace pinpoint the cause in seconds?</dt>
+<dd><code>strace -f -e trace=%file ./app</code> and look at the <code>openat</code>/<code>stat</code> lines near the end. You'll see the exact paths it tried and the errno: <code>ENOENT</code> means it's looking somewhere you didn't expect (often a relative path, or <code>$HOME</code>/<code>XDG_CONFIG_HOME</code> not what you think); <code>EACCES</code> means the file exists but permissions/ownership/SELinux deny it; <code>ELOOP</code>/<code>ENOTDIR</code> point at a broken symlink or a path component that isn't a directory. The trace shows the search order, so you know exactly where to put the file or what to chmod.</dd>
+<dt>Why does strace show nothing interesting for a CPU-bound program that's "stuck"?</dt>
+<dd>Because it's not making syscalls &mdash; it's spinning in userspace (an infinite loop, a hot retry, heavy computation). strace only sees the kernel boundary. Switch tools: <code>gdb -p PID</code> then <code>bt</code> (where is it looping), <code>perf top -p PID</code> / <code>perf record -p PID</code> (which function burns CPU), or <code>py-spy</code>/<code>async-profiler</code> for managed runtimes. strace is the right tool only when the process is talking to (or waiting on) the kernel.</dd>
+<dt>Your service is intermittently slow. <code>strace -c</code> shows most time in <code>futex</code>. What does that mean?</dt>
+<dd><code>futex</code> is the syscall behind mutexes/condvars/<code>std::mutex</code>/Go/Java locks &mdash; time there usually means <strong>lock contention</strong> (threads blocked waiting to acquire) or a condvar wait. Note <code>-c</code> (CPU time) undercounts blocked time; re-run with <code>-c -w</code> to see wall-clock time in syscalls, and <code>-T -f</code> to see how long individual <code>futex</code> calls block and which threads. Then move to a real profiler: <code>perf lock</code>, mutex/lock profiling in the runtime, or reduce critical-section size / sharding.</dd>
+<dt>How do you trace a short-lived child process that a wrapper script spawns?</dt>
+<dd>Use <code>-f</code> so strace follows <code>fork</code>/<code>clone</code>/<code>execve</code> into children, and <code>-ff -o out</code> so each PID gets its own file (<code>out.1234</code>) instead of interleaved output. To catch a specific program, add <code>-e trace=execve</code> to see every <code>exec</code> and its argv, or filter the per-PID files afterward. If the child re-execs quickly, <code>strace -f -e trace=execve,exit_group ./wrapper.sh</code> gives a clean map of the process tree.</dd>
+<dt>Is it safe to strace a production process?</dt>
+<dd>Cautiously. strace stops the target on every syscall (two ptrace traps each), so a syscall-heavy service can slow 10&ndash;100&times;, blowing latency SLOs and possibly tripping timeouts/health checks. If you must: attach briefly, filter hard (<code>-e trace=</code> a narrow set or one <code>-P path</code>), avoid <code>-s</code> large and <code>-k</code>, detach quickly (Ctrl-C on an attach leaves the process running). Better on prod: <code>perf trace</code> (much lower overhead), <code>bpftrace</code>/BCC scripts, or the audit subsystem &mdash; all can sample syscalls without freezing the process.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What exactly does strace show you?</summary><div class="answer-box">
+Every system call the traced process makes &mdash; the call name, its arguments (decoded: paths, flags, struct contents), the return value, and the errno on failure &mdash; plus signals delivered. It's the process's conversation with the kernel.
+</div></details>
+<details class="answer-reveal"><summary>Which flag lets strace follow into child processes and threads?</summary><div class="answer-box">
+<code>-f</code>. Add <code>-ff -o prefix</code> to write a separate file per PID (<code>prefix.PID</code>) instead of interleaving everything.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A binary you can't rebuild connects to the wrong database. How do you discover what host/port and config it's actually using?</summary><div class="answer-box">
+<code>strace -f -y -e trace=%file,%network -s 200 ./app</code>. The <code>%file</code> lines with <code>-y</code> show every config/env file it opens and reads (so you find the real config path and can dump its contents from the trace with a big <code>-s</code>); the <code>%network</code> lines show <code>connect()</code> with the decoded <code>sockaddr</code> (IP:port), and <code>-y</code>/<code>-yy</code> annotate the socket fd. You'll also see <code>getaddrinfo</code>-driven DNS (<code>connect</code> to :53, reads of <code>/etc/resolv.conf</code>, <code>/etc/hosts</code>). Cross-reference the file it read just before the bad <code>connect()</code> &mdash; that's the config providing the wrong endpoint (or an env var: check the <code>execve</code> line's envp, or <code>/proc/PID/environ</code>).</dd>
+</div></details>
+<details class="answer-reveal"><summary>Explain how you'd use strace to decide whether a slow request is CPU, disk, network, or lock contention.</summary><div class="answer-box">
+Run <code>strace -f -T -tt -c -w -p PID</code> over a slow request (or wrap a single request). (1) Look at the <code>-c -w</code> summary: if total wall time in syscalls is a small fraction of the request time, the cost is <strong>userspace CPU</strong> &mdash; move to <code>perf</code>. (2) If time concentrates in <code>read</code>/<code>pread</code>/<code>fsync</code> on file fds (<code>-y</code> shows the paths) with large <code>-T</code> values, it's <strong>disk I/O</strong> &mdash; check <code>iostat</code>, the file, caching. (3) If it's <code>recvfrom</code>/<code>read</code> on a socket fd, or <code>connect</code>/<code>poll</code>/<code>epoll_wait</code> with long <code>-T</code>, it's <strong>network / a slow downstream</strong> &mdash; correlate the peer from the <code>connect</code>. (4) If it's <code>futex</code> (or <code>SYS_futex</code> waits) dominating wall time, it's <strong>lock contention</strong> &mdash; threads blocked on a mutex/condvar. (5) A tight loop of <code>EAGAIN</code>/<code>EWOULDBLOCK</code> on non-blocking I/O plus high CPU = a <strong>busy-poll</strong> bug. The per-line timestamps (<code>-tt</code>) and deltas let you see the exact gap where the latency accrues. Then switch to the matching specialist tool (perf, iostat, tcpdump, perf lock) to go deeper.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>strace helped in dev but is too invasive for the production incident you're now debugging. Design a low-overhead syscall-observability approach.</summary><div class="answer-box">
+<strong>Why strace hurts</strong>: ptrace stops the tracee twice per syscall, serialises threads through the tracer, and can multiply latency 10&ndash;100&times; &mdash; unacceptable on a live SLO-bound service, and it can trip watchdogs. <strong>Alternatives, roughly in order</strong>: (1) <strong><code>perf trace</code></strong> &mdash; strace-like output built on perf events / eBPF, far lower overhead, supports <code>--duration</code> to show only slow calls, <code>-p</code>/<code>--pid</code>, and system-wide mode; good first reach. (2) <strong>bpftrace / BCC</strong> &mdash; write a tiny script that hooks the <code>raw_syscalls:sys_enter/sys_exit</code> tracepoints (or specific <code>tracepoint:syscalls:sys_enter_openat</code> etc.), aggregate in-kernel (count per syscall, latency histograms with <code>@[probe] = hist(...)</code>, top files, error counts) and only emit summaries &mdash; near-zero overhead because nothing is stopped and data is reduced in the kernel. Examples: <code>opensnoop</code>, <code>tcpconnect</code>, <code>funclatency</code>, <code>syscount</code>, a per-syscall latency histogram scoped to the PID/cgroup. (3) <strong>Linux audit (auditd)</strong> with a targeted rule (e.g. watch a path, or a syscall for a specific uid) when you need durable, policy-grade logging rather than ad-hoc. (4) <strong>Existing telemetry</strong>: USE/RED metrics, the runtime's own tracing, and structured logs often already answer "which downstream is slow" without touching syscalls at all. (5) If you truly need strace-grade detail, do it on <strong>one canary instance</strong> taken out of rotation, or for a <strong>few seconds</strong> with a hard filter (<code>-e trace=</code> one or two calls, <code>-P</code> one path), then detach. <strong>Guardrails</strong>: scope every tool to the PID/cgroup, cap duration, prefer in-kernel aggregation over per-event userspace output, and know that even eBPF has some cost &mdash; test the probe's impact on a canary first. <strong>Deliverable</strong>: a small library of vetted bpftrace/perf-trace snippets (syscall latency histogram, failed-openat by path, slow <code>connect</code> by peer, futex-wait time per thread) that on-call can run safely, plus a runbook mapping symptoms to the right snippet.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:debug:strace -->
+
+<!-- TOPIC:debug:ltrace -->
+<section class="view topic" id="v-debug-ltrace" data-skill="debug">
+<div class="layout">
+<nav class="sidebar" data-sidebar="debug"></nav>
+<div class="topic-body">
+<h1>ltrace: Library Call Tracing</h1>
+<p class="subtitle">Like strace, but one layer up: it logs the calls a program makes into shared libraries &mdash; <code>malloc</code>, <code>strcpy</code>, <code>getenv</code>, <code>SSL_read</code> &mdash; with their arguments and return values.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbg-ltr-t">
+<title id="d-dbg-ltr-t">ltrace traps calls through the PLT into shared libraries; -S also shows syscalls</title>
+<rect class="d-box-alt" x="20" y="30" width="130" height="60" rx="6"/><text class="d-t-b" x="85" y="50" text-anchor="middle">your code</text><text class="d-t-sm" x="30" y="70">calls malloc(), printf(),</text><text class="d-t-sm" x="30" y="84">SSL_write(), getenv()...</text>
+<rect class="d-box" x="210" y="40" width="80" height="40" rx="4"/><text class="d-t-b" x="250" y="58" text-anchor="middle">ltrace</text><text class="d-t-sm" x="250" y="72" text-anchor="middle">PLT traps</text>
+<rect class="d-box-soft" x="350" y="20" width="150" height="24" rx="6"/><text class="d-t-sm" x="425" y="36" text-anchor="middle">libc / libssl / libz ...</text>
+<rect class="d-box-soft" x="350" y="66" width="150" height="24" rx="6"/><text class="d-t-sm" x="425" y="82" text-anchor="middle">kernel (with -S)</text>
+<path class="d-line" d="M150 56 L208 56" marker-end="url(#dbg-ltr-ah)"/>
+<path class="d-line" d="M290 52 L348 36" marker-end="url(#dbg-ltr-ah)"/><text class="d-t-sm" x="292" y="30">lib calls</text>
+<path class="d-line" d="M290 66 L348 76" marker-end="url(#dbg-ltr-ah)"/><text class="d-t-sm" x="292" y="92">-S: syscalls too</text>
+<defs><marker id="dbg-ltr-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="118">Argument decoding needs a <tspan class="d-t-b">prototype</tspan> (from ltrace's config or debug info) &mdash; otherwise you get raw hex.</text>
+<text class="d-t-sm" x="14" y="136">Works best on dynamically linked, non-stripped ELF. Static binaries and heavy PIE/IFUNC use limit it.</text>
+</svg>
+<figcaption>ltrace fills the gap between strace (kernel calls) and gdb (your own functions): it shows how your program uses its libraries. It is less robust than strace &mdash; expect gaps on modern hardened binaries.</figcaption>
+</figure>
+
+<h3>Basic use</h3>
+<p><strong>What / how.</strong> Run a command under ltrace, or attach with <code>-p</code>. Each line is <code>function(args) = return</code>. <code>-f</code> follows children; <code>-o</code> logs to a file.</p>
+<pre>$ ltrace ./app
+getenv("HOME")                          = "/home/leo"
+malloc(1024)                            = 0x5555557592a0
+snprintf("cfg=/home/leo/.apprc", 64, "cfg=%s/.apprc", "/home/leo") = 20
+fopen("/home/leo/.apprc", "r")          = 0
++++ exited (status 1) +++               # fopen returned NULL -> config missing
+
+$ ltrace -f -o lt.txt ./app arg        # follow forks, log to file
+$ ltrace -p 4242                        # attach to a running process (Ctrl-C detaches)</pre>
+
+<h3>Filtering which calls you see</h3>
+<p><strong>What / why.</strong> <code>-e</code> selects functions by glob; <code>-l</code> selects by library. Combine to answer "what does this program ask <em>OpenSSL</em> / <em>libc string functions</em> to do".</p>
+<pre>$ ltrace -e 'malloc+free+realloc+calloc' ./app      # just the allocator
+$ ltrace -e 'str*+mem*' ./app                       # string/memory family
+$ ltrace -e '*@libcrypto.so*' ./app                 # everything from libcrypto
+$ ltrace -l libssl.so.3 ./app                       # calls resolved to libssl
+$ ltrace -e '-getenv' ./app                         # exclude a noisy call (leading '-')
+$ ltrace -e 'malloc-@libfoo.so' ./app               # malloc, but not calls made from libfoo
+$ ltrace -x 'internal_parse' ./app                  # -x: trace a non-PLT/static symbol by name</pre>
+
+<h3>Output detail and the summary</h3>
+<pre>-S              # ALSO show system calls (interleave strace-style lines: SYS_read(...)=...)
+-T              # time spent in each call  <0.000042>
+-t / -tt        # timestamp per line
+-r              # relative time since previous line
+-s 512          # max string length to print (default is short)
+-C              # demangle C++ symbol names
+-A 5            # array/struct elements to show
+-n 2            # indent nested calls by 2 spaces (call-depth view)
+-c              # SUMMARY only: count + time per function (like strace -c)
+
+$ ltrace -c ./app
+% time     seconds  usecs/call     calls      function
+------ ----------- ----------- --------- --------------------
+ 47.1    0.010293          10      1024     memcpy
+ 22.0    0.004810           4      1200     malloc
+ 18.6    0.004070           4      1198     free
+ ...
+------ ----------- ----------- --------- --------------------
+100.0    0.021850                  4700     total</pre>
+
+<h3>Prototypes: why args sometimes print as hex</h3>
+<p><strong>What / why.</strong> To show <code>fopen("/etc/hosts", "r")</code> instead of <code>fopen(0x40201f, 0x402030)</code>, ltrace needs the function's signature. It ships prototype files (<code>/usr/share/ltrace/*.conf</code> or <code>libc.so.conf</code> etc.) for common libraries; for your own or obscure libraries, add a <code>.conf</code> entry or install the library's debug info.</p>
+<pre># a custom prototype file:  ~/.ltrace.d/mylib.conf
+int   mylib_open(string, uint);
+void  mylib_free(addr);
+$ ltrace -F ~/.ltrace.d/mylib.conf -e 'mylib_*' ./app
+mylib_open("db.sqlite", 2)              = 3        # now decoded
+# without the prototype you'd see:  mylib_open(0x4a1200, 2) = 3</pre>
+
+<h3>When ltrace helps &mdash; and its limits</h3>
+<ul>
+<li><strong>Use it for</strong>: reverse-engineering how a closed binary uses libc/crypto/DB client libs; watching <code>malloc</code>/<code>free</code> pairing and sizes without a rebuild; confirming which <code>getenv</code>/<code>getpwnam</code>/<code>dlopen</code> calls happen and with what; seeing the string passed to <code>system()</code>/<code>exec*()</code>; checking arguments to a library call you suspect is misused.</li>
+<li><strong>Limits</strong>: needs a <em>dynamically linked</em> ELF &mdash; a fully static binary has no PLT to trap, so ltrace sees little or nothing. Stripped binaries lose symbol names. Modern <strong>PIE + full RELRO + IFUNC</strong> and some libc versions break or partially break ltrace (it has historically lagged glibc changes). It only sees <em>exported</em> (PLT) calls by default &mdash; inlined or static-linked library code is invisible. Overhead is high (like strace). On many distros ltrace is less maintained than strace &mdash; if it misbehaves, fall back to <code>strace -S</code>-style reasoning, gdb breakpoints on the library functions (<code>break malloc</code>), or <code>LD_PRELOAD</code> shims.</li>
+</ul>
+<pre># gdb fallback when ltrace won't cooperate:
+$ gdb -q ./app -ex 'break malloc' -ex 'commands' -ex 'bt 2' -ex 'continue' -ex 'end' -ex run
+# LD_PRELOAD fallback: a tiny wrapper that logs then calls the real symbol via dlsym(RTLD_NEXT).</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>ltrace = library (PLT) call tracer. Line format: <code>func(args) = ret</code>. Run <code>ltrace ./app</code> or attach <code>ltrace -p PID</code>; <code>-f</code> children, <code>-o</code> file.</li>
+<li>Filter: <code>-e 'malloc+free'</code>, <code>-e 'str*+mem*'</code>, <code>-e '*@libssl.so*'</code>, exclude with leading <code>-</code>; by library <code>-l libcrypto.so</code>; static symbol <code>-x name</code>.</li>
+<li>Detail: <code>-S</code> (also syscalls), <code>-T</code> (time/call), <code>-tt</code> (timestamps), <code>-r</code> (delta), <code>-s N</code> (string length), <code>-C</code> (demangle), <code>-n N</code> (indent nesting).</li>
+<li>Summary: <code>-c</code> (count + time per function).</li>
+<li>Args show as hex when there's no <strong>prototype</strong> &mdash; add a <code>.conf</code> (<code>-F file</code>) or install the lib's debug info.</li>
+<li>Great for: how a closed binary uses libc/OpenSSL/DB libs, malloc/free auditing, args to <code>system()</code>/<code>exec</code>, <code>getenv</code>/<code>dlopen</code> discovery.</li>
+<li>Limits: needs a <strong>dynamically linked</strong>, ideally non-stripped ELF; static binaries &rarr; nothing; PIE/RELRO/IFUNC and glibc changes can break it; only exported calls; high overhead; less maintained than strace.</li>
+<li>Fallbacks: <code>strace -S</code>, gdb <code>break malloc</code> + <code>commands</code>, <code>LD_PRELOAD</code> shim.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>strace vs ltrace &mdash; when do you pick each?</dt>
+<dd><strong>strace</strong> for the <em>kernel</em> boundary: which files/sockets, why a syscall failed (errno), blocking/latency, process/signal behaviour &mdash; and it's robust on virtually any binary. <strong>ltrace</strong> for the <em>library</em> boundary: how the program uses libc/crypto/DB client libraries, allocation patterns, arguments to <code>system()</code>/<code>exec</code>, <code>getenv</code>/<code>dlopen</code>. Reach for strace first (more reliable); add ltrace when the question is specifically "what library calls, with what arguments". <code>ltrace -S</code> gives you both streams at once.</dd>
+<dt>ltrace prints <code>func(0x40120a, 0x7ffd...) = 0x55...</code> instead of readable arguments. Why?</dt>
+<dd>No prototype is available for that function, so ltrace can't tell that arg 1 is a <code>char*</code> to print as a string, etc. &mdash; it falls back to raw pointer/int values. Fix by providing a prototype: add the signature to a <code>.conf</code> file and pass <code>-F file.conf</code>, or install the library's <code>-dev</code>/debug package so ltrace can read the types. Standard libc/OpenSSL functions are usually decoded out of the box via the shipped config files.</dd>
+<dt>You run ltrace on a Go (or Rust static) binary and see almost nothing. Why?</dt>
+<dd>ltrace works by trapping calls through the <strong>PLT</strong> into <em>shared</em> libraries. A statically linked binary (typical for Go, and for Rust with musl) has no PLT calls to intercept &mdash; the library code is linked in directly &mdash; so there's nothing for ltrace to see. Go also makes raw syscalls itself, bypassing libc. Use <code>strace</code> for syscalls, <code>gdb</code>/<code>perf</code> for internal functions, or the language's own tooling (pprof, Go's runtime tracing).</dd>
+<dt>How would you audit every <code>malloc</code>/<code>free</code> and spot a mismatch with ltrace?</dt>
+<dd><code>ltrace -e 'malloc+calloc+realloc+free' -T -tt -o alloc.log ./app</code>, then post-process: pair each <code>malloc(sz) = 0xADDR</code> with the later <code>free(0xADDR)</code>. Addresses returned but never freed are leaks; a <code>free(0xADDR)</code> with no prior matching <code>malloc</code> (or a second <code>free</code> of the same address) is a double/invalid free. <code>-c</code> gives quick counts (if <code>malloc</code>+<code>calloc</code> count &gt; <code>free</code> count, something leaks). This is a fast first look; for authoritative results use Valgrind Memcheck or ASan, which understand realloc, custom allocators, and report exact sites.</dd>
+<dt>ltrace crashes the target or "detach: no such process" / doesn't attach on your distro. What now?</dt>
+<dd>ltrace has historically had breakage against newer glibc/PIE/IFUNC and is less maintained than strace. Fallbacks that always work: set gdb breakpoints on the library functions (<code>gdb -ex 'break SSL_write' -ex 'commands' -ex 'bt' -ex 'continue' -ex 'end' -ex run ./app</code>); use an <code>LD_PRELOAD</code> shim that wraps the symbols (log args, then call <code>dlsym(RTLD_NEXT, "sym")</code>); or use <code>strace -S</code> plus reasoning about which libc call maps to which syscall. For allocation specifically, use Valgrind or a malloc-hook / <code>MALLOC_TRACE</code>/<code>mtrace()</code>.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does ltrace trace that strace does not?</summary><div class="answer-box">
+Calls into shared libraries (functions resolved through the PLT) &mdash; <code>malloc</code>, <code>strlen</code>, <code>getenv</code>, <code>SSL_read</code>, etc. &mdash; with their arguments and return values. <code>strace</code> only sees system calls (the kernel boundary). <code>ltrace -S</code> shows both.
+</div></details>
+<details class="answer-reveal"><summary>What kind of binary does ltrace work poorly or not at all on?</summary><div class="answer-box">
+Statically linked binaries (no PLT to trap &mdash; e.g. Go, Rust+musl), and stripped binaries (no symbol names). Modern PIE + full RELRO + IFUNC and some glibc versions also degrade or break it.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You suspect a third-party binary shells out to run a command with attacker-influenced input. How do you confirm and see the exact command?</summary><div class="answer-box">
+Two complementary traces. <strong>ltrace</strong>: <code>ltrace -f -s 4096 -e 'system+popen+exec*' ./app</code> &mdash; shows the literal string passed to <code>system()</code>/<code>popen()</code> and the argv to <code>execl</code>/<code>execv</code> family calls, so you see the full command line and whether user input is interpolated unquoted. <strong>strace</strong>: <code>strace -f -s 4096 -e trace=execve ./app</code> &mdash; catches the actual <code>execve(path, argv, envp)</code> even if it's via <code>posix_spawn</code> or a direct syscall that ltrace misses, and shows the resolved path and full argument vector. Run both (or <code>ltrace -S</code>): ltrace tells you the API and the pre-shell string; strace's <code>execve</code> is the ground truth of what ran. If it's building a shell command from input, that's a command-injection finding.</dd>
+</div></details>
+<details class="answer-reveal"><summary>A program is slow and you think it's the crypto library. How do you quantify that with ltrace, and what's the caveat?</summary><div class="answer-box">
+<code>ltrace -c -l libcrypto.so.3 -l libssl.so.3 ./app</code> (or <code>-e '*@libssl*'</code>) gives a per-function table: call counts and time attributed to each library call, so you can see e.g. <code>RSA_private_decrypt</code> or <code>BN_mod_exp</code> dominating, or an unexpected number of <code>SSL_new</code>/handshakes (connection churn). Add <code>-T</code> for per-call latency to catch a few very slow calls vs many cheap ones. <strong>Caveats</strong>: ltrace's own overhead is large and non-uniform, so the <em>proportions</em> are more trustworthy than absolute times; it only measures time in the traced (exported) calls, not work inlined or in sub-calls; and it can perturb timing enough to change behaviour (e.g. hide a race, or make I/O relatively cheaper). Confirm with a low-overhead profiler: <code>perf record -g</code> on the process and look at the libcrypto/libssl frames, or the library's own counters. Use ltrace to form the hypothesis ("it's doing 5,000 handshakes"), perf to prove the cost.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>ltrace is unreliable on your target. Design an LD_PRELOAD-based interposition layer to get the same information robustly, and note its limits.</summary><div class="answer-box">
+<strong>Mechanism</strong>: build a shared object that defines the same symbols as the library functions you want to observe. Each wrapper: on first call, resolve the real function with <code>dlsym(RTLD_NEXT, "name")</code> (cache it); log the arguments (thread id, timestamp, decoded values); call the real function; log the return value/errno; return it. Load it with <code>LD_PRELOAD=./hooks.so ./app</code> so the dynamic loader binds the app's PLT entries to your wrappers instead of libc's. Use a lock-free ring buffer or per-thread buffers + a background flush to keep overhead and lock contention low; guard against reentrancy (a wrapper that itself calls a wrapped function &mdash; e.g. your logger calling <code>malloc</code>) with a thread-local "in hook" flag or by using raw syscalls / a preallocated arena in the logger. <strong>What it gets you</strong>: exact args/returns for the chosen functions, on any dynamically linked binary, with your own decoding (you know the prototypes), much lower and more predictable overhead than ltrace since only the functions you care about are intercepted, and you can add logic (count, sample, assert, inject faults for testing). Classic uses: allocation tracking (malloc/calloc/realloc/free with backtraces via <code>backtrace()</code>), fd/socket auditing, timing every <code>SSL_*</code> call, recording every <code>getenv</code>/<code>open</code>. <strong>Limits</strong>: only works for <em>dynamically resolved</em> calls &mdash; a statically linked binary, or calls the library makes internally to its own functions (not through the PLT), or direct syscalls (Go), are invisible; functions resolved via <code>IFUNC</code> or copied by the linker, and <code>-Wl,-Bsymbolic</code>/versioned-symbol cases, may not interpose; <code>LD_PRELOAD</code> is ignored for setuid/setgid binaries and can be stripped by secure-execution mode; symbol versioning means you may need <code>dlvsym</code> for the exact version; C++ mangled/overloaded symbols need care; and if the app also uses <code>dlopen</code> with <code>RTLD_DEEPBIND</code> your interposition is bypassed for that library. It's also invasive to set up per-function. <strong>When to prefer it</strong>: you need reliable, low-overhead, custom-decoded observation of a specific set of library calls on a binary you can run but not modify, and ltrace/gdb aren't cutting it &mdash; otherwise gdb breakpoints (<code>break</code> + scripted <code>commands</code>) or Valgrind (for allocation) are less work.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:debug:ltrace -->
+
+<!-- TOPIC:debug:perf -->
+<section class="view topic" id="v-debug-perf" data-skill="debug">
+<div class="layout">
+<nav class="sidebar" data-sidebar="debug"></nav>
+<div class="topic-body">
+<h1>perf: The Linux Profiler</h1>
+<p class="subtitle">Samples the CPU thousands of times a second, or reads exact hardware counters, to show where cycles go &mdash; in your code and the kernel &mdash; with no recompilation.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-dbg-perf-t">
+<title id="d-dbg-perf-t">perf front-ends feed the kernel perf_events subsystem, which reads the PMU and tracepoints into perf.data</title>
+<rect class="d-box-alt" x="10" y="24" width="150" height="20"/><text class="d-t-sm" x="18" y="38">perf stat / record / top</text>
+<rect class="d-box-alt" x="10" y="48" width="150" height="20"/><text class="d-t-sm" x="18" y="62">perf trace / sched / probe</text>
+<rect class="d-box-soft" x="210" y="30" width="130" height="36" rx="6"/><text class="d-t-b" x="275" y="45" text-anchor="middle">perf_events</text><text class="d-t-sm" x="275" y="59" text-anchor="middle">(kernel subsystem)</text>
+<rect class="d-box" x="390" y="14" width="120" height="16"/><text class="d-t-sm" x="396" y="26">PMU &mdash; HW counters</text>
+<rect class="d-box" x="390" y="32" width="120" height="16"/><text class="d-t-sm" x="396" y="44">software events</text>
+<rect class="d-box" x="390" y="50" width="120" height="16"/><text class="d-t-sm" x="396" y="62">tracepoints/k/uprobes</text>
+<rect class="d-box-alt" x="235" y="92" width="90" height="20"/><text class="d-t-sm" x="280" y="106" text-anchor="middle">perf.data</text>
+<rect class="d-box" x="360" y="86" width="150" height="16"/><text class="d-t-sm" x="366" y="98">report / annotate / script</text>
+<rect class="d-box" x="360" y="106" width="150" height="16"/><text class="d-t-sm" x="366" y="118">&rarr; flame graph</text>
+<path class="d-line" d="M160 34 L208 42" marker-end="url(#dbg-perf-ah)"/><path class="d-line" d="M160 58 L208 54" marker-end="url(#dbg-perf-ah)"/>
+<path class="d-line" d="M340 40 L388 26" marker-end="url(#dbg-perf-ah)"/><path class="d-line" d="M340 48 L388 58" marker-end="url(#dbg-perf-ah)"/>
+<path class="d-line" d="M275 66 L280 90" marker-end="url(#dbg-perf-ah)"/><path class="d-line" d="M325 100 L358 96" marker-end="url(#dbg-perf-ah)"/>
+<defs><marker id="dbg-perf-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="10" y="140"><tspan class="d-t-b">stat</tspan> = exact counts (no sampling). <tspan class="d-t-b">record/top</tspan> = statistical sampling (~1&ndash;5% overhead). Build with <tspan class="d-t-mono">-g -fno-omit-frame-pointer</tspan>.</text>
+<text class="d-t-sm" x="10" y="158">Needs matching <tspan class="d-t-mono">linux-tools</tspan>, and <tspan class="d-t-mono">/proc/sys/kernel/perf_event_paranoid</tspan> low enough for what you're doing.</text>
+</svg>
+<figcaption>perf is a thin CLI over the kernel's <code>perf_events</code>. It's the default Linux profiler: cheap enough for production sampling, precise enough for micro-optimisation, and it sees kernel frames the way userspace-only profilers can't.</figcaption>
+</figure>
+
+<h3>perf stat: exact counts, not samples</h3>
+<p><strong>What / why.</strong> Runs a command (or attaches) and reports precise totals for a set of events &mdash; cycles, instructions, cache misses, branch misses, context switches. No sampling, negligible perturbation. Use it first to answer "is this workload CPU-bound, memory-stalled, or branchy?" and to get IPC (instructions per cycle).</p>
+<pre>$ perf stat ./app                     # default event set + wall/user/sys time
+ Performance counter stats for './app':
+      1,842.11 msec task-clock       #    0.998 CPUs utilized
+            37      context-switches
+ 6,271,004,882      cycles           #    3.404 GHz
+ 4,013,776,201      instructions     #    0.64  insn per cycle   &lt;- low IPC = stalls
+   812,004,113      branches         #  440.8 M/sec
+    41,222,900      branch-misses    #    5.08% of all branches   &lt;- high = mispredict cost
+   1.845 seconds time elapsed
+
+$ perf stat -d ./app                  # -d: add L1/LLC cache + TLB stats (repeat for more)
+$ perf stat -r 10 ./app               # run 10x, show mean +- stddev  (benchmark mode)
+$ perf stat -p 4242 -- sleep 5        # attach to a PID for 5 seconds
+$ perf stat -a -I 1000 sleep 10       # whole machine, print every 1000 ms
+$ perf stat -e cache-misses,cache-references,LLC-load-misses ./app   # pick your own events
+$ perf stat -e '{cycles,instructions}:u' ./app   # a group, user-space only (:u ; :k = kernel)</pre>
+
+<h3>perf record + perf report: the sampling profiler</h3>
+<p><strong>What / how.</strong> <code>perf record</code> interrupts the CPU N times/second and saves the instruction pointer (and, with <code>-g</code>, the call stack) to <code>perf.data</code>. <code>perf report</code> then shows which functions the samples landed in &mdash; i.e. where wall time on-CPU is spent.</p>
+<pre>$ perf record -F 999 -g -- ./app arg          # 999 Hz, with call graphs, run this command
+$ perf record -F 999 -g -p 4242 -- sleep 20   # profile a running process for 20s
+$ perf record -F 999 -g -a -- sleep 10        # whole system for 10s
+$ perf report                                 # interactive TUI (arrows, '+' to expand, 'a' annotate)
+$ perf report --stdio --sort=overhead,symbol  # plain text
+$ perf report -g graph,0.5,caller             # call graph, prune &lt;0.5%, caller-oriented
+
+# call-graph unwinding method matters:
+--call-graph fp        # frame pointers - cheap & accurate IF built with -fno-omit-frame-pointer
+--call-graph dwarf     # unwind from CFI - works without frame pointers, bigger perf.data, some skid
+--call-graph dwarf,16384   # bump the stack dump size for deep stacks
+--call-graph lbr       # hardware Last Branch Record - very cheap, limited depth, Intel
+
+# report columns: 'Children' = inclusive (this fn + callees), 'Self' = exclusive (this fn only)
+$ perf report --no-children        # show only self time (flat profile)</pre>
+
+<h3>perf top: live profiling</h3>
+<p><strong>What / why.</strong> A <code>top</code>-style, continuously-updating view of the hottest functions system-wide or for one process &mdash; the fastest way to answer "what is eating the CPU <em>right now</em>" on a box you just SSH'd into.</p>
+<pre>$ perf top                       # system-wide, hottest symbols, refreshing
+$ perf top -p 4242 -g            # one process, with call graphs (press 'E' to expand)
+$ perf top -e cache-misses       # sort by a different event
+$ perf top --sort comm,dso       # group by process / shared object instead of symbol
+$ perf top -K                    # hide kernel symbols  (-U hides userspace)
+# lines like  16.20%  libc.so.6  [.] __memmove_avx_unaligned   -> a hot memcpy path</pre>
+
+<h3>Events: <code>perf list</code> and what to count</h3>
+<p><strong>What / why.</strong> perf can count hundreds of event sources. Knowing a few well is enough for most work.</p>
+<pre>$ perf list                      # everything available on this CPU/kernel
+$ perf list 'cache*' 'sched:*'   # filter
+
+# Hardware (PMU):   cycles  instructions  cache-references  cache-misses
+#                   branches  branch-misses  ref-cycles  stalled-cycles-frontend/backend
+#                   LLC-loads  LLC-load-misses  dTLB-load-misses  ...
+# Software:         cpu-clock  task-clock  page-faults  context-switches
+#                   cpu-migrations  minor-faults  major-faults
+# Tracepoints:      sched:sched_switch  sched:sched_wakeup  block:block_rq_issue
+#                   syscalls:sys_enter_openat  net:net_dev_xmit  kmem:kmalloc  ...
+# Modifiers:        :u user  :k kernel  :h hypervisor  :G/:H guest/host  :p/:pp precise (less skid)
+# Raw:              -e r04c5  (a PMU event by hex code from the vendor manual)
+
+$ perf stat -e task-clock,context-switches,cpu-migrations,page-faults,\
+cycles,instructions,branches,branch-misses ./app   # a solid default block</pre>
+
+<h3>Flame graphs and <code>perf script</code></h3>
+<p><strong>What / why.</strong> <code>perf report</code> is a tree; a <strong>flame graph</strong> is a single picture of the whole profile &mdash; width = time, stack = depth &mdash; far easier to scan for the wide box that's the hotspot. <code>perf script</code> dumps raw samples for any custom post-processing.</p>
+<pre># on-CPU flame graph (Brendan Gregg's FlameGraph scripts)
+$ perf record -F 99 -g -- ./app
+$ perf script | ./stackcollapse-perf.pl | ./flamegraph.pl &gt; cpu.svg
+#   (newer perf: 'perf script report flamegraph' emits an HTML flame graph directly)
+
+$ perf script                          # raw: timestamp, pid, event, full stack per sample
+$ perf script -F comm,pid,tid,time,event,ip,sym   # choose columns
+$ perf script | grep -c '^'            # sample count sanity check
+
+# OFF-CPU time (blocked on I/O, locks, sleep) - not visible in a normal CPU profile:
+$ perf record -e sched:sched_switch -e sched:sched_stat_sleep -g -- ./app
+#   then build an off-cpu flame graph, or use bcc/bpftrace 'offcputime' which is simpler</pre>
+
+<h3>The specialised subcommands</h3>
+<table>
+<tr><th>Command</th><th>What it answers</th></tr>
+<tr><td><code>perf annotate SYM</code></td><td>Which <em>instruction / source line</em> inside a hot function costs &mdash; disassembly with sample %.</td></tr>
+<tr><td><code>perf sched record</code> + <code>latency</code>/<code>timehist</code></td><td>Scheduler behaviour: run-queue latency, who preempted whom, wakeup-to-run delay (p99 latency bugs).</td></tr>
+<tr><td><code>perf trace</code></td><td>strace-like syscall trace, far lower overhead; <code>--duration 5</code> shows only slow calls, <code>-s</code> summary.</td></tr>
+<tr><td><code>perf lock record</code> + <code>report</code></td><td>Kernel lock contention: which lock, wait time, contention count.</td></tr>
+<tr><td><code>perf mem record</code> / <code>perf c2c</code></td><td>Memory access latency by address; <strong>c2c</strong> finds cache-line <em>false sharing</em> across cores.</td></tr>
+<tr><td><code>perf probe</code></td><td>Add a dynamic tracepoint to <em>any</em> kernel or user function/line, capturing arguments &mdash; then <code>record -e probe:...</code>.</td></tr>
+</table>
+<pre>$ perf annotate -s parse_row --stdio        # hot lines inside parse_row()
+$ perf sched record -- ./app ; perf sched latency --sort max   # worst scheduling delays
+$ perf trace -p 4242 --duration 10          # syscalls taking &gt;10 ms on that PID
+$ perf probe --add 'do_sys_openat2 filename:string'    # add a probe with an arg
+$ perf record -e probe:do_sys_openat2 -aR sleep 5 ; perf script
+$ perf probe --del '*'                       # clean up your probes afterwards</pre>
+
+<h3>Setup, permissions, and gotchas</h3>
+<ul>
+<li><strong>Install:</strong> <code>perf</code> ships in <code>linux-tools-$(uname -r)</code> / <code>perf</code> package &mdash; the version should match the running kernel or some features break.</li>
+<li><strong>Permissions:</strong> <code>/proc/sys/kernel/perf_event_paranoid</code> gates access &mdash; <code>3</code>=nothing, <code>2</code>=user-space only, <code>1</code>=+kernel profiling, <code>0</code>=+raw tracepoints, <code>-1</code>=everything. Lower it (<code>sysctl kernel.perf_event_paranoid=1</code>) or run as root/with <code>CAP_PERFMON</code>. <code>kernel.kptr_restrict=0</code> to see kernel symbol addresses.</li>
+<li><strong>Call graphs need help:</strong> build the target (and ideally its libraries) with <code>-g -fno-omit-frame-pointer</code>, or use <code>--call-graph dwarf</code> (heavier) / <code>lbr</code> (Intel, shallow). Missing frames show as <code>[unknown]</code> or a broken tree.</li>
+<li><strong>JIT / managed runtimes:</strong> the JVM/Node/etc. need to emit a <code>/tmp/perf-&lt;pid&gt;.map</code> (e.g. <code>-XX:+PreserveFramePointer</code> + async-profiler, or <code>--perf-basic-prof</code>) or perf shows raw addresses for JITed code.</li>
+<li><strong>Containers:</strong> profile from the host (<code>perf record -a</code> or <code>--pid=$(pidof ...)</code>), or give the container <code>CAP_PERFMON</code>/<code>SYS_ADMIN</code> and a low paranoid setting; symbol files must be reachable.</li>
+<li><strong>VMs / cloud:</strong> hardware PMU counters are often unavailable or limited &mdash; <code>cycles</code>/<code>instructions</code> may be emulated or missing; <code>perf stat</code> falls back to <code>cpu-clock</code>. Bare metal for serious counter work.</li>
+<li><strong>Skid:</strong> the sampled IP can be a few instructions past the real one; use <code>:pp</code> (PEBS/precise) events for instruction-accurate attribution in <code>perf annotate</code>.</li>
+<li><strong>perf.data size:</strong> high <code>-F</code> + <code>--call-graph dwarf</code> + long runs = gigabytes; lower the frequency (99 Hz is plenty for a flame graph), shorten the window, or filter events.</li>
+</ul>
+<pre># quick "profile this running service safely" recipe
+$ sudo sysctl kernel.perf_event_paranoid=1
+$ perf record -F 99 -g -p $(pgrep -n myservice) -- sleep 30
+$ perf report --stdio --sort=overhead --percent-limit 1 | head -40
+$ perf script report flamegraph          # or: perf script | stackcollapse-perf.pl | flamegraph.pl &gt; fg.svg</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>perf stat ./app</code> = exact counts (cycles, instructions, cache/branch misses) &rarr; IPC and stall analysis. <code>-d</code> detail, <code>-r N</code> repeat, <code>-p PID</code>, <code>-a</code> system, <code>-I ms</code> interval, <code>-e</code> events, <code>:u</code>/<code>:k</code>.</li>
+<li><code>perf record -F 999 -g -- ./app</code> then <code>perf report</code> = sampling CPU profile. <code>-p PID</code>, <code>-a</code>, <code>--call-graph fp|dwarf|lbr</code>.</li>
+<li><code>perf report</code>: <strong>Children</strong> = inclusive, <strong>Self</strong> = exclusive; <code>--no-children</code> for a flat profile; <code>--stdio</code> for text.</li>
+<li><code>perf top -p PID -g</code> = live hottest-functions view.</li>
+<li>Events: <code>perf list</code>; HW <code>cycles instructions cache-misses branch-misses LLC-load-misses</code>; SW <code>context-switches page-faults cpu-migrations</code>; tracepoints <code>sched:* syscalls:* block:*</code>; modifiers <code>:u :k :pp</code>; groups <code>{a,b}</code>.</li>
+<li>Flame graph: <code>perf record -F 99 -g</code> &rarr; <code>perf script | stackcollapse-perf.pl | flamegraph.pl &gt; fg.svg</code> (or <code>perf script report flamegraph</code>).</li>
+<li>Subcommands: <code>annotate</code> (hot lines), <code>sched</code> (run-queue latency), <code>trace</code> (cheap strace), <code>lock</code> (contention), <code>mem</code>/<code>c2c</code> (false sharing), <code>probe</code> (dynamic tracepoints).</li>
+<li>Setup: match <code>linux-tools</code> to the kernel; lower <code>kernel.perf_event_paranoid</code>; build target <code>-g -fno-omit-frame-pointer</code>; JIT needs <code>perf-&lt;pid&gt;.map</code>; VMs often lack the PMU.</li>
+<li>Off-CPU (blocked on I/O/locks) is <em>not</em> in a normal CPU profile &mdash; use <code>sched:sched_switch</code> or bpftrace <code>offcputime</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>When do you use <code>perf stat</code> versus <code>perf record</code>?</dt>
+<dd><code>perf stat</code> when you want <em>exact totals</em> for a few metrics and a verdict on the nature of the workload &mdash; IPC, cache-miss rate, branch-miss rate, context switches &mdash; with essentially zero perturbation; it's also the benchmarking tool (<code>-r</code> for mean&plusmn;stddev). <code>perf record</code> when you want to know <em>where</em> in the code the time goes &mdash; it samples the instruction pointer and call stack so <code>perf report</code>/flame graphs can attribute cost to functions and call paths. Typical flow: <code>perf stat</code> to characterise, then <code>perf record</code> to localise.</dd>
+<dt>Your flame graph is a flat wall of <code>[unknown]</code> frames. Why, and how do you fix it?</dt>
+<dd>perf can't unwind the stack. Causes and fixes: (1) the binary/libraries were built with <code>-fomit-frame-pointer</code> (the default at <code>-O2</code>) so frame-pointer unwinding fails &mdash; rebuild the hot code with <code>-fno-omit-frame-pointer</code>, or record with <code>--call-graph dwarf</code> (uses CFI, works without frame pointers, at the cost of bigger <code>perf.data</code> and some skid), or <code>--call-graph lbr</code> on Intel. (2) No debug symbols &mdash; install the <code>-dbg</code>/debuginfo packages or build with <code>-g</code>. (3) JITed code (JVM/V8) with no <code>/tmp/perf-&lt;pid&gt;.map</code> &mdash; enable the runtime's perf map / use async-profiler. (4) <code>perf_event_paranoid</code> too high to read kernel symbols, or <code>kptr_restrict</code> hiding them.</dd>
+<dt>The service's CPU usage is low but latency is bad. Will <code>perf record</code> find the problem?</dt>
+<dd>Not on its own &mdash; a standard <code>perf record</code> samples <em>on-CPU</em> time, so if the threads are mostly <strong>blocked</strong> (waiting on I/O, a lock, a downstream, a sleep) they generate almost no samples and the profile looks empty or misleading. You need <strong>off-CPU analysis</strong>: record scheduler tracepoints (<code>perf record -e sched:sched_switch -e sched:sched_stat_sleep -g</code>) and build an off-CPU flame graph, use <code>perf sched latency</code>/<code>timehist</code> for run-queue and wakeup delays, <code>perf lock</code> for contention, or bpftrace/bcc <code>offcputime</code> which is the easiest. Combine on-CPU + off-CPU for the full latency picture.</dd>
+<dt>What does a low "insn per cycle" (IPC) in <code>perf stat</code> tell you?</dt>
+<dd>The CPU is spending cycles <em>not retiring instructions</em> &mdash; it's stalled. IPC around 0.2&ndash;0.6 on a modern core usually means memory stalls (cache/TLB misses &mdash; check <code>cache-misses</code>, <code>LLC-load-misses</code>, <code>dTLB-load-misses</code>, and <code>stalled-cycles-backend</code>) or heavy branch misprediction (<code>branch-misses %</code>, <code>stalled-cycles-frontend</code>). IPC around 2&ndash;4 means the core is busy doing useful work and the win is algorithmic (do less), not micro-architectural. So IPC steers you: low &rarr; fix data layout / access patterns / branches; high &rarr; reduce the work itself.</dd>
+<dt>Is it safe to run perf on a production host?</dt>
+<dd>Sampling with <code>perf record -F 99 -g</code> for a bounded window is typically 1&ndash;5% overhead and is a common production practice (Google/Netflix profile fleets this way). Keep it safe: use a modest frequency (99 Hz is enough for a flame graph), a short duration (<code>-- sleep 30</code>), scope to the PID or a cgroup rather than <code>-a</code> where possible, avoid <code>--call-graph dwarf</code> on very hot multi-threaded processes (large data + copy overhead &mdash; prefer <code>fp</code> or <code>lbr</code>), and watch <code>perf.data</code> disk usage. <code>perf stat</code> is essentially free. <code>perf trace</code> is much lighter than <code>strace</code> for syscall work. Avoid high-frequency tracepoint recording (e.g. every <code>sched_switch</code> system-wide) on a busy box unless briefly.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What's the difference between <code>perf stat</code> and <code>perf record</code>?</summary><div class="answer-box">
+<code>perf stat</code> counts events exactly for the whole run (cycles, instructions, cache/branch misses, context switches) with near-zero overhead &mdash; it tells you the <em>nature</em> of the workload. <code>perf record</code> statistically samples the instruction pointer and call stacks into <code>perf.data</code> so <code>perf report</code> can tell you <em>which functions</em> the time is spent in.
+</div></details>
+<details class="answer-reveal"><summary>Which flags give you a call-graph CPU profile of a running process for 20 seconds?</summary><div class="answer-box">
+<code>perf record -F 999 -g -p &lt;pid&gt; -- sleep 20</code>, then <code>perf report</code>. <code>-F</code> sets sample frequency, <code>-g</code> captures call stacks, <code>-p</code> targets the PID, and the <code>sleep</code> bounds the duration.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A function shows 30% "Children" but only 2% "Self" in <code>perf report</code>. What does that mean and where do you look next?</summary><div class="answer-box">
+<strong>Children</strong> is inclusive time (the function plus everything it calls); <strong>Self</strong> is exclusive (samples that landed directly in that function's own instructions). 30% children / 2% self means the function itself is cheap but it's the gateway to expensive work &mdash; the cost is in its callees. Expand its subtree in the TUI (or <code>perf report -g graph,0.5,caller</code>, or a flame graph) to see which descendant carries the weight, then profile <em>that</em> function's self time with <code>perf annotate</code> to find the hot lines/instructions. If instead you'd seen high self and low children, the function's own loop/body is the hotspot and you annotate it directly. Use <code>--no-children</code> for a flat (self-only) view when the call graph is noisy.</dd>
+</div></details>
+<details class="answer-reveal"><summary>You optimised a hot loop and wall time barely changed, though <code>perf report</code> still shows it as #1. How do you figure out what's really limiting it?</summary><div class="answer-box">
+The sampling profile tells you <em>where</em> cycles are spent, not <em>why</em> they're wasted &mdash; move to counters and micro-arch analysis. (1) <code>perf stat -d -d -d</code> on the workload: look at <strong>IPC</strong>. If IPC is high (2+), the core is already busy and the loop is doing genuine work &mdash; the win is algorithmic (fewer iterations, better data structure), not tuning. If IPC is low, it's stalled. (2) Identify the stall: <code>stalled-cycles-frontend</code> vs <code>stalled-cycles-backend</code>; high <strong>cache-misses</strong>/<strong>LLC-load-misses</strong>/<strong>dTLB-load-misses</strong> &rarr; memory-bound (fix data layout, access order, prefetch, blocking, reduce working set); high <strong>branch-misses %</strong> &rarr; mispredicting (make branches predictable, branchless, sort input, use <code>likely/unlikely</code>). (3) <code>perf annotate</code> the loop with a <strong>precise</strong> event (<code>-e cycles:pp</code> or <code>mem_load_retired.l3_miss:pp</code>) to pin the exact instruction/line that stalls &mdash; often one load. (4) <code>perf mem record</code> / <code>perf c2c</code> if it's multi-threaded and the misses look like <strong>false sharing</strong> (two cores writing the same cache line). (5) Check you're not <strong>off-CPU</strong> for part of the "loop" (a syscall, page fault &mdash; <code>perf trace</code>, <code>page-faults</code> counter). (6) Consider the "roofline": compare achieved GFLOP/s and GB/s against the machine's peaks to see whether you're compute- or bandwidth-bound. The profile said "spend cycles here"; the counters say "because it waits on memory/branches", which is what tells you the fix.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a continuous, fleet-wide profiling capability built on perf: what you collect, overhead control, symbolication, storage, and what perf alone can't give you.</summary><div class="answer-box">
+<strong>Goal</strong>: always-on, low-overhead CPU (and ideally off-CPU) profiles from every service, queryable over time, so any regression or hotspot is one query away &mdash; the "continuous profiling" model. <strong>Collection</strong>: a node agent (or a modern eBPF profiler like Parca / Grafana Pyroscope, or <code>perf</code> in a loop) samples system-wide at a low frequency &mdash; <strong>~19&ndash;49 Hz</strong> is plenty when aggregated over minutes across many hosts &mdash; with <code>-g</code> using <strong>frame pointers</strong> (mandate <code>-fno-omit-frame-pointer</code> in the org build, and for the base image/libc where possible) or <strong>LBR</strong> on Intel; avoid DWARF unwinding fleet-wide (CPU + data cost). Record in short rotating windows (e.g. 10&ndash;60s every few minutes) or use the eBPF approach that aggregates stacks in-kernel and never writes raw <code>perf.data</code>. Tag every profile with service, version, region, host, and the git build id. Add periodic <code>perf stat</code> snapshots (IPC, cache/branch misses, context-switches) as low-cardinality metrics. Optionally scheduled off-CPU captures (<code>sched:sched_switch</code>-based, sampled and time-boxed) for latency work. <strong>Overhead control</strong>: cap frequency; scope to cgroups/PIDs of interest rather than truly system-wide where possible; skip DWARF; time-box every capture; a global rate limiter and a kill switch; measure the agent's own CPU and alert if it exceeds a budget (&lt;1%); back off automatically under high load. <strong>Symbolication</strong>: don't symbolicate on the production host &mdash; ship raw stacks (addresses + build ids + mapping info) and resolve <strong>offline</strong> against a symbol server (debuginfod, or an artifact store keyed by build id) so prod images can stay stripped. Handle JIT runtimes via their perf-map / async-profiler integration; handle containers/PIE via build-id + mmap records. <strong>Storage &amp; query</strong>: fold stacks to collapsed form, store in a columnar/time-series backend designed for stack data (Parca/Pyroscope/FlameDB), with retention tiers (high-res days, downsampled months). Expose: flame graphs per service/version, <strong>diff</strong> flame graphs (this release vs last, this region vs that), top-functions trends, and "who regressed" alerts when a function's share jumps. Wire deploy markers in so a profile change lines up with a release. <strong>What perf alone doesn't give you</strong>: (1) <em>why</em> cycles are wasted &mdash; you still need <code>perf stat</code> counters / top-down analysis / <code>perf c2c</code> for the micro-arch story, run on demand on a repro host. (2) Reliable <em>off-CPU / wall-clock</em> latency attribution at fleet scale &mdash; needs scheduler tracing or eBPF <code>offcputime</code>, heavier and usually sampled/targeted. (3) <em>Request-level</em> context &mdash; perf stacks aren't tied to a trace id; you need distributed tracing (OTel) and correlation to answer "which endpoint/tenant". (4) <em>Allocation</em> profiling &mdash; use the runtime's heap profiler / bcc, not perf. (5) <em>Managed-runtime</em> semantics (GC pauses, JIT tiers) are better seen with async-profiler / runtime tooling. (6) <em>Windows/other OS</em> &mdash; perf is Linux-only. (7) It doesn't <em>fix</em> anything or rank by business impact &mdash; that's the human + the cost model. So: eBPF/perf continuous sampling with frame pointers for the always-on "where", on-demand <code>perf stat</code>/<code>c2c</code>/annotate for the "why", scheduler/off-CPU + tracing for latency, and a symbol server + diff-flamegraph UI + deploy markers so regressions surface automatically.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:debug:perf -->
+
+<!-- TOPIC:debug:gcov -->
+<section class="view topic" id="v-debug-gcov" data-skill="debug">
+<div class="layout">
+<nav class="sidebar" data-sidebar="debug"></nav>
+<div class="topic-body">
+<h1>gcov: Code Coverage Analysis</h1>
+<p class="subtitle">Compile with coverage instrumentation, run the program (or the test suite), then see exactly which lines and branches executed &mdash; and which never did.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbg-gcov-t">
+<title id="d-dbg-gcov-t">Build with --coverage produces .gcno; running produces .gcda; gcov merges them into annotated source</title>
+<rect class="d-box-alt" x="10" y="40" width="90" height="24" rx="4"/><text class="d-t-sm" x="55" y="56" text-anchor="middle">gcc --coverage</text>
+<rect class="d-box" x="130" y="20" width="80" height="20"/><text class="d-t-sm" x="170" y="34" text-anchor="middle">app (instrumented)</text>
+<rect class="d-box-soft" x="130" y="48" width="80" height="20"/><text class="d-t-sm" x="170" y="62" text-anchor="middle">*.gcno (structure)</text>
+<rect class="d-box-soft" x="250" y="48" width="80" height="20"/><text class="d-t-sm" x="290" y="62" text-anchor="middle">*.gcda (counts)</text>
+<rect class="d-box" x="250" y="20" width="80" height="20"/><text class="d-t-sm" x="290" y="34" text-anchor="middle">run tests</text>
+<rect class="d-box-alt" x="380" y="34" width="130" height="24" rx="4"/><text class="d-t-b" x="445" y="50" text-anchor="middle">gcov / lcov / gcovr</text>
+<path class="d-line" d="M100 50 L128 34" marker-end="url(#dbg-gcov-ah)"/><path class="d-line" d="M100 54 L128 58" marker-end="url(#dbg-gcov-ah)"/>
+<path class="d-line" d="M210 30 L248 30" marker-end="url(#dbg-gcov-ah)"/><text class="d-t-sm" x="212" y="24">exit / flush</text>
+<path class="d-line" d="M290 40 L290 46" marker-end="url(#dbg-gcov-ah)"/>
+<path class="d-line" d="M330 58 L378 50" marker-end="url(#dbg-gcov-ah)"/><path class="d-line" d="M210 58 L248 58" marker-end="url(#dbg-gcov-ah)"/>
+<defs><marker id="dbg-gcov-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="108"><tspan class="d-t-mono">.gcno</tspan> is written at compile time (the control-flow graph). <tspan class="d-t-mono">.gcda</tspan> is written at exit (execution counts) and <tspan class="d-t-b">accumulates</tspan> across runs.</text>
+<text class="d-t-sm" x="14" y="126">Line coverage answers "was this executed". <tspan class="d-t-b">Branch</tspan> coverage answers "were both the true and false paths taken".</text>
+</svg>
+<figcaption>gcov is GCC's coverage tool; Clang has a compatible mode (<code>--coverage</code> or its own <code>-fprofile-instr-generate</code> + <code>llvm-cov</code>). <code>lcov</code>/<code>gcovr</code> turn the raw data into HTML and CI-friendly summaries.</figcaption>
+</figure>
+
+<h3>The build-run-report cycle</h3>
+<p><strong>What / how.</strong> Add <code>--coverage</code> (shorthand for <code>-fprofile-arcs -ftest-coverage</code> when compiling, <code>-lgcov</code> when linking). Compile <code>-O0</code> so lines map cleanly. Run the program; on normal exit it writes <code>.gcda</code> files next to the objects. Then run <code>gcov</code> on each source.</p>
+<pre>$ gcc -O0 -g --coverage -c calc.c -o calc.o        # emits calc.gcno now
+$ gcc --coverage calc.o main.o -o app             # links libgcov
+$ ./app                                            # or: run the whole test suite
+#   -> writes calc.gcda, main.gcda  (execution counts)
+$ gcov calc.c
+File 'calc.c'
+Lines executed:82.35% of 51
+Creating 'calc.c.gcov'                              # annotated source
+
+$ head calc.c.gcov
+        -:    1:#include "calc.h"
+        5:    7:int add(int a,int b){ return a+b; }   # executed 5 times
+    #####:   12:int div(int a,int b){ return a/b; }   # ##### = NEVER executed
+        -:   13:                                       # '-' = non-code line</pre>
+
+<h3>Branch and function coverage</h3>
+<p><strong>What / why.</strong> A line can be "covered" while a condition was only ever true. <code>gcov -b</code> adds per-branch taken/not-taken info; <code>-c</code> shows raw branch counts instead of percentages; <code>-f</code> gives a per-function summary. This is where you find the untested <code>else</code>, the error path that never fires, the <code>&amp;&amp;</code> short-circuit you never exercised both ways.</p>
+<pre>$ gcov -b -c -f calc.c
+Function 'div'
+Lines executed:100.00% of 3
+Branches executed:100.00% of 2
+Taken at least once:50.00% of 2          # <-- one branch direction never taken
+Calls executed:100.00% of 1
+
+# in calc.c.gcov with -b:
+        3:   15:  if (b == 0)
+branch  0 taken 3 (fallthrough)
+branch  1 taken 0                        # the "b == 0" error path is untested
+    #####:   16:      return handle_div0();</pre>
+
+<h3>Key gcov options</h3>
+<pre>gcov SOURCE...            # produce SOURCE.gcov annotated files
+  -b, --branch-probabilities   include branch taken/not-taken percentages
+  -c, --branch-counts          show branch counts as absolute numbers, not %
+  -f, --function-summaries     per-function line/branch/call coverage
+  -a, --all-blocks             per basic-block counts (very detailed)
+  -m, --demangled-names        demangle C++ names in the report
+  -r, --relative-only          only report files with paths relative to the build dir
+  -s DIR, --source-prefix DIR  strip this prefix from source paths
+  -i, --json-format            machine-readable output (.gcov.json.gz) for tooling
+  -o DIR                       where the .gcno/.gcda live (if not beside the source)
+  -p, --preserve-paths         keep full path in the .gcov filename (avoids collisions)
+  -u, --unconditional-branches include branches that are always taken
+  -j, --json-format (older -i) ; -t, --stdout  print to stdout instead of a file</pre>
+
+<h3>Readable reports: lcov and gcovr</h3>
+<p><strong>What / why.</strong> Raw <code>.gcov</code> files are per-file text. <strong>lcov</strong> aggregates all <code>.gcda</code> into one <code>.info</code> database and <code>genhtml</code> renders a browsable, colour-coded report. <strong>gcovr</strong> (Python) does the same and also emits Cobertura XML / JSON / SonarQube formats that CI dashboards understand, plus a one-line summary with a fail-under threshold.</p>
+<pre># lcov -> HTML
+$ lcov --capture --directory . --output-file cov.info
+$ lcov --remove cov.info '/usr/*' '*/tests/*' '*/third_party/*' --output-file cov.info
+$ genhtml cov.info --output-directory cov-html     # open cov-html/index.html
+
+# reset counters between test groups:
+$ lcov --directory . --zerocounters        # or: find . -name '*.gcda' -delete
+
+# gcovr -> CI
+$ gcovr -r . --exclude tests --exclude-unreachable-branches \
+        --xml-pretty -o coverage.xml --html-details coverage.html \
+        --fail-under-line 80 --fail-under-branch 60      # non-zero exit if below</pre>
+
+<h3>Gotchas and special cases</h3>
+<ul>
+<li><strong>No <code>.gcda</code> written?</strong> The process must exit cleanly (<code>return</code>/<code>exit()</code>). A crash, <code>_exit()</code>, <code>abort()</code>, <code>SIGKILL</code>, or an infinite loop skips the atexit flush. Call <code>__gcov_dump()</code> (older: <code>__gcov_flush()</code>) before a known-fatal point, or install a signal handler that dumps then re-raises.</li>
+<li><strong>Long-running services</strong>: they never exit during a test. Send a signal that triggers <code>__gcov_dump()</code>, or build with <code>-fprofile-update=atomic</code> and dump periodically.</li>
+<li><strong>Counts accumulate</strong> across runs into the same <code>.gcda</code> &mdash; good for merging many test cases, but zero the counters (<code>lcov --zerocounters</code> / delete <code>.gcda</code>) when you want a clean measurement.</li>
+<li><strong>Remote/embedded target</strong>: the <code>.gcda</code> paths are baked in at compile time. Set <code>GCOV_PREFIX=/tmp/cov</code> and <code>GCOV_PREFIX_STRIP=N</code> on the target so files land in a writable place, then copy them back to the build tree for <code>gcov</code>.</li>
+<li><strong>Parallel tests</strong>: races on the same <code>.gcda</code>. Use <code>-fprofile-update=atomic</code>, or give each test process its own build/output dir and merge with <code>lcov -a a.info -a b.info</code> / <code>gcov-tool merge</code>.</li>
+<li><strong>Optimisation</strong>: coverage at <code>-O2</code> is misleading (inlining, merged lines, dead-code elimination). Use a dedicated <code>-O0 --coverage</code> build for coverage; keep it separate from the perf build.</li>
+<li>Coverage is <em>necessary, not sufficient</em> &mdash; 100% line coverage with weak assertions still misses bugs. Treat it as "what did we forget to test", not "the tests are good".</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Build: <code>gcc -O0 -g --coverage ...</code> (= <code>-fprofile-arcs -ftest-coverage</code> + link <code>-lgcov</code>). Compile emits <code>.gcno</code>; running emits <code>.gcda</code>.</li>
+<li>Report one file: <code>gcov file.c</code> &rarr; <code>file.c.gcov</code>. Markers: <code>#####</code> = never run, <code>-</code> = non-code, a number = hit count.</li>
+<li>Branches/functions: <code>gcov -b -c -f file.c</code> &mdash; find untested <code>else</code>/error paths ("taken at least once" &lt; 100%).</li>
+<li>Useful flags: <code>-m</code> (demangle), <code>-i</code>/<code>--json-format</code> (tooling), <code>-o DIR</code> (where <code>.gcno/.gcda</code> are), <code>-p</code> (preserve paths), <code>-s</code>/<code>-r</code> (path trimming).</li>
+<li>HTML: <code>lcov --capture -d . -o cov.info</code> &rarr; <code>lcov --remove</code> junk &rarr; <code>genhtml cov.info -o html/</code>.</li>
+<li>CI: <code>gcovr -r . --xml-pretty -o coverage.xml --fail-under-line 80 --fail-under-branch 60</code>.</li>
+<li>Reset between measurements: <code>lcov --zerocounters -d .</code> or <code>find . -name '*.gcda' -delete</code>. Counts otherwise <strong>accumulate</strong>.</li>
+<li>No data: process must exit cleanly &mdash; crash/<code>_exit</code>/signal skips the flush; call <code>__gcov_dump()</code>. Remote: set <code>GCOV_PREFIX</code>/<code>GCOV_PREFIX_STRIP</code>. Parallel: <code>-fprofile-update=atomic</code>. Coverage build is <code>-O0</code> and separate from the perf build.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What's the difference between <code>.gcno</code> and <code>.gcda</code> files?</dt>
+<dd><code>.gcno</code> ("notes") is written by the <em>compiler</em> and describes the code structure &mdash; the basic blocks and the arcs (control-flow graph) &mdash; along with source line mappings. <code>.gcda</code> ("data") is written by the instrumented program at exit and holds the <em>execution counts</em> for those arcs. <code>gcov</code> combines the two: the <code>.gcno</code> says what the code is, the <code>.gcda</code> says how many times each part ran. Delete <code>.gcno</code> and rebuild if the source changed; delete <code>.gcda</code> to reset counts.</dd>
+<dt>Line coverage is 95% but you still ship bugs in conditionals. What coverage metric helps and why?</dt>
+<dd><strong>Branch coverage</strong> (<code>gcov -b</code>, or condition/decision coverage). A line like <code>if (a &amp;&amp; b) do_x();</code> counts as "covered" the moment it executes once, even if <code>b</code> was always true and <code>do_x()</code>'s absence was never tested. Branch coverage requires each decision to go both ways; the report's "Taken at least once" &lt; 100% flags the direction you never exercised &mdash; typically error handling, boundary cases, and the <code>else</code> you forgot. For safety-critical code go further to MC/DC (each condition independently affects the outcome).</dd>
+<dt>Your test run produced no <code>.gcda</code> files. Give three reasons and fixes.</dt>
+<dd>(1) The program didn't exit normally &mdash; it crashed, called <code>_exit()</code>/<code>abort()</code>, was <code>SIGKILL</code>ed, or looped forever, so the <code>atexit</code> flush never ran. Fix: call <code>__gcov_dump()</code> before the fatal point, or a signal handler that dumps then re-raises; for long-running services, dump on a signal. (2) It ran in a different working directory or a read-only filesystem, so it couldn't write the <code>.gcda</code> next to the objects. Fix: run from the build dir, or set <code>GCOV_PREFIX</code>/<code>GCOV_PREFIX_STRIP</code> to redirect to a writable path. (3) The binary wasn't actually built with <code>--coverage</code> (or was relinked without <code>-lgcov</code>), or you're looking at a stale build. Fix: clean, rebuild with <code>--coverage</code> on both compile and link, verify <code>.gcno</code> exist.</dd>
+<dt>How do you get coverage for a daemon that never exits during the test?</dt>
+<dd>Trigger the profile dump without exiting: register a handler for a spare signal (e.g. <code>SIGUSR2</code>) that calls <code>__gcov_dump()</code> (and optionally <code>__gcov_reset()</code>), send it after the test scenario, then collect the <code>.gcda</code>. Alternatively build with <code>-fprofile-update=atomic</code> and periodically call the dump, or run the daemon under a test harness that sends <code>SIGTERM</code> and have a clean shutdown path that returns from <code>main</code>. Then <code>lcov --capture</code> as usual. For containers, mount a writable volume and point <code>GCOV_PREFIX</code> at it.</dd>
+<dt>Can you measure coverage on an optimised (<code>-O2</code>) build? Should you?</dt>
+<dd>You can &mdash; <code>--coverage</code> works at any <code>-O</code> &mdash; but the results are misleading: inlining attributes a callee's execution to the caller's lines, dead-code elimination removes lines so they show as non-code, and multiple source lines can collapse onto one block. For an honest line/branch map, use a dedicated <code>-O0 --coverage</code> build. The one time you'd measure at <code>-O2</code> is profile-guided optimisation (<code>-fprofile-use</code>), where you deliberately want the optimiser's view &mdash; but that's optimisation, not test-coverage reporting.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which flag enables gcov instrumentation, and at which stages?</summary><div class="answer-box">
+<code>--coverage</code> &mdash; on the <em>compile</em> step (it implies <code>-fprofile-arcs -ftest-coverage</code>, producing <code>.gcno</code>) and on the <em>link</em> step (it links <code>libgcov</code>). Build at <code>-O0</code> for a clean line mapping.
+</div></details>
+<details class="answer-reveal"><summary>In a <code>.gcov</code> file, what do <code>#####</code> and <code>-</code> mean?</summary><div class="answer-box">
+<code>#####</code> = an executable line that was <strong>never run</strong> (zero count). <code>-</code> = a line with no executable code (blank, comment, brace, declaration). A number is the execution count for that line.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Set up a coverage gate in CI for a C project with a unit-test suite. What are the moving parts?</summary><div class="answer-box">
+(1) A <strong>dedicated coverage build</strong>: <code>-O0 -g --coverage</code> (separate build dir from the normal/optimised build), plus <code>-fprofile-update=atomic</code> if tests run in parallel. (2) <strong>Reset</strong> counters before the run (<code>lcov --zerocounters -d build</code> or delete <code>.gcda</code>). (3) <strong>Run the test suite</strong>; ensure every test binary exits cleanly so <code>.gcda</code> flush (a crashing test loses its data &mdash; fix the test or add a dump-on-signal). (4) <strong>Aggregate</strong>: <code>gcovr -r . --object-directory build</code> or <code>lcov --capture</code>, then <strong>exclude</strong> non-product code (<code>--remove '*/tests/*' '*/third_party/*' '/usr/*'</code>). (5) <strong>Report</strong>: emit HTML for humans (<code>genhtml</code> / <code>--html-details</code>) as a build artifact, and Cobertura XML/JSON for the CI dashboard or PR annotation. (6) <strong>Gate</strong>: <code>gcovr --fail-under-line 80 --fail-under-branch 60</code> (non-zero exit fails the job); optionally a <em>diff/patch coverage</em> check (new/changed lines must be ≥ X%) which is fairer than a global number. (7) Track the trend over time and require justification for drops. (8) Keep the coverage build out of the release pipeline (it's slower and instrumented). Common pitfalls to handle: stale <code>.gcda</code> from a previous run, path mismatches (<code>-s</code>/<code>--root</code> to normalise), and generated code inflating or deflating the number.</dd>
+</div></details>
+<details class="answer-reveal"><summary>You need coverage from tests running on an embedded target with a read-only rootfs and no gcov binary. How?</summary><div class="answer-box">
+The instrumentation is in the built binary already; only the <em>data files</em> and the <em>reporting</em> are the problem. (1) At compile time the <code>.gcda</code> output paths are absolute build-host paths the target can't write. Set, on the target, <code>GCOV_PREFIX=/mnt/cov</code> (a writable tmpfs or SD card / NFS mount) and <code>GCOV_PREFIX_STRIP=&lt;n&gt;</code> to drop the leading path components, so files are written under the prefix with a shortened path. (2) Ensure the test app exits cleanly (or call <code>__gcov_dump()</code> from a signal handler) so the <code>.gcda</code> are actually written. (3) After the test, copy the <code>/mnt/cov</code> tree back to the build host and place the <code>.gcda</code> next to the matching <code>.gcno</code>/objects (same relative layout). (4) Run <code>gcov</code>/<code>lcov</code>/<code>gcovr</code> <em>on the build host</em>, which has the sources, the <code>.gcno</code>, and the tools. (5) If the toolchain versions differ, use the matching <code>gcov</code> for that GCC (or <code>llvm-cov gcov</code>), and consider <code>-fprofile-abs-path</code> at build time to make path fix-ups easier. For continuous use, script the prefix-set + run + pull-back + report as one CI step, and use <code>lcov -a</code>/<code>gcov-tool merge</code> to combine multiple target runs.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a coverage program for a large multi-language codebase: what to measure, how to aggregate, what to gate on, and how to avoid it becoming a vanity metric.</summary><div class="answer-box">
+<strong>What to measure</strong>: line <em>and</em> branch coverage per component from unit tests (gcov/llvm-cov for C/C++, and the native tools elsewhere &mdash; coverage.py, JaCoCo, go test -cover, etc.), plus a separate <strong>integration/e2e coverage</strong> run where feasible (instrument the service, run the black-box suite, dump on shutdown) so you know the real end-to-end exercised surface, not just unit paths. Track <strong>function coverage</strong> for a quick "entirely untested code" signal. For safety-critical modules, require MC/DC. <strong>Build</strong>: dedicated <code>-O0</code> instrumented builds, parallel-safe (<code>-fprofile-update=atomic</code> / per-worker output dirs), separate from release artifacts; dump-on-signal for daemons; <code>GCOV_PREFIX</code> for cross/remote runs. <strong>Aggregate</strong>: per-language raw data &rarr; a common format (lcov <code>.info</code> / Cobertura / OpenCppCoverage etc.) merged per component and uploaded to a coverage service (Codecov/Coveralls/SonarQube or self-hosted) that stores history, does PR annotation, and merges parallel shards. Normalise paths, exclude third-party/generated/test code consistently via a checked-in config. <strong>Gate on</strong>: primarily <strong>patch/diff coverage</strong> &mdash; new and modified lines in a PR must be ≥ a threshold (e.g. 80% line, 70% branch); this is fair, actionable, and can't be gamed by old untested code. Add a <strong>ratchet</strong> on project totals: coverage may not drop more than a small epsilon; drops need reviewer sign-off with a reason. Optionally hard per-component floors for critical modules. Do <em>not</em> gate purely on a global percentage target. <strong>Reporting</strong>: HTML artifacts per build, a trend dashboard, and PR comments showing exactly which new lines/branches are uncovered. Surface "files with 0% coverage" and "large functions with low branch coverage" as backlog items. <strong>Avoiding the vanity trap</strong>: (1) pair coverage with <strong>mutation testing</strong> (e.g. mull for C/C++, pitest, mutmut) on core modules &mdash; it measures whether tests actually <em>detect</em> changes, catching high-coverage/weak-assertion tests; run it nightly, not per-PR. (2) Review that new tests have meaningful assertions (lint for assertion-free tests). (3) Exclude trivial code (getters, generated) so the number reflects logic. (4) Treat coverage as a <em>gap finder</em> in review ("this error path is untested &mdash; is that OK?"), and record deliberate exclusions with a comment/annotation and rationale. (5) Watch for coverage added via characterization tests that just pin current behaviour without checking correctness. <strong>Ops</strong>: keep the instrumented build fast enough to run per-PR (shard it), cache <code>.gcno</code> where possible, and fail loudly if a test crash caused missing data rather than silently under-reporting. Net: measure line+branch (and integration) coverage, aggregate to a history-keeping service, gate on diff coverage + a total-coverage ratchet rather than an absolute target, back it with mutation testing and assertion review so it measures test <em>quality</em> not just execution, and use it in code review as the "what did we forget to test" checklist.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:debug:gcov -->
+
+<!-- TOPIC:debug:nmap -->
+<section class="view topic" id="v-debug-nmap" data-skill="debug">
+<div class="layout">
+<nav class="sidebar" data-sidebar="debug"></nav>
+<div class="topic-body">
+<h1>nmap: Network &amp; Port Scanning</h1>
+<p class="subtitle">Discovers which hosts are up, which ports are open, what service and version is behind each, and (with scripts) known weaknesses &mdash; the standard tool for network inventory and connectivity debugging.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbg-nmap-t">
+<title id="d-dbg-nmap-t">nmap phases: host discovery, port scan, version/OS detection, NSE scripts, output</title>
+<rect class="d-box" x="8" y="50" width="92" height="26" rx="4"/><text class="d-t-sm" x="54" y="67" text-anchor="middle">1 discovery</text>
+<rect class="d-box" x="110" y="50" width="92" height="26" rx="4"/><text class="d-t-sm" x="156" y="67" text-anchor="middle">2 port scan</text>
+<rect class="d-box" x="212" y="50" width="100" height="26" rx="4"/><text class="d-t-sm" x="262" y="67" text-anchor="middle">3 -sV / -O</text>
+<rect class="d-box" x="322" y="50" width="92" height="26" rx="4"/><text class="d-t-sm" x="368" y="67" text-anchor="middle">4 NSE</text>
+<rect class="d-box-alt" x="424" y="50" width="88" height="26" rx="4"/><text class="d-t-b" x="468" y="67" text-anchor="middle">5 output</text>
+<path class="d-line" d="M100 63 L108 63" marker-end="url(#dbg-nmap-ah)"/><path class="d-line" d="M202 63 L210 63" marker-end="url(#dbg-nmap-ah)"/>
+<path class="d-line" d="M312 63 L320 63" marker-end="url(#dbg-nmap-ah)"/><path class="d-line" d="M414 63 L422 63" marker-end="url(#dbg-nmap-ah)"/>
+<defs><marker id="dbg-nmap-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="8" y="104">Port states: <tspan class="d-t-b">open</tspan> (listening), <tspan class="d-t-b">closed</tspan> (reachable, nothing there), <tspan class="d-t-b">filtered</tspan> (no reply &mdash; a firewall).</text>
+<text class="d-t-sm" x="8" y="122"><tspan class="d-t-b">Only scan hosts you own or are explicitly authorised to test.</tspan> Unsanctioned scanning is often illegal and always rude.</text>
+</svg>
+<figcaption>Beyond security, nmap is an everyday ops tool: verify a firewall change, confirm a service is actually listening on the interface you think, find what's using an unexpected port, inventory a subnet.</figcaption>
+</figure>
+
+<h3>Targets and host discovery</h3>
+<p><strong>What / how.</strong> Targets can be a host, a list, CIDR, or ranges. By default nmap first does <strong>host discovery</strong> (a "ping sweep": ICMP echo, TCP SYN to 443, TCP ACK to 80, ICMP timestamp) and only port-scans hosts that respond. <code>-sn</code> stops after discovery; <code>-Pn</code> skips it (treat every host as up &mdash; needed when hosts block pings).</p>
+<pre>nmap 10.0.0.5                         # one host
+nmap scanme.nmap.org                  # by name
+nmap 10.0.0.0/24                      # a /24
+nmap 10.0.0.1-50 10.0.1.10            # ranges + extra host
+nmap -iL targets.txt                  # from a file
+nmap --exclude 10.0.0.1 10.0.0.0/24   # skip the gateway
+
+nmap -sn 10.0.0.0/24                  # PING SWEEP only: which hosts are up (no port scan)
+nmap -Pn 10.0.0.5                     # skip discovery: scan even if it doesn't answer pings
+nmap -PS22,80,443 -PA3389 10.0.0.0/24 # custom discovery probes (SYN to.., ACK to..)
+nmap -n 10.0.0.0/24                   # -n: no reverse-DNS (much faster on big ranges)</pre>
+
+<h3>Port scan types</h3>
+<table>
+<tr><th>Flag</th><th>Scan</th><th>Notes</th></tr>
+<tr><td><code>-sS</code></td><td>TCP <strong>SYN</strong> ("half-open")</td><td>Default when run as root/CAP_NET_RAW. Fast, doesn't complete the handshake, relatively quiet.</td></tr>
+<tr><td><code>-sT</code></td><td>TCP <strong>connect()</strong></td><td>Used when you lack raw-socket privilege. Full handshake &mdash; slower, logged by the target app.</td></tr>
+<tr><td><code>-sU</code></td><td><strong>UDP</strong></td><td>Slow (relies on ICMP port-unreachable / timeouts). Needed for DNS, SNMP, NTP, DHCP, etc.</td></tr>
+<tr><td><code>-sA</code></td><td>TCP <strong>ACK</strong></td><td>Doesn't find open ports &mdash; maps <em>firewall rules</em> (filtered vs unfiltered).</td></tr>
+<tr><td><code>-sN</code>/<code>-sF</code>/<code>-sX</code></td><td>Null / FIN / Xmas</td><td>Stealth/evasion probes; work only against strictly RFC-compliant stacks.</td></tr>
+<tr><td><code>-sn</code></td><td>No port scan</td><td>(lowercase n) discovery only &mdash; don't confuse with <code>-sN</code>.</td></tr>
+</table>
+<pre>nmap -sS -p 1-1000 10.0.0.5           # SYN scan of ports 1-1000
+nmap -sU --top-ports 50 10.0.0.5      # 50 most common UDP ports
+nmap -sS -sU -p T:22,80,443,U:53,161 host   # mixed TCP+UDP port list</pre>
+
+<h3>Port selection and speed</h3>
+<pre>-p 22,80,443            # explicit list
+-p 1-65535   OR  -p-    # all 65535 TCP ports
+-p U:53,111,T:1-1000    # protocol-qualified
+--top-ports 100         # the N most common ports (from nmap-services frequency data)
+-F                      # fast: top 100 ports
+-r                      # scan ports in order (default is randomised)
+
+-T0 .. -T5              # timing template: 0=paranoid (IDS evasion) ... 3=default ... 5=insane (fast, LAN only)
+--min-rate 500 --max-rate 2000     # packets/sec bounds
+--host-timeout 5m       # give up on a host after 5 min
+--max-retries 2         # fewer probe retransmits = faster, less accurate
+--open                  # only report open (and open|filtered) ports</pre>
+
+<h3>Service, version, and OS detection</h3>
+<p><strong>What / why.</strong> An open port tells you something listens; <code>-sV</code> probes it to identify the <em>product and version</em> ("nginx 1.24.0", "OpenSSH 9.6p1"); <code>-O</code> fingerprints the OS from TCP/IP stack quirks; <code>-A</code> turns on <code>-sV -O</code> + default scripts + traceroute.</p>
+<pre>nmap -sV 10.0.0.5                     # version detection
+nmap -sV --version-intensity 9 host  # try harder (0-9; 9 = all probes)
+nmap -O host                         # OS fingerprint (needs one open + one closed port, root)
+nmap -A 10.0.0.5                     # aggressive: -sV -O + default NSE + traceroute (loud!)
+nmap -sV -p- --min-rate 1000 10.0.0.5     # full TCP port + version sweep
+
+# example output:
+# PORT    STATE SERVICE VERSION
+# 22/tcp  open  ssh     OpenSSH 9.6p1 Ubuntu 3ubuntu13 (Ubuntu Linux; protocol 2.0)
+# 443/tcp open  ssl/http nginx 1.24.0
+# Service Info: OS: Linux; CPE: cpe:/o:linux:linux_kernel</pre>
+
+<h3>NSE: the Nmap Scripting Engine</h3>
+<p><strong>What / why.</strong> Lua scripts that run against discovered ports for deeper checks &mdash; banner grabbing, enumeration (SMB shares, HTTP titles/headers, TLS ciphers), and vulnerability probes. Scripts have <strong>categories</strong>: <code>default</code>, <code>safe</code>, <code>discovery</code>, <code>version</code>, <code>auth</code>, <code>brute</code>, <code>vuln</code>, <code>exploit</code>, <code>intrusive</code>, <code>dos</code>.</p>
+<pre>nmap -sC host                        # = --script=default (the "safe + useful" set)
+nmap --script=http-title,http-headers -p 80,443 host
+nmap --script=ssl-enum-ciphers -p 443 host          # TLS versions + cipher grades
+nmap --script=smb-enum-shares,smb-os-discovery -p 445 host
+nmap --script "vuln" host                           # all vuln-category scripts (intrusive)
+nmap --script "http-* and safe" -p 80 host          # boolean selectors
+nmap --script=banner --script-args=timeout=5 host
+nmap --script-help ssl-enum-ciphers                 # docs for a script
+# scripts live in /usr/share/nmap/scripts/ ; run 'nmap --script-updatedb' after adding one</pre>
+
+<h3>Output formats</h3>
+<pre>-oN scan.nmap     # normal (human-readable)
+-oX scan.xml      # XML - for tools / import into other systems
+-oG scan.gnmap    # "grepable" - one line per host (legacy but handy for awk/grep)
+-oA basename      # all three at once -> basename.nmap/.xml/.gnmap
+-oS ...           # "script kiddie" (a joke format)
+-v / -vv          # verbosity ;  -d / -dd  debug ;  --reason  why each port is in its state
+--stats-every 30s # progress updates on long scans
+--resume scan.gnmap   # continue an interrupted scan
+
+# turn XML into HTML:
+xsltproc scan.xml -o scan.html
+# grepable one-liner: list hosts with 22 open
+grep '22/open' scan.gnmap | cut -d' ' -f2</pre>
+
+<h3>Firewall/IDS evasion (authorised testing only)</h3>
+<pre>-f / --mtu 16          # fragment probes into tiny packets
+-D RND:10              # decoys: mix your scan with 10 spoofed source IPs
+-S 10.0.0.9            # spoof source address (needs to see replies -> usually with -e + a tap)
+--source-port 53       # come from port 53 (some firewalls trust it)
+--data-length 25       # pad packets to a non-default size
+--scan-delay 1s        # slow probes to stay under rate-based IDS thresholds
+-T0 / -T1              # paranoid/sneaky timing
+--badsum               # send bad checksums (responses imply an IDS/IPS, not the host)</pre>
+
+<h3>Where nmap is used</h3>
+<ul>
+<li><strong>Ops / SRE</strong>: "is the service actually listening on the external interface?", verify a security-group / iptables change did what you intended, find what grabbed a port, quick subnet inventory after a migration.</li>
+<li><strong>Security</strong>: authorised penetration tests and red-team recon, external attack-surface monitoring, compliance scans (open-port policy), TLS-config auditing (<code>ssl-enum-ciphers</code>).</li>
+<li><strong>Asset management</strong>: periodic <code>-sn</code>/<code>-sV</code> sweeps feeding a CMDB; diff scans to detect new hosts/ports (<code>ndiff</code>).</li>
+<li><strong>Connectivity debugging</strong>: from host A, <code>nmap -Pn -p 5432 db-host</code> to prove whether a path is open, closed, or filtered &mdash; the <code>filtered</code> state specifically means "a firewall is dropping this".</li>
+<li><strong>Not for</strong>: scanning networks without written authorisation (legal risk), and it's noisy &mdash; a full <code>-A -p-</code> scan can disrupt fragile devices (printers, SCADA, old embedded stacks).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Targets: <code>host</code>, <code>10.0.0.0/24</code>, <code>10.0.0.1-50</code>, <code>-iL file</code>, <code>--exclude</code>. Add <code>-n</code> (no DNS) for speed on big ranges.</li>
+<li>Discovery: <code>-sn</code> (ping sweep only), <code>-Pn</code> (skip discovery, assume up), <code>-PS/-PA/-PU</code> custom probes.</li>
+<li>Scan types: <code>-sS</code> (SYN, default as root), <code>-sT</code> (connect, unprivileged), <code>-sU</code> (UDP, slow), <code>-sA</code> (ACK &rarr; firewall map). States: <strong>open</strong> / <strong>closed</strong> / <strong>filtered</strong>.</li>
+<li>Ports: <code>-p 22,80</code>, <code>-p-</code> (all), <code>-p U:53,T:1-1000</code>, <code>--top-ports N</code>, <code>-F</code> (fast top 100), <code>--open</code>.</li>
+<li>Fingerprint: <code>-sV</code> (service/version), <code>-O</code> (OS), <code>-A</code> (= <code>-sV -O</code> + default scripts + traceroute, loud).</li>
+<li>NSE: <code>-sC</code> (default scripts), <code>--script=ssl-enum-ciphers</code>, <code>--script "vuln"</code>, <code>--script "http-* and safe"</code>, <code>--script-help NAME</code>.</li>
+<li>Speed: <code>-T0..T5</code> (3 default), <code>--min-rate/--max-rate</code>, <code>--host-timeout</code>, <code>--max-retries</code>.</li>
+<li>Output: <code>-oA base</code> (normal+XML+grepable), <code>-oN/-oX/-oG</code>, <code>--reason</code>, <code>--resume</code>, <code>ndiff</code> to compare scans.</li>
+<li><strong>Authorisation required.</strong> Full/aggressive scans can disrupt fragile devices.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What do the port states <code>open</code>, <code>closed</code>, and <code>filtered</code> actually mean?</dt>
+<dd><strong>open</strong>: a service accepted the probe (SYN-ACK for TCP) &mdash; something is listening. <strong>closed</strong>: the host is reachable and replied that nothing is listening there (TCP RST) &mdash; no firewall in the way for that port. <strong>filtered</strong>: nmap got no useful reply (probe dropped, or an ICMP admin-prohibited) &mdash; a firewall or filter is blocking it, and nmap can't tell if a service is behind it. There's also <strong>open|filtered</strong> (common with UDP and FIN/Null/Xmas scans &mdash; no response could mean either) and <strong>unfiltered</strong> (from <code>-sA</code>: reachable, state unknown).</dd>
+<dt>When do you need <code>-Pn</code>, and what's the cost of using it?</dt>
+<dd>Use <code>-Pn</code> when the target (or its firewall) blocks nmap's host-discovery probes, so nmap wrongly concludes the host is down and skips it &mdash; common for hardened servers, hosts behind stateful firewalls, and many cloud instances. <code>-Pn</code> tells nmap to skip discovery and port-scan every target regardless. The cost: on a large range you now port-scan every address including ones that truly are down, which is much slower and noisier. So use <code>-Pn</code> for known individual hosts, and prefer real discovery (<code>-sn</code> with tuned <code>-PS/-PA</code> probes) for sweeps.</dd>
+<dt>Why is a UDP scan (<code>-sU</code>) so slow and often inconclusive?</dt>
+<dd>UDP is connectionless: an open port usually sends <em>nothing</em> back to a probe, and a closed port replies with ICMP port-unreachable &mdash; which the kernel <strong>rate-limits</strong> (Linux: ~1/sec). So nmap must wait out timeouts and retransmits for every non-responding port, and can't distinguish "open" from "filtered" without a protocol-specific payload. Speed it up by scanning only the ports that matter (<code>--top-ports</code> or an explicit list), raising <code>--min-rate</code> cautiously, adding version probes (<code>-sV</code> sends real protocol payloads that elicit replies), and accepting <code>open|filtered</code> as the answer for many ports.</dd>
+<dt>You changed a firewall rule to allow app traffic to a DB. How do you verify it with nmap without a DB client?</dt>
+<dd>From the source host (or one on the same segment/policy): <code>nmap -Pn -p 5432 --reason db-host</code>. <code>open</code> &rarr; the path works and Postgres is listening. <code>filtered</code> &rarr; a firewall is still dropping it (your rule didn't take effect, wrong direction, wrong source, or another device in the path). <code>closed</code> &rarr; the network path is open but nothing is listening on 5432 on that host (service down or bound to a different interface). Add <code>-sV</code> to confirm it's actually Postgres and not something else on that port. Run it from the <em>real</em> source host, because firewall rules are source-specific.</dd>
+<dt>Is it OK to run <code>nmap -A -p- -T5</code> against any host you're curious about?</dt>
+<dd>No. Legally, scanning hosts you don't own or lack written authorisation to test can violate computer-misuse laws and provider AUPs, regardless of intent. Operationally, <code>-A -p- -T5</code> is aggressive: 65k ports, version probes, OS detection, default scripts, and high packet rate can crash fragile TCP/IP stacks (printers, IoT, medical/SCADA gear), trip IDS/IPS and get you blocked, and generate a lot of noise. Only scan assets in scope of an engagement or that you administer; on production/fragile networks use conservative timing (<code>-T2</code>/<code>-T3</code>), limited ports, <code>--scan-delay</code>, and coordinate with the owners.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What's the difference between <code>-sn</code> and <code>-Pn</code>?</summary><div class="answer-box">
+<code>-sn</code> does host discovery <em>only</em> &mdash; a ping sweep to list which hosts are up, with no port scan. <code>-Pn</code> does the opposite &mdash; it <em>skips</em> host discovery and port-scans every target as if it were up (used when hosts block pings).
+</div></details>
+<details class="answer-reveal"><summary>Which flag identifies the software and version behind an open port?</summary><div class="answer-box">
+<code>-sV</code> (service/version detection). <code>-A</code> includes it along with OS detection (<code>-O</code>), default scripts, and traceroute.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Design an nmap command (or few) to inventory a /22 you just took over, safely and reasonably fast.</summary><div class="answer-box">
+Two passes. <strong>Pass 1 &mdash; discovery</strong>: <code>nmap -sn -n -PE -PS22,80,443,3389 -PA80 --min-rate 300 -oA sweep 10.0.0.0/22</code> &mdash; ping sweep with a few TCP probes (so firewalled-but-up hosts still respond), no reverse DNS for speed, moderate rate. Review <code>sweep.gnmap</code> for the live list. <strong>Pass 2 &mdash; service scan of live hosts</strong>: <code>nmap -sS -sV -O --version-light -T3 --top-ports 1000 -Pn --open --reason -oA inventory -iL live-hosts.txt</code> &mdash; SYN scan of the common 1000 ports plus light version/OS detection, only report open ports, keep timing moderate (<code>-T3</code>) to avoid stressing fragile devices, feed it the discovered hosts. Optionally a targeted <strong>UDP</strong> pass for the few services that matter: <code>nmap -sU --top-ports 20 -T3 -iL live-hosts.txt -oA udp</code>. Add <code>-sC</code> (default scripts) only after you know what's out there and have confirmed nothing fragile. Then <code>ndiff</code> future scans against <code>inventory.xml</code> to catch new hosts/ports. Coordinate timing with any NOC/IDS owners, exclude known-fragile ranges (printers, OT) or scan them with <code>-T2 --max-retries 1 --scan-delay</code>, and record authorisation.</dd>
+</div></details>
+<details class="answer-reveal"><summary>A host shows port 8080 as <code>filtered</code> from your laptop but the app team says it's up. Reconcile this.</summary><div class="answer-box">
+<code>filtered</code> means nmap's probe got no answer &mdash; something between you and the host is dropping it, not that the service is down. Steps: (1) Scan from a host on the <em>same</em> network segment / security policy as the real clients (<code>nmap -Pn -p 8080 --reason host</code> from there) &mdash; your laptop likely traverses a firewall the app servers don't. (2) Check the <code>--reason</code>: <code>no-response</code> (silent drop, typical firewall) vs <code>admin-prohibited</code> (explicit ICMP reject) vs <code>host-unreach</code> (routing). (3) On the target itself, confirm it's listening and on which address: <code>ss -tlnp | grep 8080</code> &mdash; it may be bound to <code>127.0.0.1</code> only, so it's "up" locally but unreachable externally (that would show as <code>filtered</code> or a connection failure from outside). (4) Try <code>-sT</code> (full connect) and a plain <code>curl</code>/<code>nc</code> from the client segment to corroborate. (5) Check for host-based filtering (iptables/nftables/firewalld, cloud security group, SELinux) and for an L7 proxy that only answers valid HTTP. (6) If it's genuinely reachable from clients and only your path is blocked, that's expected &mdash; the finding is "not reachable from the laptop network", which may be by design. The key point: <code>filtered</code> is a statement about the <em>path</em>, so test from where the real traffic originates and correlate with <code>ss</code>/firewall config on the host.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Build a continuous external attack-surface monitoring capability using nmap. Cover scheduling, accuracy, safety, diffing, and where nmap stops being enough.</summary><div class="answer-box">
+<strong>Scope &amp; authorisation</strong>: maintain an authoritative, change-controlled list of owned IP ranges and domains (pull from IPAM/cloud APIs so it stays current); keep written authorisation and legal sign-off; exclude third-party-hosted assets and known-fragile ranges (OT, printers, medical) or handle them with ultra-conservative settings. <strong>Vantage points</strong>: scan from <em>outside</em> your network (a cloud box in a neutral ASN) to see what attackers see; optionally also from key partner networks. Rotate/scale source IPs and respect provider AUPs on scanning. <strong>Scheduling &amp; cadence</strong>: lightweight discovery (<code>-sn</code> + top-ports SYN) frequently (hourly/daily) to catch new exposure fast; fuller <code>-sV</code> + curated <code>--script "safe or default"</code> weekly; full <code>-p-</code> monthly. Stagger across ranges; use <code>--min-rate/--max-rate</code> and <code>-T3</code> (not <code>-T5</code>) to stay polite; <code>--host-timeout</code> and <code>--max-retries</code> to bound runtime; <code>--resume</code> for reliability; parallelise with masscan for the fast full-port sweep then hand open ports to nmap <code>-sV</code> for accurate fingerprinting (masscan is faster but crude; nmap is accurate but slower &mdash; use both). <strong>Accuracy</strong>: always <code>-Pn</code> for the target list (cloud hosts drop pings), <code>-n</code> for speed with a separate DNS resolution step, <code>--reason</code> stored so state changes are explainable, version-detection intensity tuned, and re-scan flapping results before alerting. Normalise service identification to CPEs. <strong>Safety</strong>: no <code>brute</code>/<code>exploit</code>/<code>dos</code>/<code>intrusive</code> NSE categories; cap rate; back off on errors; an emergency stop; announce windows to the SOC so it's not mistaken for an attack; monitor for scan-induced incidents. <strong>Storage &amp; diffing</strong>: keep every scan as XML; use <code>ndiff</code> (or parse XML into a time-series DB) to produce a daily delta &mdash; new hosts, newly-open ports, changed service/version, disappeared services, new TLS weaknesses. Alert on deltas, not on the full state, with severity by asset criticality and exposure (e.g. new RDP/SMB/database port open to the internet = page). Feed confirmed assets/services into the CMDB and vuln scanner. <strong>Enrichment</strong>: cross-reference discovered service versions against a CVE feed; run <code>ssl-enum-ciphers</code>/<code>ssl-cert</code> for TLS posture and expiry; <code>http-headers</code>/<code>http-title</code> for web exposure. <strong>Where nmap stops</strong>: it finds <em>ports and version banners</em>, not authenticated vulnerabilities, web-app flaws, cloud misconfigurations (S3 buckets, IAM), API exposure behind a single port, or assets with no open ports (serverless, SaaS). Complement with: an authenticated vulnerability scanner (Nessus/OpenVAS) for CVE validation, a web scanner (ZAP/Burp) for app issues, cloud CSPM tools for provider-side exposure, certificate-transparency + passive DNS + Shodan/Censys for assets you don't know you have, and masscan for internet-scale speed. nmap is the accurate fingerprinting and change-detection core; it needs a layer above it for "is this actually exploitable" and a layer beside it for non-port-based exposure. <strong>Ops</strong>: treat the scanner infra as production (monitoring, on-call), review the target list and NSE selection quarterly, and track metrics like time-to-detect a new exposure and false-positive rate on the diff alerts.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:debug:nmap -->
+
 </main>
 
 <footer class="site-footer">
@@ -40040,14 +41255,15 @@ Revert the commit in git (<code>git revert</code>); the GitOps controller reconc
     cdn:         { name: "CDN &amp; Edge Delivery",      blurb: "PoPs &amp; anycast, cache keys &amp; TTLs, purge &amp; invalidation, origin shielding, edge compute, TLS/HTTP3, WAF/DDoS, multi-CDN." },
     containers:  { name: "Containers &amp; Isolation",   blurb: "VMs vs containers, namespaces &amp; cgroups, image layers &amp; OverlayFS, the OCI spec, runc/containerd, capabilities/seccomp, rootless." },
     docker:      { name: "Docker",                      blurb: "Client/daemon/containerd, the CLI, images &amp; registries, Dockerfiles &amp; build cache, multi-stage builds, volumes, networking, Compose, hardening." },
-    k8s:         { name: "Kubernetes",                  blurb: "Control plane &amp; nodes, the API &amp; reconciliation, Pods, Deployments/StatefulSets, Services &amp; Ingress, ConfigMaps/Secrets, storage, scheduling, autoscaling, RBAC, Helm/GitOps." }
+    k8s:         { name: "Kubernetes",                  blurb: "Control plane &amp; nodes, the API &amp; reconciliation, Pods, Deployments/StatefulSets, Services &amp; Ingress, ConfigMaps/Secrets, storage, scheduling, autoscaling, RBAC, Helm/GitOps." },
+    debug:       { name: "Debug &amp; Profiling Tools",  blurb: "gdb, Valgrind, strace, ltrace, gcov, nmap &mdash; what each does, the flags that matter, worked examples, and when to reach for which." }
   };
 
   // home-page grouping (order shown top to bottom)
   var GROUPS = [
     ["Languages",       ["c", "cpp", "shell"]],
     ["CS fundamentals", ["oops", "ds", "algo", "db", "net"]],
-    ["Systems",         ["os", "concurrency", "linux", "arch", "build"]],
+    ["Systems",         ["os", "concurrency", "linux", "arch", "build", "debug"]],
     ["Design &amp; tools", ["lld", "sysd", "git"]],
     ["Observability",   ["grafana", "splunk", "monitor"]],
     ["Delivery &amp; tools", ["jira", "cdn"]],
@@ -40358,6 +41574,15 @@ Revert the commit in git (<code>git revert</code>); the GitOps controller reconc
       ["network-policies",  "NetworkPolicies & Pod-to-Pod Firewalls", "Default-allow until a policy selects a pod, then default-deny; ingress/egress rules by podSelector/namespaceSelector/ipBlock; CNI must enforce; mTLS via a mesh."],
       ["observability",     "Logging, Metrics & Debugging Pods",    "Node-level log collection (Fluent Bit -> Loki/Elasticsearch), Prometheus + Grafana, kube-state-metrics, events, kubectl describe/logs/debug, ephemeral containers."],
       ["helm-gitops",       "Helm, GitOps, Operators & CRDs",       "Helm charts = templated manifests + values + releases; GitOps (Argo CD/Flux) reconciles cluster to a git repo; CRDs extend the API; the Operator pattern; service meshes."]
+    ],
+    debug: [
+      ["gdb",      "gdb: The GNU Debugger",            "Breakpoints/watchpoints/catchpoints, stepping & frames, print/examine memory, core dumps, attach to a live process, TUI, gdbserver, thread & fork debugging, scripting."],
+      ["valgrind", "Valgrind: Memory & Thread Errors", "Memcheck (leaks, invalid/uninitialised reads/writes, use-after-free), --leak-check/--track-origins, suppressions; Cachegrind/Callgrind/Massif/Helgrind; when to prefer ASan."],
+      ["strace",   "strace: System Call Tracing",      "Trace syscalls & signals, -p attach, -f follow forks, -e trace= filters, -c summary, -T/-tt timing, -y decode fds, -k stacks; diagnosing 'why it fails' and 'why it's slow'."],
+      ["ltrace",   "ltrace: Library Call Tracing",     "Trace dynamic library (and optional syscall) calls with args & returns, -e/-l filters, -c summary, -S for syscalls, malloc/free tracking; limits with static/stripped/PIE binaries."],
+      ["perf",     "perf: The Linux Profiler",         "perf stat (exact counters, IPC), perf record/report (sampling + call graphs fp/dwarf/lbr), perf top, events & PMU, flame graphs, annotate/sched/trace/lock/c2c/probe, perf_event_paranoid setup."],
+      ["gcov",     "gcov: Code Coverage Analysis",     "--coverage / -fprofile-arcs -ftest-coverage, .gcno/.gcda, line & branch coverage, gcov -b/-f/-c, lcov + genhtml and gcovr reports, CI coverage gates, GCOV_PREFIX for remote/embedded."],
+      ["nmap",     "nmap: Network & Port Scanning",    "Host discovery (-sn), scan types (-sS/-sT/-sU/-sA), -p / --top-ports, -sV version & -O OS detection, -A, -T timing, NSE --script, -Pn/-n, output -oA; authorized recon & firewall verification."]
     ]
   };
 
