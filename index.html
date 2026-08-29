@@ -15329,12 +15329,27 @@ CSRF: a malicious page causes the victim's browser to send a state-changing requ
 <p>A process has its own <strong>virtual address space</strong> (text, data, heap, stack), open file
 descriptors, registers, and kernel bookkeeping. Two runs of the same program are two processes,
 isolated from each other.</p>
+<pre><code>$ sleep 100 &amp; sleep 100 &amp;          <span class="c"># same program, two isolated processes</span>
+$ ps -o pid,ppid,stat,vsz,cmd
+  PID  PPID STAT    VSZ CMD
+ 4201  3990 S      8264 sleep 100    <span class="c"># each: own PID, own address space (VSZ)</span>
+ 4202  3990 S      8264 sleep 100
+$ cat /proc/4201/maps | head -1
+55e2...000-55e2...000 r-xp ...  /usr/bin/sleep   <span class="c"># its private virtual address space</span></code></pre>
 
 <h3>The Process Control Block (PCB)</h3>
 <p>The kernel's per-process record: PID, process state, saved registers/program counter, memory
 map (page-table pointer), open-file table, scheduling info (priority, CPU time used), parent PID,
 signal handlers, accounting. On a context switch the running process's state is saved into its
 PCB and the next process's is restored from its PCB.</p>
+<pre><code>$ cat /proc/4201/status        <span class="c"># a readable view of PCB fields (Linux: task_struct)</span>
+State:  S (sleeping)
+Pid:    4201
+PPid:   3990                    <span class="c"># parent</span>
+VmRSS:  644 kB                  <span class="c"># resident memory</span>
+Threads: 1
+SigCgt: 0000000000000000       <span class="c"># caught-signal mask</span>
+$ ls /proc/4201/fd             <span class="c"># the open-file table: 0 1 2 -> /dev/pts/3</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 132" role="img" aria-labelledby="d-osproc-t">
@@ -15368,12 +15383,29 @@ some event (I/O completion, lock, child exit).</p>
 <li><code>exec()</code> replaces the current process image with a new program (keeps PID, fds unless close-on-exec).</li>
 <li>Shell pattern: <code>fork()</code>, child <code>exec()</code>s the command, parent <code>wait()</code>s.</li>
 </ul>
+<pre><code><span class="k">pid_t</span> pid = fork();               <span class="c">// one call, TWO returns</span>
+<span class="k">if</span> (pid == <span class="n">0</span>) {                    <span class="c">// child: pid == 0</span>
+    execlp(<span class="s">"ls"</span>, <span class="s">"ls"</span>, <span class="s">"-l"</span>, (<span class="k">char</span>*)<span class="k">NULL</span>);  <span class="c">// image replaced; only returns on error</span>
+    perror(<span class="s">"exec"</span>); _exit(<span class="n">127</span>);
+} <span class="k">else</span> {                          <span class="c">// parent: pid == child's PID</span>
+    <span class="k">int</span> status;
+    waitpid(pid, &amp;status, <span class="n">0</span>);      <span class="c">// reap the child, collect its exit code</span>
+}
+<span class="c">// this fork/exec/wait trio is exactly what a shell does for every command</span></code></pre>
 
 <h3>Zombies &amp; orphans</h3>
 <ul>
 <li><strong>Zombie</strong>: child has exited but the parent hasn't <code>wait()</code>ed &mdash; the exit status and PID slot linger. A parent that never reaps leaks zombies.</li>
 <li><strong>Orphan</strong>: parent exited first &mdash; the child is re-parented to <code>init</code>/PID 1 (or a subreaper), which reaps it. Harmless; deliberately created for daemons.</li>
 </ul>
+<pre><code><span class="c"># make a zombie: parent forks, child exits, parent never wait()s</span>
+$ python3 -c 'import os,time; os.fork() or (time.sleep(0.1), os._exit(0)); time.sleep(30)' &amp;
+$ ps -o pid,ppid,stat,cmd
+  PID  PPID STAT CMD
+ 5010  3990 S    python3 ...            <span class="c"># parent, still alive</span>
+ 5011  5010 Z    [python3] &lt;defunct&gt;    <span class="c"># Z = zombie: dead, but PID slot held until reaped</span>
+
+<span class="c"># kill the parent -> the zombie is re-parented to PID 1, which wait()s and clears it</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -15471,12 +15503,32 @@ Validate the path and permissions; read the file header (ELF, or <code>#!</code>
 <tr><td>Signal dispositions, PID, cwd</td><td>Thread-local storage, <code>errno</code></td></tr>
 <tr><td></td><td>Scheduling priority, kernel thread state</td></tr>
 </table>
+<pre><code><span class="k">int</span> shared = <span class="n">0</span>;                          <span class="c">// on the heap/globals -> ALL threads see it</span>
+<span class="k">_Thread_local</span> <span class="k">int</span> per_thread = <span class="n">0</span>;         <span class="c">// one copy per thread</span>
+
+<span class="k">void</span> *worker(<span class="k">void</span> *arg) {
+    <span class="k">int</span> local = <span class="n">0</span>;                        <span class="c">// on THIS thread's private stack -> naturally safe</span>
+    shared++;                             <span class="c">// DATA RACE -- needs a mutex/atomic</span>
+    per_thread++;                         <span class="c">// fine, unshared</span>
+    <span class="k">return</span> <span class="k">NULL</span>;
+}
+pthread_t t;
+pthread_create(&amp;t, <span class="k">NULL</span>, worker, <span class="k">NULL</span>);
+pthread_join(t, <span class="k">NULL</span>);</code></pre>
 
 <h3>Threads vs processes</h3>
 <ul>
 <li><strong>Threads</strong>: cheap to create/switch, communicate via shared memory (fast, but needs synchronisation), a crash or memory corruption in one thread takes down the whole process. No isolation.</li>
 <li><strong>Processes</strong>: isolated (a crash is contained), communicate via IPC (slower), heavier to create. Preferred when you want fault isolation or run untrusted code (browsers use a process per site).</li>
 </ul>
+<pre><code><span class="c"># one thread segfaults -> the WHOLE process dies (shared address space)</span>
+$ ./multithreaded_server        <span class="c"># SIGSEGV in worker thread 4 -> all 200 connections drop</span>
+
+<span class="c"># process-per-tab (Chrome model): a renderer crash is contained</span>
+$ ps --forest -C chrome
+chrome                          <span class="c"># browser process</span>
+ \_ chrome --type=renderer      <span class="c"># tab 1 -- if this crashes, only tab 1 shows "Aw, Snap"</span>
+ \_ chrome --type=renderer      <span class="c"># tab 2 unaffected</span></code></pre>
 
 <h3>Threading models</h3>
 <table>
@@ -15485,11 +15537,26 @@ Validate the path and permissions; read the file header (ELF, or <code>#!</code>
 <tr><td>N:1 (user threads / green)</td><td>many user threads on one kernel thread. Fast switching, but one blocking syscall stalls all, no multicore.</td></tr>
 <tr><td>M:N (hybrid)</td><td>M user threads over N kernel threads. Best of both, complex; Go's goroutines, old Solaris.</td></tr>
 </table>
+<pre><code><span class="c">// 1:1  -- pthread_create makes a real kernel thread (clone(CLONE_VM|CLONE_THREAD))</span>
+pthread_create(&amp;t, <span class="k">NULL</span>, work, arg);   <span class="c">// visible as an LWP: `ps -eLf`</span>
+
+<span class="c">// M:N -- Go multiplexes thousands of goroutines onto a few OS threads (GOMAXPROCS)</span>
+<span class="k">for</span> i := <span class="n">0</span>; i &lt; <span class="n">100000</span>; i++ {
+    go handle(conn[i])                <span class="c">// ~2 KB each; the runtime scheduler parks/resumes them</span>
+}</code></pre>
 
 <h3>When to use threads</h3>
 <p>CPU-bound parallel work on shared data (parallel matrix ops), or keeping a UI/event loop
 responsive while background work runs. For pure I/O concurrency, async/event loops often beat
 thread-per-connection. For isolation or scaling across machines, use processes.</p>
+<pre><code><span class="c"># CPU-bound: threads give real speedup (split the array across cores)</span>
+$ ./sum_parallel --threads=8        <span class="c"># 8x on an 8-core box</span>
+
+<span class="c"># I/O-bound: 10k idle connections -> one async event loop beats 10k threads</span>
+<span class="c">#   10k threads * ~1 MB stack = ~10 GB;  epoll loop = a few MB</span>
+
+<span class="c"># untrusted / must-not-share-a-crash: separate processes</span>
+$ firejail --seccomp ./plugin      <span class="c"># sandboxed child process, own address space</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -15574,6 +15641,12 @@ Linux doesn't have separate "create process" and "create thread" primitives at t
 </ul>
 <p>You can't maximise all at once &mdash; batch systems favour throughput/turnaround, interactive
 systems favour response time.</p>
+<pre><code><span class="c"># jobs: A(burst 6), B(burst 8), C(burst 7), D(burst 3), all arrive at t=0</span>
+<span class="c"># FCFS order A,B,C,D:</span>
+<span class="c">#   finish: A=6  B=14  C=21  D=24</span>
+<span class="c">#   waiting: A=0 B=6  C=14 D=21   -> avg wait = 41/4 = 10.25</span>
+<span class="c"># SJF order D,A,C,B:</span>
+<span class="c">#   waiting: D=0 A=3  C=9  B=16   -> avg wait = 28/4 = 7.0   (provably minimal)</span></code></pre>
 
 <h3>The classic algorithms</h3>
 <table>
@@ -15585,17 +15658,36 @@ systems favour response time.</p>
 <tr><td>Priority</td><td>highest priority first</td><td>starvation of low priority &rarr; fix with <strong>ageing</strong></td></tr>
 <tr><td>MLFQ</td><td>multiple RR queues; jobs demoted for using full quantum, promoted if I/O-bound</td><td>approximates SJF without knowing burst lengths; what real OSes use</td></tr>
 </table>
+<pre><code><span class="c"># MLFQ: 3 priority queues, quanta 10/20/40 ms</span>
+<span class="c">#   new job -> Q0 (highest)</span>
+<span class="c">#   used its whole quantum without blocking -> demote (CPU hog -> lower priority)</span>
+<span class="c">#   yielded early for I/O           -> stay (interactive -> keep it responsive)</span>
+<span class="c">#   every ~1 s: boost ALL jobs back to Q0  (prevents starvation)</span>
+job = dequeue(highest_nonempty_queue())
+run(job, quantum[job.level])
+job.level = min(job.level + used_full_quantum, MAX_LEVEL)</code></pre>
 
 <h3>Real schedulers</h3>
 <p>Linux <strong>CFS</strong> (Completely Fair Scheduler): tracks per-task "virtual runtime", always
 runs the task with the least vruntime &mdash; approximates giving every task an equal share,
 weighted by <code>nice</code>. Its successor <strong>EEVDF</strong> (2023) adds latency-sensitivity. Also:
 real-time classes (<code>SCHED_FIFO</code>, <code>SCHED_RR</code>) that preempt normal tasks.</p>
+<pre><code>$ chrt -f 50 ./low_latency_audio     <span class="c"># SCHED_FIFO prio 50 -> preempts every normal task</span>
+$ nice -n 19 ./batch_job             <span class="c"># lowest CFS weight -> runs only when nothing else wants the CPU</span>
+$ cat /proc/&lt;pid&gt;/sched | grep vruntime
+se.vruntime : 918273.451               <span class="c"># CFS always dispatches the task with the SMALLEST vruntime</span></code></pre>
 
 <h3>Preemptive vs cooperative</h3>
 <p>Preemptive: the OS can interrupt a running task (timer interrupt) &mdash; needed for
 responsiveness and to contain runaway tasks. Cooperative: tasks must yield voluntarily &mdash;
 simpler, but one bad task freezes the system (old Windows/Mac, some coroutine runtimes).</p>
+<pre><code><span class="c"># PREEMPTIVE (OS threads): the timer interrupt fires ~every 4-10 ms, kernel may switch</span>
+<span class="k">while</span> (<span class="n">1</span>) { }                   <span class="c">// a runaway thread: annoying, but the machine stays usable</span>
+
+<span class="c"># COOPERATIVE (asyncio, old Windows): control only moves at an explicit yield point</span>
+<span class="k">async def</span> handler():
+    result = heavy_cpu_work()      <span class="c"># NO await inside -> blocks the entire event loop</span>
+    <span class="k">await</span> db.save(result)          <span class="c"># only HERE can another task run</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -15677,6 +15769,15 @@ Now you're placing tasks across N run queues (usually per-CPU, to avoid a global
 <li><strong>Mode switch</strong>: user mode &harr; kernel mode, <em>same</em> process (a syscall, an interrupt handler, a page fault). Save/restore a few registers; no scheduler involved. Cheap (~tens&ndash;hundreds of ns).</li>
 <li><strong>Context switch</strong>: the scheduler swaps one thread/process off the CPU and another on. Includes a mode switch <em>plus</em> saving/restoring the full register set into the PCB/TCB and (for a different process) switching the address space.</li>
 </ul>
+<pre><code><span class="c"># MODE switch only: getpid() enters/leaves the kernel, same process, no scheduler</span>
+$ strace -c ./tight_syscall_loop
+  % time   calls  syscall
+  99.1   1000000  getpid          <span class="c"># ~100 ns each -- just the user/kernel boundary</span>
+
+<span class="c"># CONTEXT switches: yield between two processes hammering a pipe</span>
+$ pidstat -w 1
+   UID   PID   cswch/s  nvcswch/s  Command
+  1000  7010    48210        3     pingpong     <span class="c"># voluntary (blocked) vs involuntary (preempted)</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 118" role="img" aria-labelledby="d-osctx-t">
@@ -15704,6 +15805,14 @@ Now you're placing tasks across N run queues (usually per-CPU, to avoid a global
 </ol>
 <p>Direct cost ~1&ndash;5&thinsp;&micro;s; indirect (TLB + cache refill) can be much more for cache-heavy workloads.
 Thread&rarr;thread <em>within</em> a process skips step 4 (shared address space) &mdash; noticeably cheaper.</p>
+<pre><code>$ perf stat -e context-switches,cpu-migrations,dTLB-load-misses ./app
+     41,882   context-switches
+        612   cpu-migrations
+  9,203,551   dTLB-load-misses      <span class="c"># the "hidden cost": cold TLB after each cross-process switch</span>
+
+<span class="c"># mitigations:</span>
+$ taskset -c 2 ./app        <span class="c"># pin to one core -> fewer migrations, warmer cache</span>
+$ ./server --threads=$(nproc)   <span class="c"># ~1 runnable thread per core -> fewer preemptions</span></code></pre>
 
 <h3>What triggers one</h3>
 <ul>
@@ -15712,9 +15821,23 @@ Thread&rarr;thread <em>within</em> a process skips step 4 (shared address space)
 <li>A higher-priority task becomes runnable (preemption).</li>
 <li>Voluntary <code>yield()</code>; process exit.</li>
 </ul>
+<pre><code>read(fd, buf, n);        <span class="c">// data not ready -> task BLOCKS -> scheduler switches away (voluntary)</span>
+sched_yield();           <span class="c">// explicit "let someone else run"</span>
+<span class="k">while</span> (<span class="n">1</span>) work();         <span class="c">// never yields -> switched out only by the TIMER interrupt (involuntary)</span>
+<span class="c">// a just-woken SCHED_FIFO task -> immediate preemption of the current task</span></code></pre>
 
 <h3>Traps vs interrupts</h3>
 <p><strong>Trap / exception</strong>: synchronous, caused by the current instruction (syscall via a <code>trap</code>/<code>syscall</code> instruction, divide-by-zero, page fault). <strong>Interrupt</strong>: asynchronous, from hardware (timer, NIC, disk). Both enter the kernel via a vectored handler; both are mode switches, and either may lead to a context switch.</p>
+<pre><code><span class="c">// TRAP (synchronous -- THIS instruction caused it):</span>
+<span class="k">int</span> x = a / <span class="n">0</span>;            <span class="c">// -> #DE fault -> SIGFPE</span>
+syscall(SYS_write, ...);   <span class="c">// -> `syscall` instruction traps into the kernel deliberately</span>
+*(<span class="k">int</span>*)<span class="n">0</span> = <span class="n">1</span>;             <span class="c">// -> page fault trap -> SIGSEGV</span>
+
+<span class="c">// INTERRUPT (asynchronous -- unrelated to what the CPU was doing):</span>
+$ cat /proc/interrupts
+           CPU0
+ LOC:   9182734   Local timer interrupts     <span class="c"># timer -> drives preemption</span>
+  24:    442119   eth0                        <span class="c"># NIC -> packet arrived</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -15798,6 +15921,14 @@ Suppose a context switch (direct + amortised indirect: TLB refill, cache misses)
 <li><strong>Simple layout</strong> &mdash; each process sees the same predictable map (code low, stack high) regardless of where its pages physically sit.</li>
 <li>Enables demand paging, copy-on-write, memory-mapped files, shared libraries.</li>
 </ul>
+<pre><code>$ ./a.out &amp; ./a.out          <span class="c"># two runs of the SAME binary</span>
+$ grep '\[stack\]' /proc/$(pgrep -n a.out)/maps
+7ffe1c2a1000-7ffe1c2c2000 rw-p ... [stack]   <span class="c"># both see the "same" virtual layout...</span>
+<span class="c"># ...mapped to different physical frames; neither can address the other's memory</span>
+
+$ ./huge_alloc                <span class="c"># malloc(100 GB) on a 16 GB box:</span>
+$ grep VmSize /proc/$!/status   <span class="c"># VmSize: 100 GB (virtual)</span>
+$ grep VmRSS  /proc/$!/status   <span class="c"># VmRSS: 4 MB   (physical -- only touched pages cost RAM)</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-osvm-t">
@@ -15823,24 +15954,53 @@ Suppose a context switch (direct + amortised indirect: TLB refill, cache misses)
 A <strong>page table</strong> per process maps virtual page &rarr; physical frame + permission bits
 (present, writable, user/kernel, dirty, accessed, no-execute). The <strong>MMU</strong> does the lookup on
 every access; on x86-64 it's a 4- or 5-level radix tree walk (a "page walk").</p>
+<pre><code><span class="c"># a 48-bit virtual address splits into 4 x 9-bit table indices + 12-bit offset:</span>
+<span class="c">#   [ PML4 : 9 ][ PDPT : 9 ][ PD : 9 ][ PT : 9 ][ offset : 12 ]</span>
+frame = walk(cr3):
+    l1 = mem[cr3        + va.pml4 * 8]     <span class="c"># 4 dependent memory loads on a TLB MISS</span>
+    l2 = mem[l1.frame   + va.pdpt * 8]
+    l3 = mem[l2.frame   + va.pd   * 8]
+    pte = mem[l3.frame  + va.pt   * 8]
+    <span class="k">if</span> not pte.present: raise page_fault
+<span class="c"># physical addr = pte.frame &lt;&lt; 12 | va.offset       (offset copied through unchanged)</span></code></pre>
 
 <h3>The TLB</h3>
 <p>A small associative cache of recent virtual&rarr;physical translations. A hit avoids the multi-level
 page walk. TLB miss &rarr; hardware (or OS) walks the page table and fills the TLB. A process switch
 that isn't tagged (no PCID) flushes it. <strong>Huge pages</strong> (2&thinsp;MB/1&thinsp;GB) cover more memory
 per TLB entry &mdash; big win for large-heap, memory-bound apps.</p>
+<pre><code>$ perf stat -e dTLB-load-misses,dTLB-loads ./app
+   1,204,882  dTLB-load-misses   #  3.1% of all dTLB loads   <span class="c"># each miss = a page walk</span>
+
+<span class="c"># 4 KB pages: one TLB entry covers 4 KB.  A 512-entry TLB reaches 2 MB.</span>
+<span class="c"># 2 MB huge pages: one entry covers 2 MB.  Same TLB reaches 1 GB.</span>
+$ ./app --huge-pages          <span class="c"># or: madvise(p, len, MADV_HUGEPAGE)  -> far fewer misses on a big heap</span></code></pre>
 
 <h3>Segmentation</h3>
 <p>An older/alternate scheme: variable-length segments (code, data, stack) each with a base+limit.
 Gives logical structure and protection but suffers external fragmentation. Modern x86-64 mostly
 retired it (flat model); the concept survives in "segmentation fault" (an access outside any
 valid region).</p>
+<pre><code>$ ./crash
+Segmentation fault (core dumped)
+
+$ gdb -q ./crash core
+(gdb) bt
+#0  0x0000... in main () at crash.c:4
+4       *(int*)0 = 1;             <span class="c"># virtual address 0 is in NO mapping -> MMU fault -> SIGSEGV</span>
+(gdb) info proc mappings         <span class="c"># address 0 falls below the lowest mapped region</span></code></pre>
 
 <h3><code>mmap</code></h3>
 <p>Maps a file (or anonymous memory) into the address space. File reads become page faults that
 pull in file pages on demand; writes go to the page cache and back to disk lazily.
 <code>malloc</code> uses anonymous <code>mmap</code> for large allocations; shared libraries and executables
 are file-backed shared mappings.</p>
+<pre><code><span class="k">int</span> fd = open(<span class="s">"big.bin"</span>, O_RDONLY);
+<span class="k">struct</span> stat st; fstat(fd, &amp;st);
+<span class="k">char</span> *p = mmap(<span class="k">NULL</span>, st.st_size, PROT_READ, MAP_PRIVATE, fd, <span class="n">0</span>);
+<span class="c">// NO read() -- touching p[offset] triggers a page fault that pulls that page from the page cache</span>
+<span class="k">char</span> c = p[<span class="n">4</span> * <span class="n">1024</span> * <span class="n">1024</span>];   <span class="c">// only THIS 4 KB page is loaded, not the whole file</span>
+munmap(p, st.st_size);</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -15920,6 +16080,11 @@ Linux by default lets processes <code>malloc</code>/<code>mmap</code> more virtu
 <h3>Demand paging</h3>
 <p>Pages aren't loaded until first accessed. Starting a program maps its executable but faults in
 code pages as execution reaches them &mdash; fast startup, only the working set is resident.</p>
+<pre><code>$ /usr/bin/time -v ./app
+    Major (requiring I/O) page faults: 12       <span class="c"># pages fetched from disk</span>
+    Minor (reclaiming a frame)  faults: 48213   <span class="c"># pages already in RAM, just mapped in</span>
+    Maximum resident set size (kbytes): 20480   <span class="c"># RSS &lt;&lt; VmSize -- only touched pages loaded</span>
+<span class="c"># a 200 MB binary starts fast: only the code pages actually executed get faulted in</span></code></pre>
 
 <h3>Page fault types</h3>
 <table>
@@ -15928,6 +16093,13 @@ code pages as execution reaches them &mdash; fast startup, only the working set 
 <tr><td>Major (hard)</td><td>page must be read from disk / swap</td><td>ms &mdash; the process blocks; scheduler switches away</td></tr>
 <tr><td>Invalid</td><td>address in no mapping / bad permission</td><td><code>SIGSEGV</code></td></tr>
 </table>
+<pre><code>$ ps -o min_flt,maj_flt,cmd -p $(pgrep -n app)
+ MINFL MAJFL CMD
+ 91233    18 ./app          <span class="c"># mostly minor (cheap); 18 major = 18 disk reads (~ms each)</span>
+
+$ perf stat -e minor-faults,major-faults ./batch
+      41,003  minor-faults    <span class="c"># COW after fork, first-touch of fresh malloc'd pages, page-cache hits</span>
+       2,551  major-faults    <span class="c"># swap-in / cold file pages -- the ones that hurt</span></code></pre>
 
 <h3>Replacement algorithms</h3>
 <table>
@@ -15939,12 +16111,30 @@ code pages as execution reaches them &mdash; fast startup, only the working set 
 </table>
 <p>Linux uses <strong>active/inactive LRU lists</strong> with reference bits, plus aging and per-cgroup
 reclaim.</p>
+<pre><code><span class="c"># Clock / second-chance: cheap LRU approximation using the hardware "accessed" bit</span>
+<span class="k">while</span> need_a_frame:
+    pte = frames[hand]
+    <span class="k">if</span> pte.accessed:
+        pte.accessed = <span class="n">0</span>          <span class="c"># give it a second chance, move on</span>
+        hand = (hand + <span class="n">1</span>) % N
+    <span class="k">else</span>:
+        evict(pte); <span class="k">return</span> frames[hand]   <span class="c"># untouched since last sweep -> evict</span>
+
+<span class="c"># reference string 1,2,3,4,1,2,5,1,2,3,4,5 under FIFO:</span>
+<span class="c">#   3 frames -> 9 faults ;  4 frames -> 10 faults  (Belady's anomaly -- LRU never does this)</span></code></pre>
 
 <h3>Thrashing &amp; the working set</h3>
 <p>If the sum of processes' <strong>working sets</strong> (pages actively used in a recent window) exceeds
 RAM, the system spends nearly all its time paging in/out &mdash; CPU utilisation collapses,
 disk saturates. Fixes: reduce multiprogramming level (suspend/swap out whole processes), add RAM,
 use working-set / page-fault-frequency control to give each process enough frames.</p>
+<pre><code>$ vmstat 1
+ r  b   swpd   free   si   so    us sy id wa
+ 8 12 2039488  10240 41233 38901  3  9  0 88   <span class="c"># si/so = pages swapped in/out per sec (huge)</span>
+                                              <span class="c"># wa 88%: CPU idle, everyone blocked on the disk = THRASHING</span>
+
+<span class="c"># fixes: cgroup memory limit to cap a hog, add RAM, or reduce concurrency</span>
+$ systemd-run --scope -p MemoryMax=2G ./hungry_job</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -16024,6 +16214,20 @@ Both aim to give each process "enough" frames to avoid thrashing without wasting
 <p>When threads share mutable state, concurrent access must be serialised. A correct solution needs
 <strong>mutual exclusion</strong> (one at a time), <strong>progress</strong> (no unnecessary blocking), and
 <strong>bounded waiting</strong> (no starvation).</p>
+<pre><code><span class="k">int</span> counter = <span class="n">0</span>;
+
+<span class="c">// RACE: counter++ is load, add, store -- two threads interleave and lose an increment</span>
+<span class="k">void</span> *bump(<span class="k">void</span> *_) { <span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; <span class="n">1000000</span>; i++) counter++; <span class="k">return</span> <span class="k">NULL</span>; }
+<span class="c">// 4 threads -> final counter is ~1.4M, not 4M</span>
+
+<span class="c">// FIX: serialise the critical section</span>
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+<span class="k">void</span> *bump_ok(<span class="k">void</span> *_) {
+    <span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; <span class="n">1000000</span>; i++) {
+        pthread_mutex_lock(&amp;m); counter++; pthread_mutex_unlock(&amp;m);   <span class="c">// exactly 4M</span>
+    }
+    <span class="k">return</span> <span class="k">NULL</span>;
+}</code></pre>
 
 <h3>The primitives</h3>
 <table>
@@ -16035,11 +16239,32 @@ Both aim to give each process "enough" frames to avoid thrashing without wasting
 <tr><td><strong>Monitor</strong></td><td>Language construct bundling a mutex + condition variables with the data (Java <code>synchronized</code> + <code>wait/notify</code>).</td></tr>
 <tr><td><strong>RW lock</strong></td><td>Many readers or one writer. Helps read-heavy data; risk of writer starvation.</td></tr>
 </table>
+<pre><code><span class="c">// condition variable: wait for a PREDICATE, always with a mutex, always in a while-loop</span>
+pthread_mutex_lock(&amp;m);
+<span class="k">while</span> (queue_empty())                     <span class="c">// re-check: spurious wakeups + other consumers</span>
+    pthread_cond_wait(&amp;not_empty, &amp;m);    <span class="c">// atomically unlocks m + sleeps; relocks on wake</span>
+item = dequeue();
+pthread_mutex_unlock(&amp;m);
+
+<span class="c">// spinlock: busy-wait, no sleep -- only for &lt;1us sections / interrupt context</span>
+<span class="k">while</span> (atomic_flag_test_and_set(&amp;lock)) { <span class="c">/* spin, burning CPU */</span> }
+<span class="c">/* very short critical section */</span>
+atomic_flag_clear(&amp;lock);</code></pre>
 
 <h3>Mutex vs semaphore</h3>
 <p>A mutex is for <em>locking</em> (ownership, released by the same thread). A semaphore is for
 <em>signalling</em> / counting resources (any thread can post). Using a binary semaphore as a lock
 loses ownership checks and priority-inheritance support.</p>
+<pre><code><span class="c">// MUTEX: same thread locks and unlocks -- it's a "who's in the room" token</span>
+pthread_mutex_lock(&amp;m);   <span class="c">/* critical section */</span>   pthread_mutex_unlock(&amp;m);
+
+<span class="c">// SEMAPHORE: a counter -- ANY thread can post(); great for "N permits" or signalling</span>
+sem_t db_conns;
+sem_init(&amp;db_conns, <span class="n">0</span>, <span class="n">5</span>);       <span class="c">// pool of 5 connections</span>
+sem_wait(&amp;db_conns);            <span class="c">// take one (blocks if all 5 are out)</span>
+<span class="c">/* use a connection */</span>
+sem_post(&amp;db_conns);            <span class="c">// return it -- a DIFFERENT thread may have taken it</span>
+<span class="c">// using a binary semaphore as a lock loses ownership checks + priority inheritance</span></code></pre>
 
 <h3>The producer&ndash;consumer pattern</h3>
 <pre><code>mutex m; condvar not_full, not_empty; queue q; int cap;
@@ -16129,6 +16354,12 @@ A reader/writer lock still has readers taking and releasing the lock (atomic ops
 <li><strong>Circular wait</strong> &mdash; a cycle of processes each waiting for a resource the next holds.</li>
 </ol>
 <p>Break <em>any one</em> and deadlock is impossible.</p>
+<pre><code><span class="c">// all four conditions present -> classic deadlock</span>
+<span class="c">// T1:                              T2:</span>
+pthread_mutex_lock(&amp;A);   <span class="c">//        pthread_mutex_lock(&amp;B);   -- mutual exclusion</span>
+<span class="c">/* ...work... */</span>                 <span class="c">//        /* ...work... */          -- hold and wait</span>
+pthread_mutex_lock(&amp;B);   <span class="c">//        pthread_mutex_lock(&amp;A);   -- circular wait, no preemption</span>
+<span class="c">// T1 holds A waits B, T2 holds B waits A -> both blocked forever</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-osdl-t">
@@ -16153,6 +16384,23 @@ A reader/writer lock still has readers taking and releasing the lock (atomic ops
 <tr><td><strong>Detection &amp; recovery</strong></td><td>Let deadlocks happen; periodically look for a cycle in the wait-for graph; recover by killing a victim or rolling back.</td></tr>
 <tr><td><strong>Ostrich</strong></td><td>Ignore it &mdash; deadlocks are rare, and the cost of prevention isn't worth it. What general-purpose OSes (and most apps) actually do.</td></tr>
 </table>
+<pre><code><span class="c">// PREVENTION by lock ordering: always take the lower-addressed lock first</span>
+<span class="k">void</span> transfer(Account *a, Account *b, <span class="k">long</span> amt) {
+    Account *first  = a &lt; b ? a : b;
+    Account *second = a &lt; b ? b : a;
+    pthread_mutex_lock(&amp;first-&gt;m);
+    pthread_mutex_lock(&amp;second-&gt;m);      <span class="c">// every thread agrees on the order -> no cycle</span>
+    a-&gt;bal -= amt; b-&gt;bal += amt;
+    pthread_mutex_unlock(&amp;second-&gt;m);
+    pthread_mutex_unlock(&amp;first-&gt;m);
+}
+
+<span class="c">// PREVENTION by try_lock + backoff: don't hold-and-wait</span>
+<span class="k">while</span> (<span class="n">1</span>) {
+    lock(&amp;A);
+    <span class="k">if</span> (try_lock(&amp;B) == <span class="n">0</span>) <span class="k">break</span>;   <span class="c">// got both</span>
+    unlock(&amp;A); usleep(rand() % <span class="n">100</span>);  <span class="c">// release everything, retry</span>
+}</code></pre>
 
 <h3>In practice</h3>
 <p>The overwhelmingly common real-world fix is <strong>consistent lock ordering</strong>: number your
@@ -16160,11 +16408,27 @@ locks and always acquire them in increasing order. Also: keep critical sections 
 <code>try_lock</code> with backoff, avoid calling out to unknown code while holding a lock, and use
 a single coarse lock where the concurrency isn't worth the risk. Databases use detection
 (wait-for graph) + victim abort.</p>
+<pre><code><span class="c"># the DB does detection + victim abort for you:</span>
+mysql&gt; SHOW ENGINE INNODB STATUS\G
+LATEST DETECTED DEADLOCK
+*** (1) WAITING FOR ... lock on `accounts` ...
+*** (2) HOLDS THE LOCK(S) ...
+*** WE ROLL BACK TRANSACTION (2)          <span class="c"># app gets error 1213 -> just retry the txn</span></code></pre>
 
 <h3>Livelock &amp; starvation</h3>
 <p><strong>Livelock</strong>: processes keep changing state in response to each other but make no progress
 (two people stepping aside in a corridor). <strong>Starvation</strong>: a process is perpetually
 denied a resource (always lower priority, or unlucky in lock acquisition).</p>
+<pre><code><span class="c">// LIVELOCK: both retry forever in lockstep (no deadlock -- they're "busy")</span>
+<span class="k">while</span> (<span class="n">1</span>) {
+    lock(&amp;A);
+    <span class="k">if</span> (try_lock(&amp;B)) <span class="k">break</span>;
+    unlock(&amp;A);                 <span class="c">// both threads back off at the exact same time, repeat</span>
+}
+<span class="c">// fix: RANDOMISED backoff (usleep(rand()...)) so they desynchronise</span>
+
+<span class="c">// STARVATION: a writer never runs because readers keep arriving on an RW lock</span>
+<span class="c">//   fix: writer-preferring rwlock, or FIFO ticket lock</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -16252,6 +16516,16 @@ One clean solution: a central "waiter"/arbitrator (a mutex or semaphore initiali
 <tr><td><strong>Memory-mapped file</strong></td><td>shared memory backed by a file</td><td>persistent, and OS syncs to disk</td></tr>
 <tr><td><strong>eventfd / futex / pidfd</strong></td><td>lightweight kernel-assisted signalling</td><td>modern Linux building blocks</td></tr>
 </table>
+<pre><code><span class="c">// anonymous pipe: parent -> child stream (the shell's `|`)</span>
+<span class="k">int</span> fds[<span class="n">2</span>]; pipe(fds);
+<span class="k">if</span> (fork() == <span class="n">0</span>) { close(fds[<span class="n">1</span>]); read(fds[<span class="n">0</span>], buf, n); }   <span class="c">// child reads</span>
+<span class="k">else</span>              { close(fds[<span class="n">0</span>]); write(fds[<span class="n">1</span>], msg, n); }  <span class="c">// parent writes</span>
+
+<span class="c">// shared memory: the fastest -- no kernel copy, but YOU add the lock</span>
+<span class="k">int</span> shm = shm_open(<span class="s">"/ring"</span>, O_CREAT | O_RDWR, <span class="n">0600</span>);
+ftruncate(shm, SZ);
+<span class="k">void</span> *p = mmap(<span class="k">NULL</span>, SZ, PROT_READ | PROT_WRITE, MAP_SHARED, shm, <span class="n">0</span>);
+<span class="c">// both processes see *p; guard it with a sem_t in the shared region</span></code></pre>
 
 <h3>Choosing</h3>
 <ul>
@@ -16262,11 +16536,24 @@ One clean solution: a central "waiter"/arbitrator (a mutex or semaphore initiali
 <li>Across machines &rarr; TCP/UDP sockets (only option).</li>
 <li>Just "wake up" / "please stop" &rarr; <strong>signal</strong> / eventfd.</li>
 </ul>
+<pre><code><span class="c"># local RPC + fd passing + peer credentials -> Unix domain socket</span>
+srv = socket(AF_UNIX, SOCK_STREAM, <span class="n">0</span>); bind(srv, <span class="s">"/run/app.sock"</span>); listen(srv, <span class="n">8</span>);
+<span class="c"># pass an open fd to another process via SCM_RIGHTS; check SO_PEERCRED for uid/pid</span>
+
+<span class="c"># big streaming data, same host -> shared-memory ring beats a socket (no copy)</span>
+<span class="c"># cross-machine -> you have no choice: TCP/UDP</span>
+<span class="c"># "reload your config" -> a signal:  kill -HUP $(pidof app)</span></code></pre>
 
 <h3>Gotchas</h3>
 <p>Pipes have limited buffer (default 64&thinsp;KB) &mdash; a full pipe blocks the writer; a reader closing
 early makes the writer get <code>SIGPIPE</code>/<code>EPIPE</code>. Shared memory has <em>no</em> built-in
 synchronisation &mdash; races are on you. SysV IPC objects leak if not removed (<code>ipcrm</code>).</p>
+<pre><code>$ yes | head -1              <span class="c"># head exits -> `yes` gets SIGPIPE and dies (that's intended here)</span>
+
+$ ipcs -m                    <span class="c"># SysV shared memory segments -- these LEAK past process exit</span>
+key        shmid  owner  bytes   nattch
+0x00000000 98304  leo    4194304 0        <span class="c"># nattch 0 and still here -> orphaned</span>
+$ ipcrm -m 98304             <span class="c"># must clean up manually (POSIX shm_unlink is friendlier)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -16348,6 +16635,12 @@ You send a normal message with <code>sendmsg()</code> that carries an <em>ancill
 memory, or privileged instructions. <strong>Kernel mode</strong> can. A <strong>system call</strong> is the
 controlled doorway: user code executes a special instruction (<code>syscall</code> on x86-64,
 <code>svc</code> on ARM) that traps into a fixed kernel entry point.</p>
+<pre><code><span class="c">// user code CANNOT do this directly -- it must ask the kernel</span>
+*(<span class="k">volatile</span> uint8_t*)<span class="n">0xB8000</span> = <span class="s">'A'</span>;   <span class="c">// write to VGA memory -> SIGSEGV in user mode</span>
+outb(<span class="n">0x3F8</span>, <span class="s">'A'</span>);                    <span class="c">// privileged I/O instruction -> #GP fault</span>
+
+<span class="c">// the sanctioned doorway: a syscall</span>
+write(<span class="n">1</span>, <span class="s">"A"</span>, <span class="n">1</span>);                    <span class="c">// libc wrapper -> `syscall` instruction -> kernel does the I/O</span></code></pre>
 
 <h3>What happens on a syscall</h3>
 <ol>
@@ -16359,11 +16652,26 @@ controlled doorway: user code executes a special instruction (<code>syscall</cod
 </ol>
 <p>Cost: ~100&ndash;500&thinsp;ns direct, more with mitigations (Spectre/Meltdown page-table isolation). Not
 free &mdash; hence batching (<code>readv</code>, <code>io_uring</code>, <code>sendmmsg</code>) and the <strong>vDSO</strong>.</p>
+<pre><code>$ strace -T -e trace=write ./app
+write(1, "hi\n", 3)  = 3 &lt;0.000004&gt;      <span class="c"># &lt;time&gt; = ~4 us here incl. the terminal</span>
+
+<span class="c"># x86-64 calling convention: nr in rax, args in rdi,rsi,rdx,r10,r8,r9</span>
+mov  rax, 1          <span class="c"># __NR_write</span>
+mov  rdi, 1          <span class="c"># fd</span>
+mov  rsi, msg
+mov  rdx, 3          <span class="c"># len</span>
+syscall             <span class="c"># trap; kernel returns result (or -errno) in rax</span></code></pre>
 
 <h3>vDSO</h3>
 <p>A small shared library the kernel maps into every process so hot, read-only calls like
 <code>gettimeofday()</code>/<code>clock_gettime()</code> can be served <em>in user space</em> from a
 kernel-updated memory page &mdash; no mode switch at all.</p>
+<pre><code>$ cat /proc/self/maps | grep vdso
+7ffe...000-7ffe...000 r-xp 00000000 00:00 0   [vdso]   <span class="c"># kernel-mapped code page</span>
+
+<span class="c"># clock_gettime() reads a kernel-updated timestamp page in USER mode -> no syscall</span>
+$ strace -e trace=clock_gettime ./ts_loop     <span class="c"># prints (almost) nothing: the calls never trap</span>
+$ ltrace ./ts_loop                            <span class="c"># but ltrace still sees the libc call</span></code></pre>
 
 <h3>Kernel architectures</h3>
 <table>
@@ -16373,6 +16681,15 @@ kernel-updated memory page &mdash; no mode switch at all.</p>
 <tr><td>Reliability</td><td>a driver bug can crash the kernel</td><td>a driver crash is a restartable service</td></tr>
 <tr><td>Examples</td><td>Linux, *BSD (modular monolithic)</td><td>QNX, seL4, MINIX 3; macOS/Windows are hybrids</td></tr>
 </table>
+<pre><code><span class="c"># Linux monolithic-but-modular: a driver is a function call away, and can panic the box</span>
+$ lsmod | head -3
+Module        Size  Used by
+nvme         57344  3
+ext4        901120  1
+$ sudo rmmod nvme        <span class="c"># unload a driver from the running kernel (no reboot)</span>
+
+<span class="c"># microkernel (QNX/seL4): that same nvme driver is a user process;</span>
+<span class="c"># if it crashes, a supervisor restarts it and the kernel never notices</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
