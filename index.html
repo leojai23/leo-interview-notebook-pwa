@@ -9412,6 +9412,23 @@ For <code>T(n) = &sum; a_i T(b_i n + h_i(n)) + g(n)</code> with <code>0 &lt; b_i
 <p class="subtitle">The algorithm everyone "knows" and half get wrong &mdash; plus its most powerful use.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-albs-t">
+<title id="d-albs-t">Binary search halves the search interval each step</title>
+<rect class="d-box-alt" x="20" y="30" width="480" height="24"/>
+<text class="d-t-sm" x="24" y="46">sorted array, target = 42</text>
+<path class="d-line" d="M20 24 L20 28" marker-end="url(#albs-ah)"/><text class="d-t-accent" x="14" y="20">lo</text>
+<path class="d-line" d="M500 24 L500 28" marker-end="url(#albs-ah)"/><text class="d-t-accent" x="490" y="20">hi</text>
+<path class="d-line" d="M260 24 L260 28" marker-end="url(#albs-ah)"/><text class="d-t-accent" x="248" y="20">mid</text>
+<defs><marker id="albs-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-soft" x="260" y="66" width="240" height="20"/>
+<text class="d-t-sm" x="380" y="80" text-anchor="middle">a[mid] &lt; 42 &rarr; keep the right half</text>
+<text class="d-t-sm" x="20" y="80" text-anchor="start">discard &darr;</text>
+<text class="d-t-sm" x="20" y="112">Each comparison eliminates half &rarr; O(log n). Pitfalls: <tspan class="d-t-mono">mid = lo + (hi-lo)/2</tspan> (no overflow); pick and</text>
+<text class="d-t-sm" x="20" y="126">keep <tspan class="d-t-mono">[lo, hi)</tspan> vs <tspan class="d-t-mono">[lo, hi]</tspan> consistently; ensure the interval strictly shrinks or you loop forever.</text>
+</svg>
+<figcaption>The generalisation is <strong>binary search on a monotonic predicate</strong>: find the boundary where <code>f(x)</code> flips false&rarr;true (<code>lower_bound</code>), even when there's no literal sorted array.</figcaption>
+</figure>
 <h3>Correct binary search</h3>
 <pre><code><span class="c"># find target in sorted a, or -1</span>
 lo, hi = 0, len(a) - 1
@@ -9524,6 +9541,24 @@ For continuous optimisation with a monotone feasibility test &mdash; minimum rad
 <p class="subtitle">Turning nested loops into a single linear pass over an array or string.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-altp-t">
+<title id="d-altp-t">Opposite-ends two pointers and an expanding/contracting sliding window</title>
+<text class="d-t-b" x="14" y="16">converging pointers (sorted pair sum)</text>
+<rect class="d-box-alt" x="14" y="22" width="492" height="20"/>
+<path class="d-line" d="M30 56 L30 44" marker-end="url(#altp-ah)"/><text class="d-t-accent" x="24" y="70">L &rarr;</text>
+<path class="d-line" d="M480 56 L480 44" marker-end="url(#altp-ah)"/><text class="d-t-accent" x="462" y="70">&larr; R</text>
+<defs><marker id="altp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="120" y="60">sum too big &rarr; R--; too small &rarr; L++</text>
+<text class="d-t-b" x="14" y="98">sliding window (longest substring, subarray sum)</text>
+<rect class="d-box-alt" x="14" y="104" width="492" height="20"/>
+<rect class="d-box-soft" x="120" y="104" width="180" height="20"/>
+<path class="d-line" d="M120 138 L120 126" marker-end="url(#altp-ah)"/><text class="d-t-accent" x="108" y="150">start</text>
+<path class="d-line" d="M300 138 L300 126" marker-end="url(#altp-ah)"/><text class="d-t-accent" x="288" y="150">end</text>
+<text class="d-t-sm" x="320" y="138">grow <tspan class="d-t-mono">end</tspan>; while invalid, shrink <tspan class="d-t-mono">start</tspan></text>
+</svg>
+<figcaption>Both turn an O(n&sup2;) nested loop into O(n): each pointer only ever moves forward (or inward), so total moves are bounded by n.</figcaption>
+</figure>
 <h3>Two-pointer forms</h3>
 <ul>
 <li><strong>Opposite ends</strong> &mdash; <code>l = 0</code>, <code>r = n-1</code>, move inward. Sorted-array pair sum, container-with-most-water, palindrome check, reverse in place, 3-sum (fix one, two-pointer the rest).</li>
@@ -9735,6 +9770,22 @@ A matroid is a set system <code>(E, I)</code> where <code>I</code> (the "indepen
 <li><strong>Conquer</strong> each recursively (base case for small <code>n</code>).</li>
 <li><strong>Combine</strong> the sub-answers in <code>f(n)</code> work.</li>
 </ol>
+<figure class="diagram">
+<svg viewBox="0 0 520 148" role="img" aria-labelledby="d-aldc-t">
+<title id="d-aldc-t">Merge sort: split to singletons, then merge back in sorted order</title>
+<rect class="d-box-soft" x="200" y="12" width="120" height="18"/><text class="d-t-sm" x="260" y="25" text-anchor="middle">8 elements</text>
+<rect class="d-box" x="140" y="42" width="90" height="18"/><rect class="d-box" x="290" y="42" width="90" height="18"/>
+<rect class="d-box" x="100" y="72" width="50" height="18"/><rect class="d-box" x="160" y="72" width="50" height="18"/><rect class="d-box" x="270" y="72" width="50" height="18"/><rect class="d-box" x="330" y="72" width="50" height="18"/>
+<path class="d-line-soft" d="M240 30 L200 40"/><path class="d-line-soft" d="M280 30 L320 40"/>
+<path class="d-line-soft" d="M170 60 L135 70"/><path class="d-line-soft" d="M200 60 L185 70"/>
+<path class="d-line-soft" d="M320 60 L305 70"/><path class="d-line-soft" d="M350 60 L355 70"/>
+<text class="d-t-accent" x="14" y="52">split: log n levels</text>
+<text class="d-t-accent" x="14" y="118">merge: O(n) per level</text>
+<text class="d-t-sm" x="200" y="118">&rarr; O(n log n) total</text>
+<text class="d-t-sm" x="14" y="140">T(n) = a&middot;T(n/b) + f(n); subproblems must be <tspan class="d-t-b">independent</tspan> (shared sub-answers &rarr; that's DP).</text>
+</svg>
+<figcaption>Same shape drives quicksort (partition instead of merge), quickselect, closest-pair, Karatsuba multiplication, and FFT. Solve the recurrence with the Master Theorem.</figcaption>
+</figure>
 <p>Cost: <code>T(n) = a&middot;T(n/b) + f(n)</code> &mdash; solve with the Master Theorem (see Recurrences topic).
 Key requirement: the subproblems are <strong>independent</strong> (no shared sub-answers &mdash; that's DP).</p>
 
@@ -9836,6 +9887,27 @@ It broke the "obvious" &Theta;(n&sup3;) barrier for matrix multiplication in 196
 choose an <strong>evaluation order</strong> (memoise top-down, or tabulate in dependency order), then
 optionally <strong>reduce space</strong> (rolling arrays).</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 152" role="img" aria-labelledby="d-aldp-t">
+<title id="d-aldp-t">2-D DP table filled so each cell's dependencies are already computed</title>
+<g>
+<rect class="d-box-soft" x="60" y="24" width="34" height="24"/><rect class="d-box-soft" x="94" y="24" width="34" height="24"/><rect class="d-box-soft" x="128" y="24" width="34" height="24"/><rect class="d-box-soft" x="162" y="24" width="34" height="24"/>
+<rect class="d-box-soft" x="60" y="48" width="34" height="24"/><rect class="d-box" x="94" y="48" width="34" height="24"/><rect class="d-box-alt" x="128" y="48" width="34" height="24"/><rect class="d-box-soft" x="162" y="48" width="34" height="24"/>
+<rect class="d-box-soft" x="60" y="72" width="34" height="24"/><rect class="d-box-alt" x="94" y="72" width="34" height="24"/><rect class="d-box-alt" x="128" y="72" width="34" height="24"/><rect class="d-box-soft" x="162" y="72" width="34" height="24"/>
+</g>
+<text class="d-t-b" x="145" y="88" text-anchor="middle">?</text>
+<path class="d-line" d="M120 66 L138 80" marker-end="url(#aldp-ah)"/>
+<path class="d-line" d="M145 72 L145 78" marker-end="url(#aldp-ah)"/>
+<path class="d-line" d="M128 84 L138 84" marker-end="url(#aldp-ah)"/>
+<defs><marker id="aldp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="220" y="44">dp[i][j] depends on dp[i-1][j],</text>
+<text class="d-t-sm" x="220" y="62">dp[i][j-1], dp[i-1][j-1]</text>
+<text class="d-t-sm" x="220" y="82">&rarr; fill rows top-to-bottom, left-to-right</text>
+<text class="d-t-sm" x="14" y="120">Design steps: (1) define the state, (2) write the recurrence, (3) base cases, (4) fill order, (5) shrink space</text>
+<text class="d-t-sm" x="14" y="136">(this grid only needs the previous row &rarr; two rolling rows, O(min(m,n)) memory).</text>
+</svg>
+<figcaption>Classic 2-D DPs: edit distance, longest common subsequence, knapsack, grid paths. The table + fill order <em>is</em> the algorithm once the recurrence is right.</figcaption>
+</figure>
 <h3>The pattern catalogue</h3>
 <table>
 <tr><th>Pattern</th><th>State</th><th>Examples</th></tr>
@@ -10033,6 +10105,21 @@ A 2-SAT formula (clauses of &le; 2 literals) is satisfiable iff no variable <cod
 <p class="subtitle">Pick the algorithm by edge weights: unweighted, non-negative, negative, or all-pairs.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-alsp-t">
+<title id="d-alsp-t">Choosing a shortest-path algorithm by graph properties</title>
+<rect class="d-box-soft" x="180" y="12" width="160" height="24" rx="6"/><text class="d-t-sm" x="260" y="28" text-anchor="middle">need shortest paths?</text>
+<path class="d-line" d="M200 36 L120 58" marker-end="url(#alsp-ah)"/>
+<path class="d-line" d="M260 36 L260 58" marker-end="url(#alsp-ah)"/>
+<path class="d-line" d="M320 36 L400 58" marker-end="url(#alsp-ah)"/>
+<defs><marker id="alsp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="30" y="60" width="180" height="24" rx="5"/><text class="d-t-sm" x="120" y="76" text-anchor="middle">unweighted &rarr; BFS  O(V+E)</text>
+<rect class="d-box" x="170" y="94" width="200" height="24" rx="5"/><text class="d-t-sm" x="270" y="110" text-anchor="middle">non-negative weights &rarr; Dijkstra</text>
+<rect class="d-box" x="320" y="60" width="190" height="24" rx="5"/><text class="d-t-sm" x="415" y="76" text-anchor="middle">negative edges &rarr; Bellman-Ford</text>
+<text class="d-t-sm" x="14" y="140">All-pairs on a small dense graph &rarr; Floyd-Warshall O(V&sup3;). Bellman-Ford also <tspan class="d-t-b">detects negative cycles</tspan>.</text>
+</svg>
+<figcaption>Dijkstra with a binary heap is O((V+E) log V); it breaks with a negative edge because a "finalised" node might later get a cheaper path.</figcaption>
+</figure>
 <h3>The decision table</h3>
 <table>
 <tr><th>Situation</th><th>Algorithm</th><th>Time</th></tr>
