@@ -14956,6 +14956,25 @@ Developers often reason "this race is harmless &mdash; worst case a thread reads
 <p class="subtitle">Three tables between an <code>int</code> and a file &mdash; and why that structure explains <code>dup</code>, <code>fork</code>, and pipes.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="d-lxfd-t">
+<title id="d-lxfd-t">fd -> open file description (offset, flags) -> inode</title>
+<rect class="d-box" x="14" y="30" width="120" height="60" rx="6"/>
+<text class="d-t-sm" x="24" y="26">per-process fd table</text>
+<text class="d-t-mono" x="24" y="50">0 1 2 ...</text>
+<text class="d-t-mono" x="24" y="70">3 &rarr;</text>
+<text class="d-t-mono" x="24" y="86">4 &rarr;</text>
+<rect class="d-box-soft" x="200" y="24" width="140" height="30" rx="6"/><text class="d-t-sm" x="270" y="43" text-anchor="middle">open file descr. (offset, flags)</text>
+<rect class="d-box-soft" x="200" y="66" width="140" height="30" rx="6"/><text class="d-t-sm" x="270" y="85" text-anchor="middle">another (own offset)</text>
+<rect class="d-box-alt" x="400" y="45" width="106" height="30" rx="6"/><text class="d-t-sm" x="453" y="64" text-anchor="middle">inode (the file)</text>
+<path class="d-line" d="M134 62 L198 40" marker-end="url(#lxfd-ah)"/>
+<path class="d-line" d="M134 78 L198 80" marker-end="url(#lxfd-ah)"/>
+<path class="d-line" d="M340 40 L398 56" marker-end="url(#lxfd-ah)"/>
+<path class="d-line" d="M340 80 L398 66" marker-end="url(#lxfd-ah)"/>
+<defs><marker id="lxfd-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption><code>dup</code>/<code>fork</code> share the same <em>open file description</em> &rarr; a shared read/write offset. Two separate <code>open()</code> calls on one path get different descriptions &rarr; independent offsets, same inode. "Everything is a file": the same fd interface covers pipes, sockets, devices.</figcaption>
+</figure>
 <h3>The three levels</h3>
 <pre><code>process fd table          system open-file table          inode table
 [0] -----------------&gt; [ offset, flags, ref ] ----&gt; [ inode: size, perms, data ]
@@ -15273,6 +15292,21 @@ An entrypoint script or wrapper that <code>exec</code>s the real app is fine (th
 <p class="subtitle">Asynchronous notifications with a tiny, treacherous execution environment.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 110" role="img" aria-labelledby="d-lxsig-t">
+<title id="d-lxsig-t">A signal interrupts the main flow to run a handler, then resumes</title>
+<line class="d-line" x1="20" y1="50" x2="500" y2="50" marker-end="url(#lxsig-ah)"/>
+<defs><marker id="lxsig-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="20" y="42">main code running</text>
+<path class="d-line" d="M230 20 L230 46" marker-end="url(#lxsig-ah)"/><text class="d-t-accent" x="200" y="16">SIGINT delivered</text>
+<rect class="d-box-soft" x="250" y="60" width="120" height="26" rx="6"/><text class="d-t-sm" x="310" y="77" text-anchor="middle">handler runs</text>
+<path class="d-line" d="M230 50 C 240 60, 245 62, 250 66" marker-end="url(#lxsig-ah)"/>
+<path class="d-line" d="M370 70 C 390 62, 395 54, 400 50" marker-end="url(#lxsig-ah)"/>
+<text class="d-t-sm" x="405" y="42">resume</text>
+<text class="d-t-sm" x="20" y="102">Handler runs in a hostile context: only async-signal-safe functions, no <tspan class="d-t-mono">malloc</tspan>/<tspan class="d-t-mono">printf</tspan>. Common pattern: set a <tspan class="d-t-mono">volatile sig_atomic_t</tspan> flag.</text>
+</svg>
+<figcaption>Signals coalesce (two SIGCHLD may deliver as one), can interrupt slow syscalls (<code>EINTR</code>), and a few (<code>SIGKILL</code>, <code>SIGSTOP</code>) can't be caught. <code>signalfd</code>/self-pipe turn them into readable events for an event loop.</figcaption>
+</figure>
 <h3>What a signal is</h3>
 <p>An asynchronous notification delivered to a process (or thread). Each has a default action:
 terminate (<code>SIGTERM</code>, <code>SIGINT</code>), terminate + core dump (<code>SIGSEGV</code>, <code>SIGABRT</code>),
@@ -15379,6 +15413,19 @@ Async-signal-safe means the function is either fully reentrant or the signal can
 <p class="subtitle">Kernel byte channels between processes &mdash; and the SIGPIPE that catches everyone once.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 96" role="img" aria-labelledby="d-lxpipe-t">
+<title id="d-lxpipe-t">A pipe is a kernel buffer with a write end and a read end</title>
+<rect class="d-box" x="14" y="34" width="90" height="26" rx="6"/><text class="d-t-sm" x="59" y="51" text-anchor="middle">writer (fd[1])</text>
+<rect class="d-box-soft" x="180" y="30" width="150" height="34" rx="6"/><text class="d-t-sm" x="255" y="51" text-anchor="middle">kernel buffer (~64 KB)</text>
+<rect class="d-box" x="400" y="34" width="90" height="26" rx="6"/><text class="d-t-sm" x="445" y="51" text-anchor="middle">reader (fd[0])</text>
+<path class="d-line" d="M104 47 L178 47" marker-end="url(#lxpipe-ah)"/>
+<path class="d-line" d="M330 47 L398 47" marker-end="url(#lxpipe-ah)"/>
+<defs><marker id="lxpipe-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="86">Buffer full &rarr; write blocks. All write ends closed &rarr; read returns 0 (EOF). Read end closed &rarr; write gets <tspan class="d-t-mono">SIGPIPE</tspan>/<tspan class="d-t-mono">EPIPE</tspan>.</text>
+</svg>
+<figcaption>A shell pipeline <code>a | b</code> is <code>pipe()</code> + <code>fork()</code> &times;2 + <code>dup2()</code> to wire stdout&rarr;stdin, then <code>exec</code>. A FIFO (<code>mkfifo</code>) is the same thing with a name in the filesystem.</figcaption>
+</figure>
 <h3>Anonymous pipe</h3>
 <ul>
 <li><code>pipe(fds)</code> &rarr; <code>fds[0]</code> read end, <code>fds[1]</code> write end. Unidirectional byte stream, in-kernel buffer (default 64&thinsp;KB, tunable via <code>fcntl(F_SETPIPE_SZ)</code>).</li>
@@ -15485,6 +15532,24 @@ Two processes each write a large message to the other then read the reply, over 
 <p>You have N sockets and want to act on whichever becomes readable/writable, without a thread
 per socket. You need the kernel to tell you "which of these fds are ready".</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 118" role="img" aria-labelledby="d-lxmux-t">
+<title id="d-lxmux-t">One thread waits on many fds; the kernel reports which are ready</title>
+<rect class="d-box-soft" x="14" y="40" width="110" height="34" rx="6"/><text class="d-t-sm" x="69" y="61" text-anchor="middle">one thread</text>
+<rect class="d-box" x="200" y="14" width="120" height="24" rx="5"/><text class="d-t-sm" x="260" y="30" text-anchor="middle">epoll_wait()</text>
+<rect class="d-box-alt" x="380" y="8" width="40" height="18"/><text class="d-t-sm" x="400" y="21" text-anchor="middle">fd 5</text>
+<rect class="d-box-alt" x="380" y="30" width="40" height="18"/><text class="d-t-sm" x="400" y="43" text-anchor="middle">fd 9</text>
+<rect class="d-box" x="380" y="56" width="40" height="18" style="opacity:.4"/><text class="d-t-sm" x="400" y="69" text-anchor="middle">fd 12</text>
+<path class="d-line" d="M124 52 L198 30" marker-end="url(#lxmux-ah)"/>
+<path class="d-line" d="M320 22 L378 17" marker-end="url(#lxmux-ah)"/>
+<path class="d-line" d="M320 30 L378 38" marker-end="url(#lxmux-ah)"/>
+<defs><marker id="lxmux-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="330" y="70">ready set returned</text>
+<text class="d-t-sm" x="14" y="98"><tspan class="d-t-mono">select</tspan>/<tspan class="d-t-mono">poll</tspan>: pass the whole fd list every call &rarr; O(n). <tspan class="d-t-mono">epoll</tspan>/<tspan class="d-t-mono">kqueue</tspan>: register once, kernel keeps the set &rarr; O(ready).</text>
+<text class="d-t-sm" x="14" y="114">This is how one thread serves 100k connections (readiness model, not one-thread-per-connection).</text>
+</svg>
+<figcaption>Level-triggered = "still ready?" reported every call; edge-triggered = reported only on the transition, so you must drain the fd fully or you hang.</figcaption>
+</figure>
 <h3>The three APIs</h3>
 <table>
 <tr><th></th><th>select</th><th>poll</th><th>epoll (Linux)</th></tr>
@@ -16133,6 +16198,18 @@ Subnormals fill the gap between the smallest normal number and zero by giving up
 <p class="subtitle">Why "memory is slow" is the single most important performance fact.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-armh-t">
+<title id="d-armh-t">The memory hierarchy: each level is bigger but much slower</title>
+<rect class="d-box-soft" x="200" y="10" width="120" height="16"/><text class="d-t-sm" x="330" y="22">registers &mdash; &lt;1 ns</text>
+<rect class="d-box-soft" x="180" y="28" width="160" height="16"/><text class="d-t-sm" x="350" y="40">L1 ~1 ns / 32 KB</text>
+<rect class="d-box" x="160" y="46" width="200" height="16"/><text class="d-t-sm" x="370" y="58">L2 ~4 ns / 256 KB&ndash;1 MB</text>
+<rect class="d-box" x="140" y="64" width="240" height="16"/><text class="d-t-sm" x="390" y="76">L3 ~12 ns / 8&ndash;32 MB</text>
+<rect class="d-box-alt" x="100" y="82" width="320" height="16"/><text class="d-t-sm" x="260" y="94" text-anchor="middle">DRAM ~80&ndash;100 ns / GBs</text>
+<rect class="d-box-alt" x="60" y="100" width="400" height="16"/><text class="d-t-sm" x="260" y="112" text-anchor="middle">SSD ~50&ndash;100 &micro;s &nbsp;&middot;&nbsp; disk ~5&ndash;10 ms</text>
+</svg>
+<figcaption>A DRAM miss costs ~100&times; an L1 hit &mdash; hundreds of stalled CPU cycles. This is why cache-friendly data layout often matters more than instruction count.</figcaption>
+</figure>
 <h3>The latency ladder (rough, modern desktop)</h3>
 <table>
 <tr><th>Level</th><th>Latency</th><th>Size</th></tr>
@@ -16239,6 +16316,19 @@ Prefetchers are dedicated units that watch the stream of cache misses/accesses a
 <p class="subtitle">How a cache decides where a line can live, and the three reasons it isn't there.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 112" role="img" aria-labelledby="d-arcm-t">
+<title id="d-arcm-t">Memory moves in 64-byte cache lines; one miss brings the whole line</title>
+<rect class="d-box-alt" x="14" y="24" width="480" height="26"/>
+<rect class="d-box-soft" x="134" y="24" width="120" height="26"/>
+<text class="d-t-sm" x="194" y="41" text-anchor="middle">one 64-byte line</text>
+<path class="d-line" d="M160 60 L160 52" marker-end="url(#arcm-ah)"/><text class="d-t-sm" x="120" y="74">access byte here...</text>
+<path class="d-line" d="M230 60 L230 52" marker-end="url(#arcm-ah)"/><text class="d-t-sm" x="240" y="74">...the next 63 are now free</text>
+<defs><marker id="arcm-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="98">The 3 C's of misses: <tspan class="d-t-b">compulsory</tspan> (first touch), <tspan class="d-t-b">capacity</tspan> (working set &gt; cache), <tspan class="d-t-b">conflict</tspan> (too many addresses map to one set).</text>
+</svg>
+<figcaption>Sequential access = one miss per 64 bytes (great); random pointer chasing = one miss per access (terrible). Set associativity: each address can live in one of N slots of one set.</figcaption>
+</figure>
 <h3>Organisation</h3>
 <p>A cache is an array of 64-byte <strong>lines</strong>. An address is split into
 <code>[ tag | set index | line offset ]</code>. The set index picks a <strong>set</strong>; the line can go
@@ -16438,6 +16528,23 @@ A <strong>cache-aware</strong> (or "cache-conscious") algorithm has the cache/bl
 <p class="subtitle">Overlapping instruction execution &mdash; and the three things that stall it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 118" role="img" aria-labelledby="d-arpipe-t">
+<title id="d-arpipe-t">A pipeline overlaps stages so one instruction finishes per cycle</title>
+<text class="d-t-sm" x="14" y="16">cycle:&nbsp;&nbsp;1&nbsp;&nbsp;&nbsp;2&nbsp;&nbsp;&nbsp;3&nbsp;&nbsp;&nbsp;4&nbsp;&nbsp;&nbsp;5&nbsp;&nbsp;&nbsp;6&nbsp;&nbsp;&nbsp;7</text>
+<text class="d-t-mono" x="14" y="36">i1</text>
+<rect class="d-box-soft" x="40" y="24" width="24" height="14"/><rect class="d-box-soft" x="64" y="24" width="24" height="14"/><rect class="d-box-soft" x="88" y="24" width="24" height="14"/><rect class="d-box-soft" x="112" y="24" width="24" height="14"/><rect class="d-box-soft" x="136" y="24" width="24" height="14"/>
+<text class="d-t-mono" x="14" y="54">i2</text>
+<rect class="d-box-soft" x="64" y="42" width="24" height="14"/><rect class="d-box-soft" x="88" y="42" width="24" height="14"/><rect class="d-box-soft" x="112" y="42" width="24" height="14"/><rect class="d-box-soft" x="136" y="42" width="24" height="14"/><rect class="d-box-soft" x="160" y="42" width="24" height="14"/>
+<text class="d-t-mono" x="14" y="72">i3</text>
+<rect class="d-box-alt" x="88" y="60" width="24" height="14"/><rect class="d-box-alt" x="112" y="60" width="24" height="14"/>
+<rect class="d-box-soft" x="160" y="60" width="24" height="14"/><rect class="d-box-soft" x="184" y="60" width="24" height="14"/>
+<text class="d-t-accent" x="220" y="72">bubble: i3 needs i2's result &rarr; stall</text>
+<text class="d-t-sm" x="14" y="98">Stages: fetch &rarr; decode &rarr; execute &rarr; memory &rarr; write-back. Hazards: <tspan class="d-t-b">data</tspan> (dependency), <tspan class="d-t-b">control</tspan> (branch), <tspan class="d-t-b">structural</tspan> (resource).</text>
+<text class="d-t-sm" x="14" y="114">Forwarding hides most data hazards; a mispredicted branch flushes the whole pipeline.</text>
+</svg>
+<figcaption>Deeper pipeline = higher clock but costlier mispredicts. Out-of-order execution and branch prediction exist to keep the pipeline full despite hazards.</figcaption>
+</figure>
 <h3>Pipelining</h3>
 <p>An instruction goes through stages &mdash; classic 5-stage RISC: <strong>F</strong>etch, <strong>D</strong>ecode,
 <strong>E</strong>xecute, <strong>M</strong>emory, <strong>W</strong>riteback. Instead of finishing one before
@@ -17051,6 +17158,21 @@ Several effects: (1) <strong>Frequency throttling</strong> &mdash; on many Intel
 <p class="subtitle">Four stages from <code>.c</code> to executable &mdash; and what you can inspect at each.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 96" role="img" aria-labelledby="d-bdpipe-t">
+<title id="d-bdpipe-t">The four build stages and what each consumes and emits</title>
+<rect class="d-box" x="14" y="30" width="110" height="30" rx="6"/><text class="d-t-sm" x="69" y="43" text-anchor="middle">preprocess</text><text class="d-t-sm" x="69" y="56" text-anchor="middle">.c &rarr; .i</text>
+<rect class="d-box" x="150" y="30" width="110" height="30" rx="6"/><text class="d-t-sm" x="205" y="43" text-anchor="middle">compile</text><text class="d-t-sm" x="205" y="56" text-anchor="middle">.i &rarr; .s (asm)</text>
+<rect class="d-box" x="286" y="30" width="110" height="30" rx="6"/><text class="d-t-sm" x="341" y="43" text-anchor="middle">assemble</text><text class="d-t-sm" x="341" y="56" text-anchor="middle">.s &rarr; .o</text>
+<rect class="d-box-soft" x="422" y="30" width="84" height="30" rx="6"/><text class="d-t-sm" x="464" y="43" text-anchor="middle">link</text><text class="d-t-sm" x="464" y="56" text-anchor="middle">.o + libs</text>
+<path class="d-line" d="M124 45 L148 45" marker-end="url(#bdpipe-ah)"/>
+<path class="d-line" d="M260 45 L284 45" marker-end="url(#bdpipe-ah)"/>
+<path class="d-line" d="M396 45 L420 45" marker-end="url(#bdpipe-ah)"/>
+<defs><marker id="bdpipe-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="84">Each translation unit (.c + its headers) compiles independently &rarr; incremental builds only redo changed .o files.</text>
+</svg>
+<figcaption><code>-E</code>/<code>-S</code>/<code>-c</code> stop after stage 1/2/3. The compiler needs only <em>declarations</em>; the linker needs the one <em>definition</em> of every symbol.</figcaption>
+</figure>
 <h3>The four stages</h3>
 <table>
 <tr><th>Stage</th><th>Tool</th><th>In &rarr; Out</th><th>See it with</th></tr>
@@ -17360,6 +17482,27 @@ Normally the compiler puts all functions from a TU into one <code>.text</code> s
 <p class="subtitle">Why link order matters, and how "undefined reference" and "multiple definition" happen.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 118" role="img" aria-labelledby="d-bdlink-t">
+<title id="d-bdlink-t">The linker matches undefined symbols to definitions, left to right</title>
+<rect class="d-box" x="14" y="24" width="110" height="60" rx="6"/>
+<text class="d-t-sm" x="24" y="42">main.o</text>
+<text class="d-t-sm" x="24" y="58">defines: main</text>
+<text class="d-t-accent" x="24" y="74">needs: helper</text>
+<rect class="d-box-alt" x="170" y="24" width="130" height="60" rx="6"/>
+<text class="d-t-sm" x="180" y="42">libutil.a</text>
+<text class="d-t-sm" x="180" y="58">has helper.o,</text>
+<text class="d-t-sm" x="180" y="74">extra.o, ...</text>
+<rect class="d-box-soft" x="360" y="34" width="146" height="40" rx="6"/>
+<text class="d-t-sm" x="433" y="52" text-anchor="middle">pulls in only helper.o</text>
+<text class="d-t-sm" x="433" y="68" text-anchor="middle">that resolves a need</text>
+<path class="d-line" d="M124 54 L168 54" marker-end="url(#bdlink-ah)"/>
+<path class="d-line" d="M300 54 L358 54" marker-end="url(#bdlink-ah)"/>
+<defs><marker id="bdlink-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="106">Classic gotcha: <tspan class="d-t-mono">gcc -lm main.o</tspan> fails, <tspan class="d-t-mono">gcc main.o -lm</tspan> works &mdash; an archive is scanned only for already-seen needs.</text>
+</svg>
+<figcaption>Linker jobs: (1) merge sections, (2) resolve symbols (missing &rarr; <em>undefined reference</em>, dup &rarr; <em>multiple definition</em>), (3) apply relocations now that addresses are fixed.</figcaption>
+</figure>
 <h3>What the linker does</h3>
 <ol>
 <li><strong>Symbol resolution</strong>: for every undefined symbol, find exactly one definition among the inputs.</li>
@@ -17466,6 +17609,21 @@ Single-pass left-to-right resolution keeps a running "undefined set". Say <code>
 <p class="subtitle">Copy the code in at build time, or load it at run time &mdash; and everything that follows.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 110" role="img" aria-labelledby="d-bdsd-t">
+<title id="d-bdsd-t">Static linking copies library code in; dynamic resolves it at load time</title>
+<text class="d-t-b" x="14" y="16">static (.a)</text>
+<rect class="d-box-soft" x="14" y="22" width="200" height="30" rx="6"/><text class="d-t-sm" x="114" y="41" text-anchor="middle">a.out  =  your code + libc code</text>
+<text class="d-t-sm" x="230" y="41">big binary, no runtime dep, per-process copy</text>
+<text class="d-t-b" x="14" y="76">dynamic (.so)</text>
+<rect class="d-box" x="14" y="82" width="90" height="22" rx="6"/><text class="d-t-sm" x="59" y="97" text-anchor="middle">a.out</text>
+<rect class="d-box-alt" x="140" y="82" width="110" height="22" rx="6"/><text class="d-t-sm" x="195" y="97" text-anchor="middle">libc.so (shared)</text>
+<path class="d-line" d="M104 93 L138 93" marker-end="url(#bdsd-ah)"/>
+<defs><marker id="bdsd-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="270" y="97">ld.so binds at load; one copy in RAM for all; fix ships once</text>
+</svg>
+<figcaption>Dynamic code is <strong>position-independent</strong> (<code>-fPIC</code>): it reaches its globals through the GOT and calls other <code>.so</code>s via the PLT, so <code>.text</code> stays shareable read-only.</figcaption>
+</figure>
 <h3>The two models</h3>
 <table>
 <tr><th></th><th>Static (<code>.a</code> / <code>.lib</code>)</th><th>Dynamic (<code>.so</code> / <code>.dll</code> / <code>.dylib</code>)</th></tr>
