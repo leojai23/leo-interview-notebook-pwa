@@ -356,6 +356,16 @@ footer.site-footer { text-align: center; font-family: Arial, sans-serif; font-si
 <li><strong>Linkage</strong> &mdash; whether the <em>name</em> refers to the same object/function across different <code>.c</code> files, only within one file, or nowhere else at all.</li>
 </ul>
 <p>A <em>declaration</em> introduces a name and its type; a <em>definition</em> also reserves the storage (or the function body). You may declare a thing many times but must define it exactly once (the "one definition rule").</p>
+<pre><code><span class="k">int</span> g;                  <span class="c">// definition: static duration, external linkage, zero-init</span>
+<span class="k">static</span> <span class="k">int</span> s;           <span class="c">// definition: static duration, internal linkage (this file only)</span>
+<span class="k">extern</span> <span class="k">int</span> h;           <span class="c">// declaration only: 'h' is defined in some other .c file</span>
+
+<span class="k">void</span> f(<span class="k">void</span>) {
+    <span class="k">int</span> x;              <span class="c">// automatic: storage born here, released at end of block</span>
+    x = <span class="n">3</span>;             <span class="c">// MUST assign before reading -- value was indeterminate</span>
+    <span class="k">static</span> <span class="k">int</span> calls = <span class="n">0</span>; <span class="c">// automatic *name*, but static *storage*: survives the call</span>
+    calls++;
+}                       <span class="c">// 'x' gone; 'calls' keeps its value for the next call</span></code></pre>
 
 <h3>Fundamental types and their sizes</h3>
 <p>C guarantees only <em>minimum</em> ranges, not exact sizes. The standard promises
@@ -366,6 +376,19 @@ with <code>char</code> at least 8 bits, <code>short</code> and <code>int</code> 
 (<code>int32_t</code>, <code>uint64_t</code>, <code>intptr_t</code>) when the width matters.</p>
 <p><code>char</code> may be signed or unsigned &mdash; it is <em>implementation-defined</em>, and it is a <em>third</em> type distinct from both <code>signed char</code> and <code>unsigned char</code>. That is a classic bug source when using <code>char</code> to index a table with bytes &ge; 0x80: on a platform where <code>char</code> is signed, <code>(int)c</code> is negative and the index goes out of bounds. Rule: use <code>unsigned char</code> (or <code>uint8_t</code>) for raw bytes, and <code>char</code> only for actual text.</p>
 <p>Integer types come in signed/unsigned pairs sharing the same size. Unsigned arithmetic is defined to wrap modulo 2<sup>N</sup>; <strong>signed</strong> overflow is undefined behaviour (see the UB topic). Floating types (<code>float</code>, <code>double</code>, <code>long double</code>) are usually IEEE-754 but the standard does not require it.</p>
+<pre><code><span class="k">#include</span> <span class="s">&lt;stdint.h&gt;</span>
+<span class="k">#include</span> <span class="s">&lt;stdio.h&gt;</span>
+
+<span class="c">// Sizes are minimums -- print what THIS platform actually uses:</span>
+printf(<span class="s">"%zu %zu %zu\n"</span>, <span class="k">sizeof</span>(<span class="k">char</span>), <span class="k">sizeof</span>(<span class="k">int</span>), <span class="k">sizeof</span>(<span class="k">long</span>)); <span class="c">// 1 4 8 on LP64</span>
+
+int32_t  fixed = <span class="n">-2000000000</span>;   <span class="c">// exactly 32 bits everywhere -- use when width matters</span>
+uint8_t  raw   = <span class="n">0xFF</span>;          <span class="c">// use for bytes; never a plain 'char'</span>
+<span class="k">long</span> <span class="k">long</span> big = <span class="n">9000000000LL</span>;    <span class="c">// needs &gt; 32 bits; the LL suffix keeps the literal wide</span>
+
+<span class="c">// The classic 'char' signedness trap:</span>
+<span class="k">char</span> c = (<span class="k">char</span>)<span class="n">0x80</span>;            <span class="c">// might be -128 (signed char) or 128 (unsigned char)</span>
+<span class="k">int</span> idx = (<span class="k">unsigned</span> <span class="k">char</span>)c;      <span class="c">// 128 -- cast via unsigned char before widening</span></code></pre>
 
 <h3>Storage duration &mdash; four lifetimes</h3>
 <figure class="diagram">
@@ -402,6 +425,15 @@ with <code>char</code> at least 8 bits, <code>short</code> and <code>int</code> 
 </svg>
 <figcaption>Storage duration = when the bytes are guaranteed to exist. Reading an automatic object before assigning it, or any object after its lifetime ends, is undefined behaviour.</figcaption>
 </figure>
+<pre><code><span class="k">int</span> s_dur;                     <span class="c">// STATIC: exists for the whole program, zero-initialised</span>
+<span class="k">_Thread_local</span> <span class="k">int</span> t_dur;        <span class="c">// THREAD: one per thread, lives as long as that thread</span>
+
+<span class="k">void</span> demo(<span class="k">void</span>) {
+    <span class="k">int</span> a_dur;                 <span class="c">// AUTOMATIC: born here, dies at end of block; starts indeterminate</span>
+    a_dur = <span class="n">1</span>;
+    <span class="k">int</span> *m = malloc(<span class="k">sizeof</span> <span class="k">int</span>); <span class="c">// ALLOCATED: lives from malloc() until free() -- you decide</span>
+    free(m);
+}                             <span class="c">// a_dur's storage released; s_dur / t_dur untouched</span></code></pre>
 
 <h3>Storage classes</h3>
 <p>A storage-class specifier sets two things: <strong>storage duration</strong> (lifetime) and <strong>linkage</strong> (name visibility across translation units). The same keyword, <code>static</code>, does a <em>different</em> job depending on where it appears.</p>
@@ -428,6 +460,16 @@ with <code>char</code> at least 8 bits, <code>short</code> and <code>int</code> 
 <li><code>restrict</code> (C99, pointers only) &mdash; a promise that, within its scope, the pointed-to object is reached <em>only</em> through this pointer (or values derived from it), so the compiler may keep data in registers across stores made through other pointers. Breaking the promise is undefined behaviour.</li>
 </ul>
 <p><strong>Reading declarations</strong> &mdash; find the identifier, then read outward, right before left: <code>const char *p</code> &rarr; "<code>p</code> is a pointer to <code>char</code> that is <code>const</code>" (the data is read-only, <code>p</code> itself can be re-pointed); <code>char * const p</code> &rarr; "<code>p</code> is a <code>const</code> pointer to <code>char</code>" (<code>p</code> is fixed, the data is writable); <code>const char * const p</code> &rarr; both fixed.</p>
+<pre><code><span class="k">const</span> <span class="k">int</span> limit = <span class="n">100</span>;                 <span class="c">// "this code will not modify limit through this name"</span>
+<span class="c">// limit = 5;                          // compile error -- caught for free</span>
+
+<span class="k">volatile</span> uint32_t *reg = (uint32_t *)<span class="n">0x40000000</span>; <span class="c">// memory-mapped hardware register</span>
+<span class="k">while</span> (*reg &amp; <span class="n">1u</span>) { }                    <span class="c">// re-reads *reg every time; compiler may not cache it</span>
+
+<span class="c">// restrict: promise dst and src never overlap, so the compiler can vectorise</span>
+<span class="k">void</span> copy(<span class="k">int</span> n, <span class="k">int</span> *<span class="k">restrict</span> dst, <span class="k">const</span> <span class="k">int</span> *<span class="k">restrict</span> src) {
+    <span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) dst[i] = src[i];
+}</code></pre>
 
 <h3>Integer promotion and the usual arithmetic conversions</h3>
 <p>Before almost any binary arithmetic, C brings both operands to a common type in two steps.</p>
@@ -452,6 +494,15 @@ with <code>char</code> at least 8 bits, <code>short</code> and <code>int</code> 
 <figcaption>The signed-to-unsigned rule (step 3) is the source of the classic non-terminating loop <code>for (size_t i = n-1; i &gt;= 0; i--)</code> &mdash; a <code>size_t</code> is never negative, so <code>i &gt;= 0</code> is always true.</figcaption>
 </figure>
 <p>Promotion also happens for the operand of unary <code>+ - ~</code>, for both operands of the shift operators (each promoted independently &mdash; the result type is that of the <em>left</em> operand), and for arguments passed to variadic or unprototyped functions (which is why <code>printf("%d", (char)x)</code> is fine but <code>printf("%d", 1L)</code> is wrong).</p>
+<pre><code><span class="k">unsigned</span> <span class="k">int</span> u = <span class="n">1</span>;
+<span class="k">int</span> i = <span class="n">-1</span>;
+<span class="k">if</span> (i &lt; u) puts(<span class="s">"less"</span>);       <span class="c">// NOT printed: i converts to UINT_MAX, so i &gt; u</span>
+
+<span class="k">char</span> a = <span class="n">200</span>, b = <span class="n">100</span>;             <span class="c">// (values assume unsigned char)</span>
+<span class="k">int</span> sum = a + b;                  <span class="c">// well-defined: both promote to int first, sum == 300</span>
+
+<span class="k">for</span> (size_t n = <span class="n">3</span>; n &gt;= <span class="n">0</span>; n--)     <span class="c">// INFINITE LOOP: size_t is unsigned, n &gt;= 0 always true</span>
+    ;</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -558,6 +609,14 @@ more than an integer is its <em>type</em>: <code>int *p</code> tells the compile
 <code>*p</code> is the object <code>p</code> points at &mdash; an <em>lvalue</em>, so <code>*p = 5;</code> writes
 through the pointer and <code>int y = *p;</code> reads through it. <code>&amp;</code> and <code>*</code> are
 inverses: <code>*&amp;x</code> is <code>x</code>, and <code>&amp;*p</code> is <code>p</code>.</p>
+<pre><code><span class="k">int</span> x = <span class="n">42</span>;
+<span class="k">int</span> *p = &amp;x;        <span class="c">// p holds the address of x; type "pointer to int"</span>
+printf(<span class="s">"%d\n"</span>, *p);   <span class="c">// 42  -- read through the pointer</span>
+*p = <span class="n">7</span>;             <span class="c">// write through the pointer: x is now 7</span>
+
+<span class="k">int</span> y = <span class="n">99</span>;
+p = &amp;y;            <span class="c">// re-point p at y; x keeps its value (7)</span>
+printf(<span class="s">"%d\n"</span>, *p);   <span class="c">// 99</span></code></pre>
 <figure class="diagram">
 <svg viewBox="0 0 520 210" role="img" aria-labelledby="d-cptr-basic-t">
 <title id="d-cptr-basic-t">A pointer variable holds the address of another variable</title>
@@ -665,6 +724,17 @@ make(&amp;buf);                       <span class="c">// buf now points to 10 in
 loss, but you cannot dereference it or do arithmetic on it (GCC allows <code>void*</code> arithmetic
 as an extension, treating it as <code>char*</code>). <code>malloc</code> returns <code>void *</code>. Function
 pointers are a separate family &mdash; a <code>void *</code> is not guaranteed to hold one portably.</p>
+<pre><code><span class="c">// void * -- generic storage; no deref, no arithmetic until you cast back</span>
+<span class="k">int</span> n = <span class="n">5</span>;
+<span class="k">void</span> *v = &amp;n;              <span class="c">// any object pointer converts to void * silently</span>
+<span class="k">int</span> *ip = v;              <span class="c">// ...and back, losslessly</span>
+printf(<span class="s">"%d\n"</span>, *ip);        <span class="c">// 5   (*v would not compile)</span>
+
+<span class="c">// generic API: qsort takes a void*-based comparator</span>
+<span class="k">int</span> cmp(<span class="k">const</span> <span class="k">void</span> *a, <span class="k">const</span> <span class="k">void</span> *b) {
+    <span class="k">int</span> x = *(<span class="k">const</span> <span class="k">int</span> *)a, y = *(<span class="k">const</span> <span class="k">int</span> *)b; <span class="c">// cast to the real type</span>
+    <span class="k">return</span> (x &gt; y) - (x &lt; y);          <span class="c">// -1 / 0 / +1 without overflow</span>
+}</code></pre>
 
 <h3>Null, wild, and dangling</h3>
 <ul>
@@ -672,6 +742,15 @@ pointers are a separate family &mdash; a <code>void *</code> is not guaranteed t
 <li><strong>Wild pointer</strong> &mdash; uninitialised; contains garbage. Initialise to <code>NULL</code>.</li>
 <li><strong>Dangling pointer</strong> &mdash; still holds an address whose object has ended its lifetime (freed, or a local that went out of scope). Set to <code>NULL</code> after <code>free</code>.</li>
 </ul>
+<pre><code><span class="k">int</span> *wild;               <span class="c">// WILD: uninitialised, holds garbage</span>
+<span class="k">int</span> *safe = <span class="k">NULL</span>;         <span class="c">// good habit: start at NULL</span>
+
+<span class="k">int</span> *p = malloc(<span class="k">sizeof</span> *p);
+<span class="k">if</span> (!p) <span class="k">return</span> <span class="n">-1</span>;         <span class="c">// NULL check: malloc can fail</span>
+*p = <span class="n">10</span>;
+free(p);                 <span class="c">// object's lifetime ends here</span>
+<span class="c">// *p = 20;              // DANGLING: use-after-free, undefined behaviour</span>
+p = <span class="k">NULL</span>;                <span class="c">// neutralise it; a second free(p) is now harmless</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -789,6 +868,17 @@ initialising a <code>char</code> array.</p>
 </svg>
 <figcaption>You cannot assign or pass an array by value. C99 VLAs (size is a run-time value) live on the stack and can overflow it &mdash; many codebases ban them.</figcaption>
 </figure>
+<p><strong>Why it matters:</strong> the length is only known where the array is a real array; once it decays you must carry the count yourself.</p>
+<pre><code><span class="k">int</span> a[<span class="n">4</span>] = {<span class="n">1</span>,<span class="n">2</span>,<span class="n">3</span>,<span class="n">4</span>};
+size_t n = <span class="k">sizeof</span> a / <span class="k">sizeof</span> a[<span class="n">0</span>];   <span class="c">// 4  -- OK here: 'a' is still an array</span>
+<span class="k">int</span> *p = a;                          <span class="c">// decay: p holds &amp;a[0]</span>
+p[<span class="n">2</span>] = <span class="n">9</span>;                            <span class="c">// identical to a[2] = 9</span>
+
+<span class="k">void</span> fill(<span class="k">int</span> arr[], size_t len) {       <span class="c">// 'arr' is really int* -- size is lost</span>
+    <span class="c">// sizeof arr is 8 (a pointer), NOT 16 -- that is why we pass 'len'</span>
+    <span class="k">for</span> (size_t i = <span class="n">0</span>; i &lt; len; i++) arr[i] = (<span class="k">int</span>)i;
+}
+fill(a, n);                          <span class="c">// caller supplies the count</span></code></pre>
 
 <h3>C strings</h3>
 <p>A &ldquo;string&rdquo; is a <code>char</code> array containing a <code>'\0'</code> terminator. There is no stored
@@ -824,6 +914,15 @@ is O(n)). Every buffer must have room for the terminator: storing <code>"cat"</c
 <p>Prefer bounded functions: <code>snprintf</code> over <code>sprintf</code>; be careful that <code>strncpy</code> does
 <em>not</em> guarantee termination if the source is longer than <code>n</code>. <code>strlcpy</code>/<code>strlcat</code>
 (BSD, and now C23's <code>strcpy_s</code> family) are safer where available.</p>
+<pre><code><span class="k">char</span> a[] = <span class="s">"cat"</span>;     <span class="c">// 4 bytes on the stack: 'c''a''t''\0' -- writable copy</span>
+<span class="k">char</span> *b   = <span class="s">"cat"</span>;     <span class="c">// b points at a read-only string literal</span>
+a[<span class="n">0</span>] = <span class="s">'C'</span>;            <span class="c">// fine: edits the local copy -> "Cat"</span>
+<span class="c">// b[0] = 'C';           // UNDEFINED BEHAVIOUR: writing a literal, usually a crash</span>
+printf(<span class="s">"%zu %zu\n"</span>, <span class="k">sizeof</span> a, strlen(a));  <span class="c">// 4 3  (size includes '\0'; length does not)</span>
+
+<span class="k">char</span> dst[<span class="n">8</span>];
+<span class="k">int</span> want = snprintf(dst, <span class="k">sizeof</span> dst, <span class="s">"%s-%d"</span>, <span class="s">"id"</span>, <span class="n">7</span>);
+<span class="c">// dst = "id-7", want = 4. If want &gt;= sizeof dst the output was truncated (not overflowed).</span></code></pre>
 
 <h3>Multidimensional arrays vs arrays of pointers</h3>
 <p><code>int m[2][3]</code> is &ldquo;array of 2 arrays of 3 ints&rdquo;, stored <strong>row-major</strong> and fully
@@ -866,6 +965,17 @@ dimension <em>except the first</em> must be known: <code>void f(int m[][3], int 
 </svg>
 <figcaption>A 2-D array is rectangular and contiguous; an array of pointers can have rows of different lengths in unrelated places &mdash; which is exactly what <code>main</code>'s <code>argv</code> is.</figcaption>
 </figure>
+<pre><code><span class="k">int</span> m[<span class="n">2</span>][<span class="n">3</span>] = {{<span class="n">1</span>,<span class="n">2</span>,<span class="n">3</span>},{<span class="n">4</span>,<span class="n">5</span>,<span class="n">6</span>}};
+<span class="k">int</span> x = m[<span class="n">1</span>][<span class="n">2</span>];               <span class="c">// 6 -- offset = (1*3 + 2) * sizeof(int)</span>
+
+<span class="k">void</span> f(<span class="k">int</span> rows, <span class="k">int</span> grid[][<span class="n">3</span>]) { <span class="c">// every dimension but the first must be known</span>
+    grid[<span class="n">0</span>][<span class="n">0</span>] = <span class="n">42</span>;
+}
+f(<span class="n">2</span>, m);
+
+<span class="k">char</span> *words[] = { <span class="s">"prog"</span>, <span class="s">"-v"</span>, <span class="s">"input.txt"</span> }; <span class="c">// array of pointers: rows differ in length</span>
+<span class="k">for</span> (size_t i = <span class="n">0</span>; i &lt; <span class="k">sizeof</span> words / <span class="k">sizeof</span> words[<span class="n">0</span>]; i++)
+    puts(words[i]);</code></pre>
 
 <h3>Common bugs</h3>
 <ul>
@@ -875,6 +985,16 @@ dimension <em>except the first</em> must be known: <code>void f(int m[][3], int 
 <li>Comparing strings with <code>==</code> (compares addresses); use <code>strcmp</code>.</li>
 <li>Assuming <code>char buf[64]</code> from <code>fgets</code> has no trailing <code>'\n'</code>.</li>
 </ul>
+<pre><code><span class="k">char</span> *bad(<span class="k">void</span>) {
+    <span class="k">char</span> tmp[<span class="n">16</span>] = <span class="s">"hi"</span>;
+    <span class="k">return</span> tmp;              <span class="c">// BUG: tmp dies on return -> caller gets a dangling pointer</span>
+}
+<span class="k">char</span> buf[<span class="n">64</span>];
+<span class="k">if</span> (fgets(buf, <span class="k">sizeof</span> buf, stdin)) {
+    buf[strcspn(buf, <span class="s">"\n"</span>)] = <span class="s">'\0'</span>;   <span class="c">// strip the trailing newline fgets leaves</span>
+    <span class="k">if</span> (strcmp(buf, <span class="s">"quit"</span>) == <span class="n">0</span>) <span class="c">// compare CONTENT, not addresses (buf == "quit" is wrong)</span>
+        <span class="c">/* ... */</span>;
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -1015,6 +1135,11 @@ Both parameters are declared <code>restrict</code>, so the compiler assumes <cod
 </svg>
 <figcaption>Every allocation has exactly one owner responsible for exactly one <code>free</code>. Between <code>free</code> and reassigning <code>NULL</code>, the pointer is a landmine.</figcaption>
 </figure>
+<pre><code><span class="k">int</span> *p = malloc(<span class="n">10</span> * <span class="k">sizeof</span> *p);  <span class="c">// 1. acquire -- may return NULL</span>
+<span class="k">if</span> (!p) <span class="k">return</span> <span class="n">-1</span>;                <span class="c">//    always check</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; <span class="n">10</span>; i++) p[i] = i; <span class="c">// 2. use -- within [0, 10)</span>
+free(p);                          <span class="c">// 3. release exactly once</span>
+p = <span class="k">NULL</span>;                        <span class="c">// 4. disarm: *p now faults, free(p) now no-ops</span></code></pre>
 
 <h3>The bug catalogue</h3>
 <ul>
@@ -1025,6 +1150,16 @@ Both parameters are declared <code>restrict</code>, so the compiler assumes <cod
 <li><strong>Mismatched size</strong> &mdash; allocating <code>n</code> bytes but treating it as <code>n</code> elements.</li>
 <li><strong>Unchecked <code>NULL</code></strong> &mdash; dereferencing a failed <code>malloc</code>.</li>
 </ul>
+<pre><code><span class="k">char</span> *p = malloc(<span class="n">4</span>);
+<span class="c">// strcpy(p, "hello");     // OVERRUN: 6 bytes into a 4-byte block -> smashes next header</span>
+strcpy(p, <span class="s">"hi"</span>);           <span class="c">// OK: 3 bytes fit</span>
+free(p);
+<span class="c">// puts(p);               // USE-AFTER-FREE</span>
+<span class="c">// free(p);               // DOUBLE FREE -> corrupts allocator metadata</span>
+
+<span class="k">int</span> *a = malloc(<span class="n">8</span>);        <span class="c">// LEAK below: last pointer overwritten before free</span>
+a = malloc(<span class="n">8</span>);              <span class="c">// the first 8 bytes are now unreachable forever</span>
+free(a);</code></pre>
 <figure class="diagram">
 <svg viewBox="0 0 520 116" role="img" aria-labelledby="d-cdm-block-t">
 <title id="d-cdm-block-t">A heap block has hidden allocator bookkeeping next to your bytes</title>
@@ -1049,11 +1184,35 @@ Both parameters are declared <code>restrict</code>, so the compiler assumes <cod
 patterns: the creator frees; the last user frees; a cleanup label with <code>goto</code> for functions
 with multiple exit points; reference counting for shared objects. Tools: Valgrind, AddressSanitizer
 (<code>-fsanitize=address</code>), LeakSanitizer, static analysers.</p>
+<pre><code><span class="k">int</span> load(<span class="k">const</span> <span class="k">char</span> *path) {
+    <span class="k">char</span> *buf = <span class="k">NULL</span>;               <span class="c">// init to NULL so cleanup can free() unconditionally</span>
+    FILE *f = fopen(path, <span class="s">"rb"</span>);
+    <span class="k">if</span> (!f) <span class="k">goto</span> fail;             <span class="c">// single exit path for every error</span>
+    buf = malloc(<span class="n">4096</span>);
+    <span class="k">if</span> (!buf) <span class="k">goto</span> fail;
+    <span class="k">if</span> (fread(buf, <span class="n">1</span>, <span class="n">4096</span>, f) == <span class="n">0</span>) <span class="k">goto</span> fail;
+    <span class="c">/* ... use buf ... */</span>
+    free(buf); fclose(f);
+    <span class="k">return</span> <span class="n">0</span>;
+fail:                              <span class="c">// frees only what was actually acquired</span>
+    free(buf);
+    <span class="k">if</span> (f) fclose(f);
+    <span class="k">return</span> <span class="n">-1</span>;
+}</code></pre>
 
 <h3>Stack vs heap allocation</h3>
 <p>Stack: automatic, extremely fast (bump a pointer), freed on scope exit, limited size (often 1&ndash;8&nbsp;MB),
 size usually fixed. Heap: explicit, slower, large, size decided at run time, must be freed. Use the
 heap when the object must outlive the function, is large, or has a run-time-determined size.</p>
+<pre><code><span class="k">int</span> stack_buf[<span class="n">64</span>];               <span class="c">// stack: freed automatically at end of block, ~KB budget</span>
+
+<span class="k">int</span> *make_counter(<span class="k">void</span>) {
+    <span class="k">int</span> local = <span class="n">0</span>;
+    <span class="c">// return &amp;local;              // BUG: 'local' is gone once we return</span>
+    <span class="k">int</span> *heap = malloc(<span class="k">sizeof</span> *heap); <span class="c">// heap: outlives the function...</span>
+    <span class="k">if</span> (heap) *heap = <span class="n">0</span>;
+    <span class="k">return</span> heap;                   <span class="c">// ...caller now owns it and must free() it</span>
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -1205,6 +1364,21 @@ large unused gap between them.</p>
 <tr><td>Heap</td><td><code>malloc</code>'d memory. Grows upward.</td><td>Until you <code>free</code> it.</td></tr>
 <tr><td>Stack</td><td>Function frames: locals, saved registers, return address, args. Grows downward.</td><td>Until the function returns.</td></tr>
 </table>
+<pre><code><span class="k">#include</span> <span class="s">&lt;stdio.h&gt;</span>
+<span class="k">#include</span> <span class="s">&lt;stdlib.h&gt;</span>
+<span class="k">int</span> init_g = <span class="n">7</span>;                       <span class="c">// .data</span>
+<span class="k">int</span> zero_g;                          <span class="c">// .bss</span>
+<span class="k">int</span> main(<span class="k">void</span>) {
+    <span class="k">int</span> local;                       <span class="c">// stack</span>
+    <span class="k">int</span> *dyn = malloc(<span class="n">16</span>);            <span class="c">// heap block; 'dyn' itself is on the stack</span>
+    <span class="c">// Print the addresses: text &lt; rodata &lt; data &lt; bss &lt; heap &lt;&lt; stack</span>
+    printf(<span class="s">"text  %p\n"</span>, (<span class="k">void</span>*)main);
+    printf(<span class="s">"data  %p\n"</span>, (<span class="k">void</span>*)&amp;init_g);
+    printf(<span class="s">"bss   %p\n"</span>, (<span class="k">void</span>*)&amp;zero_g);
+    printf(<span class="s">"heap  %p\n"</span>, (<span class="k">void</span>*)dyn);
+    printf(<span class="s">"stack %p\n"</span>, (<span class="k">void</span>*)&amp;local);
+    free(dyn);
+}</code></pre>
 
 <h3>The stack</h3>
 <p>Each call pushes a <strong>stack frame</strong>: space for the function's automatic variables, the
@@ -1232,12 +1406,31 @@ fragmentation. Typical size is 1&ndash;8&nbsp;MB (tunable with <code>ulimit -s</
 </svg>
 <figcaption>Frames are LIFO. "Allocating" a local is just part of moving the stack pointer when the frame is set up; nothing is individually freed.</figcaption>
 </figure>
+<pre><code><span class="c">// Each recursion level adds a frame; no base case =&gt; stack overflow (SIGSEGV)</span>
+<span class="k">long</span> depth(<span class="k">long</span> n) {
+    <span class="k">char</span> pad[<span class="n">1024</span>];              <span class="c">// 1 KB of locals per frame speeds the crash</span>
+    pad[<span class="n">0</span>] = (<span class="k">char</span>)n;
+    <span class="k">return</span> n &lt; <span class="n">0</span> ? <span class="n">0</span> : depth(n + <span class="n">1</span>) + pad[<span class="n">0</span>]; <span class="c">// grows until the guard page faults</span>
+}
+
+<span class="k">void</span> ok(<span class="k">void</span>) {
+    <span class="k">int</span> tmp[<span class="n">8</span>];                 <span class="c">// created as the frame is set up...</span>
+}                                <span class="c">// ...released as one when 'ok' returns (SP restored)</span></code></pre>
 
 <h3>The heap</h3>
 <p>A pool the C library manages via <code>brk</code>/<code>sbrk</code> or <code>mmap</code> under the hood. Allocation
 walks free lists / size classes, so it's slower and can fragment, but blocks live until freed and
 can be huge. Good for objects whose size or count is known only at run time, or that must outlive
 their creating function.</p>
+<pre><code>size_t n;
+scanf(<span class="s">"%zu"</span>, &amp;n);                 <span class="c">// size known only at run time -&gt; must be heap</span>
+<span class="k">double</span> *v = malloc(n * <span class="k">sizeof</span> *v); <span class="c">// small -&gt; carved from an sbrk arena</span>
+<span class="k">if</span> (!v) { perror(<span class="s">"malloc"</span>); <span class="k">return</span> <span class="n">1</span>; }
+
+<span class="k">char</span> *huge = malloc(<span class="n">64</span> * <span class="n">1024</span> * <span class="n">1024</span>); <span class="c">// large -&gt; its own mmap region from the kernel</span>
+<span class="c">/* ... blocks live until freed, regardless of scope ... */</span>
+free(huge);
+free(v);</code></pre>
 
 <h3>Where variables go</h3>
 <pre><code><span class="k">int</span> g;                 <span class="c">// .bss  (zero-init global)</span>
@@ -1255,6 +1448,13 @@ their creating function.</p>
 <li><strong>Guard page</strong> below the stack triggers a fault on overflow instead of silent corruption.</li>
 <li><strong>Data vs BSS</strong>: BSS costs nothing on disk because the loader just zero-fills it.</li>
 </ul>
+<pre><code><span class="k">int</span> main(<span class="k">void</span>) {
+    <span class="k">int</span> x;
+    printf(<span class="s">"%p\n"</span>, (<span class="k">void</span>*)&amp;x); <span class="c">// ASLR: prints a DIFFERENT address on each run</span>
+    <span class="k">return</span> <span class="n">0</span>;
+}
+<span class="c">// $ ./a.out  -&gt; 0x7ffe4c1b9a2c</span>
+<span class="c">// $ ./a.out  -&gt; 0x7ffd0e77b58c   (so never persist or hard-code a pointer value)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -1384,6 +1584,14 @@ strictest member.</p>
 </svg>
 <figcaption>Order members from largest alignment to smallest to minimise padding. <code>offsetof(T, m)</code> from <code>&lt;stddef.h&gt;</code> gives the real offset; C11 <code>alignof</code> / <code>_Alignas</code> query or force alignment.</figcaption>
 </figure>
+<pre><code><span class="k">#include</span> <span class="s">&lt;stddef.h&gt;</span>   <span class="c">// offsetof</span>
+
+<span class="k">struct</span> bad  { <span class="k">char</span> a; <span class="k">int</span> b; <span class="k">char</span> c; };  <span class="c">// a[..pad..]b c [..pad..]  -&gt; sizeof 12</span>
+<span class="k">struct</span> good { <span class="k">int</span> b; <span class="k">char</span> a; <span class="k">char</span> c; };  <span class="c">// b a c [pad]              -&gt; sizeof 8</span>
+
+printf(<span class="s">"%zu %zu\n"</span>, <span class="k">sizeof</span>(<span class="k">struct</span> bad), <span class="k">sizeof</span>(<span class="k">struct</span> good)); <span class="c">// 12 8</span>
+printf(<span class="s">"%zu\n"</span>, offsetof(<span class="k">struct</span> bad, b));  <span class="c">// 4  -- 3 padding bytes sit after 'a'</span>
+printf(<span class="s">"%zu\n"</span>, _Alignof(<span class="k">struct</span> bad));      <span class="c">// 4  -- alignment of its strictest member (int)</span></code></pre>
 
 <h3>Unions</h3>
 <p>All members share the <em>same</em> storage &mdash; they overlap, starting at the same address.
@@ -1432,16 +1640,41 @@ trick works on GCC/Clang; <code>memcpy</code> is the fully portable route). A <s
 <em>allocation order, straddling of storage units, and signedness of plain <code>int</code> bit-fields
 are implementation-defined</em> &mdash; not portable across compilers/endianness. You cannot take a
 bit-field's address.</p>
+<pre><code><span class="k">struct</span> flags {
+    <span class="k">unsigned</span> ready   : <span class="n">1</span>;   <span class="c">// 1 bit  -- a boolean</span>
+    <span class="k">unsigned</span> mode    : <span class="n">3</span>;   <span class="c">// 3 bits -- values 0..7</span>
+    <span class="k">unsigned</span> channel : <span class="n">4</span>;   <span class="c">// 4 bits -- values 0..15; whole struct fits in 1 byte</span>
+};
+<span class="k">struct</span> flags f = {<span class="n">0</span>};
+f.mode = <span class="n">5</span>;                   <span class="c">// packs into bits 1..3; no &amp;f.mode allowed</span>
+<span class="k">if</span> (f.mode == <span class="n">7</span>) { }            <span class="c">// read back the field</span>
+printf(<span class="s">"%zu\n"</span>, <span class="k">sizeof</span> f);    <span class="c">// typically 1 -- but layout is implementation-defined</span></code></pre>
 
 <h3>Flexible array member (C99)</h3>
 <p>A trailing <code>T arr[];</code> with no size lets one allocation hold a header plus a run-time-sized
 payload contiguously. Must be the last member; the struct must have at least one other member.</p>
+<pre><code><span class="k">struct</span> packet {
+    size_t len;               <span class="c">// header field(s) first</span>
+    <span class="k">char</span>   data[];             <span class="c">// flexible array member -- no size, must be last</span>
+};
+size_t n = <span class="n">100</span>;
+<span class="k">struct</span> packet *p = malloc(<span class="k">sizeof</span> *p + n); <span class="c">// ONE allocation: header + n payload bytes</span>
+p-&gt;len = n;
+memcpy(p-&gt;data, src, n);       <span class="c">// data lives contiguously right after len</span>
+free(p);                      <span class="c">// ONE free -- better locality than a separate buffer</span></code></pre>
 
 <h3>Copying &amp; comparing</h3>
 <p>Struct assignment and passing by value copy all members (including padding, whose contents are
 unspecified). That's why you <em>cannot</em> compare structs with <code>memcmp</code> reliably &mdash;
 padding bytes may differ. Compare field by field, or <code>memset</code> the whole struct to 0 before
 filling it if you must byte-compare.</p>
+<pre><code><span class="k">struct</span> point { <span class="k">int</span> x, y; };
+<span class="k">struct</span> point a = {<span class="n">1</span>, <span class="n">2</span>};
+<span class="k">struct</span> point b = a;           <span class="c">// member-wise copy (assignment / pass-by-value both do this)</span>
+
+<span class="c">// if (memcmp(&amp;a, &amp;b, sizeof a) == 0)  // UNRELIABLE: padding bytes are unspecified</span>
+<span class="k">if</span> (a.x == b.x &amp;&amp; a.y == b.y)   <span class="c">// correct: compare the fields you care about</span>
+    puts(<span class="s">"equal"</span>);</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -1618,6 +1851,16 @@ vtables, plugin registration. The index <em>is</em> the selector &mdash; O(1), n
 <li>Comparisons: two function pointers are equal iff they name the same function.</li>
 <li>No arithmetic on function pointers.</li>
 </ul>
+<pre><code><span class="k">int</span>  add(<span class="k">int</span> a, <span class="k">int</span> b) { <span class="k">return</span> a + b; }
+<span class="k">void</span> log_msg(<span class="k">const</span> <span class="k">char</span> *s) { puts(s); }
+
+<span class="k">int</span> (*fp)(<span class="k">int</span>, <span class="k">int</span>) = add;
+<span class="k">if</span> (fp == add) puts(<span class="s">"same function"</span>); <span class="c">// equality is the only meaningful comparison</span>
+<span class="c">// fp = (int(*)(int,int))log_msg;      // then calling fp(1,2) is UNDEFINED -- wrong signature</span>
+<span class="c">// fp + 1;                             // ERROR: no arithmetic on function pointers</span>
+
+<span class="k">void</span> *h = &amp;add;                       <span class="c">// storing a function ptr in void* is not portable C</span>
+<span class="k">int</span> (*fp2)(<span class="k">int</span>, <span class="k">int</span>) = (<span class="k">int</span>(*)(<span class="k">int</span>,<span class="k">int</span>))h; <span class="c">// only "works" by documented extension (dlsym)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -1745,6 +1988,14 @@ scopes, or C grammar.</p>
 </svg>
 <figcaption>Because it is text substitution before the compiler, macros have no type, no scope, and no respect for C syntax &mdash; hence the pitfalls below.</figcaption>
 </figure>
+<pre><code><span class="c">// what you write:</span>
+<span class="k">#define</span> N 3
+<span class="k">#include</span> <span class="s">&lt;stdio.h&gt;</span>
+<span class="k">int</span> a[N];
+
+<span class="c">// $ gcc -E file.c     (stop after preprocessing) shows pure C:</span>
+<span class="c">//   ... hundreds of lines pasted in from &lt;stdio.h&gt; ...</span>
+<span class="c">//   int a[3];         &lt;- N replaced, #define line gone, no types checked yet</span></code></pre>
 
 <h3>Macro pitfalls</h3>
 <figure class="diagram">
@@ -1799,6 +2050,17 @@ is shorter and widely supported but not in the standard.</p>
 <p><code>__FILE__</code>, <code>__LINE__</code>, <code>__func__</code> (actually a variable, C99), <code>__DATE__</code>,
 <code>__STDC_VERSION__</code>, and compiler-specific ones like <code>__GNUC__</code>. <code>assert</code> is a
 macro that expands to nothing when <code>NDEBUG</code> is defined.</p>
+<pre><code><span class="c">// A logging macro that stamps every message with its source location:</span>
+<span class="k">#define</span> LOG(msg) \
+    fprintf(stderr, <span class="s">"[%s:%d %s] %s\n"</span>, __FILE__, __LINE__, __func__, msg)
+
+<span class="k">void</span> work(<span class="k">void</span>) {
+    LOG(<span class="s">"starting"</span>);           <span class="c">// -&gt; [work.c:42 work] starting</span>
+}
+
+<span class="k">#if</span> __STDC_VERSION__ &gt;= <span class="n">201112L</span>
+    <span class="c">// safe to use C11 features (_Static_assert, _Generic, ...)</span>
+<span class="k">#endif</span></code></pre>
 
 <h3>X-macros</h3>
 <p>A single list macro drives multiple generated tables (enum + names + handlers) so they can't drift
@@ -1936,6 +2198,15 @@ program (the "one definition rule").</p>
 </svg>
 <figcaption><strong>External</strong> = one shared entity across the program. <strong>Internal</strong> (<code>static</code> at file scope) = private to this TU. <strong>None</strong> = a fresh entity each time (locals, params, typedefs).</figcaption>
 </figure>
+<pre><code><span class="c">// math.h</span>
+<span class="k">int</span> square(<span class="k">int</span>);           <span class="c">// DECLARATION -- may appear in every TU that includes this</span>
+
+<span class="c">// math.c</span>
+<span class="k">int</span> square(<span class="k">int</span> n) { <span class="k">return</span> n * n; } <span class="c">// DEFINITION -- exactly one across the whole program</span>
+
+<span class="c">// main.c</span>
+<span class="k">#include</span> <span class="s">"math.h"</span>          <span class="c">// gets the declaration; linker binds the call to math.o</span>
+<span class="k">int</span> main(<span class="k">void</span>) { <span class="k">return</span> square(<span class="n">7</span>); }</code></pre>
 
 <h3>Linkage</h3>
 <table>
@@ -1944,6 +2215,17 @@ program (the "one definition rule").</p>
 <tr><td>Internal</td><td>One entity private to this translation unit.</td><td><code>static</code> at file scope.</td></tr>
 <tr><td>None</td><td>A fresh entity each time the declaration is seen.</td><td>Locals, function parameters, <code>typedef</code>, most block-scope names.</td></tr>
 </table>
+<pre><code><span class="c">// ---- util.c ----</span>
+<span class="k">int</span> shared = <span class="n">1</span>;             <span class="c">// EXTERNAL: other .c files can link to 'shared'</span>
+<span class="k">static</span> <span class="k">int</span> hidden = <span class="n">2</span>;      <span class="c">// INTERNAL: name is private to util.c</span>
+<span class="k">static</span> <span class="k">void</span> helper(<span class="k">void</span>) { }   <span class="c">// INTERNAL: won't clash with a 'helper' elsewhere</span>
+<span class="k">void</span> api(<span class="k">void</span>) {
+    <span class="k">int</span> local = <span class="n">3</span>;          <span class="c">// NO linkage: a fresh object each call</span>
+}
+
+<span class="c">// ---- main.c ----</span>
+<span class="k">extern</span> <span class="k">int</span> shared;           <span class="c">// OK: resolves to util.c's definition</span>
+<span class="c">// extern int hidden;         // LINK ERROR: 'hidden' has internal linkage</span></code></pre>
 
 <h3><code>extern</code> and the header pattern</h3>
 <pre><code><span class="c">// config.h</span>
@@ -1961,17 +2243,35 @@ several <code>.c</code> files gives multiple definitions &mdash; a link error un
 <p>In C, a file-scope <code>const</code> still has external linkage by default (unlike C++, where it's
 internal). So <code>const int K = 10;</code> in a header included twice is a redefinition; use
 <code>static const</code> or (better) put the definition in one <code>.c</code> and <code>extern const</code> in the header, or use an <code>enum</code>/<code>#define</code> for true compile-time constants.</p>
+<pre><code><span class="c">// shared.h -- included by several .c files</span>
+<span class="c">// const int K = 10;         // BAD in C: external linkage -&gt; duplicate symbol at link</span>
+<span class="k">enum</span> { K = <span class="n">10</span> };               <span class="c">// GOOD: compile-time constant, no symbol, header-safe</span>
+<span class="k">static</span> <span class="k">const</span> <span class="k">int</span> TIMEOUT = <span class="n">30</span>;    <span class="c">// OK: internal linkage, a private copy per TU</span>
+<span class="k">extern</span> <span class="k">const</span> <span class="k">char</span> *VERSION;       <span class="c">// OK: declare here, define once in a .c</span></code></pre>
 
 <h3><code>inline</code> in C (differs from C++)</h3>
 <p>C99 <code>inline</code> without <code>static</code> or <code>extern</code> provides an <em>inline definition</em> that
 does <strong>not</strong> emit an external symbol; you must supply one <code>extern inline</code> (or normal)
 definition in exactly one <code>.c</code> for the address/non-inlined calls. The simple, portable choice
 for header helpers is <code>static inline</code>.</p>
+<pre><code><span class="c">// vec.h -- safe, portable header helper</span>
+<span class="k">static</span> <span class="k">inline</span> <span class="k">int</span> clampi(<span class="k">int</span> v, <span class="k">int</span> lo, <span class="k">int</span> hi) {
+    <span class="k">return</span> v &lt; lo ? lo : (v &gt; hi ? hi : v); <span class="c">// each TU gets its own inlinable copy</span>
+}
+<span class="c">// Plain `inline int clampi(...)` here would need ONE `extern inline int clampi(...);`</span>
+<span class="c">// in some .c file, or you get "undefined reference to clampi" at link time.</span></code></pre>
 
 <h3>Tentative definitions</h3>
 <p><code>int x;</code> at file scope is a <em>tentative definition</em>. Multiple tentative definitions of the
 same variable in one translation unit collapse into one, initialised to zero. Across translation
 units they're still multiple definitions.</p>
+<pre><code><span class="c">// ---- one .c file ----</span>
+<span class="k">int</span> x;                     <span class="c">// tentative definition</span>
+<span class="k">int</span> x;                     <span class="c">// another tentative -- fine, they merge</span>
+<span class="k">int</span> x = <span class="n">5</span>;                 <span class="c">// the real definition wins; x starts at 5</span>
+<span class="c">// int x = 6;              // ERROR: two initialised definitions</span>
+
+<span class="c">// Put `int x;` in a header included by 2+ .c files -&gt; multiple-definition link error.</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -2105,6 +2405,13 @@ operator then decides what "act" means.</p>
 </svg>
 <figcaption>The same four moves compose into every field extract/insert: build a wider mask, shift it into place, then OR / AND-NOT.</figcaption>
 </figure>
+<pre><code><span class="k">unsigned</span> x    = <span class="n">0x45</span>;      <span class="c">// 0100 0101  -- bits 0, 2, 6 are set</span>
+<span class="k">unsigned</span> mask = <span class="n">1u</span> &lt;&lt; <span class="n">3</span>;    <span class="c">// 0000 1000  -- a "1" exactly at bit 3</span>
+
+x = x | mask;                <span class="c">// SET   bit 3 -&gt; 0x4D</span>
+x = x &amp; ~mask;               <span class="c">// CLEAR bit 3 -&gt; 0x45 again</span>
+x = x ^ mask;                <span class="c">// TOGGLE bit 3 -&gt; 0x4D</span>
+<span class="k">int</span> b3 = (x &gt;&gt; <span class="n">3</span>) &amp; <span class="n">1u</span>;       <span class="c">// TEST  bit 3 -&gt; 1</span></code></pre>
 
 <h3>The four fundamental operations</h3>
 <pre><code>x |  (<span class="n">1u</span> &lt;&lt; n)     <span class="c">// set bit n</span>
@@ -2145,6 +2452,15 @@ x = (x &amp; ~(mask &lt;&lt; lo)) | ((v &amp; mask) &lt;&lt; lo);</code></pre>
 <li>Shift count must be <code>0 &le; n &lt; width</code>. <code>x &lt;&lt; 32</code> for 32-bit <code>x</code> is UB, not 0.</li>
 <li>Operands narrower than <code>int</code> are promoted first, so <code>(uint8_t)0xFF &lt;&lt; 8</code> is computed in <code>int</code>.</li>
 </ul>
+<pre><code><span class="k">unsigned</span> u = <span class="n">1u</span> &lt;&lt; <span class="n">31</span>;      <span class="c">// OK: 0x80000000</span>
+<span class="c">// int s = 1 &lt;&lt; 31;          // UB: signed overflow</span>
+<span class="c">// unsigned bad = u &lt;&lt; 32;   // UB: shift count == width, NOT defined as 0</span>
+
+<span class="k">int</span> neg = <span class="n">-8</span>;
+<span class="k">int</span> r = neg &gt;&gt; <span class="n">1</span>;           <span class="c">// impl-defined: -4 on GCC/Clang (arithmetic shift), don't rely on it</span>
+
+uint8_t byte = <span class="n">0xFF</span>;
+<span class="k">int</span> wide = byte &lt;&lt; <span class="n">8</span>;      <span class="c">// byte promotes to int first -&gt; 0xFF00 (65280), no truncation</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -2247,6 +2563,9 @@ Or use a byte lookup table, or <code>__builtin</code>/ARM <code>RBIT</code>.
 <li><strong>Unspecified behaviour</strong> &mdash; several outcomes are allowed, no choice documented (e.g. order of evaluation of function arguments).</li>
 <li><strong>Implementation-defined</strong> &mdash; allowed to vary, but the implementation must document its choice (e.g. <code>sizeof(int)</code>, right shift of negatives, <code>char</code> signedness).</li>
 </ul>
+<pre><code><span class="k">int</span> a = INT_MAX + <span class="n">1</span>;            <span class="c">// UNDEFINED: anything may happen, at any -O level</span>
+printf(<span class="s">"%d %d\n"</span>, f(), g());     <span class="c">// UNSPECIFIED: f or g may run first (no set order)</span>
+<span class="k">int</span> n = <span class="k">sizeof</span>(<span class="k">int</span>);           <span class="c">// IMPLEMENTATION-DEFINED: 4 here, 2 on some MCUs -- but documented</span></code></pre>
 
 <h3>The greatest hits</h3>
 <table>
@@ -2263,6 +2582,16 @@ Or use a byte lookup table, or <code>__builtin</code>/ARM <code>RBIT</code>.
 <tr><td>Bad <code>printf</code> format/arg mismatch</td><td><code>printf("%d", 3.0)</code>, <code>%s</code> with an <code>int</code></td></tr>
 <tr><td>Calling a function through a wrong-type pointer</td><td>see Function Pointers topic</td></tr>
 </table>
+<pre><code><span class="k">int</span> a[<span class="n">4</span>];
+a[<span class="n">4</span>] = <span class="n">0</span>;                  <span class="c">// OOB write: index 4 is past the last valid index (3)</span>
+
+<span class="k">int</span> i = <span class="n">0</span>;
+i = i++ + <span class="n">1</span>;               <span class="c">// UB: i modified twice with no sequence point between</span>
+
+<span class="k">int</span> x;
+printf(<span class="s">"%d\n"</span>, x);          <span class="c">// UB: reading uninitialised automatic storage</span>
+
+printf(<span class="s">"%d\n"</span>, <span class="n">3.0</span>);        <span class="c">// UB: %d with a double -- format/arg mismatch</span></code></pre>
 
 <h3>Why &ldquo;it works on my machine&rdquo; is not a defence</h3>
 <p>Modern optimisers <em>actively assume UB never happens</em> and rewrite your code on that basis.
@@ -2295,11 +2624,28 @@ assumptions turn <code>x + 1 &gt; x</code> into a constant <code>true</code>.</p
 </svg>
 <figcaption>UB is not "a crash" &mdash; it is a licence for the whole program's behaviour to be anything. It can delete security checks and loops, and the effect can travel backwards past the offending line.</figcaption>
 </figure>
+<pre><code><span class="c">// WRONG -- check is after the deref, so -O2 may delete it entirely:</span>
+<span class="k">int</span> first_wrong(<span class="k">int</span> *p) {
+    <span class="k">int</span> v = *p;                <span class="c">// compiler now "knows" p != NULL</span>
+    <span class="k">if</span> (!p) <span class="k">return</span> <span class="n">-1</span>;         <span class="c">// provably-false -&gt; removed as dead code</span>
+    <span class="k">return</span> v;
+}
+<span class="c">// RIGHT -- guard before the first dereference:</span>
+<span class="k">int</span> first_ok(<span class="k">int</span> *p) {
+    <span class="k">if</span> (!p) <span class="k">return</span> <span class="n">-1</span>;
+    <span class="k">return</span> *p;
+}</code></pre>
 
 <h3>Sequence points / sequencing (C11 model)</h3>
 <p>Between two <em>sequence points</em> (the <code>;</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>?:</code>, comma
 operator, end of a full expression), an object may be modified at most once, and a value read only
 to compute the new value. <code>i = i++</code> violates this; <code>i = i + 1</code> is fine.</p>
+<pre><code><span class="k">int</span> i = <span class="n">1</span>;
+i = i + <span class="n">1</span>;         <span class="c">// FINE: one modification, read is only to compute the new value</span>
+<span class="c">// i = i++;        // UB: two modifications of i, unsequenced</span>
+<span class="c">// a[i] = i++;     // UB: which i indexes a[] -- old or new? unsequenced</span>
+foo(), bar();      <span class="c">// comma operator IS a sequence point: foo() fully done before bar()</span>
+<span class="k">if</span> (p &amp;&amp; *p) { }    <span class="c">// &amp;&amp; sequences: *p only runs after p is known non-null</span></code></pre>
 
 <h3>Defences</h3>
 <ul>
@@ -2308,6 +2654,11 @@ to compute the new value. <code>i = i++</code> violates this; <code>i = i + 1</c
 <li>Use <code>-fno-strict-aliasing</code> only as a stopgap; fix the aliasing.</li>
 <li>Static analysis (clang-tidy, Coverity, <code>cppcheck</code>).</li>
 </ul>
+<pre><code><span class="c"># build with every warning, warnings are errors, sanitizers on:</span>
+gcc -std=c11 -Wall -Wextra -Wpedantic -Werror \
+    -fsanitize=address,undefined -g app.c -o app
+./app                 <span class="c"># ASan/UBSan print file:line + a diagnosis on the first violation</span>
+valgrind --leak-check=full ./app   <span class="c"># catches leaks / invalid reads a sanitizer build missed</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -2438,6 +2789,19 @@ Don't cast the buffer pointer to <code>struct T *</code> and dereference. Instea
 </svg>
 <figcaption>The user-space buffer turns many small <code>printf</code>s into few <code>write()</code> syscalls. That is the speed win &mdash; and the reason output can appear out of order or be lost on a crash.</figcaption>
 </figure>
+<pre><code><span class="c">// Layer 1: ISO C stdio -- buffered, portable</span>
+FILE *fp = fopen(<span class="s">"data.txt"</span>, <span class="s">"rb"</span>);
+<span class="k">if</span> (!fp) { perror(<span class="s">"fopen"</span>); <span class="k">return</span> <span class="n">1</span>; }
+<span class="k">char</span> buf[<span class="n">64</span>];
+size_t got = fread(buf, <span class="n">1</span>, <span class="k">sizeof</span> buf, fp); <span class="c">// may return short at EOF</span>
+fclose(fp);                             <span class="c">// flushes + closes</span>
+
+<span class="c">// Layer 2: POSIX -- unbuffered, one syscall per call</span>
+<span class="k">int</span> fd = open(<span class="s">"data.txt"</span>, O_RDONLY);
+<span class="k">if</span> (fd &lt; <span class="n">0</span>) { perror(<span class="s">"open"</span>); <span class="k">return</span> <span class="n">1</span>; }
+ssize_t n = read(fd, buf, <span class="k">sizeof</span> buf);   <span class="c">// n == -1 on error, 0 at EOF</span>
+close(fd);
+<span class="c">// FILE *via = fdopen(fd, "r");          // wrap an fd in a buffered stream</span></code></pre>
 
 <h3>Buffering modes</h3>
 <ul>
@@ -2450,6 +2814,14 @@ crash can &ldquo;lose&rdquo; the last <code>printf</code> &mdash; the buffer was
 <code>fflush(stdout)</code>, <code>setvbuf</code>, or a trailing <code>'\n'</code> on a tty. Streams are flushed
 on normal <code>exit()</code> / <code>return</code> from <code>main</code>, but <em>not</em> on <code>_exit</code>,
 <code>abort</code>, or a signal.</p>
+<pre><code>printf(<span class="s">"progress..."</span>);      <span class="c">// sits in the buffer if stdout is a pipe/file (no '\n')</span>
+fflush(stdout);              <span class="c">// force it out now (e.g. before a long computation)</span>
+
+<span class="k">char</span> big[<span class="n">65536</span>];
+setvbuf(stdout, big, _IOFBF, <span class="k">sizeof</span> big); <span class="c">// full buffering with a bigger buffer</span>
+setvbuf(stderr, <span class="k">NULL</span>, _IONBF, <span class="n">0</span>);          <span class="c">// _IONBF = unbuffered (stderr's default)</span>
+
+abort();                    <span class="c">// does NOT flush -- any buffered printf output is lost</span></code></pre>
 
 <h3>Reading lines safely</h3>
 <pre><code><span class="k">char</span> buf[<span class="n">256</span>];
@@ -2465,6 +2837,15 @@ on normal <code>exit()</code> / <code>return</code> from <code>main</code>, but 
 <li><code>fread</code>/<code>fwrite</code> return the count of <em>elements</em> transferred; a short count means EOF or error &mdash; disambiguate with <code>feof</code>/<code>ferror</code>.</li>
 <li><code>fgetc</code>/<code>getchar</code> return <code>int</code> (so <code>EOF</code>, which is negative, is distinguishable from any <code>unsigned char</code>). Storing the result in a <code>char</code> is a classic bug.</li>
 </ul>
+<pre><code>FILE *fp = fopen(path, <span class="s">"r"</span>);
+<span class="k">if</span> (!fp) { perror(path); <span class="k">return</span> <span class="n">-1</span>; }   <span class="c">// NULL + errno -&gt; "path: No such file..."</span>
+
+<span class="k">int</span> c;                        <span class="c">// MUST be int, not char --</span>
+<span class="k">while</span> ((c = fgetc(fp)) != EOF) <span class="c">// ...so EOF (-1) can't be confused with byte 0xFF</span>
+    putchar(c);
+
+<span class="k">if</span> (ferror(fp)) fputs(<span class="s">"read error\n"</span>, stderr); <span class="c">// short read: error vs clean EOF?</span>
+fclose(fp);</code></pre>
 
 <h3>The string/memory functions</h3>
 <table>
@@ -2478,6 +2859,19 @@ on normal <code>exit()</code> / <code>return</code> from <code>main</code>, but 
 <tr><td><code>strtok</code></td><td>Mutates its input, keeps hidden state, not reentrant &mdash; prefer <code>strtok_r</code>/<code>strsep</code>.</td></tr>
 <tr><td><code>atoi</code></td><td>No error reporting; use <code>strtol</code> and check <code>endptr</code>/<code>errno</code>.</td></tr>
 </table>
+<pre><code><span class="k">char</span> dst[<span class="n">8</span>];
+snprintf(dst, <span class="k">sizeof</span> dst, <span class="s">"%s"</span>, src); <span class="c">// bounded + always terminated (unlike strcpy/strncpy)</span>
+
+<span class="k">char</span> ov[<span class="n">4</span>] = <span class="s">"abcd"</span>;               <span class="c">// note: no room for '\0'</span>
+memmove(ov + <span class="n">1</span>, ov, <span class="n">3</span>);              <span class="c">// overlapping -&gt; memmove, NOT memcpy (that would be UB)</span>
+
+<span class="c">// robust string-to-number: detect "not a number" and trailing junk</span>
+<span class="k">const</span> <span class="k">char</span> *in = <span class="s">"42x"</span>;
+<span class="k">char</span> *end;
+errno = <span class="n">0</span>;
+<span class="k">long</span> v = strtol(in, &amp;end, <span class="n">10</span>);
+<span class="k">if</span> (end == in || *end != <span class="s">'\0'</span> || errno == ERANGE)
+    fputs(<span class="s">"bad integer\n"</span>, stderr);   <span class="c">// here *end == 'x' -&gt; rejected (atoi would return 42 silently)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -2615,12 +3009,27 @@ OS at run time. Each stage consumes the previous stage's output and produces a l
 </svg>
 <figcaption><code>gcc -save-temps hello.c</code> keeps every intermediate (<code>.i</code>, <code>.s</code>, <code>.o</code>). <code>gcc -E</code> / <code>-S</code> / <code>-c</code> stop after stage 1 / 2 / 3.</figcaption>
 </figure>
+<pre><code><span class="c"># run each stage by hand -- normally `gcc hello.c` does all of it:</span>
+cpp    hello.c        -o hello.i    <span class="c"># 1 preprocess -&gt; expanded C</span>
+gcc -S hello.i        -o hello.s    <span class="c"># 2 compile    -&gt; assembly text</span>
+as     hello.s        -o hello.o    <span class="c"># 3 assemble   -&gt; relocatable object (ELF)</span>
+ld ... hello.o -lc    -o hello      <span class="c"># 4 link       -&gt; executable (ELF)</span>
+./hello                             <span class="c"># 5 OS loads &amp; runs it</span></code></pre>
 
 <h3>Stage 1 &mdash; Preprocess (<code>.c</code> &rarr; <code>.i</code>)</h3>
 <p>Pure text manipulation: <code>#include</code> pastes headers, <code>#define</code> macros are expanded,
 <code>#if</code>/<code>#ifdef</code> branches are resolved, comments are stripped, and <code>#line</code>
 markers are inserted. Output is one big self-contained <strong>translation unit</strong> of C with no
 directives left. (Covered in depth in the Preprocessor topic.)</p>
+<pre><code><span class="c">// hello.c</span>
+<span class="k">#include</span> <span class="s">&lt;stdio.h&gt;</span>
+<span class="k">#define</span> GREETING <span class="s">"hi"</span>
+<span class="k">int</span> main(<span class="k">void</span>) { puts(GREETING); }   <span class="c">// comment -- will be stripped</span>
+
+<span class="c">// after `gcc -E hello.c`  (hello.i):</span>
+<span class="c">//   ...&lt;hundreds of lines from stdio.h&gt;...</span>
+<span class="c">//   extern int puts(const char *);</span>
+<span class="c">//   int main(void) { puts("hi"); }   &lt;- macro expanded, comment gone, no #directives</span></code></pre>
 
 <h3>Stage 2 &mdash; Compile (<code>.i</code> &rarr; <code>.s</code>)</h3>
 <ul>
@@ -2628,6 +3037,14 @@ directives left. (Covered in depth in the Preprocessor topic.)</p>
 <li><strong>Optimiser</strong>: works on the IR &mdash; constant folding, dead-code elimination, inlining, loop transforms, register allocation planning. This is where <code>-O0</code>&hellip;<code>-O3</code>/<code>-Os</code> act, and where the compiler exploits the absence of undefined behaviour.</li>
 <li><strong>Back end</strong>: instruction selection + register allocation + scheduling &rarr; target <strong>assembly</strong> text for one CPU/ABI.</li>
 </ul>
+<pre><code><span class="c">// add.c</span>
+<span class="k">int</span> add(<span class="k">int</span> a, <span class="k">int</span> b) { <span class="k">return</span> a + b; }
+
+<span class="c"># gcc -O2 -S add.c  -&gt; add.s (x86-64):</span>
+<span class="c">#   add:</span>
+<span class="c">#       lea     eax, [rdi + rsi]   ; args arrive in edi, esi per the SysV ABI</span>
+<span class="c">#       ret                        ; return value goes in eax</span>
+<span class="c"># still TEXT -- no machine-code bytes, no final addresses yet.</span></code></pre>
 
 <h3>Stage 3 &mdash; Assemble (<code>.s</code> &rarr; <code>.o</code>)</h3>
 <p>The assembler turns mnemonics into machine-code bytes and writes a <strong>relocatable object
@@ -2710,6 +3127,13 @@ code can be loaded at any address. Calls to functions in another <code>.so</code
 binding") by updating the <strong>GOT</strong> (global offset table). <code>LD_BIND_NOW=1</code> forces
 eager resolution; <code>ldd a.out</code> lists the needed <code>.so</code>s; <code>LD_LIBRARY_PATH</code> /
 <code>rpath</code> / <code>ldconfig</code> control the search.</p>
+<pre><code>gcc hello.c -o dyn           <span class="c"># default: dynamic</span>
+ldd dyn                      <span class="c"># =&gt;  libc.so.6 =&gt; /lib/x86_64-linux-gnu/libc.so.6</span>
+ls -l dyn                    <span class="c"># ~16 KB -- libc is NOT inside it</span>
+
+gcc -static hello.c -o stat  <span class="c"># copy every used libc routine into the exe</span>
+ldd stat                     <span class="c"># =&gt;  "not a dynamic executable"</span>
+ls -l stat                   <span class="c"># ~900 KB -- self-contained, runs with no libc.so present</span></code></pre>
 
 <h3>Stage 5 &mdash; Load &amp; run</h3>
 <p><code>execve("./a.out", argv, envp)</code> makes the kernel: read the ELF header, create a fresh
@@ -2741,6 +3165,18 @@ shared libraries, performs relocations, then jumps to the program's real entry.<
 </svg>
 <figcaption><code>_exit</code>, <code>abort()</code>, and signals bypass the <code>atexit</code>/destructor path &mdash; which is why buffered <code>stdout</code> can be lost on <code>abort</code>.</figcaption>
 </figure>
+<pre><code><span class="k">#include</span> <span class="s">&lt;stdio.h&gt;</span>
+
+__attribute__((constructor)) <span class="k">static</span> <span class="k">void</span> setup(<span class="k">void</span>) {
+    puts(<span class="s">"1: runs from .init_array, BEFORE main"</span>);
+}
+__attribute__((destructor)) <span class="k">static</span> <span class="k">void</span> teardown(<span class="k">void</span>) {
+    puts(<span class="s">"3: runs from .fini_array, on normal exit"</span>);
+}
+<span class="k">int</span> main(<span class="k">void</span>) {
+    puts(<span class="s">"2: main"</span>);
+    <span class="k">return</span> <span class="n">0</span>;              <span class="c">// _exit() here would SKIP teardown() and the stdout flush</span>
+}</code></pre>
 
 <h3>Diagnostic commands</h3>
 <pre><code>gcc -save-temps -O2 hello.c   <span class="c"># keep hello.i / hello.s / hello.o</span>
@@ -2899,6 +3335,21 @@ real thing; conceptually, low&rarr;high:</p>
 <tr><td>mmap area</td><td>Shared libraries, large <code>malloc</code>s, <code>mmap</code>'d files, thread stacks, TLS blocks</td><td>varies</td><td>Independent mappings; freed with <code>munmap</code>.</td></tr>
 <tr><td>Stack</td><td>Call frames: locals, saved registers, return addresses, spilled args</td><td>rw-</td><td>Grows down; a <strong>guard page</strong> faults on overflow. Default 8&nbsp;MB (<code>ulimit -s</code>).</td></tr>
 </table>
+<pre><code><span class="k">#include</span> <span class="s">&lt;stdio.h&gt;</span>
+<span class="k">#include</span> <span class="s">&lt;stdlib.h&gt;</span>
+<span class="k">const char</span> *lit = <span class="s">"x"</span>;          <span class="c">// "x" -&gt; .rodata ; lit -&gt; .data</span>
+<span class="k">int</span> g_zero;                     <span class="c">// .bss</span>
+<span class="k">int</span> g_init = <span class="n">1</span>;                 <span class="c">// .data</span>
+<span class="k">int</span> main(<span class="k">void</span>) {
+    <span class="k">int</span> loc;                    <span class="c">// stack</span>
+    <span class="k">void</span> *hp = malloc(<span class="n">1</span>);         <span class="c">// heap (small) -- just above .bss</span>
+    <span class="k">void</span> *big = malloc(<span class="n">1</span>&lt;&lt;<span class="n">20</span>);     <span class="c">// mmap region (&gt;= ~128 KB)</span>
+    printf(<span class="s">"text %p\nrodata %p\ndata %p\nbss %p\nheap %p\nmmap %p\nstack %p\n"</span>,
+           (<span class="k">void</span>*)main, (<span class="k">void</span>*)lit, (<span class="k">void</span>*)&amp;g_init,
+           (<span class="k">void</span>*)&amp;g_zero, hp, big, (<span class="k">void</span>*)&amp;loc);
+    <span class="c">// then: system("cat /proc/self/maps");  // see the real ranges + perms</span>
+    free(hp); free(big);
+}</code></pre>
 
 <h3>How the process gets memory from the kernel</h3>
 <p>User code never talks to physical RAM. It asks the kernel to add <strong>mappings</strong> to its
@@ -2930,6 +3381,19 @@ paging</strong>).</p>
 </svg>
 <figcaption><code>brk</code>/<code>sbrk</code> just move the top of the single heap segment. <code>mmap(MAP_ANONYMOUS)</code> creates an independent zero-filled region anywhere in the gap.</figcaption>
 </figure>
+<pre><code><span class="k">#include</span> <span class="s">&lt;unistd.h&gt;</span>
+<span class="k">#include</span> <span class="s">&lt;sys/mman.h&gt;</span>
+
+<span class="k">void</span> *lo = sbrk(<span class="n">0</span>);              <span class="c">// current program break (top of heap)</span>
+sbrk(<span class="n">64</span> * <span class="n">1024</span>);                 <span class="c">// move it up 64 KB -- this is roughly what small malloc does</span>
+<span class="k">void</span> *hi = sbrk(<span class="n">0</span>);              <span class="c">// hi - lo == 65536</span>
+
+<span class="c">// a big block: its own anonymous region, RAM attached only on first write</span>
+size_t n = <span class="n">4</span> * <span class="n">1024</span> * <span class="n">1024</span>;
+<span class="k">char</span> *p = mmap(<span class="k">NULL</span>, n, PROT_READ | PROT_WRITE,
+              MAP_PRIVATE | MAP_ANONYMOUS, <span class="n">-1</span>, <span class="n">0</span>);
+p[<span class="n">0</span>] = <span class="n">1</span>;                       <span class="c">// NOW one 4 KB page is faulted in (demand paging)</span>
+munmap(p, n);                    <span class="c">// returned to the OS immediately (unlike brk memory)</span></code></pre>
 
 <h3>Inside <code>malloc</code> (glibc / ptmalloc style)</h3>
 <ul>
@@ -2939,6 +3403,15 @@ paging</strong>).</p>
 <li><code>realloc</code>: if the next chunk is free and big enough it grows in place; otherwise it <code>malloc</code>s a new block, <code>memcpy</code>s, and <code>free</code>s the old &mdash; which is why the pointer can move.</li>
 <li><strong>Arenas</strong>: to reduce lock contention, glibc gives each thread its own arena (its own heap + bins, up to <code>~8&times;cores</code>); the main arena uses <code>brk</code>, others use <code>mmap</code>.</li>
 </ul>
+<pre><code><span class="c">// tcache is per-thread and LIFO: free then malloc the same size -&gt; same address</span>
+<span class="k">void</span> *a = malloc(<span class="n">32</span>); free(a);
+<span class="k">void</span> *b = malloc(<span class="n">32</span>);        <span class="c">// b == a  (came straight back off the tcache bin)</span>
+
+<span class="c">// realloc moves when it can't grow in place:</span>
+<span class="k">char</span> *p = malloc(<span class="n">16</span>);
+<span class="k">char</span> *q = malloc(<span class="n">16</span>);        <span class="c">// q sits right after p, blocking in-place growth</span>
+<span class="k">char</span> *r = realloc(p, <span class="n">4096</span>);  <span class="c">// r != p: new chunk allocated, 16 bytes copied, old p freed</span>
+free(q); free(r);</code></pre>
 <figure class="diagram">
 <svg viewBox="0 0 540 168" role="img" aria-labelledby="d-cmm-chunk-t">
 <title id="d-cmm-chunk-t">An allocated chunk vs a free chunk</title>
@@ -2959,6 +3432,14 @@ paging</strong>).</p>
 </svg>
 <figcaption>The allocator's bookkeeping lives <em>between and inside</em> your allocations. This is why a 1-byte overrun "works" until later, when <code>malloc</code>/<code>free</code> trips over the mangled header.</figcaption>
 </figure>
+<pre><code>size_t before = mallinfo2().uordblks;  <span class="c">// bytes currently handed out</span>
+<span class="k">char</span> *a = malloc(<span class="n">100</span>);
+printf(<span class="s">"%zu\n"</span>, malloc_usable_size(a)); <span class="c">// often 104-120: rounding + header = internal frag</span>
+<span class="k">char</span> *keep = malloc(<span class="n">16</span>);            <span class="c">// small live block...</span>
+free(a);                          <span class="c">// ...sits between freed space and the top -&gt; heap can't shrink</span>
+<span class="c">// RSS stays high here: free() gave bytes back to the allocator, not the kernel</span>
+malloc_trim(<span class="n">0</span>);                    <span class="c">// ask glibc to return free space at the top of the heap</span>
+free(keep);</code></pre>
 
 <h3>Fragmentation &amp; why RAM doesn't drop after <code>free</code></h3>
 <ul>
@@ -2966,6 +3447,12 @@ paging</strong>).</p>
 <li><strong>External fragmentation</strong>: total free space is plenty, but it's scattered in small gaps between live blocks, so a large request still fails / needs new OS memory.</li>
 <li><code>free</code> returns memory to the <em>allocator</em>, not usually to the OS. The heap can only shrink from the <em>top</em> (via <code>sbrk</code> down), so one live chunk near the top pins the whole heap. Only <code>mmap</code>'d chunks (large ones) are <code>munmap</code>'d back immediately. <code>malloc_trim(0)</code> asks glibc to give back free top space.</li>
 </ul>
+<pre><code><span class="c">// External fragmentation in action:</span>
+<span class="k">void</span> *blocks[<span class="n">1000</span>];
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; <span class="n">1000</span>; i++) blocks[i] = malloc(<span class="n">64</span>);
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; <span class="n">1000</span>; i += <span class="n">2</span>) free(blocks[i]); <span class="c">// free every other one</span>
+<span class="c">// ~32 KB is now free, but in 500 scattered 64-byte holes:</span>
+<span class="k">void</span> *big = malloc(<span class="n">4096</span>);        <span class="c">// still needs fresh memory -- no single 4 KB gap exists</span></code></pre>
 
 <h3>The stack in detail</h3>
 <ul>
@@ -2974,6 +3461,15 @@ paging</strong>).</p>
 <li>A <strong>guard page</strong> below the stack turns overflow into <code>SIGSEGV</code> instead of silently clobbering the mmap region. Large local arrays / <code>alloca</code> / VLAs can jump <em>past</em> the guard page &mdash; compilers add <em>stack probing</em> to prevent that.</li>
 <li>Each thread gets its <strong>own stack</strong> (default 8&nbsp;MB, in the mmap area) and its own guard page. <code>alloca</code>/VLA memory is freed at function return, not scope exit.</li>
 </ul>
+<pre><code><span class="k">void</span> g(<span class="k">int</span> *p) { *p = <span class="n">42</span>; }
+
+<span class="k">void</span> f(<span class="k">int</span> n) {
+    <span class="k">int</span> local;              <span class="c">// carved out by the PROLOGUE (sub rsp, N)</span>
+    <span class="k">int</span> *vla = alloca(n * <span class="k">sizeof</span> <span class="k">int</span>); <span class="c">// grows rsp NOW; freed at f()'s return, not scope exit</span>
+    g(&amp;local);
+    g(vla);
+}                          <span class="c">// EPILOGUE (mov rsp, rbp; pop rbp; ret) drops the whole frame at once</span>
+<span class="c">// recursion with no base case -&gt; frames march past the guard page -&gt; SIGSEGV</span></code></pre>
 
 <h3>Thread-local storage (TLS)</h3>
 <p><code>_Thread_local</code> / <code>__thread</code> variables get one instance <em>per thread</em>. Initialised
@@ -2981,6 +3477,15 @@ ones live in a template section <code>.tdata</code>, zero ones in <code>.tbss</c
 the runtime allocates a per-thread block from that template and points the thread's TLS register
 (<code>fs</code> on x86-64) at it. Access compiles to "<code>fs</code>-relative load", not a normal
 global load.</p>
+<pre><code><span class="k">#include</span> <span class="s">&lt;threads.h&gt;</span>
+
+<span class="k">_Thread_local</span> <span class="k">int</span> errno_like = <span class="n">0</span>;   <span class="c">// one independent copy per thread (template in .tdata)</span>
+<span class="k">static</span> <span class="k">_Thread_local</span> <span class="k">char</span> scratch[<span class="n">64</span>]; <span class="c">// per-thread buffer -- no lock needed, no sharing</span>
+
+<span class="k">int</span> worker(<span class="k">void</span> *arg) {
+    errno_like = <span class="n">7</span>;               <span class="c">// does NOT affect any other thread's errno_like</span>
+    <span class="k">return</span> <span class="n">0</span>;                    <span class="c">// compiles to an fs-relative store on x86-64</span>
+}</code></pre>
 
 <h3>Tools</h3>
 <pre><code>cat /proc/$$/maps          <span class="c"># every mapping: range, perms, file</span>
