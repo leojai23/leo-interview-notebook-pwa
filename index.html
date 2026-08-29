@@ -22273,11 +22273,22 @@ Tier by cost vs signal. <strong>Per-commit / PR (fast, blocking, &lt;10 min)</st
 <li>State assumptions out loud and get agreement. A crisp, small scope beats a sprawling one.</li>
 <li>List <strong>functional</strong> requirements (what it does) and a few <strong>non-functional</strong> ones (concurrency, latency, extensibility) that will shape the design.</li>
 </ul>
+<pre><code><span class="c">// Parking-lot LLD &mdash; scope agreed out loud with the interviewer:</span>
+<span class="c">//   IN  : multi-floor lot, 3 vehicle sizes, ticket on entry, pay on exit</span>
+<span class="c">//   OUT : reservations, plate OCR, membership, surge pricing  (say this explicitly)</span>
+<span class="c">// Non-functional: many gates enter/exit at once -&gt; spot accounting must be thread-safe</span>
+<span class="c">// A small agreed scope you finish beats a big one you don't.</span></code></pre>
 
 <h3>Step 2 &mdash; find the entities</h3>
 <p>A quick heuristic (Abbott's technique): <strong>nouns &rarr; candidate classes / attributes</strong>,
 <strong>verbs &rarr; methods / interactions</strong>. Filter: keep nouns that have state and behaviour;
 drop synonyms, vague terms, and things that are really attributes of another class.</p>
+<pre><code><span class="c">// "A customer takes a TICKET at an ENTRY GATE, parks a VEHICLE in a SPOT</span>
+<span class="c">//  on a FLOOR, then pays at an EXIT GATE."</span>
+<span class="c">// nouns -&gt; Ticket, Gate, Vehicle, ParkingSpot, ParkingFloor, ParkingLot, Payment</span>
+<span class="c">// verbs -&gt; issueTicket(), assignSpot(), calculateFee(), pay()</span>
+<span class="c">// drop "customer" (no state we own here); "lot map" is an attribute of ParkingLot</span>
+<span class="c">// keep a noun only if it has BOTH state and behaviour.</span></code></pre>
 
 <h3>Step 3 &mdash; assign responsibilities (CRC cards)</h3>
 <p>For each class write a <strong>C</strong>lass&ndash;<strong>R</strong>esponsibility&ndash;<strong>C</strong>ollaborator card:
@@ -22287,6 +22298,12 @@ what it knows and does, and which other classes it needs. This surfaces:</p>
 <li>Missing classes (a responsibility with no owner).</li>
 <li>Coupling (a class collaborating with everything &mdash; a "god object").</li>
 </ul>
+<pre><code><span class="c">// CRC card = plain text, one per class, before any code:</span>
+<span class="c">//   Class:            ParkingFloor</span>
+<span class="c">//   Responsibilities: track free spots per size; find + reserve a spot; release one</span>
+<span class="c">//   Collaborators:    ParkingSpot, Vehicle</span>
+<span class="c">// Smell: a card with 6+ unrelated duties -&gt; split it (SRP).</span>
+<span class="c">// Smell: a duty no card owns -&gt; you are missing a class.</span></code></pre>
 
 <h3>Step 4 &mdash; relationships &amp; invariants</h3>
 <ul>
@@ -22294,6 +22311,19 @@ what it knows and does, and which other classes it needs. This surfaces:</p>
 <li>Name the <strong>invariants</strong> each class must maintain (a <code>ParkingFloor</code> never reports more free spots than it has; an <code>Account</code> balance never goes negative) &mdash; these justify encapsulation and drive method design.</li>
 <li>Only then think about patterns &mdash; and only where a real axis of change exists.</li>
 </ul>
+<pre><code><span class="k">class</span> ParkingFloor {
+    <span class="c">// composition: the floor owns its spots; they are created and die with it</span>
+    <span class="k">private final</span> List&lt;ParkingSpot&gt; spots;
+    <span class="k">private int</span> freeCount;
+
+    <span class="c">// INVARIANT: freeCount == count of free spots, always in 0..spots.size()</span>
+    <span class="k">synchronized</span> Optional&lt;ParkingSpot&gt; park(Vehicle v) {
+        <span class="k">return</span> spots.stream()
+            .filter(s -&gt; s.isFree() &amp;&amp; s.fits(v))
+            .findFirst()
+            .map(s -&gt; { s.occupy(v); freeCount--; <span class="k">return</span> s; });  <span class="c">// invariant preserved</span>
+    }
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -22380,6 +22410,25 @@ writes to the DB, and emails a receipt. Apply SOLID:</p>
 <tr><td><strong>ISP</strong></td><td>Split a fat <code>Repository</code> into <code>OrderReader</code> + <code>OrderWriter</code> so a read-only reporting path doesn't depend on write methods.</td></tr>
 <tr><td><strong>DIP</strong></td><td><code>OrderService</code> depends on the <em>interfaces</em> (<code>PaymentProcessor</code>, <code>OrderRepository</code>, <code>Notifier</code>), which are injected. The concrete Stripe/Postgres/SES classes are wired at the composition root.</td></tr>
 </table>
+<pre><code><span class="c">// BEFORE: one class, five reasons to change</span>
+<span class="k">class</span> OrderService {
+    Receipt placeOrder(Cart c) { <span class="c">/* validate + price + charge + save + email */</span> }
+}
+
+<span class="c">// AFTER: coordinator depends only on injected interfaces (SRP + DIP)</span>
+<span class="k">class</span> OrderService {
+    OrderService(OrderValidator v, PricingEngine p, PaymentProcessor pay,
+                 OrderRepository repo, Notifier n) { <span class="c">/* store all five */</span> }
+
+    Receipt placeOrder(Cart c) {
+        v.validate(c);
+        Money total = p.price(c);
+        pay.charge(c.customer(), total);      <span class="c">// PaymentProcessor is an interface</span>
+        Order o = repo.save(new Order(c, total));
+        n.send(o.receipt());                  <span class="c">// add a channel = new impl, no edit here (OCP)</span>
+        <span class="k">return</span> o.receipt();
+    }
+}</code></pre>
 
 <h3>The payoff</h3>
 <ul>
@@ -22387,11 +22436,31 @@ writes to the DB, and emails a receipt. Apply SOLID:</p>
 <li>Swappable infra: change DB or payment provider without touching business logic.</li>
 <li>Parallel work: teams own different collaborators behind stable interfaces.</li>
 </ul>
+<pre><code><span class="c">// The seams pay off in the test: no DB, no network, no Stripe</span>
+@Test <span class="k">void</span> placeOrder_chargesThenPersistsThenNotifies() {
+    <span class="k">var</span> pay  = <span class="k">new</span> FakePayment();      <span class="c">// records calls, returns success</span>
+    <span class="k">var</span> repo = <span class="k">new</span> InMemoryOrderRepo();
+    <span class="k">var</span> note = <span class="k">new</span> RecordingNotifier();
+    <span class="k">var</span> svc  = <span class="k">new</span> OrderService(realValidator, realPricing, pay, repo, note);
+
+    svc.placeOrder(cartOf(<span class="s">"SKU-1"</span>, <span class="n">2</span>));
+
+    assertEquals(<span class="n">1</span>, pay.charges().size());   <span class="c">// business logic verified in isolation</span>
+    assertEquals(<span class="n">1</span>, repo.count());
+    assertTrue(note.lastMessage().contains(<span class="s">"receipt"</span>));
+}</code></pre>
 
 <h3>The caution</h3>
 <p>Every interface with one implementation "for testing" is a smell &mdash; introduce a seam only
 where change or testing genuinely needs it. Five collaborator interfaces for a stable 30-line
 class is over-engineering. Apply SOLID <em>where the pain is</em>, guided by the rule of three.</p>
+<pre><code><span class="c">// SMELL: one implementation, no variation in sight, interface exists "for mocking"</span>
+<span class="k">interface</span> UserIdFormatter { String format(long id); }
+<span class="k">class</span> DefaultUserIdFormatter <span class="k">implements</span> UserIdFormatter {
+    <span class="k">public</span> String format(<span class="k">long</span> id) { <span class="k">return</span> <span class="s">"U-"</span> + id; }   <span class="c">// ...that's the whole thing</span>
+}
+<span class="c">// Better: just a method. Add the interface the day a 2nd format actually appears.</span>
+<span class="k">static</span> String formatUserId(<span class="k">long</span> id) { <span class="k">return</span> <span class="s">"U-"</span> + id; }</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -22481,17 +22550,42 @@ DIP is just "depend on interfaces, inject implementations" &mdash; you don't nee
 </table>
 <p><strong>Multiplicity</strong> on the ends: <code>1</code>, <code>0..1</code>, <code>*</code>, <code>1..*</code> &mdash; e.g. a
 <code>ParkingLot 1 &rarr;&rarr; * ParkingFloor</code>.</p>
+<pre><code><span class="c"># PlantUML class diagram &mdash; text that renders to boxes + lines</span>
+<span class="k">class</span> ParkingLot {
+  +park(v: Vehicle): Ticket
+}
+<span class="k">class</span> ParkingFloor
+<span class="k">interface</span> PaymentMethod
+
+ParkingLot <span class="s">"1"</span> *-- <span class="s">"*"</span> ParkingFloor   <span class="c"># filled diamond = composition, 1-to-many</span>
+ParkingFloor <span class="s">"1"</span> o-- <span class="s">"*"</span> ParkingSpot  <span class="c"># hollow diamond = aggregation</span>
+CreditCard ..|> PaymentMethod              <span class="c"># dashed triangle = realization (implements)</span></code></pre>
 
 <h3>Sequence diagram</h3>
 <p>Shows an interaction over time: participants across the top, vertical lifelines, horizontal
 arrows for messages (solid = call, dashed = return), activation bars for "is executing". Great
 for walking through one use case ("checkout flow") and spotting who talks to whom, chatty
 round-trips, and missing error paths.</p>
+<pre><code><span class="c"># PlantUML sequence &mdash; one use case, top-to-bottom in time</span>
+Customer  -&gt; ExitGate   : scanTicket(t)
+ExitGate  -&gt; FeeCalc    : amountDue(t)
+FeeCalc  --&gt; ExitGate   : $12.00              <span class="c"># dashed = return</span>
+ExitGate  -&gt; Payment    : charge(card, 12.00)
+Payment  --&gt; ExitGate   : APPROVED
+ExitGate  -&gt; Floor      : release(t.spot)     <span class="c"># spotting a missing error path here is the point</span></code></pre>
 
 <h3>State diagram</h3>
 <p>States as rounded boxes, transitions as labelled arrows (<code>event [guard] / action</code>).
 Essential for anything with a lifecycle: an <code>Order</code> (created &rarr; paid &rarr; shipped &rarr;
 delivered / cancelled), an elevator car, a TCP connection.</p>
+<pre><code><span class="c"># PlantUML state diagram &mdash; Order lifecycle; illegal transitions become obvious</span>
+[*]      -&gt; Created
+Created  -&gt; Paid       : pay [amount == total] / reserveStock
+Created  -&gt; Cancelled  : cancel
+Paid     -&gt; Shipped    : dispatch / emailTracking
+Shipped  -&gt; Delivered  : confirmReceipt
+Delivered -&gt; [*]
+<span class="c"># note: no arrow Shipped -&gt; Cancelled  =&gt; you cannot cancel a shipped order</span></code></pre>
 
 <h3>In an interview</h3>
 <ul>
@@ -22499,6 +22593,17 @@ delivered / cancelled), an elevator car, a TCP connection.</p>
 <li>Draw the class diagram to show structure, one sequence diagram for the main flow, a state diagram if there's a non-trivial lifecycle.</li>
 <li>Keep it legible; don't cram 20 classes &mdash; show the core, mention the rest.</li>
 </ul>
+<pre><code><span class="c">// "Just enough" whiteboard UML &mdash; ASCII is fine, the relationships carry the meaning</span>
+<span class="c">//</span>
+<span class="c">//   +-----------+  1      *  +-------------+  1   *  +-----------+</span>
+<span class="c">//   | ParkingLot|&#9670;--------- | ParkingFloor|&#9671;------- |ParkingSpot|</span>
+<span class="c">//   +-----------+            +-------------+         +-----------+</span>
+<span class="c">//        | uses                                            ^ occupies</span>
+<span class="c">//        v                                                 |</span>
+<span class="c">//   +-----------+                                     +-----------+</span>
+<span class="c">//   |  Ticket   |------------------------------------ |  Vehicle  |</span>
+<span class="c">//   +-----------+                                     +-----------+</span>
+<span class="c">// &#9670; = composition (owns)   &#9671; = aggregation (has)   plain line = association</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -22577,6 +22682,12 @@ Full formal UML (all 14 diagram types, MDA/round-trip code generation) largely f
 <p>Multi-floor lot; vehicle types (motorcycle, car, bus); matching spot sizes (small, medium,
 large); entry issues a ticket, exit computes a fee. In scope: spot allocation, ticketing,
 pricing hook. Out of scope for now: reservations, license-plate recognition, valet.</p>
+<pre><code><span class="c">// Assumptions written on the board before any class:</span>
+<span class="k">enum</span> VehicleType { MOTORCYCLE, CAR, BUS }
+<span class="k">enum</span> SpotSize   { SMALL, MEDIUM, LARGE }
+<span class="c">// IN : allocate spot, issue/close ticket, pluggable pricing</span>
+<span class="c">// OUT: reservations, plate OCR, valet, multi-lot        (say it, get a nod)</span>
+<span class="c">// NFR: concurrent gates -&gt; spot claim must be atomic</span></code></pre>
 
 <h3>Entities</h3>
 <table>
@@ -22590,12 +22701,35 @@ pricing hook. Out of scope for now: reservations, license-plate recognition, val
 <tr><td><code>PricingStrategy</code> (interface)</td><td>compute fee from duration + vehicle type</td></tr>
 <tr><td><code>EntryGate</code> / <code>ExitGate</code></td><td>issue ticket / process payment</td></tr>
 </table>
+<pre><code><span class="k">abstract class</span> Vehicle { <span class="k">abstract</span> Set&lt;SpotSize&gt; fitsIn(); }
+<span class="k">class</span> Car <span class="k">extends</span> Vehicle { Set&lt;SpotSize&gt; fitsIn() { <span class="k">return</span> EnumSet.of(MEDIUM, LARGE); } }
+
+<span class="k">interface</span> ParkingStrategy { Optional&lt;ParkingSpot&gt; pick(List&lt;ParkingFloor&gt; f, Vehicle v); }
+<span class="k">interface</span> PricingStrategy  { Money fee(Ticket t); }   <span class="c">// two independent axes of change</span>
+
+<span class="k">class</span> ParkingLot {
+    <span class="k">private final</span> List&lt;ParkingFloor&gt; floors;
+    <span class="k">private final</span> ParkingStrategy allocator;   <span class="c">// injected -&gt; DIP + OCP</span>
+    <span class="k">private final</span> PricingStrategy pricing;
+}</code></pre>
 
 <h3>Key flows</h3>
 <ul>
 <li><strong>Park</strong>: gate &rarr; <code>lot.park(vehicle)</code> &rarr; strategy picks a compatible free spot &rarr; mark occupied &rarr; create ticket. Fail cleanly if full (return <code>Optional&lt;Ticket&gt;</code> / throw <code>LotFullException</code>).</li>
 <li><strong>Unpark</strong>: <code>lot.unpark(ticket)</code> &rarr; set exit time &rarr; <code>pricing.fee(ticket)</code> &rarr; free the spot &rarr; return the fee.</li>
 </ul>
+<pre><code>Optional&lt;Ticket&gt; park(Vehicle v) {
+    <span class="k">return</span> allocator.pick(floors, v).map(spot -&gt; {
+        spot.occupy(v);                       <span class="c">// claim already atomic (see Concurrency)</span>
+        <span class="k">return</span> ticketStore.create(v, spot, now());
+    });                                       <span class="c">// empty -&gt; gate shows "FULL"</span>
+}
+Money unpark(Ticket t) {
+    t.setExitTime(now());
+    Money due = pricing.fee(t);
+    t.spot().release();                        <span class="c">// free-count updated atomically inside</span>
+    <span class="k">return</span> due;
+}</code></pre>
 
 <h3>Extension points (where OCP matters)</h3>
 <ul>
@@ -22603,11 +22737,33 @@ pricing hook. Out of scope for now: reservations, license-plate recognition, val
 <li>New allocation policy / pricing model &rarr; new strategy implementation.</li>
 <li>EV charging spots, handicapped spots &rarr; spot attributes + a filter in the strategy.</li>
 </ul>
+<pre><code><span class="c">// OCP: a new pricing model is a new class, ParkingLot is untouched</span>
+<span class="k">class</span> SlabPricing <span class="k">implements</span> PricingStrategy {
+    <span class="k">public</span> Money fee(Ticket t) {
+        <span class="k">long</span> h = hoursBetween(t.entry(), t.exit());
+        <span class="k">if</span> (h &lt;= <span class="n">1</span>)  <span class="k">return</span> Money.of(<span class="n">2</span>);
+        <span class="k">if</span> (h &lt;= <span class="n">3</span>)  <span class="k">return</span> Money.of(<span class="n">5</span>);
+        <span class="k">return</span> Money.of(<span class="n">5</span> + (h - <span class="n">3</span>) * <span class="n">2</span>);
+    }
+}
+<span class="c">// EV spot: no new subclass, just an attribute + a strategy predicate</span>
+<span class="c">// allocator.pick(floors, v, req -&gt; !req.needsCharger || spot.hasCharger)</span></code></pre>
 
 <h3>Concurrency</h3>
 <p>Two cars racing for the last spot: allocation must be atomic &mdash; a per-floor lock around
 "find + mark", or an atomic compare-and-set on the spot's state, plus an atomic free-count. Keep
 the critical section tiny (just the claim, not ticket creation).</p>
+<pre><code><span class="c">// CAS on the spot state: two racing threads, only one wins, no lock held</span>
+<span class="k">class</span> ParkingSpot {
+    <span class="k">private final</span> AtomicReference&lt;State&gt; state = <span class="k">new</span> AtomicReference&lt;&gt;(FREE);
+
+    <span class="k">boolean</span> occupy(Vehicle v) {
+        <span class="k">if</span> (!state.compareAndSet(FREE, OCCUPIED)) <span class="k">return false</span>;  <span class="c">// lost the race -&gt; caller tries next spot</span>
+        <span class="k">this</span>.vehicle = v;
+        floor.freeCount.decrementAndGet();       <span class="c">// atomic counter, not a plain int</span>
+        <span class="k">return true</span>;
+    }
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -22710,6 +22866,21 @@ Don't put this in one method with a pile of <code>if</code>s. Model it as a <str
 <p>Use a <strong>sentinel head and tail</strong> to avoid null checks. Both operations are O(1). Many
 languages have this built in (Java <code>LinkedHashMap</code> with <code>accessOrder=true</code>, Python
 <code>OrderedDict</code> / <code>functools.lru_cache</code>).</p>
+<pre><code><span class="k">class</span> LRUCache:
+    <span class="k">def</span> __init__(self, cap):
+        self.cap = cap
+        self.d = OrderedDict()              <span class="c"># insertion order == recency order</span>
+
+    <span class="k">def</span> get(self, k):
+        <span class="k">if</span> k <span class="k">not in</span> self.d: <span class="k">return</span> -<span class="n">1</span>
+        self.d.move_to_end(k)              <span class="c"># O(1): mark most-recently-used</span>
+        <span class="k">return</span> self.d[k]
+
+    <span class="k">def</span> put(self, k, v):
+        self.d[k] = v
+        self.d.move_to_end(k)
+        <span class="k">if</span> len(self.d) &gt; self.cap:
+            self.d.popitem(last=<span class="k">False</span>)     <span class="c"># evict the LRU end, O(1)</span></code></pre>
 
 <h3>LFU (least-frequently-used)</h3>
 <p>Evict the item with the lowest access count; break ties by recency. O(1) version: a map key&rarr;node,
@@ -22717,6 +22888,19 @@ a map frequency&rarr;(doubly linked list of nodes with that frequency), and a <c
 pointer. On access, move the node from its freq list to the freq+1 list; update <code>minFreq</code>.
 More complex; use it when access frequency is a better predictor than recency (e.g. a long-tail
 workload with a few very hot keys).</p>
+<pre><code><span class="c"># O(1) LFU state: key->(val,freq), freq->ordered set of keys, plus min_freq</span>
+freq   = defaultdict(OrderedDict)   <span class="c"># freq -> {key: None} in recency order</span>
+counts = {}                          <span class="c"># key -> current freq</span>
+min_freq = <span class="n">1</span>
+
+<span class="k">def</span> touch(k):                        <span class="c"># called on every get/successful put</span>
+    f = counts[k]
+    <span class="k">del</span> freq[f][k]
+    <span class="k">if</span> <span class="k">not</span> freq[f] <span class="k">and</span> f == min_freq: min_freq += <span class="n">1</span>
+    counts[k] = f + <span class="n">1</span>
+    freq[f + <span class="n">1</span>][k] = <span class="k">None</span>          <span class="c"># promote to next frequency bucket</span>
+
+<span class="c"># evict: next(iter(freq[min_freq]))  = least-frequent, and oldest among ties</span></code></pre>
 
 <h3>Real-world concerns</h3>
 <ul>
@@ -22725,6 +22909,17 @@ workload with a few very hot keys).</p>
 <li><strong>Size vs bytes</strong>: cap by entry count is easy; capping by memory needs a per-entry weight.</li>
 <li><strong>Stampede</strong>: on a miss for a hot key, many threads recompute &mdash; add per-key single-flight (compute once, others wait).</li>
 </ul>
+<pre><code><span class="c">// Per-key single-flight: first miss computes, the rest block on the same Future</span>
+<span class="k">private final</span> ConcurrentHashMap&lt;K, CompletableFuture&lt;V&gt;&gt; inflight = <span class="k">new</span> ConcurrentHashMap&lt;&gt;();
+
+V get(K key) {
+    V hit = lru.getIfPresent(key);
+    <span class="k">if</span> (hit != <span class="k">null</span>) <span class="k">return</span> hit;
+    CompletableFuture&lt;V&gt; f = inflight.computeIfAbsent(key, k -&gt;
+        CompletableFuture.supplyAsync(() -&gt; loadFromDb(k)));   <span class="c">// runs once per key</span>
+    <span class="k">try</span> { V v = f.join(); lru.put(key, v); <span class="k">return</span> v; }
+    <span class="k">finally</span> { inflight.remove(key, f); }
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -22831,17 +23026,46 @@ Make it scan-resistant. Options: (1) <strong>Segmented LRU / 2Q</strong> &mdash;
 <tr><td><strong>Token bucket</strong></td><td>bucket of <code>capacity</code> tokens, refilled at <code>rate</code>/sec; each request takes 1</td><td>allows a burst up to <code>capacity</code>, then steady rate. The usual choice.</td></tr>
 <tr><td><strong>Leaky bucket</strong></td><td>requests queue; drained at a fixed rate; queue full &rarr; reject</td><td>no bursts &mdash; perfectly smooth output</td></tr>
 </table>
+<pre><code><span class="c"># Sliding-window counter: O(1) memory, smooths the fixed-window boundary spike</span>
+<span class="k">def</span> allow(key, limit, window):
+    now  = time.time()
+    cur  = int(now // window)                 <span class="c"># current window index</span>
+    prev = cur - <span class="n">1</span>
+    c_cur  = redis.hincrby(key, cur, <span class="n">1</span>)
+    c_prev = int(redis.hget(key, prev) <span class="k">or</span> <span class="n">0</span>)
+    overlap = <span class="n">1</span> - (now % window) / window     <span class="c"># fraction of prev window still "in view"</span>
+    <span class="k">return</span> c_prev * overlap + c_cur &lt;= limit  <span class="c"># weighted blend vs the limit</span></code></pre>
 
 <h3>Token bucket &mdash; the common implementation</h3>
 <p>Store per key: <code>tokens</code> (float), <code>lastRefill</code> (timestamp). On a request:
 <code>tokens = min(capacity, tokens + (now - lastRefill) * rate); lastRefill = now;</code> then if
 <code>tokens &ge; 1</code>, decrement and allow, else reject. Two numbers per key, O(1).</p>
+<pre><code><span class="k">class</span> TokenBucket {
+    <span class="k">final double</span> capacity, refillPerSec;
+    <span class="k">double</span> tokens; <span class="k">long</span> lastNanos;
+
+    <span class="k">synchronized boolean</span> tryAcquire() {
+        <span class="k">long</span> now = System.nanoTime();
+        tokens = Math.min(capacity,
+                 tokens + (now - lastNanos) / <span class="n">1e9</span> * refillPerSec);  <span class="c">// lazy refill</span>
+        lastNanos = now;
+        <span class="k">if</span> (tokens &lt; <span class="n">1</span>) <span class="k">return false</span>;      <span class="c">// bucket empty -&gt; 429</span>
+        tokens -= <span class="n">1</span>;
+        <span class="k">return true</span>;
+    }
+}</code></pre>
 
 <h3>Where it lives</h3>
 <ul>
 <li><strong>Per-process</strong>: an in-memory map; simplest, but each instance has its own limit &rarr; effective limit &times; instance count.</li>
 <li><strong>Distributed</strong>: state in Redis. Do the read-modify-write atomically &mdash; a Lua script (or <code>INCR</code> + <code>EXPIRE</code> for fixed window). Watch Redis latency on the hot path; consider a local token bucket that syncs periodically for approximate limiting with low latency.</li>
 </ul>
+<pre><code><span class="c">-- Redis Lua: atomic fixed-window counter (runs server-side, no race)</span>
+<span class="k">local</span> n = redis.call(<span class="s">'INCR'</span>, KEYS[<span class="n">1</span>])
+<span class="k">if</span> n == <span class="n">1</span> <span class="k">then</span>
+    redis.call(<span class="s">'EXPIRE'</span>, KEYS[<span class="n">1</span>], ARGV[<span class="n">1</span>])   <span class="c">-- set TTL only on first hit of the window</span>
+<span class="k">end</span>
+<span class="k">return</span> n &lt;= tonumber(ARGV[<span class="n">2</span>]) <span class="k">and</span> <span class="n">1</span> <span class="k">or</span> <span class="n">0</span>      <span class="c">-- 1 = allow, 0 = reject</span></code></pre>
 
 <h3>API concerns</h3>
 <ul>
@@ -22849,6 +23073,13 @@ Make it scan-resistant. Options: (1) <strong>Segmented LRU / 2Q</strong> &mdash;
 <li>Return <code>429 Too Many Requests</code> with <code>Retry-After</code> and <code>X-RateLimit-Limit/Remaining/Reset</code> headers.</li>
 <li>Fail-open vs fail-closed if the limiter store is down (usually fail-open for availability).</li>
 </ul>
+<pre><code>HTTP/1.1 429 Too Many Requests
+Retry-After: 30                       <span class="c"># seconds until a token is available</span>
+X-RateLimit-Limit: 100               <span class="c"># ceiling for this key/window</span>
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1724930400        <span class="c"># epoch when the window rolls over</span>
+
+<span class="c">// server: if the limiter store is unreachable -&gt; allow (fail-open) and log</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -22930,6 +23161,14 @@ They solve overlapping but distinct problems. <strong>Rate limiting</strong> is 
 <li><strong>Hall call</strong>: a button in the lobby/floor &mdash; has a floor and a direction (up/down). Served by the <em>system</em>, which picks a car.</li>
 <li><strong>Car call</strong>: a button inside a car &mdash; has a target floor. Served by <em>that</em> car.</li>
 </ul>
+<pre><code><span class="k">enum</span> Direction { UP, DOWN, NONE }
+
+<span class="c">// hall call: system chooses the car; direction is part of the request</span>
+<span class="k">record</span> HallCall(<span class="k">int</span> floor, Direction dir) {}
+<span class="c">// car call: bound to one car; just a destination</span>
+<span class="k">record</span> CarCall(<span class="k">int</span> targetFloor) {}
+
+<span class="c">// both collapse to "stop wanted at floor F" once assigned to a car</span></code></pre>
 
 <h3>Single-car scheduling</h3>
 <p>Keep two sorted sets of target floors: <code>up</code> stops and <code>down</code> stops. The car
@@ -22937,6 +23176,15 @@ follows the <strong>elevator algorithm (SCAN/LOOK)</strong>: keep moving in the 
 stopping at every requested floor along the way, until there are no more requests ahead; then
 reverse. This minimises direction changes and starvation vs "serve nearest request" (which can
 strand someone at the top).</p>
+<pre><code><span class="c">// SCAN/LOOK: serve every stop in the current direction, then flip</span>
+<span class="k">int</span> nextStop() {
+    <span class="k">if</span> (dir == UP) {
+        <span class="k">var</span> ahead = up.tailSet(floor);          <span class="c">// requested floors &ge; here, sorted</span>
+        <span class="k">if</span> (!ahead.isEmpty()) <span class="k">return</span> ahead.first();
+        dir = down.isEmpty() ? NONE : DOWN;      <span class="c">// nothing above -&gt; reverse</span>
+    }
+    <span class="k">return</span> dir == DOWN ? down.descendingSet().tailSet(floor).first() : floor;
+}</code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 100" role="img" aria-labelledby="d-lldelev-t">
@@ -22967,11 +23215,38 @@ estimated time to reach that floor = f(distance, current direction vs call direc
 stops already queued, load). Assign to the minimum. Re-evaluate as conditions change (a closer
 car frees up). Real systems use "destination dispatch" (you enter your target in the lobby, the
 system groups passengers and assigns cars to minimise total travel time).</p>
+<pre><code><span class="k">interface</span> Dispatcher { ElevatorCar assign(HallCall c, List&lt;ElevatorCar&gt; cars); }
+
+<span class="k">class</span> NearestCarDispatcher <span class="k">implements</span> Dispatcher {
+    <span class="k">public</span> ElevatorCar assign(HallCall c, List&lt;ElevatorCar&gt; cars) {
+        <span class="k">return</span> cars.stream()
+            .min(Comparator.comparingInt(car -&gt; cost(car, c)))   <span class="c">// lowest ETA wins</span>
+            .orElseThrow();
+    }
+    <span class="k">int</span> cost(ElevatorCar car, HallCall c) {
+        <span class="k">int</span> d = Math.abs(car.floor() - c.floor());
+        <span class="k">boolean</span> sameWay = car.direction() == c.dir() || car.isIdle();
+        <span class="k">return</span> d + car.queuedStops() * <span class="n">2</span> + (sameWay ? <span class="n">0</span> : <span class="n">10</span>);  <span class="c">// penalise wrong-direction cars</span>
+    }
+}</code></pre>
 
 <h3>Classes</h3>
 <ul>
 <li><code>ElevatorSystem</code> (owns cars + dispatcher), <code>ElevatorCar</code> (state machine, own queue), <code>Dispatcher</code> (interface &mdash; strategy for car selection), <code>Request</code> (HallCall / CarCall), <code>Door</code>, <code>Button</code>/<code>Panel</code>, <code>FloorSensor</code>.</li>
 </ul>
+<pre><code><span class="k">class</span> ElevatorSystem {                     <span class="c">// facade + owner</span>
+    <span class="k">private final</span> List&lt;ElevatorCar&gt; cars;
+    <span class="k">private final</span> Dispatcher dispatcher;    <span class="c">// injected strategy (OCP)</span>
+
+    <span class="k">void</span> pressHallButton(<span class="k">int</span> floor, Direction dir) {
+        dispatcher.assign(<span class="k">new</span> HallCall(floor, dir), cars).enqueue(floor);
+    }
+}
+<span class="k">class</span> ElevatorCar {                        <span class="c">// state machine + its own stop set</span>
+    State state; <span class="k">int</span> floor; Direction dir;
+    <span class="k">final</span> NavigableSet&lt;Integer&gt; up = <span class="k">new</span> TreeSet&lt;&gt;(), down = <span class="k">new</span> TreeSet&lt;&gt;();
+    <span class="k">void</span> enqueue(<span class="k">int</span> f) { (f &gt;= floor ? up : down).add(f); }
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -23058,6 +23333,20 @@ Safety is layered and mostly <em>not</em> in the dispatch software. (1) <strong>
 </table>
 <p>A logger fans a record out to one or more sinks, each with its own level, formatter, and filter.
 Named loggers form a tree so you can set <code>com.acme.db</code> to DEBUG while the root stays INFO.</p>
+<pre><code><span class="k">interface</span> Sink { <span class="k">void</span> write(LogRecord r); }        <span class="c">// OCP extension point</span>
+
+<span class="k">class</span> Logger {
+    <span class="k">private final</span> String name;
+    <span class="k">private</span> Level threshold;
+    <span class="k">private final</span> List&lt;Sink&gt; sinks;
+
+    <span class="k">void</span> log(Level lvl, Supplier&lt;String&gt; msg) {
+        <span class="k">if</span> (lvl.ordinal() &lt; threshold.ordinal()) <span class="k">return</span>;   <span class="c">// cheap gate, msg not built</span>
+        <span class="k">var</span> rec = <span class="k">new</span> LogRecord(now(), lvl, name, currentThread(), msg.get(), Context.snapshot());
+        <span class="k">for</span> (Sink s : sinks) s.write(rec);           <span class="c">// fan-out</span>
+    }
+    <span class="k">void</span> info(Supplier&lt;String&gt; m) { log(Level.INFO, m); }
+}</code></pre>
 
 <h3>Performance</h3>
 <ul>
@@ -23065,12 +23354,33 @@ Named loggers form a tree so you can set <code>com.acme.db</code> to DEBUG while
 <li><strong>Async logging</strong>: the caller writes the record into a lock-free ring buffer / bounded queue and returns; a background thread formats and writes to sinks. This takes I/O (file, network) off the request path &mdash; often 10&ndash;100&times; lower logging latency. (Log4j2 async, spdlog async, zap.)</li>
 <li>Bounded queue policy when full: block, drop oldest, or drop the new record &mdash; a deliberate choice (usually drop with a counter, so logging can't stall the app).</li>
 </ul>
+<pre><code><span class="c">// Async sink: caller just enqueues; a worker does the formatting + I/O</span>
+<span class="k">class</span> AsyncSink <span class="k">implements</span> Sink {
+    <span class="k">private final</span> BlockingQueue&lt;LogRecord&gt; q = <span class="k">new</span> ArrayBlockingQueue&lt;&gt;(<span class="n">8192</span>);
+    <span class="k">private final</span> Sink delegate;
+    <span class="k">private final</span> AtomicLong dropped = <span class="k">new</span> AtomicLong();
+
+    <span class="k">public void</span> write(LogRecord r) {
+        <span class="k">if</span> (!q.offer(r)) dropped.incrementAndGet();   <span class="c">// full -&gt; drop-new + count, never block the app</span>
+    }
+    <span class="c">// worker thread: while(true) delegate.write(q.take());</span>
+}</code></pre>
 
 <h3>Structured &amp; contextual logging</h3>
 <p>Prefer key&ndash;value fields (<code>logger.info("order placed", "orderId", id, "amountCents", amt)</code>)
 over string interpolation &mdash; machine-parseable, queryable. <strong>MDC / context</strong>: attach
 request id, user id, trace id once per request (thread-local or explicit context) so every log
 line in that request carries them.</p>
+<pre><code><span class="c">// set once per request; every log line in this thread inherits the fields</span>
+Context.put(<span class="s">"traceId"</span>, req.traceId());
+Context.put(<span class="s">"userId"</span>, session.userId());
+<span class="k">try</span> {
+    log.info(() -&gt; <span class="s">"order placed"</span>);       <span class="c">// message stays a constant...</span>
+    <span class="c">// emitted JSON: {"ts":..., "lvl":"INFO", "msg":"order placed",</span>
+    <span class="c">//               "traceId":"abc123", "userId":"u-42", "orderId":"o-9"}</span>
+} <span class="k">finally</span> {
+    Context.clear();                        <span class="c">// avoid leaking onto a pooled thread's next task</span>
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -23154,6 +23464,13 @@ Hierarchical named loggers. A logger's effective level is its own configured lev
 <li><strong>Concurrent building blocks</strong> &mdash; use <code>ConcurrentHashMap</code>, blocking queues, atomics, thread pools instead of hand-rolled locking.</li>
 <li><strong>Lock-free</strong> &mdash; last resort, for a proven hot single-word contention point.</li>
 </ol>
+<pre><code><span class="c">// 1. Immutable value object: no locks ever needed</span>
+<span class="k">record</span> Money(<span class="k">long</span> cents, String ccy) {
+    Money plus(Money o) { <span class="k">return new</span> Money(cents + o.cents, ccy); }  <span class="c">// returns new, never mutates</span>
+}
+<span class="c">// 2. Confinement: each request thread gets its own parser instance</span>
+<span class="k">static final</span> ThreadLocal&lt;SimpleDateFormat&gt; FMT =
+    ThreadLocal.withInitial(() -&gt; <span class="k">new</span> SimpleDateFormat(<span class="s">"yyyy-MM-dd"</span>));  <span class="c">// SDF is not thread-safe</span></code></pre>
 
 <h3>Design-level moves</h3>
 <ul>
@@ -23163,12 +23480,33 @@ Hierarchical named loggers. A logger's effective level is its own configured lev
 <li><strong>Message passing</strong>: give a resource to one owner thread and send it requests via a queue (actor model) &mdash; turns shared-state bugs into ordering questions.</li>
 <li>Keep lock scope out of your public API &mdash; don't return a reference to internal mutable state, and don't call user callbacks while holding a lock.</li>
 </ul>
+<pre><code><span class="k">class</span> EventBus {
+    <span class="c">// copy-on-write: readers (publish) never lock; writers swap a new list in</span>
+    <span class="k">private volatile</span> List&lt;Listener&gt; listeners = List.of();
+
+    <span class="k">synchronized void</span> subscribe(Listener l) {
+        <span class="k">var</span> copy = <span class="k">new</span> ArrayList&lt;&gt;(listeners); copy.add(l);
+        listeners = List.copyOf(copy);                <span class="c">// single volatile write publishes it</span>
+    }
+    <span class="k">void</span> publish(Event e) {
+        <span class="k">for</span> (Listener l : listeners) l.onEvent(e);       <span class="c">// no lock held while calling user code</span>
+    }
+}</code></pre>
 
 <h3>Thread-safe singleton</h3>
 <p>Prefer eager init (a <code>static final</code> instance) or the initialisation-on-demand holder idiom
 (a private static nested class) &mdash; both give lazy, thread-safe, lock-free access via the
 language's class-init guarantees. Double-checked locking needs a <code>volatile</code>/atomic field to
 be correct; an <code>enum</code> singleton (Java) is the simplest correct lazy-ish form.</p>
+<pre><code><span class="k">class</span> Config {
+    <span class="k">private</span> Config() { <span class="c">/* expensive load */</span> }
+
+    <span class="c">// initialization-on-demand holder: JVM guarantees the class is loaded</span>
+    <span class="c">// once, lazily, on first use of Holder -&gt; thread-safe, no synchronized</span>
+    <span class="k">private static class</span> Holder { <span class="k">static final</span> Config INSTANCE = <span class="k">new</span> Config(); }
+
+    <span class="k">static</span> Config get() { <span class="k">return</span> Holder.INSTANCE; }
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -23249,17 +23587,39 @@ Copy-on-write: store listeners in an immutable array/list; <code>addListener</co
 <li><strong>YAGNI</strong> ("You Aren't Gonna Need It"): don't build a plugin framework, generic rules engine, or config-driven abstraction for a single case that isn't varying yet. Speculative flexibility usually guesses the wrong axis and adds cost forever.</li>
 <li><strong>But</strong>: keep the code <em>changeable</em> &mdash; small classes, clear boundaries, dependency injection at true seams &mdash; so adding the abstraction later is a local refactor, not a rewrite.</li>
 </ul>
+<pre><code><span class="c">// YAGNI: one shipping rule today -&gt; just write it</span>
+Money shippingFee(Order o) { <span class="k">return</span> o.total().gt(Money.of(<span class="n">50</span>)) ? Money.ZERO : Money.of(<span class="n">5</span>); }
+
+<span class="c">// OVER-ENGINEERED for one case: rules engine, config, registry, factory...</span>
+<span class="k">interface</span> ShippingRule { Money fee(Order o, RuleContext ctx); }
+ShippingRuleEngine engine = ShippingRuleEngine.fromYaml(<span class="s">"rules/shipping.yml"</span>);  <span class="c">// you don't need this yet</span></code></pre>
 
 <h3>The rule of three</h3>
 <p>Write it inline the first time. Copy it the second time (duplication is cheaper than the wrong
 abstraction). On the <strong>third</strong> occurrence, you understand the real variation &mdash; now extract
 the abstraction. Premature abstraction from two examples often captures a coincidence.</p>
+<pre><code><span class="c">// 1st: inline</span>
+<span class="k">double</span> areaCircle(<span class="k">double</span> r) { <span class="k">return</span> Math.PI * r * r; }
+<span class="c">// 2nd: copy, don't abstract yet (a rectangle looks nothing like this)</span>
+<span class="k">double</span> areaRect(<span class="k">double</span> w, <span class="k">double</span> h) { <span class="k">return</span> w * h; }
+<span class="c">// 3rd (triangle): NOW the real variation is clear -&gt; extract</span>
+<span class="k">interface</span> Shape { <span class="k">double</span> area(); }   <span class="c">// Circle, Rectangle, Triangle implement it</span></code></pre>
 
 <h3>Refactoring seams</h3>
 <p>A "seam" is a place you can change behaviour without editing in place: an interface, a factory,
 a strategy parameter, a hook method. Good design leaves seams <em>where change is likely</em>
 (payment providers, storage, notification channels) and keeps everything else concrete and
 direct. Adding a seam later: extract an interface from the concrete class, inject it, done.</p>
+<pre><code><span class="c">// BEFORE: concrete, direct &mdash; fine while there's one implementation</span>
+<span class="k">class</span> OrderService {
+    <span class="k">private final</span> StripeClient stripe = <span class="k">new</span> StripeClient();   <span class="c">// hard-wired</span>
+}
+<span class="c">// ADD SEAM (a local change): extract role interface + inject it</span>
+<span class="k">interface</span> PaymentGateway { Result charge(Card c, Money m); }
+<span class="k">class</span> OrderService {
+    <span class="k">private final</span> PaymentGateway gateway;               <span class="c">// StripeGateway | AdyenGateway | FakeGateway</span>
+    OrderService(PaymentGateway g) { <span class="k">this</span>.gateway = g; } <span class="c">// wired at the composition root</span>
+}</code></pre>
 
 <h3>When patterns pay off</h3>
 <table>
@@ -23270,11 +23630,29 @@ direct. Adding a seam later: extract an interface from the concrete class, injec
 <tr><td>a big <code>switch</code> on a type/state keeps growing &rarr; polymorphism / State</td></tr>
 <tr><td>an object has a real lifecycle with rules &rarr; State machine</td></tr>
 </table>
+<pre><code><span class="c">// The growing switch that earns a Strategy (3+ variants, chosen at runtime)</span>
+Money discount(Cart c, String type) {
+    <span class="k">switch</span> (type) {
+        <span class="k">case</span> <span class="s">"PERCENT"</span>: <span class="k">return</span> c.total().pct(<span class="n">10</span>);
+        <span class="k">case</span> <span class="s">"BOGO"</span>:    <span class="k">return</span> c.cheapestItem().price();
+        <span class="k">case</span> <span class="s">"LOYALTY"</span>: <span class="k">return</span> Money.of(c.customer().points() / <span class="n">100</span>);
+        <span class="c">// every new promo edits this method -&gt; OCP violation</span>
+    }
+}
+<span class="c">// -&gt; interface DiscountRule { Money apply(Cart c); }  one class per promo, iterate a list</span></code></pre>
 
 <h3>Signals you over-engineered</h3>
 <p>Interfaces with one implementation and no test need; layers that only forward calls; config for
 things that never change; a framework where a function would do; more time reading the
 indirection than the logic. The fix is usually to inline and delete.</p>
+<pre><code><span class="c">// Smell stack: 3 files to add 1 + 1</span>
+<span class="k">interface</span> Adder { <span class="k">int</span> add(<span class="k">int</span> a, <span class="k">int</span> b); }
+<span class="k">class</span> AdderImpl <span class="k">implements</span> Adder { <span class="k">public int</span> add(<span class="k">int</span> a, <span class="k">int</span> b) { <span class="k">return</span> a + b; } }
+<span class="k">class</span> AdderService {                       <span class="c">// pass-through layer, adds nothing</span>
+    <span class="k">private final</span> Adder adder;
+    <span class="k">int</span> add(<span class="k">int</span> a, <span class="k">int</span> b) { <span class="k">return</span> adder.add(a, b); }
+}
+<span class="c">// Fix: int sum = a + b;   (delete all three)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
