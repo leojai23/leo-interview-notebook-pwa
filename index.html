@@ -45,6 +45,9 @@
 .theme-monitor     { --accent:#4a5db0; }
 .theme-jira        { --accent:#2058c8; }
 .theme-cdn         { --accent:#0f7a86; }
+.theme-containers  { --accent:#2a8f8f; }
+.theme-docker      { --accent:#1d74c4; }
+.theme-k8s         { --accent:#3f5ecc; }
 [class*="theme-"] {
   --accent-soft: color-mix(in srgb, var(--accent) 20%, #ffffff);
   --highlight:   color-mix(in srgb, var(--accent) 9%, #ffffff);
@@ -34631,6 +34634,1343 @@ Config parity &mdash; keeping cache/WAF/purge/edge behavior identical across pro
 </section>
 <!-- /TOPIC:cdn:multi-cdn -->
 
+<!-- ============================== CONTAINERS TOPICS ============================== -->
+
+<!-- TOPIC:containers:vm-vs-container -->
+<section class="view topic" id="v-containers-vm-vs-container" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>VMs vs Containers &amp; the Hypervisor</h1>
+<p class="subtitle">A VM virtualizes the hardware and runs a whole guest OS; a container virtualizes the OS and shares the host kernel.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 190" role="img" aria-labelledby="d-cvmc-t">
+<title id="d-cvmc-t">VM stack runs N guest kernels on a hypervisor; container stack shares one host kernel</title>
+<text class="d-t-b" x="14" y="14">Virtual Machines</text>
+<rect class="d-box-soft" x="14" y="22" width="70" height="18"/><rect class="d-box-soft" x="90" y="22" width="70" height="18"/><rect class="d-box-soft" x="166" y="22" width="70" height="18"/>
+<text class="d-t-sm" x="24" y="35">App + libs</text><text class="d-t-sm" x="100" y="35">App + libs</text><text class="d-t-sm" x="176" y="35">App + libs</text>
+<rect class="d-box" x="14" y="42" width="70" height="16"/><rect class="d-box" x="90" y="42" width="70" height="16"/><rect class="d-box" x="166" y="42" width="70" height="16"/>
+<text class="d-t-sm" x="24" y="54">Guest OS</text><text class="d-t-sm" x="100" y="54">Guest OS</text><text class="d-t-sm" x="176" y="54">Guest OS</text>
+<rect class="d-box-alt" x="14" y="62" width="222" height="18"/><text class="d-t-sm" x="24" y="75">Hypervisor (Type-1/2)</text>
+<rect class="d-box-alt" x="14" y="82" width="222" height="16"/><text class="d-t-sm" x="24" y="94">Host hardware</text>
+<text class="d-t-b" x="290" y="14">Containers</text>
+<rect class="d-box-soft" x="290" y="22" width="66" height="18"/><rect class="d-box-soft" x="360" y="22" width="66" height="18"/><rect class="d-box-soft" x="430" y="22" width="66" height="18"/>
+<text class="d-t-sm" x="298" y="35">App + libs</text><text class="d-t-sm" x="368" y="35">App + libs</text><text class="d-t-sm" x="438" y="35">App + libs</text>
+<rect class="d-box-alt" x="290" y="42" width="206" height="16"/><text class="d-t-sm" x="298" y="54">Container engine (namespaces + cgroups)</text>
+<rect class="d-box" x="290" y="60" width="206" height="18"/><text class="d-t-accent" x="298" y="73">ONE shared host kernel</text>
+<rect class="d-box-alt" x="290" y="80" width="206" height="16"/><text class="d-t-sm" x="298" y="92">Host hardware</text>
+<text class="d-t-sm" x="14" y="120">VM: N guest kernels, hardware-enforced boundary, GBs, boots in ~30&ndash;60 s.</text>
+<text class="d-t-sm" x="14" y="136">Container: no guest OS, kernel-enforced boundary, MBs, starts in ~50&ndash;200 ms.</text>
+</svg>
+<figcaption>A container is not a lightweight VM &mdash; there is no virtual hardware and no second kernel. It is a host process that the kernel has fenced off with namespaces, limited with cgroups, and handed a private root filesystem.</figcaption>
+</figure>
+
+<h3>The two stacks</h3>
+<p><strong>What.</strong> A <strong>hypervisor</strong> slices real hardware into virtual machines; each VM boots its own kernel and OS. A <strong>container engine</strong> instead asks the single host kernel to give a process an isolated view (its own process tree, network, mounts) &mdash; no second kernel.</p>
+<p><strong>Why.</strong> Skipping the guest OS removes the thing that is slow to boot, large on disk, and expensive to patch. You get ~10&times; the density, images in MB instead of GB, and start-up in milliseconds &mdash; which is what makes autoscaling, CI, and "one process per container" practical.</p>
+<pre># container: shares the host kernel, starts almost instantly
+$ time docker run --rm alpine uname -r
+6.8.0-40-generic            # <-- the HOST kernel version, not the image's
+real    0m0.42s
+
+# a VM boots a whole OS first
+$ time (virsh start web01 &amp;&amp; virsh-wait-ssh web01)
+real    0m38.7s</pre>
+
+<h3>Type-1 vs Type-2 hypervisors</h3>
+<p><strong>What.</strong> <strong>Type-1 (bare-metal)</strong> runs directly on hardware: VMware ESXi, Microsoft Hyper-V, Xen, Linux KVM. <strong>Type-2 (hosted)</strong> runs as an application on a normal OS: VirtualBox, VMware Workstation, Parallels.</p>
+<p><strong>Why.</strong> Type-1 has less overhead and a smaller attack surface, so it runs production servers and clouds. Type-2 is for developer laptops where you already have a desktop OS.</p>
+<pre># KVM (Type-1, built into the Linux kernel) present?
+$ lsmod | grep kvm
+kvm_intel             380928  0
+kvm                  1146880  1 kvm_intel
+$ virsh list --all
+ Id   Name    State
+ 1    web01   running
+ -    db01    shut off</pre>
+
+<h3>Isolation strength</h3>
+<p><strong>What.</strong> A VM boundary is enforced by the CPU (VT-x/AMD-V) and the hypervisor: separate kernel, virtual CPUs, virtual devices. A container boundary is enforced by the <em>same</em> kernel it is trying to contain &mdash; a kernel privilege-escalation bug can escape a container to the host.</p>
+<p><strong>Why.</strong> Run mutually distrusting or hostile workloads (a public "run my code" service, per-customer tenants) behind a VM or a <strong>micro-VM</strong> (AWS Firecracker, Kata Containers, Google gVisor's user-space kernel). Trusted internal microservices are fine in plain containers.</p>
+<pre># plain container escape surface = the whole kernel syscall ABI
+#   e.g. CVE-2022-0847 "Dirty Pipe", CVE-2019-5736 (runc host-binary overwrite)
+
+# micro-VM: container image + workflow, but a real KVM boundary per pod
+$ firecracker --config-file vm.json      # ~125 ms boot, ~5 MB overhead
+# Kata / gVisor slot in as a Kubernetes RuntimeClass:
+#   runtimeClassName: kata   # untrusted pods get a VM; trusted pods stay on runc</pre>
+
+<h3>Density, speed &amp; footprint</h3>
+<p><strong>What / why.</strong> No guest kernel means a container's baseline cost is just its own processes.</p>
+<pre>                       VM                     Container
+image size             1&ndash;20 GB               5&ndash;300 MB
+start time             30&ndash;90 s               50&ndash;200 ms
+memory floor           ~512 MB&ndash;1 GB           a few MB
+per host               tens                   hundreds&ndash;thousands
+patch the kernel       once per VM            once on the host</pre>
+
+<h3>When to use which (and the hybrid)</h3>
+<ul>
+<li><strong>VM</strong>: run a different OS/kernel, hard multi-tenant isolation, legacy apps, kernel modules, "lift and shift" whole machines.</li>
+<li><strong>Container</strong>: microservices, stateless web apps, CI jobs, dev environments, anything you deploy often and scale horizontally.</li>
+<li><strong>Hybrid (the norm in the cloud)</strong>: cloud VMs (EC2, GCE) each run a container runtime; Kubernetes packs containers onto those VMs. Kata/Firecracker give you container ergonomics with a VM boundary for the untrusted bits.</li>
+</ul>
+<pre># the real production stack, top to bottom
+Pod (your containers)
+  -> containerd / runc          # container runtime
+  -> Linux kernel               # namespaces + cgroups
+  -> guest OS on a cloud VM
+  -> KVM hypervisor
+  -> physical host in a datacentre</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>VM</strong> = virtual hardware + full guest OS on a <strong>hypervisor</strong>; <strong>container</strong> = isolated process on the <strong>shared host kernel</strong> (namespaces + cgroups + rootfs).</li>
+<li>Container advantages: MB images, ~100 ms start, ~10&times; density, patch the kernel once.</li>
+<li>VM advantages: hardware-enforced isolation, run any OS/kernel, strong multi-tenant boundary.</li>
+<li><strong>Type-1</strong> hypervisor = bare metal (ESXi, Hyper-V, KVM, Xen); <strong>Type-2</strong> = hosted app (VirtualBox, VMware Workstation).</li>
+<li>Container escape surface = the entire kernel; a kernel bug can break out. Distrusted workloads &rarr; VM or <strong>micro-VM</strong> (Firecracker, Kata, gVisor).</li>
+<li>Common reality: containers <em>inside</em> cloud VMs &mdash; you get both layers.</li>
+<li>"A container is a lightweight VM" is the wrong mental model &mdash; it's a fenced-off process.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does a container share with the host that a VM does not?</dt>
+<dd>The <strong>kernel</strong>. Every container on a host runs its processes against that one kernel; there is no guest kernel. A VM has its own kernel isolated by the hypervisor and CPU virtualization extensions.</dd>
+<dt>Why do containers start so much faster than VMs?</dt>
+<dd>There is no OS to boot &mdash; no firmware, no bootloader, no kernel init, no systemd bringing up services. Starting a container is just <code>clone()</code>/<code>exec()</code> of a process with some namespaces and cgroup settings, so it's tens to a couple hundred milliseconds versus tens of seconds.</dd>
+<dt>Can you run a Windows container on a Linux host (or vice versa)?</dt>
+<dd>Not natively &mdash; the container uses the host kernel, so a Linux container needs a Linux kernel and a Windows container needs a Windows kernel. "Docker Desktop running Linux containers on Windows/macOS" works by running a small Linux VM and putting the containers inside it.</dd>
+<dt>Is a container less secure than a VM?</dt>
+<dd>The isolation boundary is weaker: a container is only as isolated as the kernel's namespace/cgroup/LSM implementation, and a kernel exploit escapes to the host and every other container. A VM boundary is enforced by hardware and a much smaller hypervisor. For hostile multi-tenant workloads you add a VM layer (Firecracker/Kata) or a user-space kernel (gVisor).</dd>
+<dt>What is a micro-VM and why does it exist?</dt>
+<dd>A stripped-down VM (e.g. AWS Firecracker) with no BIOS, minimal devices, and a fast boot (~100&nbsp;ms), designed to wrap a single container/function. It gives you the container developer experience and packing density while keeping a real hypervisor boundary for isolation &mdash; used by AWS Lambda and Fargate.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>In one sentence, how does a container differ from a VM?</summary><div class="answer-box">
+A VM virtualizes hardware and runs its own guest OS on a hypervisor; a container is an isolated process that shares the host's kernel, fenced off with namespaces and limited with cgroups.
+</div></details>
+<details class="answer-reveal"><summary>Name a Type-1 and a Type-2 hypervisor.</summary><div class="answer-box">
+Type-1 (bare-metal): VMware ESXi, Microsoft Hyper-V, Xen, Linux KVM. Type-2 (hosted): Oracle VirtualBox, VMware Workstation/Fusion, Parallels Desktop.
+</div></details>
+<details class="answer-reveal"><summary>Roughly how big is a container image versus a VM image, and how fast does each start?</summary><div class="answer-box">
+Container image: single-to-hundreds of MB, starts in ~50&ndash;200&nbsp;ms. VM image: 1&ndash;20&nbsp;GB, boots in ~30&ndash;90&nbsp;s.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A team says "just use containers, VMs are obsolete." Where would you push back?</summary><div class="answer-box">
+Containers can't run a different kernel/OS, can't load kernel modules, and give a weaker isolation boundary. You still want VMs (or micro-VMs) for: hostile multi-tenant workloads (running arbitrary customer code), strict compliance/isolation requirements, workloads needing a specific or patched kernel, Windows workloads on Linux hosts, and "lift and shift" of legacy systems that assume a whole machine. In practice it's not either/or &mdash; containers run <em>inside</em> VMs in every cloud, so you get the density of containers and the boundary of VMs.
+</div></details>
+<details class="answer-reveal"><summary>Why is "patch once" a real operational advantage of containers?</summary><div class="answer-box">
+With VMs, a kernel CVE means patching and rebooting every guest &mdash; hundreds of OS instances, each with its own maintenance window. With containers, there is one kernel per host: patch and drain-reboot the host (or roll new host images) and every container on it is fixed. The container images still need their <em>userspace</em> packages patched, but the kernel &mdash; the largest and most security-critical component &mdash; is centralized.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the isolation strategy for a platform that runs untrusted user-submitted code at scale (like a CI service or a serverless platform).</summary><div class="answer-box">
+Plain containers are not enough &mdash; a single kernel LPE escapes to the host and every other tenant. Layered approach: (1) <strong>Wrap each job in a micro-VM</strong> &mdash; Firecracker or Kata Containers, one lightweight VM per job/function, so the boundary is KVM + a tiny device model, not the shared kernel. Expose it through a normal container/OCI interface (Kata plugs in as a Kubernetes <code>RuntimeClass</code>) so the rest of the platform is unchanged. Alternatively gVisor for a user-space kernel that intercepts syscalls &mdash; less overhead than a VM, more than runc, and it shrinks the host-kernel attack surface without full hardware virtualization. (2) <strong>Defence in depth inside the sandbox</strong> &mdash; seccomp allowlist to a minimal syscall set, drop all capabilities, no-new-privileges, read-only rootfs, non-root uid, tight cgroup limits (CPU, memory, PIDs, IO) to bound blast radius and prevent DoS, no host network (own netns, egress via a filtered proxy). (3) <strong>Host hardening</strong> &mdash; minimal host OS, up-to-date kernel with mitigations, one tenant per host or at least per VM, node auto-recycling, and no secrets/credentials on the node the sandbox can reach (no cloud metadata endpoint). (4) <strong>Blast-radius controls</strong> &mdash; short-lived nodes, per-job network policy, disk quotas, wall-clock timeouts, and monitoring for escape indicators. (5) <strong>Operational</strong> &mdash; keep the sandbox runtime (Firecracker/gVisor/kernel) patched aggressively; treat it as the crown-jewel dependency. Net: micro-VM per job for the hard boundary, plus full container hardening inside, plus disposable hosts &mdash; the model AWS Lambda/Fargate and modern CI runners use.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:vm-vs-container -->
+
+<!-- TOPIC:containers:what-is-a-container -->
+<section class="view topic" id="v-containers-what-is-a-container" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>A Container Is Just a Process</h1>
+<p class="subtitle">There is no "container" object in the Linux kernel &mdash; it's an ordinary process with a private view of the system and its privileges trimmed.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-cwic-t">
+<title id="d-cwic-t">A container = a process plus namespaces, cgroups, a root filesystem and dropped privileges</title>
+<rect class="d-box-soft" x="200" y="20" width="120" height="30" rx="6"/><text class="d-t-b" x="260" y="39" text-anchor="middle">your process</text>
+<rect class="d-box" x="14" y="70" width="110" height="24"/><text class="d-t-sm" x="69" y="86" text-anchor="middle">namespaces</text>
+<rect class="d-box" x="134" y="70" width="90" height="24"/><text class="d-t-sm" x="179" y="86" text-anchor="middle">cgroups</text>
+<rect class="d-box" x="234" y="70" width="130" height="24"/><text class="d-t-sm" x="299" y="86" text-anchor="middle">root fs (chroot/pivot)</text>
+<rect class="d-box" x="374" y="70" width="132" height="24"/><text class="d-t-sm" x="440" y="86" text-anchor="middle">caps / seccomp / LSM</text>
+<path class="d-line" d="M230 50 L90 68" marker-end="url(#cwic-ah)"/><path class="d-line" d="M250 50 L185 68" marker-end="url(#cwic-ah)"/>
+<path class="d-line" d="M270 50 L300 68" marker-end="url(#cwic-ah)"/><path class="d-line" d="M295 50 L430 68" marker-end="url(#cwic-ah)"/>
+<defs><marker id="cwic-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="116"><tspan class="d-t-b">isolate</tspan> what it sees (namespaces) &middot; <tspan class="d-t-b">limit</tspan> what it uses (cgroups) &middot; <tspan class="d-t-b">confine</tspan> its files (rootfs) &middot; <tspan class="d-t-b">restrict</tspan> what it can do (caps/seccomp).</text>
+<text class="d-t-sm" x="14" y="134">On the host it is still a plain PID in <tspan class="d-t-mono">ps</tspan>; inside, it thinks it is PID 1 of its own machine.</text>
+</svg>
+<figcaption>Docker/containerd/Kubernetes are orchestration and packaging on top of these four kernel features. The "container" is the sum of the isolation applied to a process, not a kernel object you can point at.</figcaption>
+</figure>
+
+<h3>No such thing as a "container" in the kernel</h3>
+<p><strong>What.</strong> Linux has no container syscall or container struct. A container is a process (or process tree) started with: a set of <strong>namespaces</strong> (private view of PIDs, mounts, network, hostname, users, IPC), a <strong>cgroup</strong> (resource limits), a private <strong>root filesystem</strong>, and a <strong>reduced privilege set</strong> (dropped capabilities, a seccomp filter, an LSM profile).</p>
+<p><strong>Why it matters.</strong> Every "container" behaviour &mdash; "it has its own IP", "PID 1 inside is my app", "it can't see host files" &mdash; traces to one of those primitives. Debugging a container is debugging a process plus its namespaces.</p>
+<pre># the same process, two views
+# --- inside the container ---
+/ # ps
+PID   USER  COMMAND
+1     root  nginx: master process       # thinks it is PID 1
+/ # hostname
+a1b2c3d4e5f6                             # its own UTS namespace
+
+# --- on the host ---
+$ ps -o pid,cmd -C nginx
+   PID CMD
+ 48213 nginx: master process            # just PID 48213
+$ sudo ls -l /proc/48213/ns             # the namespaces pinning it
+lrwxrwxrwx net -> 'net:[4026533210]'
+lrwxrwxrwx pid -> 'pid:[4026533207]'
+lrwxrwxrwx mnt -> 'mnt:[4026533205]'</pre>
+
+<h3>How a runtime starts one</h3>
+<p><strong>What / how.</strong> A runtime like <code>runc</code> does roughly: <code>clone()</code> a child with the requested <code>CLONE_NEW*</code> flags &rarr; in the child, set up the mount namespace and <code>pivot_root</code> into the image's rootfs &rarr; apply the cgroup, seccomp filter and capability set &rarr; <code>execve()</code> the entrypoint.</p>
+<pre># the essence, with shell tools (no Docker) -- see "Build a Container by Hand" for the full version
+$ sudo unshare --pid --mount --net --uts --ipc --fork --mount-proc \
+      chroot /var/lib/rootfs /bin/sh
+/ # ps          # PID namespace: only our processes
+/ # ip addr     # NET namespace: just lo, down
+/ # hostname box ; hostname   # UTS namespace: private hostname
+# add: cgroup for limits, capsh --drop=... for privileges, a seccomp profile</pre>
+
+<h3>What is (and isn't) isolated</h3>
+<ul>
+<li><strong>Isolated by namespaces</strong>: process list, mounts/filesystem view, network stack, hostname, users/UIDs, IPC objects, and the cgroup path itself.</li>
+<li><strong>Limited by cgroups</strong>: CPU time, memory, block IO, number of PIDs.</li>
+<li><strong>Shared with the host</strong>: the <strong>kernel</strong> (and thus the syscall ABI, kernel version, loaded modules), the system clock (unless the time namespace is used), and hardware.</li>
+<li><strong>Not isolated unless you ask</strong>: capabilities default to a set that still allows a lot; the seccomp profile must be supplied; without a user namespace, root in the container is root on the host.</li>
+</ul>
+<pre># PID 1 pitfall: your app inherits init duties it may not perform
+#   - reaping zombie children  -> use "docker run --init" or tini, or handle SIGCHLD
+#   - forwarding SIGTERM       -> exec your app so it IS PID 1 and gets the signal
+CMD ["node", "server.js"]        # exec form  -> node is PID 1, receives SIGTERM
+CMD node server.js               # shell form -> /bin/sh is PID 1, may swallow signals</pre>
+
+<h3>Why "it works on my machine" goes away</h3>
+<p><strong>What / why.</strong> The image bundles the app <em>and</em> its entire userspace (libc, shared libraries, interpreter, tools, config) as immutable layers. The only thing not in the image is the kernel &mdash; and the syscall ABI is stable &mdash; so the same bytes run identically on any host with a new-enough kernel.</p>
+<pre>$ docker run --rm myapp cat /etc/os-release | head -1
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"     # the image's userspace...
+$ uname -r
+6.8.0-40-generic                                  # ...on whatever kernel the host has
+# reproducible: same image digest -> same files -> same behaviour, laptop or prod</pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>A container = <strong>process + namespaces + cgroup + rootfs + dropped privileges</strong>. No kernel "container" object.</li>
+<li>Namespaces <strong>isolate what it sees</strong>; cgroups <strong>limit what it uses</strong>; rootfs <strong>confines its files</strong>; capabilities/seccomp/LSM <strong>restrict what it can do</strong>.</li>
+<li>On the host it's a normal PID; inside, its PID namespace makes the entrypoint look like PID 1.</li>
+<li>Shared with the host: the <strong>kernel</strong>, hardware, and (usually) the clock.</li>
+<li>PID 1 duties: reap zombies (<code>--init</code>/tini) and forward <code>SIGTERM</code> (use exec form so your app is PID 1).</li>
+<li>Portability comes from bundling the whole userspace as immutable layers; only the stable syscall ABI is external.</li>
+<li><code>runc</code> flow: <code>clone(CLONE_NEW*)</code> &rarr; mount ns + <code>pivot_root</code> &rarr; cgroup + seccomp + caps &rarr; <code>execve(entrypoint)</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>If you run <code>ps aux</code> on the host, do you see the container's processes?</dt>
+<dd>Yes &mdash; they are ordinary host processes with host PIDs. Inside the container's PID namespace those same processes are renumbered starting at 1, and the container can only see its own subtree, but nothing hides them from the host.</dd>
+<dt>What are the four ingredients that turn a process into a container?</dt>
+<dd>Namespaces (isolated view of PIDs/mounts/network/hostname/users/IPC), cgroups (CPU/memory/IO/PID limits), a private root filesystem (<code>chroot</code>/<code>pivot_root</code> into the image), and reduced privileges (dropped capabilities + a seccomp syscall filter + an LSM profile like AppArmor/SELinux).</dd>
+<dt>Why should your Dockerfile <code>CMD</code>/<code>ENTRYPOINT</code> use the exec form (JSON array)?</dt>
+<dd>The exec form runs your binary directly as PID 1, so it receives <code>SIGTERM</code> on <code>docker stop</code>/pod termination and can shut down gracefully. The shell form runs <code>/bin/sh -c "..."</code> as PID 1, which often does not forward the signal to your app, so it gets <code>SIGKILL</code>ed after the grace period.</dd>
+<dt>What does a container <em>not</em> get its own copy of?</dt>
+<dd>The kernel. All containers on a host execute against the same kernel, share its version and loaded modules and syscall ABI, and (unless the time namespace is in use) see the same clock. That shared kernel is also the security boundary.</dd>
+<dt>Why is "works on my machine" less of a problem with containers?</dt>
+<dd>The image is an immutable bundle of the application plus its entire userspace &mdash; libc, libraries, interpreter, CLI tools, default config &mdash; identified by a content digest. The same digest produces the same files everywhere, and the only external dependency is the stable kernel syscall interface.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Is there a "container" data structure in the Linux kernel?</summary><div class="answer-box">
+No. "Container" is a userspace concept &mdash; the combination of namespaces, cgroups, a root filesystem, and privilege restrictions applied to a process. The kernel just sees processes.
+</div></details>
+<details class="answer-reveal"><summary>Inside a container, what PID is your application usually running as, and why?</summary><div class="answer-box">
+PID 1, because the container has its own PID namespace and the entrypoint is the first process in it. On the host it has some ordinary large PID.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your containerized app leaves zombie processes and doesn't stop cleanly on deploy. What's going on?</summary><div class="answer-box">
+Two PID-1 problems. (1) <strong>Zombies</strong>: PID 1 is expected to <code>wait()</code> on orphaned children; if your app spawns subprocesses and doesn't reap them, they pile up as zombies. Fix: run a tiny init as PID 1 &mdash; <code>docker run --init</code> (uses tini), or <code>tini</code>/<code>dumb-init</code> as the entrypoint, or handle <code>SIGCHLD</code> yourself. (2) <strong>Doesn't stop cleanly</strong>: <code>docker stop</code>/Kubernetes sends <code>SIGTERM</code> to PID 1. If PID 1 is <code>/bin/sh -c "myapp"</code> (shell form CMD), the shell often doesn't forward the signal, so your app never gets it and is <code>SIGKILL</code>ed after the grace period, aborting in-flight work. Fix: use the exec form (<code>CMD ["myapp"]</code>) so your app is PID 1, or use an init that forwards signals.
+</div></details>
+<details class="answer-reveal"><summary>Walk through what <code>runc</code> does to start a container from an OCI bundle.</summary><div class="answer-box">
+Given a bundle (a rootfs directory + a <code>config.json</code>): (1) create a new process with <code>clone()</code>/<code>unshare()</code> requesting the configured namespaces (<code>CLONE_NEWPID</code>, <code>NEWNS</code>, <code>NEWNET</code>, <code>NEWUTS</code>, <code>NEWIPC</code>, optionally <code>NEWUSER</code>, <code>NEWCGROUP</code>); (2) in the child, if a user namespace is used, set up the UID/GID mappings; (3) set the hostname (UTS ns), configure the network namespace (or let the runtime/CNI do it); (4) do the mount-namespace setup &mdash; bind/mount the configured mounts, then <code>pivot_root</code> into the image rootfs and mount a fresh <code>/proc</code>, <code>/sys</code>, <code>/dev</code>; (5) move the process into its cgroup and write the limits; (6) drop capabilities to the configured set, apply <code>no_new_privs</code>, install the seccomp BPF filter, apply the AppArmor/SELinux label; (7) <code>execve()</code> the configured entrypoint. The container is now that process running under all those restrictions.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Given that a container is "just a process," how would you inspect and debug a misbehaving one on the host without exec'ing into it?</summary><div class="answer-box">
+Treat it as a process plus namespaces. (1) <strong>Find the PID</strong>: <code>docker inspect -f '{{.State.Pid}}' &lt;id&gt;</code>, or <code>crictl inspect</code>, or <code>ps</code> with the cgroup. (2) <strong>Filesystem</strong>: <code>/proc/&lt;pid&gt;/root/</code> is the container's rootfs as seen from the host &mdash; browse it directly; <code>/proc/&lt;pid&gt;/cwd</code>, <code>/proc/&lt;pid&gt;/environ</code>, <code>/proc/&lt;pid&gt;/maps</code>. (3) <strong>Enter selected namespaces</strong> with <code>nsenter -t &lt;pid&gt; -n ip addr</code> (just the netns to debug networking), <code>-m</code> for mounts, <code>-p</code> for the process view &mdash; you don't need any tools installed <em>in</em> the image because you bring the host's. (4) <strong>Resource state</strong>: read the cgroup files under <code>/sys/fs/cgroup/&lt;path&gt;/</code> &mdash; <code>memory.current</code>, <code>memory.events</code> (OOM count), <code>cpu.stat</code> (throttling), <code>pids.current</code>. (5) <strong>Syscalls</strong>: <code>strace -f -p &lt;pid&gt;</code> from the host, or <code>bpftrace</code>/<code>perf</code> filtered by cgroup. (6) <strong>What's constraining it</strong>: <code>/proc/&lt;pid&gt;/status</code> shows <code>CapEff</code> (effective capabilities), <code>Seccomp</code> mode, and the namespace inode numbers (compare with <code>lsns</code>). (7) <strong>Kernel/host events</strong>: <code>dmesg</code> for OOM-killer messages and seccomp/audit denials, <code>journalctl</code> for the runtime's logs. This is also why "distroless" images are debuggable: the container has no shell, but the host does, and <code>nsenter</code>/<code>/proc/&lt;pid&gt;/root</code> give you everything.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:what-is-a-container -->
+
+<!-- TOPIC:containers:namespaces -->
+<section class="view topic" id="v-containers-namespaces" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>Linux Namespaces</h1>
+<p class="subtitle">Each namespace gives a process a private copy of one global kernel resource &mdash; the process tree, the network stack, the mount table, and so on.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-cns-t">
+<title id="d-cns-t">The seven namespace types and what each one isolates</title>
+<rect class="d-box" x="14" y="16" width="150" height="20"/><text class="d-t-sm" x="22" y="30"><tspan class="d-t-mono">pid</tspan> &mdash; process IDs / tree</text>
+<rect class="d-box" x="14" y="40" width="150" height="20"/><text class="d-t-sm" x="22" y="54"><tspan class="d-t-mono">mnt</tspan> &mdash; mount points</text>
+<rect class="d-box" x="14" y="64" width="150" height="20"/><text class="d-t-sm" x="22" y="78"><tspan class="d-t-mono">net</tspan> &mdash; interfaces, routes, ports</text>
+<rect class="d-box" x="14" y="88" width="150" height="20"/><text class="d-t-sm" x="22" y="102"><tspan class="d-t-mono">uts</tspan> &mdash; hostname, domainname</text>
+<rect class="d-box" x="180" y="16" width="150" height="20"/><text class="d-t-sm" x="188" y="30"><tspan class="d-t-mono">ipc</tspan> &mdash; SysV IPC, POSIX mq</text>
+<rect class="d-box" x="180" y="40" width="150" height="20"/><text class="d-t-sm" x="188" y="54"><tspan class="d-t-mono">user</tspan> &mdash; UID/GID + capabilities</text>
+<rect class="d-box" x="180" y="64" width="150" height="20"/><text class="d-t-sm" x="188" y="78"><tspan class="d-t-mono">cgroup</tspan> &mdash; cgroup root view</text>
+<rect class="d-box-soft" x="180" y="88" width="150" height="20"/><text class="d-t-sm" x="188" y="102"><tspan class="d-t-mono">time</tspan> &mdash; boot/monotonic clock</text>
+<rect class="d-box-alt" x="356" y="40" width="150" height="44" rx="6"/><text class="d-t-sm" x="364" y="58">a container picks a</text><text class="d-t-sm" x="364" y="72">subset of these +</text><text class="d-t-sm" x="364" y="86">cgroup + rootfs</text>
+<text class="d-t-sm" x="14" y="128">Created with <tspan class="d-t-mono">clone(CLONE_NEW*)</tspan> / <tspan class="d-t-mono">unshare(2)</tspan>; joined with <tspan class="d-t-mono">setns(2)</tspan>. Pinned by <tspan class="d-t-mono">/proc/&lt;pid&gt;/ns/*</tspan>.</text>
+<text class="d-t-sm" x="14" y="146">A namespace lives while any process is in it, or a bind-mount / open fd pins it.</text>
+</svg>
+<figcaption>Namespaces answer "what can this process <em>see</em>?" They do not limit resource usage (that's cgroups) and do not by themselves reduce privilege (that's capabilities/seccomp) &mdash; except the <strong>user</strong> namespace, which does both.</figcaption>
+</figure>
+
+<h3>What a namespace is</h3>
+<p><strong>What.</strong> A namespace wraps a global kernel resource so that processes inside it see their own isolated instance of it. Change the resource inside, and only members of that namespace notice.</p>
+<p><strong>Why.</strong> This is the "isolation" half of containers. Give a process its own <code>net</code> namespace and it has its own IP, ports and firewall rules; its own <code>pid</code> namespace and it can't see or signal host processes; its own <code>mnt</code> namespace and it has a private filesystem tree.</p>
+<pre># create namespaces for a shell, one flag per type
+$ sudo unshare --pid --net --mount --uts --ipc --user --map-root-user \
+      --fork --mount-proc /bin/bash
+
+# inspect what any process is in
+$ ls -l /proc/self/ns/
+lrwxrwxrwx net -> 'net:[4026531840]'      # the number is the namespace's inode id
+lrwxrwxrwx pid -> 'pid:[4026531836]'
+$ lsns -t net                             # list network namespaces + their processes</pre>
+
+<h3>The types, one by one</h3>
+<table>
+<tr><th>Namespace</th><th>Isolates</th><th>Effect inside</th></tr>
+<tr><td><strong>pid</strong></td><td>Process IDs &amp; the process tree</td><td>First process is PID 1; only your subtree is visible; can't signal host PIDs.</td></tr>
+<tr><td><strong>mnt</strong></td><td>The mount table</td><td>Private set of mounts; <code>pivot_root</code> into the image rootfs; host mounts hidden.</td></tr>
+<tr><td><strong>net</strong></td><td>Interfaces, routes, iptables, sockets, ports</td><td>Starts with only a down <code>lo</code>; you add a <code>veth</code> to reach the outside.</td></tr>
+<tr><td><strong>uts</strong></td><td>Hostname &amp; NIS domain</td><td><code>sethostname()</code> changes only this container's name.</td></tr>
+<tr><td><strong>ipc</strong></td><td>System V IPC, POSIX message queues, shared memory</td><td>Own <code>/dev/shm</code>; can't attach to host shared-memory segments.</td></tr>
+<tr><td><strong>user</strong></td><td>UID/GID ranges &amp; capability sets</td><td>UID 0 inside maps to an unprivileged UID outside; root-in-container &ne; root-on-host.</td></tr>
+<tr><td><strong>cgroup</strong></td><td>The cgroup filesystem root</td><td><code>/proc/self/cgroup</code> and <code>/sys/fs/cgroup</code> show a relative view, not the host path.</td></tr>
+<tr><td><strong>time</strong></td><td><code>CLOCK_BOOTTIME</code> / <code>CLOCK_MONOTONIC</code> offsets</td><td>Container can present a different uptime (used for checkpoint/restore).</td></tr>
+</table>
+
+<h3>Creating, joining, and pinning them</h3>
+<p><strong>How.</strong> Three syscalls. <code>clone(CLONE_NEW*)</code> starts a child in fresh namespaces. <code>unshare(2)</code> moves the <em>calling</em> process into new ones. <code>setns(2)</code> joins an <em>existing</em> namespace via an fd from <code>/proc/&lt;pid&gt;/ns/&lt;type&gt;</code> &mdash; this is exactly what <code>docker exec</code> and <code>nsenter</code> do.</p>
+<pre># join a running container's network + pid namespace to debug it
+$ PID=$(docker inspect -f '{{.State.Pid}}' web)
+$ sudo nsenter -t $PID -n -p ss -tlnp        # host's ss, container's sockets
+
+# a namespace normally disappears when its last process exits;
+# pin an empty one so it persists (how "ip netns" works):
+$ sudo ip netns add blue
+$ ls /var/run/netns/blue                       # a bind-mounted nsfs file keeps it alive
+$ sudo ip netns exec blue ip link</pre>
+
+<h3>The user namespace &mdash; the special one</h3>
+<p><strong>What / why.</strong> It maps a range of UIDs/GIDs inside to a different range outside, and it is the <em>only</em> namespace an unprivileged user can create. Inside it you hold a full capability set (over that namespace's resources); outside, you are still unprivileged. This is the foundation of <strong>rootless containers</strong>: "root" in the container is really UID 100000 on the host, so a container breakout lands as a nobody.</p>
+<pre># rootless: run a whole container as your user, no daemon, no sudo
+$ podman unshare cat /proc/self/uid_map
+         0       1000          1          # in-ns uid 0  -> host uid 1000
+         1     100000      65536          # in-ns uid 1.. -> host 100000..
+
+$ podman run --rm alpine id
+uid=0(root) ...            # "root" inside
+$ ps -o user,cmd -C sleep # ... but on the host it's owned by 'me' (or 100000)</pre>
+
+<h3>Gotchas</h3>
+<ul>
+<li>A new <code>net</code> namespace has <strong>no connectivity</strong> &mdash; not even DNS &mdash; until you plumb a <code>veth</code>/bridge (the runtime or CNI does this).</li>
+<li><code>unshare --pid</code> needs <code>--fork --mount-proc</code>, otherwise <code>ps</code> still reads the host <code>/proc</code>.</li>
+<li>Sharing a namespace is a feature: Kubernetes pods share <code>net</code> + <code>ipc</code> (+ optionally <code>pid</code>) so containers in a pod reach each other on <code>localhost</code>; <code>docker run --net=container:web</code> and <code>--pid=host</code> do the same manually.</li>
+<li>User namespaces have historically been a source of kernel CVEs (lots of code becomes reachable by unprivileged users) &mdash; some hardened distros restrict them.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Namespace = a process's private copy of one global kernel resource. Answers "what can it <strong>see</strong>?"</li>
+<li>Types: <strong>pid</strong> (process tree), <strong>mnt</strong> (mounts), <strong>net</strong> (interfaces/ports/iptables), <strong>uts</strong> (hostname), <strong>ipc</strong> (SysV IPC/shm), <strong>user</strong> (UID/GID + caps), <strong>cgroup</strong> (cgroup root), <strong>time</strong> (boot/monotonic clock).</li>
+<li>Syscalls: <code>clone(CLONE_NEW*)</code> new child, <code>unshare(2)</code> move self, <code>setns(2)</code> join existing (= <code>docker exec</code>/<code>nsenter</code>).</li>
+<li>Pinned by <code>/proc/&lt;pid&gt;/ns/*</code>; survives via a bind-mount or open fd even with no process.</li>
+<li>Namespaces isolate <em>visibility</em>; they don't limit resources (cgroups) or drop privilege (caps/seccomp) &mdash; except <strong>user</strong>, which remaps UIDs and is the basis of <strong>rootless</strong>.</li>
+<li>Fresh <code>net</code> ns = only a down <code>lo</code>; needs a <code>veth</code> to reach anything.</li>
+<li><code>unshare --pid</code> also needs <code>--fork --mount-proc</code> to get a correct <code>ps</code>.</li>
+<li>Pods deliberately <strong>share</strong> <code>net</code>+<code>ipc</code> so containers talk over <code>localhost</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Which namespace makes a container's entrypoint appear as PID 1?</dt>
+<dd>The <strong>PID namespace</strong>. The first process created in a new PID namespace is numbered 1 and can only see processes in its own subtree; it also takes on init responsibilities (reaping orphans).</dd>
+<dt>You create a fresh network namespace and can't ping anything. Why?</dt>
+<dd>A new <code>net</code> namespace starts empty &mdash; just a loopback interface that is down. It has no route to the host or the internet until you create a <code>veth</code> pair, put one end in the namespace, attach the other to a bridge (or the host), bring them up, add a default route, and set up NAT. Container runtimes and CNI plugins do all of this for you.</dd>
+<dt>How does <code>docker exec</code> get a shell "inside" a running container?</dt>
+<dd>It calls <code>setns(2)</code> to join the target container's existing namespaces (mount, PID, net, IPC, UTS, and user if used), moves into its cgroup, applies the same seccomp/caps, then <code>execve()</code>s the requested command. <code>nsenter -t &lt;pid&gt; -a</code> is the manual equivalent.</dd>
+<dt>What is special about the user namespace?</dt>
+<dd>It remaps UIDs/GIDs (UID 0 inside &rarr; some high unprivileged UID outside) and is the only namespace an unprivileged process can create. It lets you have "root" inside a container without any real host privilege &mdash; the basis of rootless containers &mdash; but it also exposes more kernel code to unprivileged users, so it has a history of CVEs.</dd>
+<dt>Do Kubernetes pod containers each get their own network namespace?</dt>
+<dd>No &mdash; all containers in a pod <em>share</em> one network namespace (and IPC, and optionally PID). That's why they see each other on <code>localhost</code> and share the pod's single IP and port space, and why two containers in a pod can't both bind port 8080.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name four Linux namespace types and what each isolates.</summary><div class="answer-box">
+Any four of: <strong>pid</strong> (process IDs/tree), <strong>mnt</strong> (mount points), <strong>net</strong> (network interfaces, routes, ports, iptables), <strong>uts</strong> (hostname/domain), <strong>ipc</strong> (System&nbsp;V IPC and POSIX message queues), <strong>user</strong> (UID/GID mappings and capabilities), <strong>cgroup</strong> (the cgroup filesystem root view), <strong>time</strong> (boot/monotonic clock offsets).
+</div></details>
+<details class="answer-reveal"><summary>Which command lists the namespaces on a system?</summary><div class="answer-box">
+<code>lsns</code> (optionally <code>lsns -t net</code> for one type). You can also read <code>/proc/&lt;pid&gt;/ns/</code> for a single process.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Do namespaces limit how much CPU or memory a container can use?</summary><div class="answer-box">
+No. Namespaces only control <em>visibility</em> &mdash; what processes, mounts, interfaces, etc. a process can see and act on. Resource <em>limits</em> (CPU shares/quota, memory ceilings, IO weight, PID count) are enforced by <strong>cgroups</strong>, a separate mechanism. A container with no cgroup limits can consume the whole host. The one namespace that also affects privilege is the <strong>user</strong> namespace, which remaps UIDs and scopes capabilities.
+</div></details>
+<details class="answer-reveal"><summary>How do two containers in the same Kubernetes pod communicate, and what constraint does that create?</summary><div class="answer-box">
+They share a network namespace (set up on the pod's "pause"/sandbox container), so they talk over <code>localhost</code> and share one IP. Constraint: they also share the port space &mdash; two containers in a pod cannot both listen on the same port &mdash; and network-level isolation between them is nil, so co-locating containers in a pod is a trust decision (it's meant for tightly-coupled helpers/sidecars, not arbitrary services).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how you would manually build the namespace isolation for a container using only shell tools, and where each step maps to what a runtime does.</summary><div class="answer-box">
+(1) <strong>unshare the namespaces</strong>: <code>unshare --user --map-root-user --pid --fork --mount --net --uts --ipc --cgroup /bin/bash</code>. <code>--fork</code> is required with <code>--pid</code> so the shell's children are in the new PID ns; <code>--map-root-user</code> sets up a minimal <code>uid_map</code>/<code>gid_map</code> for the user ns. (2) <strong>mount namespace + rootfs</strong>: make mounts private (<code>mount --make-rprivate /</code>), bind-mount the image rootfs onto itself, <code>mount --bind newroot newroot</code>, <code>cd newroot</code>, <code>pivot_root . old_root</code>, then <code>umount -l old_root</code>; mount fresh <code>proc</code>, <code>sysfs</code>, <code>devtmpfs</code>/a minimal <code>/dev</code>. (3) <strong>UTS</strong>: <code>hostname container01</code>. (4) <strong>network</strong>: from the host, <code>ip link add veth0 type veth peer name ceth0</code>, <code>ip link set ceth0 netns &lt;pid&gt;</code>, attach <code>veth0</code> to a bridge, assign addresses, bring links up, set a default route in the ns, add an iptables MASQUERADE rule for egress. (5) <strong>cgroup</strong>: <code>mkdir /sys/fs/cgroup/mycontainer</code>, write <code>memory.max</code>, <code>cpu.max</code>, <code>pids.max</code>, then <code>echo &lt;pid&gt; &gt; cgroup.procs</code>. (6) <strong>privileges</strong>: <code>capsh --drop=cap_sys_admin,cap_net_admin,... --</code> (or set the bounding/effective sets), <code>prctl(PR_SET_NO_NEW_PRIVS)</code>, install a seccomp BPF filter, apply an AppArmor/SELinux profile. (7) <strong>exec</strong> the entrypoint. Mapping: steps 1&ndash;4 are what <code>runc</code>'s namespace/rootfs/network setup does from <code>config.json</code>; step 5 is the cgroup manager (systemd or cgroupfs driver); step 6 is the <code>seccomp</code>/<code>capabilities</code>/<code>apparmorProfile</code> fields; step 7 is <code>process.args</code>. Docker/containerd add image pull, layer/overlayfs assembly, and lifecycle/API on top.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:namespaces -->
+
+<!-- TOPIC:containers:cgroups -->
+<section class="view topic" id="v-containers-cgroups" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>Control Groups (cgroups v2)</h1>
+<p class="subtitle">Namespaces decide what a process can see; cgroups decide how much CPU, memory, IO and how many processes it can use.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-ccg-t">
+<title id="d-ccg-t">cgroup v2 unified hierarchy: one tree, controllers enabled per node</title>
+<rect class="d-box" x="200" y="14" width="120" height="22" rx="4"/><text class="d-t-sm" x="260" y="29" text-anchor="middle">/sys/fs/cgroup (root)</text>
+<rect class="d-box-soft" x="60" y="56" width="130" height="22" rx="4"/><text class="d-t-sm" x="125" y="71" text-anchor="middle">system.slice</text>
+<rect class="d-box-soft" x="330" y="56" width="150" height="22" rx="4"/><text class="d-t-sm" x="405" y="71" text-anchor="middle">kubepods.slice</text>
+<rect class="d-box-alt" x="300" y="96" width="90" height="22" rx="4"/><text class="d-t-sm" x="345" y="111" text-anchor="middle">pod-abc</text>
+<rect class="d-box-alt" x="400" y="96" width="90" height="22" rx="4"/><text class="d-t-sm" x="445" y="111" text-anchor="middle">pod-def</text>
+<path class="d-line" d="M240 36 L130 54" marker-end="url(#ccg-ah)"/><path class="d-line" d="M280 36 L400 54" marker-end="url(#ccg-ah)"/>
+<path class="d-line" d="M390 78 L345 94" marker-end="url(#ccg-ah)"/><path class="d-line" d="M420 78 L445 94" marker-end="url(#ccg-ah)"/>
+<defs><marker id="ccg-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="134">Each node: <tspan class="d-t-mono">cgroup.procs</tspan> (member PIDs) &middot; <tspan class="d-t-mono">cpu.max</tspan> <tspan class="d-t-mono">memory.max</tspan> <tspan class="d-t-mono">io.max</tspan> <tspan class="d-t-mono">pids.max</tspan> (limits) &middot; <tspan class="d-t-mono">*.stat</tspan> <tspan class="d-t-mono">*.current</tspan> (usage).</text>
+</svg>
+<figcaption>cgroup v2 replaced v1's separate per-controller hierarchies with a single tree. A process is in exactly one cgroup; limits and accounting are read/written as plain files.</figcaption>
+</figure>
+
+<h3>What a cgroup is</h3>
+<p><strong>What.</strong> A control group is a node in a filesystem tree (<code>/sys/fs/cgroup/&hellip;</code>) that a set of processes belongs to. Kernel <strong>controllers</strong> (<code>cpu</code>, <code>memory</code>, <code>io</code>, <code>pids</code>, <code>hugetlb</code>&hellip;) attached to that node <strong>account</strong> for and <strong>limit</strong> the resources those processes use.</p>
+<p><strong>Why.</strong> Without limits, one container can starve the host of memory (triggering the OOM killer on random victims), peg every CPU, or fork-bomb it. cgroups turn "best effort" into enforceable quotas and make usage measurable per container.</p>
+<pre># where a process's cgroup is (v2 = one line, "0::&lt;path&gt;")
+$ cat /proc/self/cgroup
+0::/user.slice/user-1000.slice/session-3.scope
+
+# a container's cgroup, from Docker
+$ cat /sys/fs/cgroup/system.slice/docker-&lt;id&gt;.scope/memory.current
+134217728
+$ cat /sys/fs/cgroup/system.slice/docker-&lt;id&gt;.scope/memory.max
+536870912                     # 512 MiB ceiling (from --memory 512m)</pre>
+
+<h3>The controllers you'll touch</h3>
+<table>
+<tr><th>Controller</th><th>Key files (v2)</th><th>Controls</th></tr>
+<tr><td><strong>cpu</strong></td><td><code>cpu.max</code> = "QUOTA PERIOD", <code>cpu.weight</code></td><td>Hard cap (throttling) and relative share under contention.</td></tr>
+<tr><td><strong>memory</strong></td><td><code>memory.max</code>, <code>memory.high</code>, <code>memory.current</code>, <code>memory.events</code></td><td>Hard OOM ceiling, soft throttle point, current use, OOM count.</td></tr>
+<tr><td><strong>io</strong></td><td><code>io.max</code>, <code>io.weight</code>, <code>io.stat</code></td><td>Per-device bytes/s and IOPS caps; proportional weight.</td></tr>
+<tr><td><strong>pids</strong></td><td><code>pids.max</code>, <code>pids.current</code></td><td>Max processes/threads &mdash; stops fork bombs.</td></tr>
+</table>
+<pre># create a cgroup, cap it, run something in it
+$ sudo mkdir /sys/fs/cgroup/demo
+$ echo '50000 100000' | sudo tee /sys/fs/cgroup/demo/cpu.max   # 0.5 CPU (50ms per 100ms)
+$ echo 128M          | sudo tee /sys/fs/cgroup/demo/memory.max
+$ echo 100           | sudo tee /sys/fs/cgroup/demo/pids.max
+$ echo $$            | sudo tee /sys/fs/cgroup/demo/cgroup.procs  # move this shell in
+$ yes > /dev/null &amp;                                              # uses at most 50% of one core</pre>
+
+<h3>Limits vs weights (requests)</h3>
+<p><strong>What / why.</strong> <code>cpu.max</code> / <code>memory.max</code> are <strong>hard limits</strong> &mdash; the kernel throttles or OOM-kills at the ceiling. <code>cpu.weight</code> / <code>io.weight</code> are <strong>proportional shares</strong> that only matter <em>under contention</em>. Docker's <code>--cpus</code> sets <code>cpu.max</code>; <code>--cpu-shares</code> sets the weight. Kubernetes maps <code>limits.cpu</code> &rarr; <code>cpu.max</code> and <code>requests.cpu</code> &rarr; <code>cpu.weight</code> (and uses requests for scheduling + QoS class).</p>
+<pre># Docker
+$ docker run --cpus 1.5 --memory 512m --memory-swap 512m \
+             --cpu-shares 512 --pids-limit 200 myapp
+# --memory-swap == --memory  -> swap disabled for the container
+
+# Kubernetes -> cgroup files
+resources:
+  requests: { cpu: "250m", memory: "256Mi" }   # 250m -> cpu.weight ~= 25 ; scheduling
+  limits:   { cpu: "1",    memory: "512Mi" }    # -> cpu.max "100000 100000", memory.max 512Mi</pre>
+
+<h3>OOM and CPU throttling &mdash; the two things that bite</h3>
+<ul>
+<li><strong>Memory</strong>: hit <code>memory.max</code> and the kernel first reclaims, then <strong>OOM-kills a process in that cgroup</strong> (usually your app, exit code 137). It does <em>not</em> touch the rest of the host. Check <code>memory.events</code> (<code>oom_kill</code> count) and <code>dmesg</code>.</li>
+<li><strong>CPU</strong>: hit <code>cpu.max</code> and the kernel <strong>throttles</strong> &mdash; runnable threads are stalled until the next period. Latency spikes, no crash. Check <code>cpu.stat</code> (<code>nr_throttled</code>, <code>throttled_usec</code>). A too-low CPU limit on a multi-threaded app or GC causes mysterious p99 latency.</li>
+</ul>
+<pre>$ cat /sys/fs/cgroup/.../cpu.stat
+usage_usec 91230000
+nr_periods 3120
+nr_throttled 812                  # <-- throttled in ~26% of periods = limit too low
+throttled_usec 4100000
+$ cat /sys/fs/cgroup/.../memory.events
+oom_kill 3                          # <-- 3 OOM kills; raise memory.max or fix the leak</pre>
+
+<h3>v1 vs v2, and delegation</h3>
+<ul>
+<li><strong>v1</strong>: one hierarchy per controller (<code>/sys/fs/cgroup/memory</code>, <code>/cpu</code>, &hellip;), a process could be in different cgroups per controller &mdash; messy. <strong>v2</strong>: one unified tree; controllers are enabled on a subtree via <code>cgroup.subtree_control</code>. Modern distros and Kubernetes default to v2.</li>
+<li><strong>Delegation</strong>: systemd owns the tree; containers get a sub-slice (<code>system.slice/docker-*.scope</code>, <code>kubepods.slice/&hellip;</code>). Rootless containers use systemd user delegation so an unprivileged user can set limits on their own subtree.</li>
+<li>"No internal processes" rule (v2): a non-root cgroup can have member processes <em>or</em> child cgroups with controllers, not both.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>cgroup = a node in <code>/sys/fs/cgroup</code> that processes belong to; controllers <strong>account for + limit</strong> CPU, memory, IO, PIDs.</li>
+<li>Namespaces = visibility; cgroups = <strong>resource limits</strong>. Different mechanisms.</li>
+<li>Hard limits: <code>cpu.max</code> ("QUOTA PERIOD"), <code>memory.max</code>. Proportional shares (contention only): <code>cpu.weight</code>, <code>io.weight</code>.</li>
+<li>Docker: <code>--cpus</code>&rarr;<code>cpu.max</code>, <code>--cpu-shares</code>&rarr;weight, <code>--memory</code>&rarr;<code>memory.max</code>, <code>--pids-limit</code>&rarr;<code>pids.max</code>.</li>
+<li>K8s: <code>limits</code>&rarr;<code>*.max</code>; <code>requests.cpu</code>&rarr;<code>cpu.weight</code> + scheduling + QoS.</li>
+<li>Over memory limit &rarr; <strong>OOM kill inside the cgroup</strong> (exit 137); check <code>memory.events</code>.</li>
+<li>Over CPU limit &rarr; <strong>throttling</strong>, not a crash; check <code>cpu.stat</code> <code>nr_throttled</code>/<code>throttled_usec</code>.</li>
+<li>cgroup <strong>v2</strong> = single unified hierarchy (default now); <strong>v1</strong> = per-controller trees.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Namespaces vs cgroups &mdash; one line each.</dt>
+<dd>Namespaces isolate <em>what a process can see</em> (PIDs, mounts, network, &hellip;). cgroups limit and account for <em>what a process can use</em> (CPU, memory, IO, PID count).</dd>
+<dt>Your container is OOM-killed with exit code 137. What happened and what do you check?</dt>
+<dd>It exceeded its cgroup <code>memory.max</code>; the kernel reclaimed what it could, then killed a process in that cgroup (137 = 128 + SIGKILL(9)). Check <code>memory.events</code> for the <code>oom_kill</code> count, <code>memory.max</code> vs your app's real working set, <code>dmesg</code> for the OOM report, and whether the JVM/Node heap is sized larger than the limit. Fix by raising the limit or fixing the leak/heap config &mdash; and know it did <em>not</em> affect other containers.</dd>
+<dt>A CPU-limited container has fine average CPU but terrible p99 latency. Why?</dt>
+<dd><strong>CFS throttling.</strong> <code>cpu.max</code> is enforced per ~100&nbsp;ms period; if the app (or its GC / thread pool) needs a burst that exceeds the quota, all its threads are frozen until the next period, adding tens of milliseconds of stall. Average usage stays under the limit but tail latency blows up. Check <code>cpu.stat</code> <code>nr_throttled</code>; fix by raising the limit, reducing quota-relative parallelism, or (K8s) using only requests without a tight limit for latency-sensitive workloads.</dd>
+<dt>What's the difference between a CPU limit and a CPU request/share?</dt>
+<dd>A <strong>limit</strong> (<code>cpu.max</code>) is a hard ceiling &mdash; the container is throttled once it hits the quota even if the host is idle. A <strong>request/share</strong> (<code>cpu.weight</code>) only matters under contention: it sets the proportion of CPU this cgroup gets relative to its siblings when they're all trying to run. An idle host lets a share-only container use everything.</dd>
+<dt>What is cgroup v2 and why did it replace v1?</dt>
+<dd>v1 had a separate hierarchy per controller, so a process could sit in different cgroups for <code>cpu</code> vs <code>memory</code>, making coordinated policy and delegation hard, and some features (like pressure-aware memory management) impossible. v2 is a single unified hierarchy where each process is in exactly one cgroup and controllers are toggled per subtree, enabling consistent policy, safe delegation to unprivileged users (rootless), and PSI/pressure metrics.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What do cgroups control that namespaces do not?</summary><div class="answer-box">
+Resource usage &mdash; CPU time, memory, block IO bandwidth, and the number of processes/threads. Namespaces only control visibility/isolation.
+</div></details>
+<details class="answer-reveal"><summary>Which Docker flags set the container's memory ceiling and process cap?</summary><div class="answer-box">
+<code>--memory</code> (writes <code>memory.max</code>) and <code>--pids-limit</code> (writes <code>pids.max</code>). Also <code>--cpus</code> for a CPU cap.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>How do Kubernetes <code>requests</code> and <code>limits</code> map onto cgroup files, and how do they affect QoS?</summary><div class="answer-box">
+<code>limits.memory</code> &rarr; <code>memory.max</code> (hard OOM ceiling). <code>limits.cpu</code> &rarr; <code>cpu.max</code> (CFS quota/period, causes throttling). <code>requests.cpu</code> &rarr; <code>cpu.weight</code> (proportional share under contention) <em>and</em> is what the scheduler sums against node allocatable to decide placement. <code>requests.memory</code> is used for scheduling and QoS but isn't a cgroup enforcement knob by itself. <strong>QoS class</strong>: <code>Guaranteed</code> if every container sets requests==limits for both CPU and memory; <code>Burstable</code> if at least one request is set but not equal to limits; <code>BestEffort</code> if nothing is set. Under node memory pressure the kubelet evicts <code>BestEffort</code> first, then <code>Burstable</code> exceeding requests, then <code>Guaranteed</code> last &mdash; and the OOM score adjustment follows the same ordering.
+</div></details>
+<details class="answer-reveal"><summary>A container sets <code>--memory 512m</code> but no swap limit; what can still go wrong?</summary><div class="answer-box">
+If the host has swap and <code>--memory-swap</code> isn't set equal to <code>--memory</code>, the container can spill to swap up to (memory + host swap), so it doesn't get OOM-killed at 512&nbsp;MiB &mdash; it just thrashes, and every allocation-heavy operation becomes disk-slow, dragging down latency and the whole node's IO. Also, runtimes like the JVM or Node may read the host's total memory (on old cgroup-unaware versions) and size their heap to that, blowing past the limit and getting OOM-killed anyway. Fixes: set <code>--memory-swap</code> equal to <code>--memory</code> (disable container swap), use cgroup-aware runtimes / <code>-XX:MaxRAMPercentage</code>, and on Kubernetes note that swap is disabled by default for exactly this reason.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design resource governance for a shared multi-tenant node so one tenant can't degrade others, covering CPU, memory, IO, and PIDs.</summary><div class="answer-box">
+<strong>CPU</strong>: give every workload a <code>requests.cpu</code> (&rarr; <code>cpu.weight</code>) sized to its steady-state need so contention is shared fairly; set <code>limits.cpu</code> only where a hard cap is genuinely wanted (batch/abuse-prone), and be cautious with tight limits on latency-sensitive services because CFS throttling spikes tail latency &mdash; prefer weight + monitoring + a generous limit. Reserve capacity for the kubelet/system daemons (<code>--kube-reserved</code>, <code>--system-reserved</code>) so node agents never starve. <strong>Memory</strong>: always set <code>limits.memory</code> (&rarr; <code>memory.max</code>) so a leak OOM-kills only that cgroup; set <code>requests.memory</code> equal to the limit for critical services (Guaranteed QoS) so they're evicted last; enable <code>memory.high</code> (soft limit) via the runtime where supported so a container is throttled/reclaimed <em>before</em> the hard OOM; disable swap (or set <code>--memory-swap</code>=<code>--memory</code>) to avoid thrash; keep node memory reservations for system components. <strong>IO</strong>: set <code>io.weight</code> per cgroup for proportional fairness on the shared disk; add <code>io.max</code> bytes/IOPS caps for known noisy neighbours (log-heavy, backup jobs); prefer separate/local NVMe for high-IO tenants; watch <code>io.pressure</code> (PSI). <strong>PIDs</strong>: set <code>pids.max</code> (K8s node-level <code>--pod-max-pids</code> or per-pod) to contain fork bombs and runaway thread creation. <strong>Isolation extras</strong>: one tenant per node pool where isolation must be strong (taints/tolerations + node affinity), or micro-VM runtime (Kata) for hostile tenants; NetworkPolicy so tenants can't reach each other; ResourceQuota + LimitRange per namespace so tenants can't over-request. <strong>Observability</strong>: alert on <code>cpu.stat</code> throttling ratio, <code>memory.events</code> OOM counts, PSI (<code>cpu.pressure</code>/<code>memory.pressure</code>/<code>io.pressure</code>) per cgroup, and eviction events; capacity-plan from actual usage vs requests. Net: weights for fair sharing, hard limits for blast-radius containment, node reservations for the system, PSI for early warning, and node-pool or micro-VM separation where the trust boundary demands it.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:cgroups -->
+
+<!-- TOPIC:containers:layers-overlayfs -->
+<section class="view topic" id="v-containers-layers-overlayfs" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>Image Layers &amp; OverlayFS</h1>
+<p class="subtitle">An image is a stack of read-only tarballs; a running container adds one thin writable layer on top, merged into a single view by a union filesystem.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-clay-t">
+<title id="d-clay-t">OverlayFS merges read-only lower layers with one writable upper layer</title>
+<rect class="d-box-alt" x="330" y="18" width="170" height="26" rx="4"/><text class="d-t-b" x="415" y="35" text-anchor="middle">merged view (mountpoint)</text>
+<rect class="d-box-soft" x="330" y="58" width="170" height="22"/><text class="d-t-sm" x="415" y="73" text-anchor="middle">upper = container R/W layer</text>
+<rect class="d-box" x="330" y="84" width="170" height="18"/><text class="d-t-sm" x="415" y="97" text-anchor="middle">lower: COPY app/ layer</text>
+<rect class="d-box" x="330" y="104" width="170" height="18"/><text class="d-t-sm" x="415" y="117" text-anchor="middle">lower: RUN apt-get layer</text>
+<rect class="d-box" x="330" y="124" width="170" height="18"/><text class="d-t-sm" x="415" y="137" text-anchor="middle">lower: base image (debian)</text>
+<text class="d-t-sm" x="14" y="34">read = top-down</text><text class="d-t-sm" x="14" y="50">first match wins</text>
+<text class="d-t-sm" x="14" y="82">write = "copy-up"</text><text class="d-t-sm" x="14" y="98">file copied into</text><text class="d-t-sm" x="14" y="114">upper, then edited</text>
+<text class="d-t-sm" x="14" y="150">delete = a "whiteout" entry in upper hides the lower file</text>
+<path class="d-line" d="M200 40 L328 31" marker-end="url(#clay-ah)"/><path class="d-line" d="M200 96 L328 69" marker-end="url(#clay-ah)"/>
+<defs><marker id="clay-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Layers are content-addressed, so identical layers are stored once and shared by every image/container that references them &mdash; the reason pulls and starts are fast and disk use stays low.</figcaption>
+</figure>
+
+<h3>What an image layer is</h3>
+<p><strong>What.</strong> Each Dockerfile instruction that changes the filesystem (<code>FROM</code>, <code>RUN</code>, <code>COPY</code>, <code>ADD</code>) produces a <strong>layer</strong>: a tar of the files that were added, changed or deleted relative to the layer below. An image is an ordered list of layer digests plus a config (env, entrypoint, &hellip;).</p>
+<p><strong>Why.</strong> Layers are <strong>content-addressed</strong> (<code>sha256:&hellip;</code>) and immutable, so: a layer is downloaded and stored <strong>once</strong> and reused by every image that shares it; a rebuild only re-ships the layers that actually changed; and starting N containers from an image copies nothing &mdash; they share the read-only layers.</p>
+<pre>$ docker history python:3.12-slim
+IMAGE          CREATED BY                                      SIZE
+&lt;missing&gt;      RUN pip install ...                             48MB
+&lt;missing&gt;      COPY . /app                                     2.1MB
+&lt;missing&gt;      ENV LANG=C.UTF-8                                0B      # metadata-only, no layer
+&lt;missing&gt;      /bin/sh -c apt-get install -y libpq5            9.4MB
+&lt;missing&gt;      (base debian layer)                             74MB
+
+$ docker inspect --format '{{json .RootFS.Layers}}' myimage | jq
+["sha256:8a1e...", "sha256:2f0b...", "sha256:9cc4..."]   # the ordered stack</pre>
+
+<h3>How OverlayFS merges them</h3>
+<p><strong>What / how.</strong> The runtime <code>mount -t overlay</code>s the layers: the image layers are the read-only <strong>lowerdir</strong>s, a fresh empty directory is the writable <strong>upperdir</strong>, plus a <strong>workdir</strong> for atomic operations. The <strong>merged</strong> mount is what the container sees as <code>/</code>.</p>
+<ul>
+<li><strong>Read</strong>: overlay looks from the upper layer downward and returns the first copy of the path it finds.</li>
+<li><strong>Write / modify</strong>: <strong>copy-up</strong> &mdash; the file is copied from its lower layer into the upper layer, then written there. The lower layers are never touched.</li>
+<li><strong>Delete</strong>: a <strong>whiteout</strong> (a character device <code>0:0</code>, or an xattr) is created in the upper layer to mask the lower file. Deleting a directory uses an <strong>opaque</strong> marker.</li>
+</ul>
+<pre># the actual mount for a running container (Docker, overlay2)
+$ mount | grep overlay
+overlay on /var/lib/docker/overlay2/&lt;id&gt;/merged type overlay
+  (lowerdir=.../l/AAA:.../l/BBB:.../l/CCC,   # image layers, top-first
+   upperdir=.../&lt;id&gt;/diff,                   # container's writable layer
+   workdir=.../&lt;id&gt;/work)
+
+# prove copy-up: edit a base-image file, see it appear in 'diff'
+$ docker run -d --name c1 nginx
+$ docker exec c1 sh -c 'echo hi >> /etc/nginx/nginx.conf'
+$ ls /var/lib/docker/overlay2/&lt;c1-id&gt;/diff/etc/nginx/     # nginx.conf now here</pre>
+
+<h3>Why this shapes how you write Dockerfiles</h3>
+<ul>
+<li><strong>Order stable &rarr; volatile.</strong> Put rarely-changing steps (install OS packages, dependencies) before frequently-changing steps (<code>COPY</code> your source). A change invalidates that layer <em>and every layer after it</em>.</li>
+<li><strong>Cleanup must be in the same <code>RUN</code>.</strong> <code>RUN apt-get install ...</code> then a later <code>RUN rm -rf /var/lib/apt/lists</code> still ships the files &mdash; they're in the earlier layer; the later layer just adds whiteouts. Chain it: <code>RUN apt-get install -y x &amp;&amp; rm -rf /var/lib/apt/lists/*</code>.</li>
+<li><strong>Big-file churn bloats the image.</strong> Modifying a 200&nbsp;MB file in a later layer copies the whole 200&nbsp;MB into that layer &mdash; the image now carries both versions.</li>
+<li><strong>Secrets leak across layers.</strong> <code>COPY key .</code> then <code>RUN use-key &amp;&amp; rm key</code> &mdash; the key is still in the <code>COPY</code> layer forever. Use build secrets / multi-stage.</li>
+</ul>
+<pre># BAD: source change busts the pip-install cache every build
+COPY . /app
+RUN pip install -r /app/requirements.txt
+
+# GOOD: deps layer is cached until requirements.txt itself changes
+COPY requirements.txt .
+RUN pip install -r requirements.txt
+COPY . /app</pre>
+
+<h3>Storage drivers &amp; where the layers live</h3>
+<ul>
+<li><strong>overlay2</strong> is the default on Linux (needs a kernel with overlayfs, most since 4.x). Alternatives: <code>fuse-overlayfs</code> (rootless), <code>btrfs</code>/<code>zfs</code> (CoW at the FS level), <code>devicemapper</code> (legacy), <code>vfs</code> (no CoW, full copy per layer &mdash; slow, testing only).</li>
+<li>On disk (Docker): <code>/var/lib/docker/overlay2/</code>. Layers are dedup'd; <code>docker system df</code> shows real vs reclaimable; <code>docker image prune</code> / <code>docker builder prune</code> reclaim.</li>
+<li>The <strong>writable layer dies with the container</strong> (<code>docker rm</code>). Anything that must survive goes in a <strong>volume</strong> or <strong>bind mount</strong> &mdash; which also skips copy-up and its write-amplification.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Image = ordered list of <strong>content-addressed read-only layers</strong> (a diff tar each) + a config. Container adds <strong>one thin writable layer</strong>.</li>
+<li>OverlayFS: <strong>lowerdir</strong>(s) = image layers, <strong>upperdir</strong> = container R/W, <strong>merged</strong> = what the container sees.</li>
+<li>Read = first match top-down. Write = <strong>copy-up</strong> into upper. Delete = <strong>whiteout</strong> in upper.</li>
+<li>Layers dedup'd &amp; shared &rarr; fast pulls, small disk, near-zero-cost container start.</li>
+<li>Changing a layer invalidates it <strong>and every layer after it</strong> &rarr; order Dockerfile stable&rarr;volatile; copy deps before source.</li>
+<li>Clean up in the <strong>same</strong> <code>RUN</code>; a later <code>rm</code> only adds whiteouts, doesn't shrink the image.</li>
+<li>Secrets in an early layer stay forever &mdash; use build secrets / multi-stage.</li>
+<li>Default driver <strong>overlay2</strong>; rootless uses <code>fuse-overlayfs</code>. Writable layer is lost on <code>rm</code> &mdash; persist via volumes.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why can 50 containers from the same image start almost instantly and use little extra disk?</dt>
+<dd>They all share the image's read-only layers via OverlayFS &mdash; nothing is copied at start. Each gets only a small empty <em>upperdir</em> for its writes. Disk grows only as each container actually modifies or creates files (copy-up).</dd>
+<dt>You <code>RUN apt-get install</code> then in a later <code>RUN</code> delete the apt cache, but the image is still huge. Why?</dt>
+<dd>The installed files and cache live in the earlier layer, which is immutable. The later <code>RUN</code> just adds <em>whiteout</em> entries that hide them in the merged view &mdash; the bytes are still shipped in the earlier layer. You must install and clean up in a single <code>RUN ... &amp;&amp; rm -rf ...</code> so the cleanup is part of the same layer diff.</dd>
+<dt>What is "copy-up" in OverlayFS?</dt>
+<dd>When a process in the container modifies (or opens for write, or changes metadata on) a file that exists only in a read-only lower layer, overlay first copies the entire file up into the writable upper layer, then applies the change there. The lower copy is untouched. Modifying a large file therefore duplicates it into the container's writable layer.</dd>
+<dt>Where does data written by a container go, and what happens to it on <code>docker rm</code>?</dt>
+<dd>Into the container's writable upper layer (<code>/var/lib/docker/overlay2/&lt;id&gt;/diff</code>). It is deleted with the container. To persist data, mount a named volume or a bind mount at that path &mdash; those live outside the layer stack and survive container removal (and also avoid copy-up write-amplification).</dd>
+<dt>Why does putting <code>COPY . /app</code> before <code>RUN pip install</code> hurt build times?</dt>
+<dd>Any change to any source file changes the <code>COPY</code> layer's digest, which invalidates it and <em>every subsequent layer</em> &mdash; so <code>pip install</code> re-runs on every build. Copying just <code>requirements.txt</code> first lets the dependency layer stay cached until the dependency list itself changes.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How many writable layers does a running container have?</summary><div class="answer-box">
+One &mdash; a thin writable layer (the OverlayFS <em>upperdir</em>) on top of the image's read-only layers. It's discarded when the container is removed.
+</div></details>
+<details class="answer-reveal"><summary>What makes two identical layers get stored only once?</summary><div class="answer-box">
+Layers are content-addressed by a SHA-256 digest of their contents. Same contents &rarr; same digest &rarr; the store keeps one copy and every image/container that references that digest shares it.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You added a secret in one <code>COPY</code>, used it, and deleted it in the next <code>RUN</code>. Is the image safe to publish?</summary><div class="answer-box">
+No. The secret is baked into the <code>COPY</code> layer, which is immutable and part of the pushed image; the later <code>RUN rm</code> only whiteouts it in the merged view. Anyone can <code>docker save</code> the image, extract that layer's tar, and read the file. Safe options: BuildKit build secrets (<code>RUN --mount=type=secret</code>, never persisted to a layer), multi-stage builds where the secret only exists in a discarded builder stage, or injecting the secret at runtime instead of build time. If it's already published, rotate the secret &mdash; it must be considered compromised.
+</div></details>
+<details class="answer-reveal"><summary>An image balloons to 3&nbsp;GB after a step that just "updates a config file." Explain.</summary><div class="answer-box">
+That "config file" is probably large (a model file, a bundled dataset, a database), and it lives in an earlier layer. Editing it in a later <code>RUN</code>/<code>COPY</code> triggers copy-up of the <em>whole</em> file into the new layer, so the image now contains both the original (in the old layer) and the modified copy (in the new layer). Same thing happens if a build step touches permissions/timestamps on a big directory tree. Fixes: generate the file in its final form in one layer, use a build arg/template so it's written once, keep large mutable data in a volume at runtime rather than the image, or flatten with a multi-stage <code>COPY --from</code> of just the final tree.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the layer strategy for a large polyglot service image to maximize cache hits across builds and minimize pushed bytes.</summary><div class="answer-box">
+<strong>Order by change frequency, coarse to fine:</strong> (1) base image pinned by digest; (2) OS packages (<code>RUN apt-get update &amp;&amp; apt-get install -y ... &amp;&amp; rm -rf /var/lib/apt/lists/*</code> in one layer); (3) language runtime / toolchain if not in the base; (4) dependency manifests only (<code>package.json</code>+lockfile, <code>requirements.txt</code>/<code>poetry.lock</code>, <code>go.mod</code>/<code>go.sum</code>) then the dependency install &mdash; so deps re-resolve only when the lockfile changes; (5) application source; (6) build/compile step; (7) final config/entrypoint. <strong>Use BuildKit features:</strong> <code>RUN --mount=type=cache</code> for package-manager caches (npm/pip/go build cache) so the cache persists <em>outside</em> the image without bloating layers; <code>--mount=type=secret</code> for registry/credentials; parallel stages for independent language builds. <strong>Multi-stage:</strong> a fat builder stage (compilers, dev headers, test deps) and a slim runtime stage that <code>COPY --from=builder</code>s only the artifacts + runtime deps onto a minimal base (distroless/alpine/scratch) &mdash; the builder layers are never pushed. <strong>Minimize pushed bytes:</strong> keep the runtime base tiny and stable (so it's already in the registry/nodes), split rarely- vs often-changing app assets into separate <code>COPY</code>s, avoid <code>COPY .</code> (use a tight <code>.dockerignore</code> and explicit paths so unrelated file changes don't bust the layer), and don't <code>chmod -R</code>/<code>chown -R</code> big trees in a late layer (copies them up). <strong>Cross-build cache:</strong> in CI, use <code>--cache-from</code>/<code>--cache-to</code> (registry or gha cache) so a fresh runner reuses layers; tag intermediate images. <strong>Verify:</strong> <code>docker history</code>/<code>dive</code> to spot fat or wasted layers and files duplicated across layers; measure "bytes changed per typical commit" and drive it toward just the source + build-output layers.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:layers-overlayfs -->
+
+<!-- TOPIC:containers:oci-runtimes -->
+<section class="view topic" id="v-containers-oci-runtimes" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>OCI, runc, containerd &amp; the CRI</h1>
+<p class="subtitle">Open standards let any tool build an image any runtime can run, and let Kubernetes talk to any runtime through one interface.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-coci-t">
+<title id="d-coci-t">From kubelet down to a running process: CRI, containerd, shim, runc</title>
+<rect class="d-box" x="14" y="16" width="90" height="22" rx="4"/><text class="d-t-sm" x="59" y="31" text-anchor="middle">kubelet</text>
+<rect class="d-box" x="140" y="16" width="120" height="22" rx="4"/><text class="d-t-sm" x="200" y="31" text-anchor="middle">containerd (CRI)</text>
+<rect class="d-box" x="300" y="16" width="120" height="22" rx="4"/><text class="d-t-sm" x="360" y="31" text-anchor="middle">containerd-shim</text>
+<rect class="d-box-soft" x="300" y="58" width="120" height="22" rx="4"/><text class="d-t-sm" x="360" y="73" text-anchor="middle">runc (OCI runtime)</text>
+<rect class="d-box-alt" x="300" y="100" width="120" height="22" rx="4"/><text class="d-t-b" x="360" y="115" text-anchor="middle">your process</text>
+<path class="d-line" d="M104 27 L138 27" marker-end="url(#coci-ah)"/><text class="d-t-sm" x="106" y="14">gRPC (CRI)</text>
+<path class="d-line" d="M260 27 L298 27" marker-end="url(#coci-ah)"/>
+<path class="d-line" d="M360 38 L360 56" marker-end="url(#coci-ah)"/><text class="d-t-sm" x="366" y="52">exec &amp; wait</text>
+<path class="d-line" d="M360 80 L360 98" marker-end="url(#coci-ah)"/><text class="d-t-sm" x="366" y="94">clone + setup + execve</text>
+<defs><marker id="coci-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="140">runc exits after start; the <tspan class="d-t-b">shim</tspan> stays as the container's parent so containerd can restart without killing containers.</text>
+</svg>
+<figcaption>Docker uses the same lower half: <code>docker</code> CLI &rarr; <code>dockerd</code> &rarr; <code>containerd</code> &rarr; shim &rarr; <code>runc</code>. Kubernetes dropped the Docker-specific shim in 1.24 and talks CRI directly to containerd or CRI-O.</figcaption>
+</figure>
+
+<h3>Two OCI specs</h3>
+<p><strong>What.</strong> The Open Container Initiative publishes standards so the ecosystem interoperates:</p>
+<ul>
+<li><strong>Image spec</strong> &mdash; the on-disk/registry format: a <em>manifest</em> (list of layer digests + config digest), a <em>config</em> (env, entrypoint, working dir, exposed ports), and the <em>layer</em> tarballs. Optionally a <em>manifest list / image index</em> for multi-arch.</li>
+<li><strong>Runtime spec</strong> &mdash; how to run a <em>bundle</em>: a <code>rootfs/</code> directory plus a <code>config.json</code> describing namespaces, mounts, cgroup limits, capabilities, seccomp, the process to run.</li>
+<li><strong>Distribution spec</strong> &mdash; the registry HTTP API (<code>/v2/&hellip;</code>) for push/pull.</li>
+</ul>
+<pre># an OCI image manifest (what a registry serves)
+{ "schemaVersion": 2,
+  "config": { "digest": "sha256:cfg...", "mediaType": "application/vnd.oci.image.config.v1+json" },
+  "layers": [
+    { "digest": "sha256:l1...", "size": 3145728 },
+    { "digest": "sha256:l2...", "size": 812   } ] }
+
+# the runtime bundle runc actually consumes
+bundle/
+  config.json        # namespaces, mounts, cgroups, caps, seccomp, process.args
+  rootfs/            # the merged filesystem</pre>
+
+<h3>runc &mdash; the low-level runtime</h3>
+<p><strong>What / why.</strong> <code>runc</code> is the reference OCI runtime: given a bundle, it does the <code>clone()</code> + namespaces + <code>pivot_root</code> + cgroups + seccomp + <code>execve()</code> dance from the "A Container Is Just a Process" topic, then exits. It is tiny and does one job. Alternatives that implement the same interface: <strong>crun</strong> (C, faster/lighter), <strong>runsc</strong> (gVisor, user-space kernel), <strong>kata-runtime</strong> (boots a micro-VM), <strong>youki</strong> (Rust).</p>
+<pre># run an OCI bundle directly, no Docker, no containerd
+$ mkdir -p bundle/rootfs
+$ docker export $(docker create alpine) | tar -C bundle/rootfs -xf -
+$ cd bundle &amp;&amp; runc spec                 # generates a default config.json
+$ sudo runc run demo                       # starts a shell in the container
+$ sudo runc list ; sudo runc kill demo KILL ; sudo runc delete demo</pre>
+
+<h3>containerd &amp; the shim</h3>
+<p><strong>What / why.</strong> <code>containerd</code> is the daemon that manages the container <em>lifecycle</em>: pulling images from registries, unpacking layers into an overlay snapshot, storing metadata, wiring up networking, and calling <code>runc</code>. Between containerd and runc sits a <strong>shim</strong> (one per container): it becomes the container's parent process and keeps the stdio and exit-status plumbing alive, so <code>containerd</code> (or <code>dockerd</code>) can be restarted or upgraded <em>without</em> killing running containers.</p>
+<pre>$ ctr images pull docker.io/library/redis:7-alpine
+$ ctr run --rm -t docker.io/library/redis:7-alpine r1 redis-server --version
+$ ctr containers ls ; ctr tasks ls
+# process tree:  containerd --- containerd-shim-runc-v2 --- redis-server</pre>
+
+<h3>The CRI &mdash; how Kubernetes stays runtime-agnostic</h3>
+<p><strong>What / why.</strong> The <strong>Container Runtime Interface</strong> is a gRPC API the <code>kubelet</code> calls to create <em>pod sandboxes</em> and containers, pull images, stream logs/exec, and report status. Any runtime that implements CRI works: <strong>containerd</strong> (via its built-in CRI plugin) and <strong>CRI-O</strong> (a minimal runtime built specifically for Kubernetes) are the two in production. This is why "Kubernetes removed Docker" in 1.24 was a non-event &mdash; it removed the <code>dockershim</code> adapter; images and containerd underneath are unchanged.</p>
+<pre># crictl = a CRI debugging CLI, works against containerd OR CRI-O
+$ crictl ps                         # containers the kubelet started
+$ crictl pods                       # pod sandboxes
+$ crictl inspect &lt;id&gt; | jq '.info.runtimeSpec.linux.resources'
+$ crictl logs &lt;id&gt; ; crictl exec -it &lt;id&gt; sh
+
+# node config points the kubelet at the CRI socket
+--container-runtime-endpoint=unix:///run/containerd/containerd.sock</pre>
+
+<h3>How the pieces line up</h3>
+<table>
+<tr><th>Layer</th><th>Job</th><th>Examples</th></tr>
+<tr><td>Orchestrator</td><td>Schedule, heal, scale across nodes</td><td>Kubernetes, Nomad</td></tr>
+<tr><td>CRI runtime (high-level)</td><td>Images, snapshots, lifecycle, CRI/API</td><td>containerd, CRI-O, (dockerd for the CLI)</td></tr>
+<tr><td>Shim</td><td>Per-container parent; decouple daemon restarts</td><td>containerd-shim-runc-v2</td></tr>
+<tr><td>OCI runtime (low-level)</td><td>clone/namespaces/cgroups/execve</td><td>runc, crun, runsc (gVisor), kata-runtime</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>OCI</strong> specs: <em>image</em> (manifest + config + layers), <em>runtime</em> (bundle = rootfs + <code>config.json</code>), <em>distribution</em> (registry API).</li>
+<li><strong>runc</strong> = reference low-level runtime: does the namespaces/cgroups/pivot_root/execve, then exits. Swappable: crun, runsc (gVisor), kata-runtime.</li>
+<li><strong>containerd</strong> = high-level runtime daemon: pull, unpack, snapshot, network, lifecycle, calls runc.</li>
+<li><strong>shim</strong> = one per container; becomes its parent so containerd/dockerd can restart without killing containers.</li>
+<li><strong>CRI</strong> = gRPC API the kubelet uses; implemented by <strong>containerd</strong> and <strong>CRI-O</strong>. "K8s removed Docker" = removed the dockershim adapter only.</li>
+<li>Full stack: kubelet &rarr; (CRI) containerd &rarr; shim &rarr; runc &rarr; your process. Docker: docker CLI &rarr; dockerd &rarr; containerd &rarr; shim &rarr; runc.</li>
+<li>Debug CLIs: <code>ctr</code> (containerd native), <code>crictl</code> (CRI, works with containerd or CRI-O), <code>runc</code> (bundles directly).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What are the OCI image spec and OCI runtime spec?</dt>
+<dd>The <strong>image spec</strong> defines the portable package format &mdash; a manifest listing content-addressed layer digests plus a config blob (env, entrypoint, &hellip;), served by registries. The <strong>runtime spec</strong> defines how to <em>execute</em> an unpacked image: a "bundle" of a <code>rootfs/</code> directory and a <code>config.json</code> that specifies namespaces, mounts, cgroup limits, capabilities, seccomp and the process to run. Together they let any builder produce an image any compliant runtime can run.</dd>
+<dt>What does runc do, and what does it not do?</dt>
+<dd>runc takes an OCI bundle and creates the container process &mdash; sets up namespaces, mounts and <code>pivot_root</code>, applies the cgroup, seccomp filter and capability set, then <code>execve()</code>s the entrypoint &mdash; and then exits. It does <em>not</em> pull images, manage layers/snapshots, do networking beyond what's in config.json, keep any state, or provide an API. Those are containerd's job.</dd>
+<dt>What is the container shim and why does it exist?</dt>
+<dd>A small process (one per container) that containerd starts and that becomes the container's parent. It holds the container's stdio, keeps the pty open, and reports the exit code. Because it &mdash; not containerd &mdash; is the parent, you can restart or upgrade containerd (or dockerd) without every running container getting reparented to init or killed.</dd>
+<dt>Did Kubernetes "remove Docker support," and what actually changed?</dt>
+<dd>It removed <code>dockershim</code> &mdash; the built-in adapter that let the kubelet talk to the Docker daemon &mdash; in v1.24. The kubelet now speaks CRI directly to containerd or CRI-O. Since Docker already used containerd underneath, and images are OCI-standard, nodes and images are unaffected; you just don't run the Docker daemon on cluster nodes.</dd>
+<dt>containerd vs CRI-O?</dt>
+<dd>Both are CRI-compliant high-level runtimes for Kubernetes. <strong>containerd</strong> is a general-purpose runtime (also used by Docker and standalone via <code>ctr</code>/nerdctl) with a broad plugin ecosystem. <strong>CRI-O</strong> is deliberately minimal &mdash; it implements exactly the CRI and nothing else, tracks Kubernetes releases closely, and is the default in OpenShift. Functionally interchangeable for running pods.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the low-level and high-level runtime in a standard Kubernetes node.</summary><div class="answer-box">
+Low-level (OCI) runtime: <code>runc</code> (or crun). High-level runtime: <code>containerd</code> (or CRI-O). The kubelet talks to the high-level one over the CRI gRPC API.
+</div></details>
+<details class="answer-reveal"><summary>What is an "OCI bundle"?</summary><div class="answer-box">
+A directory containing a <code>rootfs/</code> (the container's filesystem) and a <code>config.json</code> (namespaces, mounts, cgroup limits, capabilities, seccomp, and the process to run). It's the input to an OCI runtime like <code>runc</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Trace a <code>kubectl run nginx</code> down to a running process.</summary><div class="answer-box">
+API server persists a Pod to etcd &rarr; scheduler assigns it a node &rarr; that node's <strong>kubelet</strong> sees the Pod and calls the <strong>CRI</strong>: <code>RunPodSandbox</code> creates the pod's network namespace (via CNI) and a pause container; <code>PullImage</code> if needed; <code>CreateContainer</code> + <code>StartContainer</code> for nginx. <strong>containerd</strong> handles that: pulls the image from the registry (distribution spec), unpacks layers into an overlay snapshot, writes an OCI bundle (rootfs + config.json with the pod's namespaces, the container's cgroup limits from requests/limits, seccomp/caps), then starts a <strong>containerd-shim</strong> which invokes <strong>runc create/start</strong>. runc does <code>clone()</code> with the namespace flags, sets up mounts + <code>pivot_root</code>, applies cgroup/seccomp/caps, and <code>execve("nginx")</code>. runc exits; the shim stays as nginx's parent and streams logs/exit status back to containerd &rarr; kubelet &rarr; API server status.
+</div></details>
+<details class="answer-reveal"><summary>How do you run "hostile" pods with a stronger boundary without changing the rest of the cluster?</summary><div class="answer-box">
+Install an alternative OCI runtime that presents a stronger isolation boundary &mdash; <strong>Kata Containers</strong> (each pod in a lightweight KVM micro-VM) or <strong>gVisor</strong> (<code>runsc</code>, a user-space kernel that intercepts syscalls). Register it as a Kubernetes <strong>RuntimeClass</strong> (containerd/CRI-O config points a handler name at the runtime binary). Untrusted pods set <code>spec.runtimeClassName: kata</code> (or <code>gvisor</code>) and get the stronger sandbox; everything else keeps using <code>runc</code>. The CRI, kubelet, images, manifests and scheduling are unchanged &mdash; only the runtime handler differs &mdash; and you can use node labels/taints to place hostile pods on dedicated nodes as defence in depth.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is the shim architecture important for daemon upgrades, and what breaks without it?</summary><div class="answer-box">
+Without a shim, the container-manager daemon (dockerd/containerd) would be the direct parent of every container process. Consequences: (1) restarting or upgrading the daemon reparents all containers to PID 1 (init), losing the stdio pipes and the ability to collect exit codes &mdash; or, in the naive design, kills them; (2) the daemon must stay running to hold the pty and forward signals, so it can't be a stateless component; (3) a daemon crash orphans containers with no one to reap them or report status. The <strong>shim</strong> fixes this: containerd double-forks a tiny shim per container that becomes the container's parent, owns the pty/stdio fds, waits on the container, and exposes a small API (over a socket/FIFO) for containerd to reconnect to. So containerd can be stopped, upgraded, and restarted; on restart it re-discovers the shims and reattaches, and running containers never noticed. The shim also isolates faults (a bug handling one container's IO doesn't take down the daemon) and is where runtime-specific logic lives (there are shim implementations for runc, Kata, gVisor). The cost is one extra lightweight process per container (a few MB), which is why shims are written to be minimal.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:oci-runtimes -->
+
+<!-- TOPIC:containers:security-model -->
+<section class="view topic" id="v-containers-security-model" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>Capabilities, seccomp, LSMs &amp; Rootless</h1>
+<p class="subtitle">Namespaces and cgroups isolate and limit; this layer decides how much a container is actually <em>allowed to do</em> to the shared kernel.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-csec-t">
+<title id="d-csec-t">Layered restrictions between a container process and the kernel</title>
+<rect class="d-box-alt" x="180" y="14" width="160" height="24" rx="6"/><text class="d-t-b" x="260" y="30" text-anchor="middle">container process</text>
+<rect class="d-box" x="120" y="46" width="280" height="18"/><text class="d-t-sm" x="130" y="59">user namespace &mdash; UID 0 in = UID 100000 out</text>
+<rect class="d-box" x="120" y="68" width="280" height="18"/><text class="d-t-sm" x="130" y="81">capabilities &mdash; only the bits you keep</text>
+<rect class="d-box" x="120" y="90" width="280" height="18"/><text class="d-t-sm" x="130" y="103">no_new_privs + seccomp &mdash; syscall allowlist</text>
+<rect class="d-box" x="120" y="112" width="280" height="18"/><text class="d-t-sm" x="130" y="125">AppArmor / SELinux &mdash; MAC on files, mounts, ptrace</text>
+<rect class="d-box-soft" x="120" y="134" width="280" height="14"/><text class="d-t-accent" x="130" y="145">shared Linux kernel</text>
+<defs><marker id="csec-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<path class="d-line" d="M260 38 L260 44" marker-end="url(#csec-ah)"/>
+</svg>
+<figcaption>Every layer you add shrinks what a compromised container can reach in the one kernel it shares with the host. Defence in depth &mdash; no single control is sufficient.</figcaption>
+</figure>
+
+<h3>Why "root in a container" is dangerous by default</h3>
+<p><strong>What.</strong> Without a user namespace, UID 0 inside the container <em>is</em> UID 0 on the host. The container's root has a reduced default capability set, but that set still includes things like <code>CAP_NET_RAW</code>, <code>CAP_SETUID</code>, <code>CAP_CHOWN</code>, <code>CAP_DAC_OVERRIDE</code> &mdash; and any bind-mounted host path is writable as root.</p>
+<p><strong>Why it matters.</strong> A remote-code-execution bug in your app, running as root, plus a kernel LPE or a misconfigured mount, equals host compromise. Running as a non-root UID, dropping capabilities, and adding a user namespace each cut that path.</p>
+<pre># default docker root: a trimmed but still potent capability set
+$ docker run --rm alpine sh -c 'apk add -q libcap; capsh --print | grep Current'
+Current: cap_chown,cap_dac_override,cap_fowner,cap_fsetid,cap_kill,cap_setgid,
+         cap_setuid,cap_setpcap,cap_net_bind_service,cap_net_raw,cap_sys_chroot,
+         cap_mknod,cap_audit_write,cap_setfcap
+
+# the hardened baseline
+$ docker run --rm \
+    --user 10001:10001 \
+    --cap-drop ALL --cap-add NET_BIND_SERVICE \
+    --security-opt no-new-privileges \
+    --read-only --tmpfs /tmp \
+    myapp</pre>
+
+<h3>Linux capabilities</h3>
+<p><strong>What.</strong> The kernel splits "root's power" into ~40 independent <strong>capabilities</strong> (<code>CAP_NET_ADMIN</code> = configure networking, <code>CAP_SYS_ADMIN</code> = the "kitchen sink", <code>CAP_NET_BIND_SERVICE</code> = bind ports &lt;1024, <code>CAP_SYS_PTRACE</code> = trace other processes, &hellip;). A process only holds the ones in its sets.</p>
+<p><strong>Why / how.</strong> Start from nothing and add back only what the workload needs. <code>--cap-drop ALL</code> then <code>--cap-add</code> the essentials; in Kubernetes it's <code>securityContext.capabilities</code>. Avoid <code>--privileged</code> (grants <em>all</em> capabilities, all devices, and lifts seccomp/AppArmor) &mdash; it's an isolation off-switch.</p>
+<pre># Kubernetes: drop everything, add only what's required
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10001
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: ["ALL"]
+    add:  ["NET_BIND_SERVICE"]   # e.g. an app that must listen on :80
+  seccompProfile: { type: RuntimeDefault }</pre>
+
+<h3>seccomp &mdash; syscall filtering</h3>
+<p><strong>What / why.</strong> A <strong>seccomp-bpf</strong> filter is a per-process allow/deny list over the ~350 syscalls. It shrinks the kernel attack surface: most containers never legitimately call <code>keyctl</code>, <code>ptrace</code>, <code>mount</code>, <code>bpf</code>, <code>userfaultfd</code>, <code>kexec_load</code>, &hellip; Docker's default profile blocks ~50 dangerous syscalls; Kubernetes needs <code>seccompProfile: RuntimeDefault</code> set explicitly (or a cluster default) to get it.</p>
+<pre># see it working: the default profile blocks unshare(CLONE_NEWNS) etc.
+$ docker run --rm alpine unshare -Urm sh
+unshare: unshare failed: Operation not permitted        # seccomp said no
+
+$ docker run --rm --security-opt seccomp=unconfined alpine unshare -Urm sh   # allowed (bad)
+
+# a custom minimal profile (default action = errno, then allow a whitelist)
+{ "defaultAction": "SCMP_ACT_ERRNO",
+  "syscalls": [ { "names": ["read","write","openat","close","futex","mmap","..."],
+                  "action": "SCMP_ACT_ALLOW" } ] }</pre>
+
+<h3>LSMs &mdash; AppArmor &amp; SELinux</h3>
+<p><strong>What / why.</strong> A <strong>Linux Security Module</strong> adds mandatory access control on top of Unix permissions: a profile constrains which files a container can read/write, which mounts and capabilities it can use, and whether it can <code>ptrace</code> or send signals across labels. Docker applies a default <code>docker-default</code> AppArmor profile; Red Hat/OpenShift use SELinux with per-container MCS labels (each container gets a unique category pair, so container A can't touch container B's files even if permissions would allow it).</p>
+<pre># confirm the profile is applied
+$ docker run --rm alpine cat /proc/self/attr/current
+docker-default (enforce)
+
+# SELinux: bind mounts need a label or they're denied
+$ docker run -v /data:/data:Z myapp     # :Z relabels /data with a private MCS label
+                                        # :z shares the label between containers</pre>
+
+<h3>Rootless containers</h3>
+<p><strong>What / why.</strong> Run the entire container stack &mdash; daemon (or daemonless with Podman), runtime, and containers &mdash; as an <em>unprivileged</em> user, using a <strong>user namespace</strong> so in-container UID 0 maps to your host UID (or a subordinate range from <code>/etc/subuid</code>). A container breakout lands as a nobody, not as host root. Networking uses <code>slirp4netns</code>/pasta (user-mode) and storage uses <code>fuse-overlayfs</code>.</p>
+<pre># Podman is rootless by default
+$ id -u                      # 1000  (not root)
+$ podman run -d -p 8080:80 nginx
+$ podman unshare cat /proc/self/uid_map
+     0   1000      1          # container root -> me
+     1  100000  65536         # container uid 1..65535 -> my subuid range
+
+# rootless Docker (opt-in)
+$ dockerd-rootless-setuptool.sh install
+$ export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock</pre>
+
+<h3>The hardening checklist</h3>
+<ul>
+<li>Non-root <code>USER</code> in the image; <code>runAsNonRoot: true</code> to enforce it.</li>
+<li><code>--cap-drop ALL</code>, add back the few you need. Never <code>--privileged</code> unless you truly are (a device driver, DinD).</li>
+<li><code>no-new-privileges</code> / <code>allowPrivilegeEscalation: false</code> (blocks setuid binaries from re-gaining privilege).</li>
+<li>Seccomp <code>RuntimeDefault</code> (or tighter); AppArmor/SELinux enforcing.</li>
+<li><code>--read-only</code> rootfs + explicit <code>tmpfs</code>/volumes for the paths that must be writable.</li>
+<li>Don't mount the Docker socket (<code>/var/run/docker.sock</code>) into a container &mdash; that's root-equivalent on the host.</li>
+<li>Drop the cloud metadata endpoint from the container's network reach; don't pass host secrets via env.</li>
+<li>Prefer rootless / user namespaces; for hostile workloads use a micro-VM runtime (Kata) or gVisor.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Layers of restriction: <strong>user ns</strong> (remap UIDs) &rarr; <strong>capabilities</strong> (which root powers) &rarr; <strong>seccomp</strong> (which syscalls) &rarr; <strong>LSM</strong> (AppArmor/SELinux MAC) &rarr; the shared kernel.</li>
+<li>Container root &ne; host root only if a <strong>user namespace</strong> is in use; otherwise it basically is host root minus a few caps.</li>
+<li><code>--cap-drop ALL</code> then add back essentials (e.g. <code>NET_BIND_SERVICE</code>). Never <code>--privileged</code> casually.</li>
+<li><code>no-new-privileges</code> / <code>allowPrivilegeEscalation: false</code> stops setuid re-escalation.</li>
+<li>Seccomp <code>RuntimeDefault</code> blocks ~50 dangerous syscalls; Kubernetes needs it set explicitly.</li>
+<li>LSM: AppArmor <code>docker-default</code> profile, or SELinux per-container MCS labels; bind mounts need <code>:z</code>/<code>:Z</code> under SELinux.</li>
+<li><strong>Rootless</strong> (Podman default, Docker opt-in): whole stack as an unprivileged user via user ns; breakout = nobody.</li>
+<li>Never bind-mount <code>/var/run/docker.sock</code> into a container &mdash; it's host root.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Is root inside a container the same as root on the host?</dt>
+<dd>Without a user namespace, effectively yes &mdash; it's UID 0 on the host with a slightly reduced default capability set, and any bind-mounted host path is writable. With a user namespace, container UID 0 maps to an unprivileged host UID, so a breakout has no host privilege. Rootless containers always use a user namespace for this reason.</dd>
+<dt>What does <code>--privileged</code> actually do, and why avoid it?</dt>
+<dd>It grants <em>all</em> Linux capabilities, exposes <em>all</em> host devices, and disables the seccomp and AppArmor/SELinux profiles &mdash; essentially turning off the container's security controls. A privileged container can load kernel modules, reconfigure the host network, mount host filesystems, and trivially escape. Use it only for genuine cases (a device driver, Docker-in-Docker) and prefer targeted <code>--cap-add</code> / <code>--device</code> instead.</dd>
+<dt>What is seccomp and what does the default profile buy you?</dt>
+<dd>seccomp installs a BPF filter that allows or denies syscalls per-process. Docker's default profile denies ~50 syscalls that containers almost never need but attackers love &mdash; <code>keyctl</code>, <code>ptrace</code> (cross-process), <code>mount</code>, <code>bpf</code>, <code>userfaultfd</code>, <code>kexec_load</code>, various namespace/clone flags &mdash; shrinking the kernel attack surface with essentially no compatibility cost. In Kubernetes you must opt in with <code>seccompProfile: RuntimeDefault</code> (or a cluster-wide default).</dd>
+<dt>How does SELinux keep two containers from touching each other's files?</dt>
+<dd>Each container gets a unique MCS (Multi-Category Security) label &mdash; a pair of categories like <code>s0:c123,c456</code>. A process labelled with one set can only access files labelled with the same set, regardless of Unix permissions. So even if container A can read a world-readable file that container B wrote, the label mismatch denies it. Bind mounts need <code>:z</code> (shared label) or <code>:Z</code> (private label) to be accessible at all.</dd>
+<dt>Why is mounting the Docker socket into a container a security problem?</dt>
+<dd><code>/var/run/docker.sock</code> is the Docker daemon's API, and the daemon runs as root. A process that can reach the socket can start a new container with <code>--privileged</code>, bind-mount <code>/</code>, and run any command as root on the host &mdash; it's equivalent to giving that container full host root. If a container needs to manage containers, use a scoped API proxy, a rootless daemon, or the Kubernetes API with RBAC instead.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name three things you'd put in a container's <code>securityContext</code> to harden it.</summary><div class="answer-box">
+<code>runAsNonRoot: true</code> / <code>runAsUser</code>, <code>allowPrivilegeEscalation: false</code>, <code>capabilities.drop: ["ALL"]</code>, <code>readOnlyRootFilesystem: true</code>, <code>seccompProfile.type: RuntimeDefault</code>. Any three.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>--cap-drop ALL --cap-add NET_BIND_SERVICE</code> achieve?</summary><div class="answer-box">
+The container process holds no Linux capabilities except the one that lets it bind to ports below 1024. It can't do raw sockets, change file ownership, load modules, mount, ptrace others, etc. &mdash; minimal privilege for something that just needs to listen on :80/:443.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>An app "needs to run as root." How do you reduce the risk without changing the app?</summary><div class="answer-box">
+(1) <strong>User namespace</strong> &mdash; run rootless (Podman, or Docker with userns-remap / rootless mode) so the app's UID 0 maps to an unprivileged host UID; a breakout is a nobody. (2) <strong>Drop capabilities</strong> to the minimum the app actually uses (<code>--cap-drop ALL</code> + a short <code>--cap-add</code> list found by testing, or by <code>capsh</code>/<code>getpcaps</code> tracing). (3) <code>no-new-privileges</code> so it can't re-escalate via a setuid binary. (4) <code>--read-only</code> root filesystem + <code>tmpfs</code> for <code>/tmp</code>/<code>/run</code>. (5) Seccomp <code>RuntimeDefault</code> and an enforcing AppArmor/SELinux profile. (6) No host bind mounts (especially not the docker socket), no host network, block the metadata endpoint. (7) If it's genuinely untrusted, put it under a micro-VM runtime (Kata) via RuntimeClass. Often "needs root" really means "needs to bind :80" (grant just <code>NET_BIND_SERVICE</code> or use a high port + a proxy) or "needs to write somewhere" (a volume with the right ownership) &mdash; check before accepting the premise.
+</div></details>
+<details class="answer-reveal"><summary>Explain the difference between capabilities, seccomp, and an LSM &mdash; do you need all three?</summary><div class="answer-box">
+They restrict different things and overlap only partially, so yes, use all three (defence in depth). <strong>Capabilities</strong> gate <em>privileged operations</em> &mdash; a coarse allow-list of "root powers" (bind low ports, change ownership, admin the network, load modules). <strong>seccomp</strong> gates <em>syscalls</em> &mdash; finer-grained, it can block <code>ptrace</code> or <code>keyctl</code> entirely even for a process that has the relevant capability, shrinking the kernel's exposed API. <strong>LSMs</strong> (AppArmor/SELinux) do <em>mandatory access control</em> on resources &mdash; which files/paths, mounts, sockets, and cross-process operations are allowed, by label/profile, independent of DAC permissions and independent of syscalls. Example: capabilities might allow <code>CAP_DAC_OVERRIDE</code>, seccomp still allows <code>open()</code>, but the AppArmor profile denies writing to <code>/etc/</code>. A gap in one layer is often covered by another.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design container security controls for a platform running third-party workloads you don't fully trust, from image to runtime to node.</summary><div class="answer-box">
+<strong>Supply chain / image</strong>: only run signed images (cosign + admission policy), from an allow-listed registry; scan every image (Trivy/Grype) and block on fixable HIGH/CRITICAL; generate and store an SBOM; base images minimal (distroless/alpine) and rebuilt on CVE. <strong>Admission</strong>: enforce Pod Security "restricted" (no privileged, no host namespaces, non-root, drop-ALL caps, seccomp RuntimeDefault, read-only rootfs) via Pod Security Admission or a policy engine (Kyverno/OPA Gatekeeper); deny <code>hostPath</code>, <code>hostNetwork</code>, <code>hostPID</code>, the docker socket, and privileged escalation; require resource limits and a runtimeClass for untrusted tenants. <strong>Runtime isolation</strong>: put untrusted pods under <strong>Kata Containers</strong> (per-pod micro-VM) or <strong>gVisor</strong> via RuntimeClass so a kernel exploit doesn't cross to the host; keep runc pods (trusted infra) on separate node pools (taints/tolerations + node affinity), one tenant per node pool where the threat model demands it. <strong>Inside the sandbox</strong>: non-root uid, all caps dropped, tight seccomp (custom profile per workload class), enforcing AppArmor/SELinux, read-only rootfs, no-new-privileges, cgroup limits on CPU/mem/PIDs/IO to bound DoS, user namespace on. <strong>Network</strong>: default-deny NetworkPolicy, per-tenant namespaces, egress via a filtering proxy, block link-local/metadata (169.254.169.254) at the CNI, mTLS between services (mesh). <strong>Node</strong>: minimal hardened host OS, current kernel with mitigations, no secrets on the node the workload can reach (disable/lock down the metadata service, use IRSA/Workload Identity scoped per pod), auto-recycle nodes, read-only where possible, host-level auditd/Falco for escape indicators (unexpected <code>mount</code>, <code>ptrace</code>, writes to <code>/proc/sys</code>, new caps). <strong>Blast radius</strong>: short-lived nodes, per-tenant ResourceQuota/LimitRange, per-namespace RBAC with no cross-namespace access, disk quotas, wall-clock timeouts. <strong>Detection &amp; response</strong>: runtime security (Falco/Tetragon) alerting on the sandbox-escape signatures, centralized audit logs, and a playbook to cordon/drain/replace a node on suspicion. Net: verified minimal images, restrictive admission, a real isolation boundary (micro-VM) per untrusted workload, full in-sandbox hardening, default-deny networking, node-level least privilege and monitoring &mdash; assume the container will be compromised and make that not matter.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:security-model -->
+
+<!-- TOPIC:containers:container-networking -->
+<section class="view topic" id="v-containers-container-networking" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>Container Networking Primitives</h1>
+<p class="subtitle">A fresh network namespace has nothing but a down loopback; a veth pair, a bridge and a NAT rule turn it into a container that can reach the world.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-cnet-t">
+<title id="d-cnet-t">veth pair links the container netns to a host bridge; NAT gives it egress</title>
+<rect class="d-box-soft" x="14" y="30" width="150" height="70" rx="6"/><text class="d-t-b" x="89" y="46" text-anchor="middle">container netns</text>
+<text class="d-t-mono" x="24" y="66">eth0 172.18.0.2/16</text><text class="d-t-mono" x="24" y="82">lo 127.0.0.1</text>
+<rect class="d-box" x="230" y="46" width="110" height="24" rx="4"/><text class="d-t-sm" x="285" y="62" text-anchor="middle">docker0 bridge</text>
+<text class="d-t-mono" x="230" y="90">172.18.0.1/16</text>
+<rect class="d-box-alt" x="400" y="46" width="100" height="24" rx="4"/><text class="d-t-sm" x="450" y="62" text-anchor="middle">host eth0</text>
+<path class="d-line" d="M164 60 L228 58" marker-end="url(#cnet-ah)"/><text class="d-t-sm" x="168" y="52">veth pair</text>
+<path class="d-line" d="M340 58 L398 58" marker-end="url(#cnet-ah)"/><text class="d-t-sm" x="344" y="52">route + NAT</text>
+<defs><marker id="cnet-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="126">Egress: SNAT/MASQUERADE on the way out. Ingress: <tspan class="d-t-mono">-p 8080:80</tspan> = a DNAT rule host:8080 &rarr; 172.18.0.2:80.</text>
+<text class="d-t-sm" x="14" y="144">Container-to-container on the same bridge: plain L2, no NAT.</text>
+</svg>
+<figcaption>This is exactly what <code>docker network create</code> and every CNI plugin automate. Kubernetes adds the rule that every pod gets a routable IP and pods talk without NAT.</figcaption>
+</figure>
+
+<h3>The empty network namespace</h3>
+<p><strong>What / why.</strong> <code>unshare --net</code> (or a container's <code>net</code> namespace) starts with a single <code>lo</code> interface, and it's <em>down</em>. No routes, no DNS, no way out. Everything below is how you connect it.</p>
+<pre>$ sudo ip netns add c1
+$ sudo ip netns exec c1 ip addr
+1: lo: &lt;LOOPBACK&gt; state DOWN            # that's all there is
+$ sudo ip netns exec c1 ping 8.8.8.8
+connect: Network is unreachable</pre>
+
+<h3>veth pairs &mdash; a virtual cable</h3>
+<p><strong>What / why.</strong> A <strong>veth</strong> is a pair of interfaces acting like a patch cable: a frame sent into one end comes out the other. Put one end in the container's netns and leave the other on the host, and you have a link between the two.</p>
+<pre>$ sudo ip link add veth-c1 type veth peer name eth0-in
+$ sudo ip link set eth0-in netns c1                   # one end into the container
+$ sudo ip netns exec c1 ip addr add 172.18.0.2/16 dev eth0-in
+$ sudo ip netns exec c1 ip link set eth0-in up
+$ sudo ip netns exec c1 ip link set lo up
+$ sudo ip link set veth-c1 up                          # host end up</pre>
+
+<h3>A bridge &mdash; the virtual switch</h3>
+<p><strong>What / why.</strong> To connect many containers, attach every container's host-side veth to a <strong>Linux bridge</strong> (a software L2 switch). Containers on the same bridge reach each other directly at layer 2 &mdash; no NAT, no routing. The bridge gets the gateway IP; it's the container's default route.</p>
+<pre>$ sudo ip link add br0 type bridge
+$ sudo ip addr add 172.18.0.1/16 dev br0
+$ sudo ip link set br0 up
+$ sudo ip link set veth-c1 master br0                  # plug the veth into the switch
+$ sudo ip netns exec c1 ip route add default via 172.18.0.1
+$ sudo ip netns exec c1 ping 172.18.0.3                # another container on br0: works, no NAT</pre>
+
+<h3>NAT &mdash; egress and port publishing</h3>
+<p><strong>What / why.</strong> The container's <code>172.18.x.x</code> address isn't routable on the real network. For <strong>egress</strong>, the host rewrites the source address on the way out (<code>MASQUERADE</code>). For <strong>ingress</strong>, <code>-p 8080:80</code> installs a <strong>DNAT</strong> rule so traffic to the host's <code>:8080</code> is redirected to the container's <code>:80</code>.</p>
+<pre># egress: SNAT everything leaving the bridge subnet
+$ sudo iptables -t nat -A POSTROUTING -s 172.18.0.0/16 ! -o br0 -j MASQUERADE
+$ sudo sysctl -w net.ipv4.ip_forward=1
+$ sudo ip netns exec c1 ping 8.8.8.8                   # now works
+
+# ingress: what "docker run -p 8080:80" adds
+$ sudo iptables -t nat -A DOCKER ! -i br0 -p tcp --dport 8080 \
+      -j DNAT --to-destination 172.18.0.2:80
+$ curl localhost:8080                                   # reaches the container</pre>
+
+<h3>DNS &amp; service discovery</h3>
+<ul>
+<li>By default a container inherits the host's <code>/etc/resolv.conf</code> (or a runtime-provided resolver).</li>
+<li>On a <strong>user-defined</strong> Docker bridge, the daemon runs an embedded DNS server at <code>127.0.0.11</code> that resolves other containers by <strong>name</strong> &mdash; that's why <code>docker compose</code> lets <code>web</code> reach <code>db</code> by hostname.</li>
+<li>Kubernetes runs cluster DNS (CoreDNS); Services get an A record like <code>db.default.svc.cluster.local</code>.</li>
+</ul>
+<pre>$ docker network create appnet
+$ docker run -d --name db  --network appnet postgres
+$ docker run --rm --network appnet alpine nslookup db
+Server:  127.0.0.11
+Address: 127.0.0.11:53
+Name:    db
+Address: 172.19.0.2</pre>
+
+<h3>Network modes &amp; CNI</h3>
+<table>
+<tr><th>Mode</th><th>What it does</th></tr>
+<tr><td><strong>bridge</strong> (default)</td><td>The setup above: private subnet, NAT egress, <code>-p</code> for ingress.</td></tr>
+<tr><td><strong>host</strong></td><td>No netns of its own &mdash; uses the host's stack directly. Fastest, zero isolation, port conflicts with the host.</td></tr>
+<tr><td><strong>none</strong></td><td>Just <code>lo</code>. For fully offline/computational containers.</td></tr>
+<tr><td><strong>container:&lt;id&gt;</strong></td><td>Share another container's netns (how a K8s pod's containers share one IP).</td></tr>
+<tr><td><strong>overlay</strong></td><td>VXLAN tunnels between hosts so containers on different machines share an L2 segment (Swarm; K8s does the equivalent via CNI).</td></tr>
+</table>
+<p><strong>CNI</strong> (Container Network Interface) is the plugin standard Kubernetes uses: the kubelet calls a CNI plugin (Calico, Cilium, Flannel, AWS VPC CNI) with the pod's netns, and the plugin creates the veth/route/policy so the pod gets a cluster-routable IP. The primitives are the same &mdash; veth, bridge/routing, iptables/eBPF &mdash; just automated per pod.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Fresh <code>net</code> namespace = a <strong>down <code>lo</code></strong> and nothing else.</li>
+<li><strong>veth pair</strong> = virtual cable; one end in the container netns, other end on the host.</li>
+<li><strong>Linux bridge</strong> = virtual L2 switch; attach all container veths &rarr; they talk directly, no NAT.</li>
+<li><strong>MASQUERADE/SNAT</strong> = egress (rewrite source IP). <strong>DNAT</strong> = ingress; <code>-p host:container</code> installs it.</li>
+<li>Container-to-container on the same bridge: plain L2, no NAT.</li>
+<li>Embedded DNS at <code>127.0.0.11</code> on user-defined Docker networks resolves container names (why Compose service names work).</li>
+<li>Modes: <strong>bridge</strong> (default), <strong>host</strong> (no isolation, fast), <strong>none</strong> (lo only), <strong>container:&lt;id&gt;</strong> (share netns = pod), <strong>overlay</strong> (VXLAN cross-host).</li>
+<li><strong>CNI</strong> automates veth/route/policy per pod; Kubernetes rule: every pod gets a routable IP, pod&harr;pod with no NAT.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>You put a process in a new network namespace and it has no connectivity. What's missing?</dt>
+<dd>Everything except a down loopback. You need: a <code>veth</code> pair with one end moved into the namespace, IP addresses on both ends (or the host end on a bridge), the links brought up, a default route in the namespace pointing at the host/bridge, <code>ip_forward</code> enabled, and a MASQUERADE rule so the namespace's private IP is SNAT'd for egress. DNS (<code>/etc/resolv.conf</code>) too if you want name resolution.</dd>
+<dt>What does <code>-p 8080:80</code> actually do?</dt>
+<dd>It adds a <strong>DNAT</strong> (destination NAT) rule in the host's <code>nat</code> table: packets arriving on the host's port 8080 have their destination rewritten to the container's IP:80 and are forwarded over the bridge. (Plus a matching rule so the container's replies are un-NAT'd.) It also usually adds a small userland proxy for loopback/edge cases.</dd>
+<dt>How do containers on the same Docker user-defined network reach each other by name?</dt>
+<dd>The Docker daemon runs an embedded DNS resolver, injected into each container as <code>nameserver 127.0.0.11</code>. It resolves container/service names on that network to their current IPs. On the default <code>bridge</code> network (legacy) this doesn't work &mdash; you needed <code>--link</code>; on any network you create with <code>docker network create</code>, it does. Compose creates such a network, so services resolve each other by service name.</dd>
+<dt>What's the difference between <code>--network host</code> and the default bridge?</dt>
+<dd>With <code>host</code>, the container does <em>not</em> get its own network namespace &mdash; it shares the host's interfaces, IP, ports and routing table. No veth, no bridge, no NAT: lowest latency and no port-mapping needed, but zero network isolation and the container's listeners collide with the host's. The default <code>bridge</code> gives the container a private IP on a NAT'd subnet, isolating it and requiring <code>-p</code> to expose ports.</dd>
+<dt>What role does CNI play in Kubernetes networking?</dt>
+<dd>CNI is the plugin interface between the kubelet and the network implementation. When a pod is created, the kubelet invokes the configured CNI plugin (Calico, Cilium, Flannel, cloud VPC CNI, &hellip;) with the pod's network namespace; the plugin sets up the veth, assigns an IP from the cluster/pod CIDR, adds routes (and, for policy-capable plugins, programs iptables/eBPF for NetworkPolicy). The result satisfies the Kubernetes model: every pod has a unique cluster-routable IP and any pod can reach any other pod without NAT.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What is a veth pair?</summary><div class="answer-box">
+Two linked virtual network interfaces &mdash; whatever goes in one end comes out the other, like a virtual patch cable. Used to connect a container's network namespace to the host (or a bridge).
+</div></details>
+<details class="answer-reveal"><summary>Do two containers on the same Docker bridge network need NAT to talk to each other?</summary><div class="answer-box">
+No. They're on the same layer-2 segment (the bridge), so they communicate directly by IP with no NAT. NAT is only for egress to the outside world and for publishing ports inward.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A container can reach the internet but not another container by name. Where do you look?</summary><div class="answer-box">
+"Reaches the internet" means veth/bridge/route/NAT are fine. "Not by name" is DNS or network membership. Check: (1) are both containers on the <em>same</em> user-defined network? The default <code>bridge</code> has no embedded DNS. (2) Is the resolver <code>127.0.0.11</code> in the container's <code>/etc/resolv.conf</code>? (3) Does <code>nslookup other-container 127.0.0.11</code> resolve? (4) Is the target container actually running and attached (<code>docker network inspect</code>)? (5) Is there a name vs alias mismatch (Compose service name vs container name)? (6) In Kubernetes: is CoreDNS healthy, is the Service created, is the pod's <code>resolv.conf</code> pointing at the cluster DNS ClusterIP, and is a NetworkPolicy blocking DNS (UDP/53 to kube-system)?
+</div></details>
+<details class="answer-reveal"><summary>Why can't two containers in the same Kubernetes pod both listen on port 8080?</summary><div class="answer-box">
+Containers in a pod share one network namespace (set up on the pod's pause/sandbox container), so they share a single IP and a single port space. Two processes &mdash; whether in the same container or different containers of the pod &mdash; can't both <code>bind()</code> the same port. They reach each other over <code>localhost</code>. If you need two services on 8080, they belong in separate pods.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Compare bridge+NAT, overlay/VXLAN, and native-routing (e.g. cloud VPC CNI) container networking, and when you'd choose each.</summary><div class="answer-box">
+<strong>Bridge + NAT</strong> (single host, or Docker default): container on a private subnet, SNAT for egress, DNAT for published ports. Simple, no dependency on the underlying network, works anywhere. Costs: NAT hides the real client IP, port-publishing is a bottleneck and a source of conflicts, and it doesn't span hosts. Good for local dev, single-node, or simple multi-container apps. <strong>Overlay / VXLAN</strong> (Flannel vxlan, Docker Swarm overlay, Calico VXLAN/IPIP, Cilium tunnel): pod/container traffic between hosts is encapsulated in UDP and tunnelled, so containers on different nodes share a flat address space regardless of the physical network. Pros: runs on any L3 network, no need to program the physical routers, easy to stand up. Cons: ~50 bytes of encapsulation overhead (MTU tuning, some throughput/CPU cost), and packet captures show the outer header not the pod IP. Good default for on-prem or mixed environments where you don't control routing. <strong>Native routing / no overlay</strong> (Calico BGP, Cilium native routing, AWS VPC CNI, GKE/Azure CNI): the pod IP is a real address in the datacenter/VPC and the network (BGP peers, or the cloud's SDN) routes to it directly &mdash; no encapsulation. Pros: line-rate, real source IPs end to end, security groups/flow logs see pod IPs, best for latency-sensitive and high-throughput workloads. Cons: consumes real IP space (VPC CNI can exhaust subnet IPs; needs prefix delegation), requires control of routing (BGP fabric) or a cloud CNI, and cross-cluster/hybrid gets harder. <strong>Choosing</strong>: managed cloud &rarr; that cloud's VPC CNI (native routing, integrates with security groups and load balancers) unless IP exhaustion pushes you to an overlay or Cilium with masquerade; on-prem with a plain L3 network &rarr; overlay (VXLAN) for simplicity, or Calico BGP if you can peer with the ToR switches and want native performance and real IPs; single host / dev &rarr; bridge+NAT. Cilium (eBPF) is increasingly the pick across all three because it replaces kube-proxy, does native routing or tunnel, and gives identity-based policy and observability.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:container-networking -->
+
+<!-- TOPIC:containers:build-by-hand -->
+<section class="view topic" id="v-containers-build-by-hand" data-skill="containers">
+<div class="layout">
+<nav class="sidebar" data-sidebar="containers"></nav>
+<div class="topic-body">
+<h1>Build a Container by Hand</h1>
+<p class="subtitle">Assemble a working container from a rootfs, <code>unshare</code>, <code>pivot_root</code>, a cgroup and <code>capsh</code> &mdash; no Docker, no runtime, just the kernel features.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="d-cbh-t">
+<title id="d-cbh-t">Six steps: rootfs, namespaces, pivot_root, mounts, cgroup, drop privileges, exec</title>
+<rect class="d-box" x="8" y="40" width="70" height="26" rx="4"/><text class="d-t-sm" x="43" y="57" text-anchor="middle">1 rootfs</text>
+<rect class="d-box" x="86" y="40" width="80" height="26" rx="4"/><text class="d-t-sm" x="126" y="57" text-anchor="middle">2 unshare</text>
+<rect class="d-box" x="174" y="40" width="90" height="26" rx="4"/><text class="d-t-sm" x="219" y="57" text-anchor="middle">3 pivot_root</text>
+<rect class="d-box" x="272" y="40" width="80" height="26" rx="4"/><text class="d-t-sm" x="312" y="57" text-anchor="middle">4 cgroup</text>
+<rect class="d-box" x="360" y="40" width="80" height="26" rx="4"/><text class="d-t-sm" x="400" y="57" text-anchor="middle">5 drop caps</text>
+<rect class="d-box-alt" x="448" y="40" width="64" height="26" rx="4"/><text class="d-t-b" x="480" y="57" text-anchor="middle">6 exec</text>
+<path class="d-line" d="M78 53 L84 53" marker-end="url(#cbh-ah)"/><path class="d-line" d="M166 53 L172 53" marker-end="url(#cbh-ah)"/>
+<path class="d-line" d="M264 53 L270 53" marker-end="url(#cbh-ah)"/><path class="d-line" d="M352 53 L358 53" marker-end="url(#cbh-ah)"/>
+<path class="d-line" d="M440 53 L446 53" marker-end="url(#cbh-ah)"/>
+<defs><marker id="cbh-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="8" y="96">This is what <tspan class="d-t-mono">runc</tspan> does from <tspan class="d-t-mono">config.json</tspan> &mdash; Docker adds image pull, overlayfs and an API.</text>
+</svg>
+<figcaption>Doing it once by hand makes every later behaviour obvious: PID 1, "own hostname", "can't see host processes", OOM kills, dropped capabilities.</figcaption>
+</figure>
+
+<h3>Step 1 &mdash; get a root filesystem</h3>
+<p><strong>What / why.</strong> The container needs its own <code>/</code>. Any minimal userspace works &mdash; a BusyBox or Alpine tarball, or export one from an existing image.</p>
+<pre>$ mkdir -p /tmp/box/rootfs
+# option A: from an image
+$ docker export $(docker create alpine:3.20) | tar -C /tmp/box/rootfs -xf -
+# option B: debootstrap / an alpine-minirootfs tarball
+$ ls /tmp/box/rootfs
+bin  etc  lib  proc  sys  usr  var  ...</pre>
+
+<h3>Step 2 &mdash; unshare the namespaces</h3>
+<p><strong>What / why.</strong> Create the isolated views. <code>--fork --mount-proc</code> is needed so the child is really in the new PID namespace and gets a correct <code>/proc</code>.</p>
+<pre>$ sudo unshare \
+    --uts --pid --mount --ipc --net --cgroup \
+    --fork --mount-proc \
+    -- /bin/bash            # we're now in fresh namespaces (still using the host rootfs)
+# prove it:
+# ps            -> only bash + ps
+# hostname box  -> changes only here (UTS)
+# ip addr       -> nothing but lo (NET)</pre>
+
+<h3>Step 3 &mdash; switch into the rootfs with pivot_root</h3>
+<p><strong>What / why.</strong> <code>chroot</code> is the quick version; <code>pivot_root</code> is what real runtimes use because it fully detaches the old root so the container can't escape back to it. Mount propagation must be made private first.</p>
+<pre>ROOT=/tmp/box/rootfs
+mount --make-rprivate /                 # don't leak mounts back to the host
+mount --bind "$ROOT" "$ROOT"           # pivot_root needs the new root to be a mount
+mkdir -p "$ROOT/oldroot"
+cd "$ROOT"
+pivot_root . oldroot                    # new / is the rootfs; old / is at /oldroot
+umount -l /oldroot &amp;&amp; rmdir /oldroot    # cut the cord
+mount -t proc  proc  /proc              # fresh /proc for the new PID namespace
+mount -t sysfs sys   /sys
+mount -t tmpfs tmp   /tmp
+hostname box</pre>
+
+<h3>Step 4 &mdash; put it in a cgroup</h3>
+<p><strong>What / why.</strong> Namespaces don't limit anything. Add a cgroup v2 node with memory, CPU and PID caps and move the process into it.</p>
+<pre># run these from the HOST shell, using the child's PID
+CG=/sys/fs/cgroup/box
+sudo mkdir -p "$CG"
+echo '128M'          | sudo tee "$CG/memory.max"
+echo '50000 100000'  | sudo tee "$CG/cpu.max"      # 0.5 CPU
+echo '64'            | sudo tee "$CG/pids.max"
+echo &lt;child-pid&gt;      | sudo tee "$CG/cgroup.procs"
+# now: a fork bomb in the container hits pids.max; a memory hog is OOM-killed inside the cgroup</pre>
+
+<h3>Step 5 &mdash; drop privileges</h3>
+<p><strong>What / why.</strong> Strip capabilities, block re-escalation, and (ideally) install a seccomp filter and switch to a non-root UID.</p>
+<pre># inside the container, before exec'ing the workload
+capsh --drop=cap_sys_admin,cap_net_admin,cap_sys_module,cap_sys_ptrace,cap_sys_boot \
+      --secbits=0x2f \
+      --                                  # PR_SET_NO_NEW_PRIVS via secbits/prctl
+# then, ideally:
+#   prctl(PR_SET_NO_NEW_PRIVS, 1)
+#   seccomp(SECCOMP_SET_MODE_FILTER, ...) with an allowlist
+#   setgid(10001); setuid(10001)          # run as non-root
+exec /bin/sh                              # the "entrypoint"</pre>
+
+<h3>Step 6 &mdash; (optional) give it a network</h3>
+<p><strong>What / why.</strong> The <code>--net</code> namespace is empty; wire a veth to a bridge for connectivity (see "Container Networking Primitives").</p>
+<pre># from the host, PID = the container's PID
+sudo ip link add veth0 type veth peer name ceth0
+sudo ip link set ceth0 netns &lt;PID&gt;
+sudo ip link set veth0 master br0 up
+sudo nsenter -t &lt;PID&gt; -n ip addr add 172.20.0.2/24 dev ceth0
+sudo nsenter -t &lt;PID&gt; -n ip link set ceth0 up
+sudo nsenter -t &lt;PID&gt; -n ip route add default via 172.20.0.1</pre>
+
+<h3>What you just proved</h3>
+<ul>
+<li>The shell is <strong>PID 1</strong> &mdash; a PID namespace, nothing more.</li>
+<li><code>ps</code> can't see host processes; <code>kill -9 &lt;host-pid&gt;</code> fails &mdash; PID namespace isolation.</li>
+<li><code>hostname</code> changed only here &mdash; UTS namespace.</li>
+<li>A memory hog is OOM-killed and the host is fine &mdash; the cgroup contained it.</li>
+<li><code>capsh --print</code> shows a reduced set &mdash; capabilities, not magic.</li>
+<li>What a real runtime adds: image pull + overlayfs layer assembly (instead of a hand-made rootfs), a <code>config.json</code> instead of shell commands, a shim + API + lifecycle, and CNI instead of manual veth wiring.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>1. rootfs</strong>: <code>docker export</code> a tarball, or a BusyBox/Alpine minirootfs.</li>
+<li><strong>2. unshare</strong>: <code>unshare --uts --pid --mount --ipc --net --cgroup --fork --mount-proc</code>.</li>
+<li><strong>3. pivot_root</strong>: <code>mount --make-rprivate /</code>; bind-mount the rootfs; <code>pivot_root . oldroot</code>; <code>umount -l oldroot</code>; mount fresh <code>/proc</code>, <code>/sys</code>, <code>/tmp</code>; <code>hostname box</code>.</li>
+<li><strong>4. cgroup</strong>: <code>mkdir /sys/fs/cgroup/box</code>; write <code>memory.max</code>, <code>cpu.max</code>, <code>pids.max</code>; <code>echo &lt;pid&gt; &gt; cgroup.procs</code>.</li>
+<li><strong>5. drop</strong>: <code>capsh --drop=...</code>, <code>no_new_privs</code>, seccomp filter, <code>setuid</code> to non-root.</li>
+<li><strong>6. network</strong>: veth pair, one end into the netns, other on a bridge, add addr + route.</li>
+<li>This is exactly <code>runc</code>'s job from <code>config.json</code>. Docker/containerd add image pull, overlayfs, shim, API, CNI.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why <code>pivot_root</code> instead of <code>chroot</code>?</dt>
+<dd><code>chroot</code> only changes the apparent root directory &mdash; the process still has a reference to the real root and, with enough privilege (or a second <code>chroot</code>), can climb back out. <code>pivot_root</code> moves the old root to a subdirectory which you then <code>umount</code>, so there is no remaining path to the host filesystem. Real runtimes use <code>pivot_root</code> (or <code>MS_MOVE</code> + <code>chroot</code>) for this reason.</dd>
+<dt>Why does <code>unshare --pid</code> need <code>--fork --mount-proc</code>?</dt>
+<dd>The PID namespace only takes effect for <em>children</em> of the calling process &mdash; <code>unshare</code> itself stays in the old namespace &mdash; so you need <code>--fork</code> to run the command as a child that's actually inside the new namespace. And <code>ps</code> reads <code>/proc</code>, which still shows the host's processes until you <code>--mount-proc</code> a fresh procfs for the new namespace.</dd>
+<dt>After unshare, the container still limits nothing. Why, and what fixes it?</dt>
+<dd>Namespaces are visibility isolation only. Without a cgroup, the process can use all the host's CPU and memory and fork without bound. Create a cgroup v2 node, write <code>memory.max</code>/<code>cpu.max</code>/<code>pids.max</code>, and move the PID into <code>cgroup.procs</code>.</dd>
+<dt>In this hand-built container, is the shell "root"? Is that host root?</dt>
+<dd>The shell runs as UID 0 <em>because you started it with sudo</em> and didn't add a user namespace &mdash; so yes, it is host root, just with fewer capabilities after <code>capsh --drop</code>. To make container-root not be host-root you'd add <code>--user --map-root-user</code> to <code>unshare</code>, creating a user namespace that maps in-container UID 0 to your unprivileged host UID.</dd>
+<dt>What does a real runtime add on top of these six steps?</dt>
+<dd>Image handling &mdash; pull from a registry, verify digests, assemble the read-only layers with OverlayFS instead of a hand-made rootfs; a declarative <code>config.json</code> (the OCI runtime spec) instead of ad-hoc shell; the seccomp profile, AppArmor/SELinux label, and full mount list; a shim for lifecycle and daemon-restart safety; a stable API; and CNI for networking instead of manual <code>ip</code> commands.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the minimum ingredients to turn a process into a container.</summary><div class="answer-box">
+A root filesystem, a set of namespaces (at least mount + PID; usually also net, uts, ipc, and user), a cgroup for limits, and reduced privileges (dropped capabilities, no-new-privs, ideally seccomp). Then exec the workload.
+</div></details>
+<details class="answer-reveal"><summary>What single command creates several namespaces and runs a shell inside them?</summary><div class="answer-box">
+<code>sudo unshare --uts --pid --mount --net --ipc --cgroup --fork --mount-proc /bin/bash</code>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Walk through building a minimal container for a static Go binary using only shell tools.</summary><div class="answer-box">
+(1) <strong>rootfs</strong>: since the binary is static you barely need one &mdash; <code>mkdir -p /tmp/box/rootfs/{proc,sys,tmp}</code>, <code>cp ./app /tmp/box/rootfs/app</code>, maybe add <code>/etc/ssl/certs</code> for TLS and <code>/etc/passwd</code>. (2) <strong>namespaces</strong>: <code>unshare --uts --pid --mount --ipc --net --cgroup --fork --mount-proc</code>. (3) <strong>rootfs switch</strong>: <code>mount --make-rprivate /</code>, bind-mount the rootfs on itself, <code>pivot_root</code> into it, <code>umount -l</code> the old root, mount fresh <code>proc</code>/<code>sysfs</code>/<code>tmpfs</code>, set the hostname. (4) <strong>cgroup</strong> (from the host, using the child PID): <code>mkdir /sys/fs/cgroup/box</code>, write <code>memory.max=64M</code>, <code>cpu.max='20000 100000'</code>, <code>pids.max=16</code>, <code>echo &lt;pid&gt; &gt; cgroup.procs</code>. (5) <strong>privileges</strong>: <code>capsh --drop=all --</code>, set <code>no_new_privs</code>, install a tiny seccomp allowlist, <code>setuid</code> to a non-root uid (add the uid to <code>/etc/passwd</code> in the rootfs). (6) <strong>network</strong>: if it needs egress, create a veth pair, move one end into the netns, attach the other to a bridge, assign an address and default route, and add a MASQUERADE rule on the host. (7) <code>exec /app</code>. That's a functionally complete container; a Dockerfile with <code>FROM scratch</code> + <code>COPY app /</code> + a non-root <code>USER</code> produces the same thing with the runtime doing steps 2&ndash;7.
+</div></details>
+<details class="answer-reveal"><summary>Your hand-built container's <code>ps</code> shows host processes even though you used <code>--pid</code>. Why?</summary><div class="answer-box">
+Two likely causes. (1) You didn't pass <code>--fork</code>, so the command ran as <code>unshare</code>'s own process, which stays in the parent PID namespace; only children enter the new one. (2) You didn't remount <code>/proc</code> &mdash; <code>ps</code> reads the procfs mounted at <code>/proc</code>, and until you <code>mount -t proc proc /proc</code> (or use <code>--mount-proc</code>, which requires <code>--mount</code> too) it's still the host's procfs showing every process. Fix: <code>unshare --pid --mount --fork --mount-proc ...</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Map each part of an OCI <code>config.json</code> to the manual steps, and name what the manual approach still gets wrong that runc handles.</summary><div class="answer-box">
+<strong>Mapping</strong>: <code>process.args</code>/<code>env</code>/<code>cwd</code>/<code>user</code> &rarr; the final <code>exec</code> and <code>setuid/setgid</code>; <code>root.path</code> &rarr; the rootfs you built + <code>pivot_root</code>; <code>linux.namespaces</code> &rarr; the <code>unshare</code> flags; <code>mounts</code> &rarr; the <code>mount -t proc/sysfs/tmpfs</code> and any bind mounts; <code>linux.resources</code> (memory/cpu/pids/io) &rarr; the cgroup files you wrote; <code>process.capabilities</code> (bounding/effective/permitted/inheritable/ambient) &rarr; <code>capsh --drop</code>; <code>process.noNewPrivileges</code> &rarr; the prctl; <code>linux.seccomp</code> &rarr; the seccomp filter; <code>linux.uidMappings</code>/<code>gidMappings</code> &rarr; <code>--map-root-user</code>/writing <code>uid_map</code>; <code>hostname</code> &rarr; <code>hostname box</code>; <code>linux.maskedPaths</code>/<code>readonlyPaths</code> &rarr; extra bind/remount tricks; <code>linux.devices</code> &rarr; <code>mknod</code>/bind of <code>/dev/*</code>. <strong>What the shell version gets wrong or omits</strong>: (1) it doesn't mask <code>/proc/kcore</code>, <code>/proc/sys</code>, <code>/sys/firmware</code>, <code>/proc/sysrq-trigger</code> etc. (runc's default <code>maskedPaths</code>/<code>readonlyPaths</code>) &mdash; leaving host-influencing knobs writable; (2) it usually skips a proper minimal <code>/dev</code> (null, zero, random, urandom, tty, pts) with correct modes, and the devices cgroup allow-list; (3) mount propagation edge cases &mdash; not making the parent mount private/slave correctly can leak container mounts to the host or vice versa; (4) it applies caps but not the full 5-set model, and often forgets ambient caps needed for non-root + file caps; (5) no seccomp by default (huge attack surface); (6) no AppArmor/SELinux label; (7) ordering/races &mdash; setting the cgroup from the host after the child starts is racy (the process runs briefly unconstrained); runc joins the cgroup before <code>execve</code>; (8) no cleanup/teardown of namespaces, cgroup, and network on exit; (9) no rootless plumbing (subuid/subgid, <code>newuidmap</code>). runc encodes all of this, tested against the OCI spec, which is why "just use runc" (or a runtime) is the right answer outside of learning exercises.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:containers:build-by-hand -->
+
 </main>
 
 <footer class="site-footer">
@@ -34663,7 +36003,10 @@ Config parity &mdash; keeping cache/WAF/purge/edge behavior identical across pro
     splunk:      { name: "Splunk",                      blurb: "Forwarders/indexers/search heads, SPL, stats &amp; timechart, eval &amp; lookups, data models &amp; tstats, alerts, dashboards, RBAC." },
     monitor:     { name: "Dashboards &amp; Monitoring",  blurb: "Metrics/logs/traces, counter vs gauge vs histogram, RED/USE/golden signals, SLIs &amp; SLOs, alerting philosophy, cardinality, tracing." },
     jira:        { name: "Jira &amp; Agile Boards",      blurb: "Issues &amp; workflows, Scrum vs Kanban boards, backlog &amp; sprints, JQL, epics &amp; hierarchy, burndown/velocity, automation, schemes." },
-    cdn:         { name: "CDN &amp; Edge Delivery",      blurb: "PoPs &amp; anycast, cache keys &amp; TTLs, purge &amp; invalidation, origin shielding, edge compute, TLS/HTTP3, WAF/DDoS, multi-CDN." }
+    cdn:         { name: "CDN &amp; Edge Delivery",      blurb: "PoPs &amp; anycast, cache keys &amp; TTLs, purge &amp; invalidation, origin shielding, edge compute, TLS/HTTP3, WAF/DDoS, multi-CDN." },
+    containers:  { name: "Containers &amp; Isolation",   blurb: "VMs vs containers, namespaces &amp; cgroups, image layers &amp; OverlayFS, the OCI spec, runc/containerd, capabilities/seccomp, rootless." },
+    docker:      { name: "Docker",                      blurb: "Client/daemon/containerd, the CLI, images &amp; registries, Dockerfiles &amp; build cache, multi-stage builds, volumes, networking, Compose, hardening." },
+    k8s:         { name: "Kubernetes",                  blurb: "Control plane &amp; nodes, the API &amp; reconciliation, Pods, Deployments/StatefulSets, Services &amp; Ingress, ConfigMaps/Secrets, storage, scheduling, autoscaling, RBAC, Helm/GitOps." }
   };
 
   // home-page grouping (order shown top to bottom)
@@ -34673,7 +36016,8 @@ Config parity &mdash; keeping cache/WAF/purge/edge behavior identical across pro
     ["Systems",         ["os", "concurrency", "linux", "arch", "build"]],
     ["Design &amp; tools", ["lld", "sysd", "git"]],
     ["Observability",   ["grafana", "splunk", "monitor"]],
-    ["Delivery &amp; tools", ["jira", "cdn"]]
+    ["Delivery &amp; tools", ["jira", "cdn"]],
+    ["Virtualization",  ["containers", "docker", "k8s"]]
   ];
 
   // ---- built topics: [slug, title, blurb]. Order defines sidebar order. --
@@ -34939,6 +36283,47 @@ Config parity &mdash; keeping cache/WAF/purge/edge behavior identical across pro
       ["security",             "CDN Security: WAF, DDoS, Bots & Tokens","L3/4 & L7 DDoS absorption, WAF rules, rate limiting, bot management, signed URLs/tokens, mTLS to origin."],
       ["performance",          "Measuring & Tuning CDN Performance",    "Hit ratio, offload, RUM vs synthetic, edge/origin latency, compression, Brotli, cache-key tuning."],
       ["multi-cdn",            "Multi-CDN, Traffic Steering & Cost",    "Why multi-CDN, DNS vs 302 steering, RUM-based steering, config parity, egress & request pricing."]
+    ],
+    containers: [
+      ["vm-vs-container",     "VMs vs Containers & the Hypervisor",   "Type-1/2 hypervisors, guest OS vs shared kernel, boot time, density, isolation strength, when to use each."],
+      ["what-is-a-container", "A Container Is Just a Process",         "No 'container' object in Linux; a normal process with namespaces + cgroups + a root filesystem + dropped privileges."],
+      ["namespaces",          "Linux Namespaces",                     "mnt, pid, net, uts, ipc, user, cgroup, time; unshare/setns/clone; what each isolates; the user namespace and rootless."],
+      ["cgroups",             "Control Groups (cgroups v2)",          "The unified hierarchy, controllers (cpu, memory, io, pids), limits vs requests, cgroupfs, OOM, throttling, delegation."],
+      ["layers-overlayfs",    "Image Layers & OverlayFS",             "Lower/upper/work dirs, copy-up, the union mount, why layers are shared & cached, whiteouts, content-addressable storage."],
+      ["oci-runtimes",        "OCI, runc, containerd & the CRI",      "OCI image vs runtime spec, the config.json bundle, runc, containerd + shim, CRI (containerd/CRI-O), Kubernetes' runtime path."],
+      ["security-model",      "Capabilities, seccomp, LSMs & Rootless","Dropping capabilities, seccomp syscall filtering, AppArmor/SELinux, no-new-privileges, rootless containers, user-ns mapping."],
+      ["container-networking","Container Networking Primitives",      "The loopback-only netns, veth pairs, a bridge, NAT/masquerade, port forwarding, DNS, and how CNI plugins wire it up."],
+      ["build-by-hand",       "Build a Container by Hand",            "unshare + chroot/pivot_root + a cgroup + cap-drop, from a busybox rootfs — the whole 'container' with no Docker."]
+    ],
+    docker: [
+      ["architecture",       "Docker Architecture: Client, Daemon, containerd", "docker CLI -> dockerd (REST) -> containerd -> containerd-shim -> runc; the image store, registries, and where each piece lives."],
+      ["cli-basics",         "The Docker CLI: run, ps, exec, logs",  "docker run flags, lifecycle (create/start/stop/rm), exec vs attach, logs, inspect, cp, stats, the container lifecycle state machine."],
+      ["images-registries",  "Images, Tags, Digests & Registries",   "Image = manifest + config + layers; tags are mutable, digests aren't; pull/push, Docker Hub vs private registries, auth, rate limits."],
+      ["dockerfile",         "Writing Dockerfiles",                  "FROM/RUN/CMD/ENTRYPOINT/COPY/ADD/ENV/ARG/WORKDIR/EXPOSE/USER/HEALTHCHECK; shell vs exec form; each instruction = a layer."],
+      ["build-cache",        "The Build Cache, Context & .dockerignore", "Layer cache invalidation, instruction ordering, the build context upload, .dockerignore, BuildKit, cache mounts, --cache-from."],
+      ["multi-stage",        "Multi-Stage Builds & Minimal Images",  "Separate build vs runtime stages, COPY --from, distroless/scratch/alpine, shrinking images from 1 GB to 20 MB, reproducibility."],
+      ["storage",            "Volumes, Bind Mounts & tmpfs",         "Ephemeral writable layer vs persistent data; named volumes, bind mounts, tmpfs; volume drivers; backup/restore; permissions."],
+      ["networking",         "Docker Networking & Port Publishing",  "bridge/host/none, user-defined bridges + embedded DNS, -p host:container, published vs exposed, container-to-container, overlay."],
+      ["compose",            "Docker Compose: Multi-Container Apps", "One docker-compose.yml for app + db; services, networks, volumes, depends_on + healthcheck, env & .env, profiles, override files."],
+      ["resources",          "CPU & Memory Limits",                  "--cpus / --cpu-shares / --memory / --memory-swap; how they map to cgroup v2 files; OOM kills; --pids-limit; reservations."],
+      ["security",           "Hardening: Non-root, Caps, Read-only, Scanning", "USER, --cap-drop=ALL, --read-only, --security-opt no-new-privileges, seccomp, --user, secrets vs ENV, Trivy/Grype scanning."],
+      ["production",         "Logging, Healthchecks, Tagging & CI Builds", "Log drivers (json-file/journald), HEALTHCHECK, restart policies, tag strategy (immutable + semver), CI build+push, prune & GC."]
+    ],
+    k8s: [
+      ["architecture",      "Cluster Architecture: Control Plane & Nodes", "API server, etcd, scheduler, controller-manager on the control plane; kubelet, kube-proxy, container runtime on nodes; the request path."],
+      ["objects-api",       "Objects, the API & the Reconciliation Loop", "Every resource = spec + status; controllers drive status toward spec forever; kubectl apply, declarative vs imperative, labels/selectors, namespaces."],
+      ["pods",              "Pods: The Smallest Unit",              "One or more co-scheduled containers sharing net + IPC + volumes; init containers, sidecars, the pause container, probes, restartPolicy, QoS."],
+      ["workloads",         "Deployments, StatefulSets, DaemonSets & Jobs", "Deployment -> ReplicaSet -> Pods, rolling update & rollback; StatefulSet stable identity + storage; DaemonSet per-node; Job/CronJob to completion."],
+      ["services-dns",      "Services, kube-proxy & Cluster DNS",   "ClusterIP/NodePort/LoadBalancer/Headless, label selectors -> EndpointSlices, kube-proxy (iptables/IPVS), CoreDNS names, session affinity."],
+      ["ingress",           "Ingress, Controllers & the Gateway API", "Ingress = L7 routing rules; a controller (nginx/Traefik) does the work; TLS, host/path rules, annotations; the newer Gateway API."],
+      ["config-secrets",    "ConfigMaps & Secrets",                 "Non-secret vs secret config; env vs mounted volume; Secret is base64 not encrypted (enable encryption-at-rest); immutable; projected volumes; external secrets."],
+      ["storage",           "Volumes, PV, PVC & StorageClasses",    "emptyDir/hostPath/configMap volumes; PV (cluster resource) bound to PVC (claim); StorageClass + provisioner = dynamic PVs; access modes; reclaim policy; CSI."],
+      ["scheduling",        "Scheduling: Requests, Affinity, Taints", "requests drive placement + QoS, limits cap usage; nodeSelector, node/pod affinity & anti-affinity, taints & tolerations, topology spread, PriorityClass, PDB."],
+      ["autoscaling",       "HPA, VPA & Cluster Autoscaler",        "HPA scales replicas on CPU/mem/custom metrics via metrics-server; VPA right-sizes requests; Cluster Autoscaler adds/removes nodes; KEDA event-driven."],
+      ["rbac-security",     "RBAC, Service Accounts & Pod Security", "Role/ClusterRole + RoleBinding/ClusterRoleBinding; ServiceAccount tokens; least privilege; Pod Security Standards (privileged/baseline/restricted); admission control."],
+      ["network-policies",  "NetworkPolicies & Pod-to-Pod Firewalls", "Default-allow until a policy selects a pod, then default-deny; ingress/egress rules by podSelector/namespaceSelector/ipBlock; CNI must enforce; mTLS via a mesh."],
+      ["observability",     "Logging, Metrics & Debugging Pods",    "Node-level log collection (Fluent Bit -> Loki/Elasticsearch), Prometheus + Grafana, kube-state-metrics, events, kubectl describe/logs/debug, ephemeral containers."],
+      ["helm-gitops",       "Helm, GitOps, Operators & CRDs",       "Helm charts = templated manifests + values + releases; GitOps (Argo CD/Flux) reconciles cluster to a git repo; CRDs extend the API; the Operator pattern; service meshes."]
     ]
   };
 
