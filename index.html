@@ -26720,6 +26720,13 @@ SQLite/MySQL/Postgres backend. The actual time series, logs, and traces live in
 <strong>data sources</strong> &mdash; Prometheus, Loki, Tempo, InfluxDB, Elasticsearch,
 Graphite, CloudWatch, a SQL database, etc. At render time each panel sends a query to its
 data source and plots what comes back.</p>
+<pre># Grafana's own DB is tiny &mdash; it stores dashboards + config, not a single data point
+sqlite&gt; .tables
+alert_rule   annotation   dashboard   data_source   org   user   ...
+sqlite&gt; SELECT count(*) FROM dashboard;      -- 214
+# the metrics themselves? not here. a panel just holds a query string:
+#   { "datasource": {"uid": "prom-prod"}, "expr": "rate(http_requests_total[5m])" }
+# at render time Grafana forwards that to Prometheus and plots the response.</pre>
 
 <h3>Data source plugins</h3>
 <ul>
@@ -26727,6 +26734,15 @@ data source and plots what comes back.</p>
 <li>A configured data source instance has a URL, auth, and default settings. Panels reference it by <strong>UID</strong> (stable) &mdash; not by name &mdash; which is what makes dashboards portable.</li>
 <li>The <strong>-- Mixed --</strong> data source lets one panel pull from several sources at once; <strong>-- Dashboard --</strong> reuses another panel's result; <strong>-- Grafana --</strong> is the built-in one for annotations and test data.</li>
 </ul>
+<pre># panels reference a data source by UID, never by display name -> portable JSON
+{
+  "targets": [
+    { "datasource": { "type": "prometheus", "uid": "P1809F7CD0C75ACF3" },
+      "expr": "up{job=\"api\"}" }
+  ]
+}
+# import the same dashboard on another Grafana -> it prompts to map that UID
+# to a local Prometheus. Rename the data source freely; the UID is stable.</pre>
 
 <h3>Query path: proxy vs direct</h3>
 <table>
@@ -26734,6 +26750,13 @@ data source and plots what comes back.</p>
 <tr><td><strong>Server (proxy)</strong> &mdash; default</td><td>browser &rarr; Grafana server &rarr; data source</td><td>Data source needn't be reachable from the browser; credentials stay server-side; CORS is a non-issue.</td></tr>
 <tr><td><strong>Browser (direct)</strong></td><td>browser &rarr; data source directly</td><td>Only for sources that support it; needs network + CORS from every user's browser; rarely used now.</td></tr>
 </table>
+<pre># proxy mode (default): the query goes THROUGH the Grafana server
+GET https://grafana.corp/api/datasources/proxy/uid/prom-prod/api/v1/query?query=up
+#   -> Grafana adds the stored Authorization header, calls http://prometheus:9090
+#   browser never sees the Prometheus URL or credentials, no CORS setup needed
+
+# direct mode: browser calls http://prometheus:9090/api/v1/query itself
+#   -> Prometheus must be reachable from every laptop + send CORS headers</pre>
 
 <h3>Deployment shape</h3>
 <ul>
@@ -26742,12 +26765,32 @@ data source and plots what comes back.</p>
 <li>Sessions are JWT/cookie; no sticky sessions required for the UI.</li>
 <li><strong>Grafana Cloud</strong> bundles hosted Prometheus (Mimir), Loki, and Tempo as the data sources.</li>
 </ul>
+<pre># HA: N identical stateless Grafana replicas, ONE shared config DB
+[database]
+type = postgres
+host = grafana-db.internal:5432        # all replicas read/write here
+
+[unified_alerting]
+enabled = true
+ha_peers = grafana-0:9094,grafana-1:9094,grafana-2:9094   # gossip so a rule fires ONCE
+# scale out = add a replica behind the LB; no sticky sessions (JWT/cookie auth)</pre>
 
 <h3>Provisioning &amp; config</h3>
 <p>Data sources, dashboards, alerting, and plugins can be defined as YAML files under
 <code>conf/provisioning/</code> (or via Terraform / the HTTP API) so the whole Grafana
 setup is reproducible &mdash; see the Provisioning topic. <code>grafana.ini</code> /
 env vars (<code>GF_*</code>) control server settings.</p>
+<pre># conf/provisioning/datasources/prod.yaml &mdash; checked into git, applied on boot
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    uid: prom-prod            # stable UID dashboards reference
+    type: prometheus
+    url: http://prometheus:9090
+    isDefault: true
+
+# every grafana.ini key has an env override: [auth] disable_login_form=true
+#   -> GF_AUTH_DISABLE_LOGIN_FORM=true</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -26830,6 +26873,19 @@ The shared SQL DB holds dashboards, users, data sources, API keys/service accoun
 <li><strong>Field config</strong> &mdash; units, decimals, min/max, thresholds, color scheme, display name, no-value text, links.</li>
 <li><strong>Overrides</strong> &mdash; field config applied selectively (by name, by regex, by query, by type).</li>
 </ol>
+<pre># the five stages, as they appear in panel JSON
+{
+  "targets": [ {"refId": "A", "expr": "rate(http_req_total[$__rate_interval])"} ],
+  "transformations": [ {"id": "renameByRegex", "options": {...}} ],
+  "type": "timeseries",                       // 3. visualization
+  "fieldConfig": {
+    "defaults": {"unit": "reqps", "min": 0,   // 4. field config
+                 "thresholds": {"steps": [{"value": null,"color":"green"},
+                                          {"value": 100,"color":"red"}]}},
+    "overrides": [ {"matcher": {"id":"byName","options":"5xx"},   // 5. override one series
+                    "properties": [{"id":"color","value":{"fixedColor":"red"}}]} ]
+  }
+}</pre>
 
 <h3>Common visualizations and when to use them</h3>
 <table>
@@ -26842,6 +26898,11 @@ The shared SQL DB holds dashboards, users, data sources, API keys/service accoun
 <tr><td><strong>State timeline / Status history</strong></td><td>Discrete states (up/down, ok/warn/crit) over time.</td></tr>
 <tr><td><strong>Logs</strong></td><td>Log lines from Loki/Elasticsearch, with level coloring and dedup.</td></tr>
 </table>
+<pre># match the query SHAPE to the viz:
+sum(rate(http_req_total[5m])) by (le)   # range vector over time  -> Time series / Heatmap
+sum(up{job="api"})                       # single instant scalar   -> Stat / Gauge
+topk(10, sum by (route)(rate(err[5m])))  # instant, many rows      -> Table
+max_over_time(up[$__interval])           # 0/1 discrete over time   -> State timeline</pre>
 
 <h3>Units, thresholds, mappings</h3>
 <ul>
@@ -26850,18 +26911,49 @@ The shared SQL DB holds dashboards, users, data sources, API keys/service accoun
 <li><strong>Value mappings</strong>: map a raw value/range to text + color (<code>0 &rarr; "Down" (red)</code>, <code>1 &rarr; "Up" (green)</code>).</li>
 <li><strong>Standard options</strong>: <em>Display name</em> (with <code>${__field.labels.instance}</code>), <em>Min/Max</em>, <em>Decimals</em>, <em>No value</em>.</li>
 </ul>
+<pre>// unit: raw seconds from Prometheus -> Grafana shows "1.4 s", "320 ms" automatically
+"unit": "s"          // NOT "ms": the data is in seconds; the unit just formats it
+
+// thresholds: colour a Stat panel by error-budget burn
+"thresholds": { "mode": "absolute",
+  "steps": [ {"value": null, "color": "green"},
+             {"value": 2,    "color": "orange"},   // burn rate > 2x
+             {"value": 10,   "color": "red"} ] }
+
+// value mapping: 0/1 up-series -> readable state
+"mappings": [ {"type":"value","options":{"0":{"text":"Down","color":"red"},
+                                         "1":{"text":"Up","color":"green"}}} ]</pre>
 
 <h3>Overrides &mdash; the key skill</h3>
 <p>Base field config applies to every series. An <strong>override</strong> targets a subset:
 "fields with name matching <code>/error/</code>" &rarr; color red; "field <code>rx_bytes</code>"
 &rarr; unit bytes, custom axis; "fields returned by query B" &rarr; right Y axis, dashed line.
 This is how you put two different units on one graph, or highlight one series.</p>
+<pre># one graph, two units: latency (ms, left axis) + error rate (%, right axis)
+"overrides": [
+  { "matcher": {"id": "byFrameRefID", "options": "B"},        # query B = error rate
+    "properties": [
+      {"id": "unit", "value": "percent"},
+      {"id": "custom.axisPlacement", "value": "right"},
+      {"id": "custom.lineStyle", "value": {"dash": [8, 4]}} ] },
+  { "matcher": {"id": "byRegexp", "options": "/5xx|error/i"},
+    "properties": [ {"id": "color", "value": {"mode":"fixed","fixedColor":"red"}} ] }
+]</pre>
 
 <h3>Data links &amp; drilldown</h3>
 <p>Field config can add <strong>data links</strong> &mdash; clickable URLs built from the value
 and its labels (<code>${__field.labels.pod}</code>, <code>${__value.raw}</code>,
 <code>${__url_time_range}</code>) that jump to another dashboard, an Explore query, or an
 external tool. Combined with template variables this makes overview&rarr;detail navigation.</p>
+<pre># data link on a "pod" table -> open the pod-detail dashboard, same time range
+{
+  "title": "Inspect pod",
+  "url": "/d/pod-detail/pod?var-pod=${__data.fields.pod}&${__url_time_range}",
+  "targetBlank": false
+}
+# ${__value.raw}  = the numeric cell value
+# ${__field.labels.namespace} = a label carried on the series
+# ${__url_time_range} = expands to from=...&to=... so context follows the click</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -26942,6 +27034,16 @@ Grafana normalises every data source response into <strong>data frames</strong> 
 <li>Dashboard settings: time options (default range, refresh list, timezone), <strong>variables</strong>, <strong>annotations</strong> queries, links, tags, and the JSON model.</li>
 <li>Every dashboard has a <strong>UID</strong> (in the URL <code>/d/&lt;uid&gt;/&lt;slug&gt;</code>) &mdash; stable across renames, used by links and provisioning.</li>
 </ul>
+<pre># top of the dashboard JSON model
+{
+  "uid": "api-overview",            // stable; /d/api-overview/... survives a title change
+  "title": "API Overview",
+  "templating": { "list": [ /* variables */ ] },
+  "annotations": { "list": [ /* event overlays */ ] },
+  "time": { "from": "now-6h", "to": "now" },
+  "refresh": "30s",
+  "panels": [ { "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0}, ... } ]  // 24-col grid
+}</pre>
 
 <h3>Variable types</h3>
 <table>
@@ -26954,6 +27056,14 @@ Grafana normalises every data source response into <strong>data frames</strong> 
 <tr><td><strong>Text box</strong></td><td>Free user input.</td></tr>
 <tr><td><strong>Ad hoc filters</strong></td><td>Special: adds arbitrary <code>key=value</code> label filters applied to <em>all</em> queries against a source (Prometheus/Loki/Elastic).</td></tr>
 </table>
+<pre># Query variable (Prometheus): fill $job from live label values
+label_values(up, job)                         # -> api, worker, cron, ...
+label_values(up{job="$job"}, instance)        # $instance, scoped to the chosen job
+
+# Custom variable: hand-typed
+prod, staging, dev
+
+# Interval variable "$step": 1m,5m,10m,1h   -> use as ...[$step] in rate()</pre>
 
 <h3>Multi-value, "All", and formatting</h3>
 <ul>
@@ -26961,23 +27071,51 @@ Grafana normalises every data source response into <strong>data frames</strong> 
 <li>In a Prometheus query use the regex form: <code>pod=~"$pod"</code> (not <code>pod="$pod"</code>) so multi-select works.</li>
 <li>Control interpolation with format functions: <code>${pod:regex}</code>, <code>${pod:pipe}</code>, <code>${servers:json}</code>, <code>${var:csv}</code>, <code>${var:singlequote}</code>, <code>${var:sqlstring}</code>. Raw is <code>${var}</code> / <code>[[var]]</code> / <code>$var</code>.</li>
 </ul>
+<pre># $pod is multi-select with values: api-1, api-2
+
+sum(rate(cpu{pod="$pod"}[5m]))     # BROKEN: expands to pod="api-1,api-2"
+sum(rate(cpu{pod=~"$pod"}[5m]))    # OK: pod=~"api-1|api-2"  (regex form)
+
+# format functions pick the right syntax per target language:
+${pod:regex}   -> (api\-1|api\-2)      # for =~
+${pod:pipe}    -> api-1|api-2
+${pod:json}    -> ["api-1","api-2"]    # for a JSON body
+${pod:sqlstring} -> 'api-1','api-2'    # for an IN (...) clause</pre>
 
 <h3>Chained (dependent) variables</h3>
 <p>A variable's query can reference another variable:
 <code>label_values(kube_pod_info{namespace="$namespace"}, pod)</code>. Selecting a namespace
 narrows the pod list. Order matters; Grafana re-queries downstream variables when an upstream
 one changes.</p>
+<pre># variable order in the list = dependency order (top drives bottom)
+$cluster : label_values(kube_node_info, cluster)
+$namespace : label_values(kube_pod_info{cluster="$cluster"}, namespace)
+$pod : label_values(kube_pod_info{cluster="$cluster",namespace="$namespace"}, pod)
+# pick a new $cluster  -> Grafana re-runs the $namespace query, then the $pod query</pre>
 
 <h3>Repeating panels &amp; rows</h3>
 <p>Set a panel (or row) to <strong>Repeat</strong> for a multi-value variable &mdash; Grafana
 clones it once per selected value (one graph per region, a row of panels per service). Great
 for "same view, N things" without hand-copying panels.</p>
+<pre># one panel definition, cloned per value of a multi-value variable
+"repeat": "region",              // $region = us-east, us-west, eu
+"repeatDirection": "h",          // lay the clones out horizontally
+"targets": [ {"expr": "sum(rate(req_total{region=\"$region\"}[5m]))"} ]
+// render: 3 identical panels, each pinned to one region. Edit once, all update.</pre>
 
 <h3>Built-in macros</h3>
 <p><code>$__interval</code> / <code>$__rate_interval</code> (auto step), <code>$__range</code>,
 <code>$__from</code> / <code>$__to</code> (ms epoch; also <code>:date</code> variants),
 <code>$__timeFilter()</code> (SQL sources), <code>$__searchFilter</code> (type-ahead in a
 query variable), <code>$__dashboard</code>, <code>$__user</code>, <code>$__org</code>.</p>
+<pre># Prometheus: let Grafana choose the rate window from panel width + scrape interval
+rate(http_requests_total[$__rate_interval])
+
+# SQL data source: bound the query to the dashboard's time picker
+SELECT $__timeGroup(ts, '1m') AS time, avg(latency_ms)
+FROM requests
+WHERE $__timeFilter(ts)          -- expands to  ts BETWEEN '...' AND '...'
+GROUP BY 1 ORDER BY 1</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -27059,6 +27197,11 @@ Variable state lives in the <strong>URL query string</strong> as <code>var-&lt;n
 <li><strong>Range vector</strong> &mdash; a window of samples per series (<code>http_requests_total[5m]</code>); only functions like <code>rate()</code>, <code>increase()</code>, <code>*_over_time()</code> take these.</li>
 <li><strong>Scalar</strong> and <strong>string</strong>.</li>
 </ul>
+<pre>http_requests_total                 # instant vector: {job="api"} 5231, {job="web"} 812
+http_requests_total[5m]             # range vector: each series -> [(t1,v1)...(tn,vn)]
+rate(http_requests_total[5m])       # range vector IN -> instant vector OUT
+rate(http_requests_total)          # ERROR: rate() needs a range vector, got instant
+2 * scalar(count(up))              # scalar</pre>
 
 <h3>Instant vs range queries in Grafana</h3>
 <table>
@@ -27067,12 +27210,26 @@ Variable state lives in the <strong>URL query string</strong> as <code>var-&lt;n
 <tr><td>Use for</td><td>time series graphs</td><td>Stat/Gauge/Table "current value", top-N</td></tr>
 <tr><td>Toggle</td><td>"Range" (default in graph panels)</td><td>"Instant" checkbox in the query editor</td></tr>
 </table>
+<pre># same expr, two API calls Grafana makes:
+
+# Range  -> GET /api/v1/query_range?query=...&start=..&end=..&step=15s
+#   result: a line with a point every 15s across the panel  -> Time series panel
+
+# Instant -> GET /api/v1/query?query=...&time=&lt;range end&gt;
+#   result: one number per series  -> Stat / Gauge / Table
+topk(5, sum by (route)(rate(errors_total[5m])))   # only meaningful as Instant</pre>
 
 <h3>Counters: always <code>rate()</code></h3>
 <p>Counters only go up (and reset to 0 on restart). Graphing them raw is meaningless. Use
 <code>rate(metric[window])</code> for per-second average rate (handles resets), or
 <code>increase(metric[window])</code> for the total over the window. <code>irate()</code>
 uses only the last two samples &mdash; spiky, for fast-moving graphs only.</p>
+<pre># raw counter: a ramp from process start + a cliff on restart -> useless
+http_requests_total                     # 4.1M ... 4.1M ... 0 (restart) ... 12k
+
+rate(http_requests_total[5m])           # ~820 req/s, and the restart is smoothed out
+increase(http_requests_total[1h])       # ~2.95M requests in the last hour
+sum(rate(http_requests_total[5m])) by (status)   # per-second, grouped by status code</pre>
 
 <h3>The rate window and <code>$__rate_interval</code></h3>
 <ul>
@@ -27080,6 +27237,12 @@ uses only the last two samples &mdash; spiky, for fast-moving graphs only.</p>
 <li>Grafana provides <code>$__rate_interval</code> = <code>max($__interval + scrape_interval, 4 &times; scrape_interval)</code> &mdash; <strong>use it as the rate window</strong>: <code>rate(http_requests_total[$__rate_interval])</code>. It adapts to zoom level and avoids gaps.</li>
 <li><code>$__interval</code> is the step Grafana computes from range width &divide; panel pixels; <code>$__interval_ms</code> is the numeric form.</li>
 </ul>
+<pre># scrape_interval = 15s
+
+rate(http_requests_total[1m])              # BAD: only ~4 samples, gaps when zoomed out
+rate(http_requests_total[$__rate_interval]) # GOOD: >= 4x scrape, grows as you zoom out
+#   zoomed in  (step 15s) -> $__rate_interval = 1m
+#   zoomed out (step 10m) -> $__rate_interval = ~10m15s   no gaps at any zoom</pre>
 
 <h3>Aggregation</h3>
 <pre>sum(rate(http_requests_total[$__rate_interval])) by (status)      # group up
@@ -27097,11 +27260,21 @@ keep the <code>le</code> label and <code>sum by (le)</code> before <code>histogr
 <li><strong>Min step</strong> stops Grafana asking for finer resolution than Prometheus stores.</li>
 <li><strong>Exemplars</strong>: toggle on to overlay trace-linked points on latency graphs (needs exemplar storage + a trace data source).</li>
 </ul>
+<pre># query editor fields:
+Legend format:  {{method}} {{status}}        # -> "GET 200", "POST 500" per line
+Format:         Heatmap                        # for *_bucket series
+Min step:       15s                            # never request finer than the scrape
+# without a legend format you get the full {__name__="...", job="...", ...} label set</pre>
 
 <h3>Query-type variables</h3>
 <p><code>label_values(metric, label)</code>, <code>label_values(label)</code>,
 <code>metrics(regex)</code>, <code>query_result(&lt;promql&gt;)</code> for a variable whose
 values come from an arbitrary expression.</p>
+<pre>label_values(node_cpu_seconds_total, instance)   # distinct values of one label
+label_values(job)                                 # values of a label across all metrics
+metrics(node_.*)                                  # metric names matching a regex
+query_result(topk(5, sum by (pod)(rate(err[5m])))) # values built from a full expression
+#   -> then use  regex  /pod="([^"]+)"/  to extract just the pod name for the dropdown</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -27183,6 +27356,14 @@ Sources of divergence: (1) <strong>Different evaluation model</strong> &mdash; a
 <li>This makes ingestion cheap and storage cheap, but content search is a <strong>brute-force scan</strong> of the matching streams &mdash; so you must first narrow by labels, then filter.</li>
 <li><strong>Keep label cardinality low.</strong> High-cardinality labels (user id, request id, path) create millions of tiny streams and destroy performance &mdash; put those in the line, extract at query time.</li>
 </ul>
+<pre># a stream = one unique combination of INDEXED labels
+{job="api", namespace="prod", level="error"}   -> one stream, all its lines appended
+
+# BAD: user_id as a label -> ~1 stream per user -> millions of streams
+{job="api", user_id="12345"}
+
+# GOOD: user_id stays in the line; pull it out only when querying
+{job="api"} | json | user_id="12345"</pre>
 
 <h3>LogQL: two query kinds</h3>
 <table>
@@ -27190,6 +27371,12 @@ Sources of divergence: (1) <strong>Different evaluation model</strong> &mdash; a
 <tr><td>Returns log lines</td><td>Returns a time series computed from logs</td></tr>
 <tr><td><code>{app="api"} |= "error"</code></td><td><code>sum(rate({app="api"} |= "error" [$__interval]))</code></td></tr>
 </table>
+<pre># LOG query -> raw lines, for a Logs panel / Explore
+{app="api", level="error"} |= "payment" | json | line_format "{{.msg}}"
+
+# METRIC query -> a number over time, for a Time series / Stat panel / alert
+sum(rate({app="api", level="error"} |= "payment" [5m]))
+# same selector + filters; wrapping it in rate()/count_over_time() makes it a series</pre>
 
 <h3>Log query pipeline</h3>
 <pre>{namespace="prod", app="checkout"}          # 1. stream selector (indexed labels, required)
@@ -27222,6 +27409,15 @@ extracted field so <code>sum_over_time</code>, <code>avg_over_time</code>,
 <li><strong>Derived fields</strong> (data source config): regex on the line to extract e.g. a trace ID and turn it into a link to Tempo &mdash; the basis of logs&rarr;traces navigation.</li>
 <li><strong>Loki as an alert source</strong>: metric LogQL queries can back Grafana-managed alert rules ("more than N errors in 5m").</li>
 </ul>
+<pre># Derived field (Loki data source config) -> logs-to-traces link
+name:          traceID
+matcher regex: (?:trace_id|traceID)=(\w+)
+url:           ${__value.raw}
+internalLink:  Tempo                # clicking the extracted id opens the trace
+
+# alert rule backed by a metric LogQL query
+expr:  sum(count_over_time({app="checkout", level="error"} [5m])) > 20
+for:   10m</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -27302,6 +27498,16 @@ It operates on the returned data frames: rename fields, filter rows, join two qu
 compute a new column, pivot, reduce to a single value. They run <strong>in order</strong>, each
 consuming the previous one's output. Debug with the "Table view" toggle and the
 transformation's own preview.</p>
+<pre>// pipeline runs top-to-bottom, each stage eats the previous output
+"transformations": [
+  { "id": "joinByField",  "options": { "field": "time", "mode": "outer" } },
+  { "id": "calculateField", "options": {                 // new column = A / B
+      "mode": "binary",
+      "binary": { "left": "errors", "operator": "/", "right": "total" },
+      "alias": "error_ratio" } },
+  { "id": "organize", "options": { "excludeByName": { "errors": true, "total": true } } }
+]
+// query stays untouched; toggle "Table view" to see the frame after each stage</pre>
 
 <h3>The transformations you'll actually use</h3>
 <table>
@@ -27317,6 +27523,15 @@ transformation's own preview.</p>
 <tr><td><strong>Config from query results</strong></td><td>Use one query to set another's min/max/thresholds/display name dynamically (e.g. pull the SLO target and use it as the gauge max).</td></tr>
 <tr><td><strong>Partition by values</strong></td><td>Split one frame into several series by a field's values.</td></tr>
 </table>
+<pre># Goal: a Table of "pod | cpu | mem | restarts", one row per pod, from 3 queries
+A: sum by (pod)(rate(container_cpu_seconds_total[5m]))
+B: sum by (pod)(container_memory_working_set_bytes)
+C: sum by (pod)(kube_pod_container_status_restarts_total)
+
+transforms:
+  1. Join by field: pod                 # A+B+C -> one wide table keyed by pod
+  2. Organize fields: rename A->cpu, B->mem, C->restarts
+  3. Filter data by values: mem > 0     # drop empty rows</pre>
 
 <h3>Mixed data source</h3>
 <ul>
@@ -27324,6 +27539,14 @@ transformation's own preview.</p>
 <li>Combine with <strong>Join by field</strong> on <code>time</code> and <strong>Add field from calculation</strong> to divide a metric from source A by a metric from source B.</li>
 <li>Alignment matters: the two sources must produce points on comparable timestamps; use "Join" (outer) and be aware of null handling.</li>
 </ul>
+<pre># panel datasource: -- Mixed --   (each row picks its own)
+A  [Prometheus] sum(rate(app_requests_total[5m]))
+B  [CloudWatch] ALBRequestCountPerTarget        # AWS-side count
+
+transforms:
+  1. Join by field: time            # align both series on the timestamp
+  2. Add field from calculation: A / B  ->  "internal_vs_edge_ratio"
+# only works if both emit points at comparable steps; outer join + null-as-zero</pre>
 
 <h3>Gotchas</h3>
 <ul>
@@ -27332,6 +27555,12 @@ transformation's own preview.</p>
 <li>"Add field from calculation &rarr; Binary operation" needs the two fields in the <em>same</em> frame &mdash; usually you must Join first.</li>
 <li>Alerting evaluates <strong>queries + expressions</strong>, not panel transformations &mdash; so a ratio built only via a transformation can't be alerted on; rebuild it as a query/expression.</li>
 </ul>
+<pre># WON'T alert: ratio exists only as a panel transformation
+panel: A=errors, B=total, transform: A/B -> error_ratio    # invisible to alerting
+
+# WILL alert: rebuild the ratio in the query (or a Grafana "Math" expression)
+expr: sum(rate(errors_total[5m])) / sum(rate(requests_total[5m])) > 0.05
+# order also bites: Filter BEFORE Group; Organize/rename AFTER Join</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -27430,12 +27659,32 @@ Causes: (1) <strong>Timestamp misalignment</strong> &mdash; Prometheus emits poi
 <tr><td><strong>Contact point</strong></td><td>Where to send: email, Slack, PagerDuty, Opsgenie, webhook, OnCall, &hellip; with a message template.</td></tr>
 <tr><td><strong>Silence</strong></td><td>Label-matcher-based suppression for a time window. <strong>Mute timing</strong> = recurring schedule (e.g. weekends).</td></tr>
 </table>
+<pre># one rule, evaluated by series -> one alert INSTANCE per dimension
+expr: sum by (service)(rate(http_5xx[5m])) / sum by (service)(rate(http_total[5m])) > 0.05
+#   -> instance {service="checkout"}  FIRING
+#   -> instance {service="search"}    NORMAL
+# each instance carries labels (service=..., + rule labels like severity="page")
+# labels route + group;  annotations (summary/runbook_url) are display-only</pre>
 
 <h3>Rule types</h3>
 <ul>
 <li><strong>Grafana-managed</strong> &mdash; evaluated by Grafana; can use <em>any</em> data source and multi-step server-side expressions (Query &rarr; Reduce &rarr; Math &rarr; Threshold). State stored in Grafana's DB.</li>
 <li><strong>Data-source-managed</strong> (Mimir/Loki/Prometheus recording &amp; alerting rules) &mdash; Grafana edits rules that live and evaluate in that system's ruler. Single data source, PromQL/LogQL only, but scales with the backend and is the same rules your infra team manages as code.</li>
 </ul>
+<pre># Grafana-managed: multi-source, multi-step (Query -> Reduce -> Math), state in Grafana DB
+A [Loki]        count_over_time({app="api",level="error"}[5m])
+B [Prometheus]  sum(rate(http_requests_total{app="api"}[5m]))
+C [Math]        $A / $B > 0.01            # ratio across two different backends
+
+# Data-source-managed: a plain Prometheus rule file, evaluated by the ruler
+groups:
+  - name: api
+    rules:
+      - alert: HighErrorRate
+        expr: sum(rate(http_5xx[5m])) / sum(rate(http_total[5m])) > 0.05
+        for: 5m
+        labels:   { severity: page }
+        annotations: { runbook_url: "https://wiki/rb/api-5xx" }</pre>
 
 <h3>Rule anatomy (Grafana-managed)</h3>
 <pre>A: query   sum by (service) (rate(http_requests_total{status=~"5.."}[5m]))
@@ -27454,6 +27703,17 @@ with a configurable behaviour (treat as OK / Alerting / keep last).</p>
 <li><strong>Group by</strong> labels (e.g. <code>alertname</code>, <code>cluster</code>) &rarr; one notification per group. <strong>Group wait</strong> (buffer new group), <strong>group interval</strong> (batch updates), <strong>repeat interval</strong> (re-notify still-firing).</li>
 <li>Default policy is the catch-all root; add child policies per team/severity.</li>
 </ul>
+<pre># notification policy tree (first match wins unless continue: true)
+root:  group_by: [alertname, cluster]
+       receiver: slack-alerts
+       routes:
+         - matchers: ['severity = page']
+           receiver: pagerduty
+           group_wait: 30s          # buffer a new group before first send
+           group_interval: 5m       # batch further changes to that group
+           repeat_interval: 4h      # re-page if still firing
+         - matchers: ['team = data']
+           receiver: slack-data</pre>
 
 <h3>Good practice</h3>
 <ul>
@@ -27463,6 +27723,18 @@ with a configurable behaviour (treat as OK / Alerting / keep last).</p>
 <li>Decide NoData behaviour deliberately &mdash; "NoData = Alerting" catches dead exporters but is noisy on flaky scrapes.</li>
 <li>Manage rules as code (provisioning / Terraform / the export YAML) for anything important.</li>
 </ul>
+<pre># GOOD: symptom-based, multi-dimensional, actionable annotations
+- alert: SLOBurnFast
+  expr: (1 - slo:availability:ratio_rate5m{service=~".+"}) > (14.4 * 0.001)  # 2% budget/1h
+  for: 5m
+  labels: { severity: page }
+  annotations:
+    summary: "{{ $labels.service }} burning error budget fast"
+    runbook_url: "https://wiki/rb/{{ $labels.service }}"
+
+# BAD: cause-based, per-host, no context -> pager noise
+- alert: CPUHigh
+  expr: node_cpu_usage > 0.8            # not user-visible; fires nightly on batch jobs</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -27552,6 +27824,18 @@ Grafana's unified alerting embeds a fork of Prometheus <strong>Alertmanager</str
 <li>Provisioned objects are <strong>read-only in the UI</strong> by default (<code>allowUiUpdates: false</code>) &mdash; the file is the source of truth; a delete from file removes the object (<code>disableDeletion</code> to guard).</li>
 <li>Secrets: use <code>secureJsonData</code> + env var interpolation (<code>$&#123;PROM_TOKEN&#125;</code>), never commit them.</li>
 </ul>
+<pre># conf/provisioning/dashboards/team.yaml &mdash; a PROVIDER, not the dashboards
+apiVersion: 1
+providers:
+  - name: team-dashboards
+    folder: "Team A"
+    type: file
+    disableDeletion: true          # a missing file won't delete the dashboard
+    allowUiUpdates: false          # UI edits are reverted on next reload
+    updateIntervalSeconds: 30
+    options:
+      path: /var/lib/grafana/dashboards/team-a
+      foldersFromFilesStructure: true</pre>
 
 <h3>The dashboard JSON model</h3>
 <ul>
@@ -27560,6 +27844,16 @@ Grafana's unified alerting embeds a fork of Prometheus <strong>Alertmanager</str
 <li><code>id</code> is instance-local; <code>uid</code> is the portable identity &mdash; keep it stable in Git.</li>
 <li>Bumping Grafana can bump <code>schemaVersion</code> and silently migrate the JSON &mdash; commit the migrated form.</li>
 </ul>
+<pre># "Export for sharing externally" parameterises the data sources:
+{
+  "__inputs": [
+    { "name": "DS_PROMETHEUS", "type": "datasource", "pluginId": "prometheus" }
+  ],
+  "__requires": [ { "type": "grafana", "id": "grafana", "version": "10.4.0" } ],
+  "uid": "api-overview",             // keep stable in Git
+  "schemaVersion": 39,              // bumped by upgrades -> commit the migrated file
+  "panels": [ { "datasource": "${DS_PROMETHEUS}", ... } ]
+}</pre>
 
 <h3>Ways to manage dashboards as code</h3>
 <table>
@@ -27570,11 +27864,28 @@ Grafana's unified alerting embeds a fork of Prometheus <strong>Alertmanager</str
 <tr><td><strong>Grizzly</strong></td><td>kubectl-style CLI to push dashboards/datasources/rules from Jsonnet/YAML.</td></tr>
 <tr><td><strong>Git Sync / GitOps</strong> (newer Grafana)</td><td>Grafana watches a Git repo of resources directly.</td></tr>
 </table>
+<pre># grafonnet (Jsonnet): one function, many similar dashboards, no copy-paste JSON
+local g = import 'g.libsonnet';
+g.dashboard.new('API - ' + svc)
++ g.dashboard.withPanels([
+    g.panel.timeSeries.new('Req/s')
+    + g.panel.timeSeries.queryOptions.withTargets([
+        prom.new('$ds', 'sum(rate(http_requests_total{service="%s"}[5m]))' % svc) ]),
+  ])
+
+# Terraform: state-managed, fits an IaC pipeline
+resource "grafana_dashboard" "api" { config_json = file("dashboards/api.json") }</pre>
 
 <h3>Library panels &amp; reuse</h3>
 <p><strong>Library panels</strong> are shared panel definitions referenced by many dashboards &mdash;
 edit once, propagates. In code, factor common panels/rows into Jsonnet functions or Terraform
 modules. Keep a house "dashboard library" (RED row, USE row, SLO header).</p>
+<pre># library panel: stored once, referenced by libraryPanel.uid from many dashboards
+"panels": [
+  { "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+    "libraryPanel": { "uid": "red-row-latency", "name": "RED - Latency p95" } }
+]
+# edit the library panel once -> every dashboard that embeds it updates</pre>
 
 <h3>CI for dashboards</h3>
 <ul>
@@ -27582,6 +27893,15 @@ modules. Keep a house "dashboard library" (RED row, USE row, SLO header).</p>
 <li>Validate PromQL/LogQL with <code>promtool</code> / <code>cortextool</code>.</li>
 <li>Deploy on merge; provisioning picks up on the reload interval or a restart/API reload.</li>
 </ul>
+<pre># CI pipeline for a dashboards repo
+- run: jsonnet -m out/ dashboards.jsonnet                 # render
+- run: |                                                   # lint
+    for f in out/*.json; do
+      jq -e '.uid and .schemaVersion' "$f" &gt;/dev/null || exit 1
+      ! grep -q '"datasource": *"[A-Za-z]' "$f"            # no hard-coded ds names
+    done
+- run: promtool check rules rules/*.yaml                   # validate PromQL
+- run: curl -X POST $GRAFANA/api/admin/provisioning/dashboards/reload   # on merge</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -27665,6 +27985,16 @@ Grafana migrates dashboard JSON to the current <code>schemaVersion</code> on loa
 <li><strong>Anonymous access</strong> for public read-only dashboards (<code>auth.anonymous</code>, with an org + role).</li>
 <li><strong>Service accounts</strong> (replaced API keys): non-human identities with a role and tokens, for Terraform / CI / external callers.</li>
 </ul>
+<pre># grafana.ini: generic OIDC + map an IdP claim to the Grafana role
+[auth.generic_oauth]
+enabled = true
+auth_url   = https://idp.corp/authorize
+token_url  = https://idp.corp/token
+# JMESPath over the token: "grafana-admins" group -> Admin, else Viewer
+role_attribute_path = contains(groups[*], 'grafana-admins') &amp;&amp; 'Admin' || 'Viewer'
+
+[auth]
+disable_login_form = true          # force SSO once it works</pre>
 
 <h3>Orgs vs the rest</h3>
 <p>An <strong>Organization</strong> is a hard tenancy boundary: separate users' role, dashboards,
@@ -27672,6 +28002,13 @@ data sources, teams, alerting. A user can belong to multiple orgs with different
 Grafana now steers you toward <strong>one org + folders + RBAC + teams</strong> instead;
 multi-org is clunky (data sources must be recreated per org, no cross-org dashboards) and
 semi-legacy. Use multi-org only for genuinely separate tenants.</p>
+<pre># multi-org pain: a data source exists only inside ONE org
+GET /api/datasources            # returns only the CURRENT org's sources
+POST /api/user/using/3          # switch org, then re-create every data source here
+
+# preferred model instead: one org, isolate with folders + team permissions
+POST /api/folders  {"title": "Team A", "uid": "team-a"}
+POST /api/folders/team-a/permissions  {"items":[{"teamId":7,"permission":2}]}  # 2 = Edit</pre>
 
 <h3>Basic roles (per org)</h3>
 <table>
@@ -27681,6 +28018,13 @@ semi-legacy. Use multi-org only for genuinely separate tenants.</p>
 <tr><td><strong>Admin</strong> (org)</td><td>Everything in the org: users, data sources, plugins, org settings.</td></tr>
 <tr><td><strong>Grafana Server Admin</strong></td><td>Cross-org superuser: manage orgs and all users. Separate from org Admin.</td></tr>
 </table>
+<pre>Viewer   -&gt; GET  /api/dashboards/uid/x           200
+         -&gt; POST /api/dashboards/db              403   (no edit)
+Editor   -&gt; POST /api/dashboards/db              200
+         -&gt; POST /api/datasources               403   (not infra)
+Admin    -&gt; POST /api/datasources               200   (within this org)
+         -&gt; POST /api/orgs                       403   (that's Server Admin only)
+# Server Admin lives at /admin, is a per-USER flag, and is org-independent</pre>
 
 <h3>Folders, dashboards &amp; permission inheritance</h3>
 <ul>
@@ -27689,12 +28033,25 @@ semi-legacy. Use multi-org only for genuinely separate tenants.</p>
 <li>Pattern: an "Editor" org role for most, but folder permissions that make team A Editor only on its folder and Viewer elsewhere. Or default everyone to Viewer and grant Edit per folder.</li>
 <li>Alert rules and library panels are folder-scoped too.</li>
 </ul>
+<pre># folder subtree: set once on the folder, inherited by every dashboard/alert inside
+Folder "Payments"        Team Payments = Edit,  Org role Viewer = View
+  |- dash "Txn latency"  (inherits: Payments Edit, others View)
+  |- Folder "Payments/Reconciliation"
+       |- dash "Ledger"  (inherits down; add "Team Finance = View" here to widen)
+# override by setting an explicit permission on the child dashboard/subfolder</pre>
 
 <h3>Teams &amp; team sync</h3>
 <p><strong>Teams</strong> group users so you assign folder/datasource permissions once.
 <strong>Team sync</strong> (Enterprise/Cloud) maps IdP groups to Grafana teams automatically on
 login, so membership follows your directory. Teams can also carry default preferences (home
 dashboard, theme).</p>
+<pre># map IdP group -> Grafana team once; membership then follows the directory
+[auth.saml]
+[[auth.saml.group_mappings]]     # Enterprise team sync
+group_dn  = "cn=payments,ou=groups,dc=corp"
+org_id    = 1
+grafana_team_id = 7
+# on every login Grafana adds/removes the user from team 7 to match the IdP</pre>
 
 <h3>Fine-grained RBAC (Enterprise/Cloud)</h3>
 <ul>
@@ -27702,11 +28059,28 @@ dashboard, theme).</p>
 <li>Built-in fixed roles (e.g. "Data source writer") + custom roles; assign to basic roles, teams, service accounts, or users.</li>
 <li>Lets you say "this team can query datasource X but not edit it", "these people can manage alert rules but not dashboards".</li>
 </ul>
+<pre># custom role: "can manage alert rules, cannot touch dashboards"
+POST /api/access-control/roles
+{
+  "name": "custom:alert-manager",
+  "permissions": [
+    { "action": "alert.rules:read" },
+    { "action": "alert.rules:write", "scope": "folders:uid:payments" }
+  ]
+}
+POST /api/access-control/teams/7/roles  { "roleUid": "custom:alert-manager" }</pre>
 
 <h3>Data source permissions</h3>
 <p>By default any org user can query any data source. Enterprise data source permissions
 restrict <em>query</em> access per team/role &mdash; important for multi-tenant setups where a
 shared Prometheus is scoped per team via headers/label enforcement.</p>
+<pre># lock a data source so only one team can query it
+POST /api/datasources/uid/prom-payments/permissions
+{ "permission": "Query", "teamId": 7 }        # everyone else: 403 on query
+
+# multi-tenant Prometheus: Grafana adds a tenant header per team
+#   secureJsonData: { httpHeaderValue1: "payments" }
+#   httpHeaderName1: "X-Scope-OrgID"          -> Mimir returns only that tenant's data</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -27790,6 +28164,12 @@ On a dashboard load Grafana checks, roughly in this order: (1) <strong>Authn</st
 <li>Data-source-specific helpers: log volume histogram + Logs for Loki; the metrics browser for Prometheus; trace view for Tempo; "Add to dashboard" to promote a query to a panel.</li>
 <li>Requires the user to have Explore permission (Editor role, or `viewers_can_edit`/RBAC).</li>
 </ul>
+<pre># Explore round-trip: iterate a query, then promote the keeper
+1. {app="checkout"} |= "timeout"              # too noisy
+2. {app="checkout"} |= "timeout" | json | duration &gt; 2s   # narrowed
+3. sum(count_over_time({app="checkout"} |= "timeout" [5m]))  # now a metric
+4. "Add to dashboard" -> becomes a Time series panel on a new/existing dashboard
+# split view: metrics query left, the same time range of logs right</pre>
 
 <h3>Built-in cross-signal jumps</h3>
 <table>
@@ -27801,6 +28181,15 @@ On a dashboard load Grafana checks, roughly in this order: (1) <strong>Authn</st
 <tr><td><strong>Data links</strong></td><td>Panel/field links templated with values &amp; labels &rarr; another dashboard / Explore / external tool.</td></tr>
 <tr><td><strong>Correlations</strong></td><td>Instance-level config: define "from results of query on source A, build a link to a query on source B" using field values as variables &mdash; adds a link on matching results across dashboards and Explore, no per-panel setup.</td></tr>
 </table>
+<pre># Tempo data source config: span -> logs for the same pod & time
+tracesToLogsV2:
+  datasourceUid: loki
+  tags: [{ key: 'pod', value: 'pod' }]
+  query: '{pod="${__span.tags.pod}"} |= "${__span.traceId}"'
+
+# Correlation (instance-wide): any result with a "service" field gains a link
+source: prometheus     target: loki
+target query: '{service="${service}"} | logfmt | level="error"'</pre>
 
 <h3>Dashboard design principles</h3>
 <ul>
@@ -27813,11 +28202,24 @@ On a dashboard load Grafana checks, roughly in this order: (1) <strong>Authn</st
 <li><strong>Performance</strong>: fewer panels, sane refresh, <code>$__rate_interval</code>, recording rules for heavy queries, collapse+lazy-load detail rows.</li>
 <li><strong>Text panel</strong> at the top: what this dashboard is for, who owns it, links to runbook &amp; related dashboards.</li>
 </ul>
+<pre># top-down layout, encoded in gridPos (y grows downward, 24-col wide)
+row  "Health"      y=0   : 4x Stat (SLO, error %, p95, RPS)  thresholds green/red
+row  "Traffic"     y=8   : Time series req/s by route, errors by code
+row  "Dependencies" y=16 (collapsed:true) : DB, cache, queue depth   # lazy-loaded
+# every service dashboard uses this SAME shape (templated) -> muscle memory</pre>
 
 <h3>Annotations</h3>
 <p>Event overlays on time axes: manual (region-select &rarr; "add annotation"), from a query
 (<code>ALERTS</code>, a deploy metric, a CI webhook writing to the Grafana annotations API),
 or built-in "Alerting" annotations. Tag them and filter by tag.</p>
+<pre># CI writes a deploy marker via the annotations API
+curl -XPOST $GRAFANA/api/annotations -H "Authorization: Bearer $SA_TOKEN" -d '{
+  "dashboardUID": "api-overview",
+  "time": '$(date +%s000)',
+  "tags": ["deploy", "api"],
+  "text": "deploy v2.4.1 ('$GIT_SHA')"
+}'
+# dashboard annotation query:  tags = "deploy"   -> vertical lines on every panel</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
