@@ -2564,6 +2564,500 @@ The C standard only guarantees that all-bits-zero is a valid representation for 
 </section>
 <!-- /TOPIC:c:stdlib-fileio -->
 
+<!-- TOPIC:c:source-to-exe -->
+<section class="view topic" id="v-c-source-to-exe" data-skill="c" data-title="From Source to Executable: the Toolchain">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>From Source to Executable: the Toolchain</h1>
+<p class="subtitle">What actually happens between <code>gcc hello.c</code> and a process running <code>main</code>.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The whole pipeline at a glance</h3>
+<p>&ldquo;Compiling&rdquo; is really <strong>four programs</strong> run in sequence, then a fifth step by the
+OS at run time. Each stage consumes the previous stage's output and produces a lower-level form.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 250" role="img" aria-labelledby="d-s2e-pipe-t">
+<title id="d-s2e-pipe-t">Source to executable: five stages and their artifacts</title>
+<!-- row 1: build-time -->
+<rect class="d-box-soft" x="12" y="24" width="86" height="40" rx="6"/>
+<text class="d-t-b" x="55" y="42" text-anchor="middle">hello.c</text>
+<text class="d-t-sm" x="55" y="57" text-anchor="middle">+ headers</text>
+<rect class="d-box" x="128" y="24" width="96" height="40" rx="6"/>
+<text class="d-t-b" x="176" y="42" text-anchor="middle">preprocess</text>
+<text class="d-t-sm" x="176" y="57" text-anchor="middle">cpp &rarr; .i</text>
+<rect class="d-box" x="254" y="24" width="96" height="40" rx="6"/>
+<text class="d-t-b" x="302" y="42" text-anchor="middle">compile</text>
+<text class="d-t-sm" x="302" y="57" text-anchor="middle">cc1 &rarr; .s</text>
+<rect class="d-box" x="380" y="24" width="96" height="40" rx="6"/>
+<text class="d-t-b" x="428" y="42" text-anchor="middle">assemble</text>
+<text class="d-t-sm" x="428" y="57" text-anchor="middle">as &rarr; .o</text>
+<path class="d-line" d="M98 44 L126 44" marker-end="url(#s2e-ah)"/>
+<path class="d-line" d="M224 44 L252 44" marker-end="url(#s2e-ah)"/>
+<path class="d-line" d="M350 44 L378 44" marker-end="url(#s2e-ah)"/>
+<defs><marker id="s2e-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<!-- down to link -->
+<path class="d-line" d="M428 64 C 428 84, 300 84, 300 100" marker-end="url(#s2e-ah)"/>
+<!-- row 2 -->
+<rect class="d-box" x="200" y="100" width="200" height="40" rx="6"/>
+<text class="d-t-b" x="300" y="118" text-anchor="middle">link  (ld)</text>
+<text class="d-t-sm" x="300" y="133" text-anchor="middle">+ other .o, .a, .so &rarr; a.out (ELF)</text>
+<path class="d-line" d="M300 140 L300 160" marker-end="url(#s2e-ah)"/>
+<rect class="d-box-soft" x="220" y="160" width="160" height="34" rx="6"/>
+<text class="d-t-b" x="300" y="182" text-anchor="middle">./a.out</text>
+<path class="d-line" d="M300 194 L300 214" marker-end="url(#s2e-ah)"/>
+<!-- row 3: runtime -->
+<rect class="d-box-alt" x="140" y="214" width="320" height="30" rx="6"/>
+<text class="d-t-sm" x="300" y="233" text-anchor="middle">OS: execve &rarr; loader maps segments &rarr; ld.so &rarr; _start &rarr; main</text>
+<text class="d-t-sm" x="12" y="88">stage 1&ndash;4 = build time</text>
+<text class="d-t-sm" x="12" y="230">stage 5 = run</text>
+<text class="d-t-sm" x="12" y="246">time</text>
+</svg>
+<figcaption><code>gcc -save-temps hello.c</code> keeps every intermediate (<code>.i</code>, <code>.s</code>, <code>.o</code>). <code>gcc -E</code> / <code>-S</code> / <code>-c</code> stop after stage 1 / 2 / 3.</figcaption>
+</figure>
+
+<h3>Stage 1 &mdash; Preprocess (<code>.c</code> &rarr; <code>.i</code>)</h3>
+<p>Pure text manipulation: <code>#include</code> pastes headers, <code>#define</code> macros are expanded,
+<code>#if</code>/<code>#ifdef</code> branches are resolved, comments are stripped, and <code>#line</code>
+markers are inserted. Output is one big self-contained <strong>translation unit</strong> of C with no
+directives left. (Covered in depth in the Preprocessor topic.)</p>
+
+<h3>Stage 2 &mdash; Compile (<code>.i</code> &rarr; <code>.s</code>)</h3>
+<ul>
+<li><strong>Front end</strong>: lexing &rarr; parsing &rarr; semantic analysis (type checking, name lookup) &rarr; an <strong>intermediate representation</strong> (GCC GIMPLE, LLVM IR).</li>
+<li><strong>Optimiser</strong>: works on the IR &mdash; constant folding, dead-code elimination, inlining, loop transforms, register allocation planning. This is where <code>-O0</code>&hellip;<code>-O3</code>/<code>-Os</code> act, and where the compiler exploits the absence of undefined behaviour.</li>
+<li><strong>Back end</strong>: instruction selection + register allocation + scheduling &rarr; target <strong>assembly</strong> text for one CPU/ABI.</li>
+</ul>
+
+<h3>Stage 3 &mdash; Assemble (<code>.s</code> &rarr; <code>.o</code>)</h3>
+<p>The assembler turns mnemonics into machine-code bytes and writes a <strong>relocatable object
+file</strong> (ELF on Linux). It is <em>not</em> runnable: addresses of anything defined in another
+file, and even some addresses within this file, are left as <strong>relocations</strong> to be
+patched later.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 214" role="img" aria-labelledby="d-s2e-obj-t">
+<title id="d-s2e-obj-t">Inside a relocatable object file</title>
+<rect class="d-box" x="14" y="20" width="200" height="176" rx="6"/>
+<text class="d-t-b" x="24" y="38">hello.o  (ELF, relocatable)</text>
+<rect class="d-box-alt" x="26" y="46" width="176" height="22"/><text class="d-t-sm" x="34" y="61">.text  &mdash; machine code</text>
+<rect class="d-box-alt" x="26" y="70" width="176" height="22"/><text class="d-t-sm" x="34" y="85">.rodata / .data / .bss</text>
+<rect class="d-box-alt" x="26" y="94" width="176" height="22"/><text class="d-t-sm" x="34" y="109">.symtab &mdash; symbol table</text>
+<rect class="d-box-alt" x="26" y="118" width="176" height="22"/><text class="d-t-sm" x="34" y="133">.rela.text &mdash; relocations</text>
+<rect class="d-box-alt" x="26" y="142" width="176" height="22"/><text class="d-t-sm" x="34" y="157">.debug_* (with -g)</text>
+<text class="d-t-sm" x="26" y="182">no fixed load address yet</text>
+<!-- symbol detail -->
+<rect class="d-box-soft" x="250" y="20" width="276" height="86" rx="6"/>
+<text class="d-t-b" x="260" y="38">.symtab entries</text>
+<text class="d-t-sm" x="260" y="56"><tspan class="d-t-mono">main</tspan> &mdash; DEFINED here, offset 0x0</text>
+<text class="d-t-sm" x="260" y="74"><tspan class="d-t-mono">msg</tspan> &mdash; DEFINED here, .rodata</text>
+<text class="d-t-accent" x="260" y="92"><tspan class="d-t-mono">printf</tspan> &mdash; UNDEFINED (needs libc)</text>
+<rect class="d-box-soft" x="250" y="116" width="276" height="80" rx="6"/>
+<text class="d-t-b" x="260" y="134">.rela.text entries</text>
+<text class="d-t-sm" x="260" y="152">at .text+0x11: put address of <tspan class="d-t-mono">msg</tspan></text>
+<text class="d-t-sm" x="260" y="170">at .text+0x16: call <tspan class="d-t-mono">printf</tspan> (fix later)</text>
+<text class="d-t-sm" x="260" y="188">= &ldquo;holes&rdquo; the linker will fill</text>
+</svg>
+<figcaption>Every <code>.o</code> carries its code/data plus a list of symbols it <em>defines</em>, symbols it <em>needs</em>, and relocation records saying where addresses must be patched.</figcaption>
+</figure>
+
+<h3>Stage 4 &mdash; Link (<code>.o</code> + libraries &rarr; executable)</h3>
+<p>The linker does three jobs:</p>
+<ol>
+<li><strong>Section merging / layout</strong> &mdash; concatenate all <code>.text</code> from every input into one, all <code>.data</code> into one, etc., and assign each a final virtual address.</li>
+<li><strong>Symbol resolution</strong> &mdash; for every <em>undefined</em> symbol, find the one input that <em>defines</em> it. Missing &rarr; <code>undefined reference</code>. Two definitions &rarr; <code>multiple definition</code>.</li>
+<li><strong>Relocation</strong> &mdash; now that final addresses are known, walk the relocation records and patch the code/data.</li>
+</ol>
+<figure class="diagram">
+<svg viewBox="0 0 540 176" role="img" aria-labelledby="d-s2e-link-t">
+<title id="d-s2e-link-t">The linker resolves undefined symbols against definitions</title>
+<rect class="d-box" x="14" y="26" width="120" height="52" rx="6"/>
+<text class="d-t-sm" x="24" y="44"><tspan class="d-t-mono">main.o</tspan></text>
+<text class="d-t-sm" x="24" y="60">defines main</text>
+<text class="d-t-accent" x="24" y="74">needs: helper, printf</text>
+<rect class="d-box" x="14" y="94" width="120" height="40" rx="6"/>
+<text class="d-t-sm" x="24" y="112"><tspan class="d-t-mono">util.o</tspan></text>
+<text class="d-t-sm" x="24" y="126">defines helper</text>
+<rect class="d-box-alt" x="14" y="146" width="120" height="24" rx="6"/>
+<text class="d-t-sm" x="24" y="163"><tspan class="d-t-mono">libc</tspan> defines printf</text>
+<rect class="d-box-soft" x="220" y="60" width="110" height="56" rx="6"/>
+<text class="d-t-b" x="275" y="84" text-anchor="middle">ld</text>
+<text class="d-t-sm" x="275" y="102" text-anchor="middle">match &amp; patch</text>
+<path class="d-line" d="M134 52 C 180 52, 190 78, 218 82" marker-end="url(#s2e-ah2)"/>
+<path class="d-line" d="M134 114 C 180 114, 190 96, 218 92" marker-end="url(#s2e-ah2)"/>
+<path class="d-line" d="M134 158 C 180 158, 195 105, 218 100" marker-end="url(#s2e-ah2)"/>
+<defs><marker id="s2e-ah2" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<path class="d-line" d="M330 88 L360 88" marker-end="url(#s2e-ah2)"/>
+<rect class="d-box-soft" x="364" y="56" width="160" height="64" rx="6"/>
+<text class="d-t-b" x="444" y="80" text-anchor="middle">a.out (ELF)</text>
+<text class="d-t-sm" x="444" y="98" text-anchor="middle">merged .text/.data,</text>
+<text class="d-t-sm" x="444" y="112" text-anchor="middle">addresses fixed</text>
+</svg>
+<figcaption>Static libraries (<code>.a</code>) are just archives of <code>.o</code> files; the linker pulls in only the members that satisfy an unresolved symbol. Link order matters for <code>.a</code>.</figcaption>
+</figure>
+
+<h3>Static vs dynamic linking</h3>
+<table>
+<tr><th></th><th>Static (<code>.a</code>, <code>-static</code>)</th><th>Dynamic (<code>.so</code>, default)</th></tr>
+<tr><td>When resolved</td><td>At link time &mdash; library code copied into <code>a.out</code></td><td>At <em>load</em> time by <code>ld.so</code></td></tr>
+<tr><td>Executable size</td><td>Large (self-contained)</td><td>Small</td></tr>
+<tr><td>Memory</td><td>Each process has its own copy</td><td>One <code>libc.so</code> mapped, shared read-only across all processes</td></tr>
+<tr><td>Updates</td><td>Must relink to pick up a library fix</td><td>Replace the <code>.so</code>, all programs benefit</td></tr>
+<tr><td>Startup</td><td>Fast</td><td>Slight cost: <code>ld.so</code> resolves symbols &amp; relocations</td></tr>
+</table>
+<p>Dynamic executables are usually <strong>position-independent</strong> (PIE / <code>-fPIC</code>): the
+code can be loaded at any address. Calls to functions in another <code>.so</code> go through the
+<strong>PLT</strong> (procedure linkage table), whose entries are resolved on first call ("lazy
+binding") by updating the <strong>GOT</strong> (global offset table). <code>LD_BIND_NOW=1</code> forces
+eager resolution; <code>ldd a.out</code> lists the needed <code>.so</code>s; <code>LD_LIBRARY_PATH</code> /
+<code>rpath</code> / <code>ldconfig</code> control the search.</p>
+
+<h3>Stage 5 &mdash; Load &amp; run</h3>
+<p><code>execve("./a.out", argv, envp)</code> makes the kernel: read the ELF header, create a fresh
+address space, <code>mmap</code> the <code>PT_LOAD</code> segments (<code>.text</code> r-x, <code>.rodata</code> r--,
+<code>.data</code>/<code>.bss</code> rw-), set up the initial stack with <code>argv</code>/<code>envp</code>/auxv,
+and jump to the ELF entry point. For a dynamic executable the entry point is the
+<strong>dynamic linker</strong> (<code>/lib64/ld-linux-x86-64.so.2</code>), which maps the needed
+shared libraries, performs relocations, then jumps to the program's real entry.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 168" role="img" aria-labelledby="d-s2e-start-t">
+<title id="d-s2e-start-t">Startup chain from the entry point to main and out again</title>
+<rect class="d-box" x="10" y="30" width="80" height="34" rx="5"/><text class="d-t-sm" x="50" y="51" text-anchor="middle">_start</text>
+<rect class="d-box" x="110" y="30" width="130" height="34" rx="5"/><text class="d-t-sm" x="175" y="46" text-anchor="middle">__libc_start_main</text>
+<text class="d-t-sm" x="175" y="59" text-anchor="middle">set up libc</text>
+<rect class="d-box" x="260" y="30" width="120" height="34" rx="5"/><text class="d-t-sm" x="320" y="46" text-anchor="middle">.init_array</text>
+<text class="d-t-sm" x="320" y="59" text-anchor="middle">constructors</text>
+<rect class="d-box-soft" x="400" y="30" width="80" height="34" rx="5"/><text class="d-t-b" x="440" y="51" text-anchor="middle">main()</text>
+<path class="d-line" d="M90 47 L108 47" marker-end="url(#s2e-ah3)"/>
+<path class="d-line" d="M240 47 L258 47" marker-end="url(#s2e-ah3)"/>
+<path class="d-line" d="M380 47 L398 47" marker-end="url(#s2e-ah3)"/>
+<defs><marker id="s2e-ah3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<path class="d-line" d="M440 64 C 440 90, 300 90, 300 104" marker-end="url(#s2e-ah3)"/>
+<rect class="d-box" x="200" y="104" width="200" height="30" rx="5"/>
+<text class="d-t-sm" x="300" y="123" text-anchor="middle">return / exit() &rarr; atexit + .fini_array</text>
+<path class="d-line" d="M200 119 C 120 119, 90 119, 60 128" marker-end="url(#s2e-ah3)"/>
+<rect class="d-box-alt" x="10" y="128" width="90" height="28" rx="5"/>
+<text class="d-t-sm" x="55" y="146" text-anchor="middle">_exit &rarr; kernel</text>
+<text class="d-t-sm" x="10" y="20">crt0/crt1 objects (crt1.o, crti.o, crtn.o) glue this together &mdash; linked in automatically.</text>
+</svg>
+<figcaption><code>_exit</code>, <code>abort()</code>, and signals bypass the <code>atexit</code>/destructor path &mdash; which is why buffered <code>stdout</code> can be lost on <code>abort</code>.</figcaption>
+</figure>
+
+<h3>Diagnostic commands</h3>
+<pre><code>gcc -save-temps -O2 hello.c   <span class="c"># keep hello.i / hello.s / hello.o</span>
+gcc -E / -S / -c              <span class="c"># stop after preprocess / compile / assemble</span>
+file a.out                    <span class="c"># ELF type: relocatable / executable / shared, PIE?</span>
+nm hello.o                    <span class="c"># symbols: T defined text, U undefined, D data, B bss</span>
+objdump -d -r hello.o         <span class="c"># disassembly + relocation entries</span>
+readelf -h -S -l a.out        <span class="c"># ELF header, sections, program (load) segments</span>
+ldd a.out                     <span class="c"># shared libraries needed</span>
+LD_DEBUG=all ./a.out          <span class="c"># trace the dynamic linker</span></code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Pipeline</strong>: preprocess (<code>.c</code>&rarr;<code>.i</code>) &rarr; compile (<code>.i</code>&rarr;<code>.s</code>) &rarr; assemble (<code>.s</code>&rarr;<code>.o</code>) &rarr; link (<code>.o</code>+libs&rarr;<code>a.out</code>) &rarr; load &amp; run.</li>
+<li><code>gcc -E</code>/<code>-S</code>/<code>-c</code> stop after 1/2/3; <code>-save-temps</code> keeps all intermediates.</li>
+<li>A <code>.o</code> is <strong>relocatable</strong>: sections + <strong>symbol table</strong> (defined / undefined) + <strong>relocation</strong> records ("patch this address later").</li>
+<li>Linker: <strong>merge sections</strong> &rarr; <strong>resolve symbols</strong> (missing = <em>undefined reference</em>, dup = <em>multiple definition</em>) &rarr; <strong>relocate</strong>.</li>
+<li>Static (<code>.a</code>): copied in, big exe, per-process copy, relink to update. Dynamic (<code>.so</code>): resolved by <code>ld.so</code> at load, small exe, one shared read-only copy, update in place.</li>
+<li>PIE/<code>-fPIC</code> code is address-independent; cross-<code>.so</code> calls go via <strong>PLT</strong>&rarr;<strong>GOT</strong> (lazy binding; <code>LD_BIND_NOW</code> = eager).</li>
+<li>Run: <code>execve</code> &rarr; kernel maps <code>PT_LOAD</code> segments &rarr; <code>ld.so</code> &rarr; <code>_start</code> &rarr; <code>__libc_start_main</code> &rarr; <code>.init_array</code> &rarr; <code>main</code> &rarr; <code>exit</code> &rarr; <code>.fini_array</code>/<code>atexit</code> &rarr; <code>_exit</code>.</li>
+<li>Inspect: <code>nm</code>, <code>objdump -dr</code>, <code>readelf -hSl</code>, <code>ldd</code>, <code>file</code>, <code>LD_DEBUG</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why do you get "undefined reference to <code>foo</code>" only at link time, not compile time?</dt>
+<dd>Each <code>.c</code> is compiled in isolation. The compiler only needs a <em>declaration</em> of <code>foo</code> to emit a call with an unresolved reference. It's the linker, seeing all the object files together, that must find a <em>definition</em> &mdash; and errors if none of them (or the linked libraries) provides one. Common causes: forgot to link the <code>.o</code>/<code>-l</code> library, library listed before the object that uses it, name mangling mismatch (C vs C++).</dd>
+<dt>What is a relocation?</dt>
+<dd>A record in an object file saying "at this offset in this section, once you know the final address of symbol X, write it here (in this format)". The assembler emits them because it can't know final addresses; the linker (for static addresses) and the dynamic linker (for load-time addresses / shared libs) consume them.</dd>
+<dt>What's in <code>.bss</code> and why does it make the executable smaller?</dt>
+<dd><code>.bss</code> holds zero-initialised and uninitialised globals/<code>static</code>s. The ELF file only records its <em>size</em>, not its bytes, because the loader just maps zero-filled pages. <code>.data</code> (non-zero initial values) stores the actual bytes on disk.</dd>
+<dt>Static vs dynamic linking &mdash; one advantage each?</dt>
+<dd>Static: a single self-contained binary with no runtime dependency surprises and slightly faster startup. Dynamic: one copy of <code>libc</code> in RAM shared by every process, and a security fix ships by replacing one <code>.so</code> instead of rebuilding every program.</dd>
+<dt>What does <code>ld.so</code> do?</dt>
+<dd>The dynamic linker/loader. For a dynamic executable the kernel transfers control to it first. It maps every needed shared object (following <code>DT_NEEDED</code>, the search paths, and <code>rpath</code>), applies their relocations, resolves symbols (possibly lazily via the PLT/GOT), runs their initialisers, and only then jumps to the program's entry point.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the four build stages and their output extensions.</summary><div class="answer-box">
+Preprocess (<code>.i</code>), compile (<code>.s</code>), assemble (<code>.o</code>), link (executable, e.g. <code>a.out</code>).
+</div></details>
+<details class="answer-reveal"><summary>Which stage produces the "undefined reference" error?</summary><div class="answer-box">
+Linking. The compiler is happy with a declaration; the linker needs a definition.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>gcc -c</code> do?</summary><div class="answer-box">
+Compile and assemble to a <code>.o</code> object file, but stop before linking.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You link <code>gcc main.o -lm</code> and get "undefined reference to <code>sqrt</code>"; <code>gcc -lm main.o</code> works. Why?</summary><div class="answer-box">
+Traditional linkers process inputs left to right and pull a member out of an archive (<code>.a</code>, and <code>-lm</code> is <code>libm.a</code>/<code>libm.so</code> handling) only to satisfy an <em>already-seen</em> unresolved symbol. With <code>-lm</code> first, nothing is unresolved yet, so <code>libm</code> is skipped; then <code>main.o</code> introduces <code>sqrt</code> as unresolved and there's nothing left to satisfy it. Put libraries <em>after</em> the objects that use them (<code>gcc main.o -lm</code>), or use <code>--start-group</code>/<code>--end-group</code> for mutually dependent archives. Shared libraries are less order-sensitive but the rule still holds for archives.
+</div></details>
+<details class="answer-reveal"><summary>A global <code>int counter;</code> appears (no <code>extern</code>) at file scope in two <code>.c</code> files. It used to link, now it fails. What changed and what's correct?</summary><div class="answer-box">
+Historically C compilers treated an uninitialised file-scope definition as a <em>tentative definition</em> that became a "common" symbol; the linker merged multiple commons into one, so it linked (fragile, non-standard). GCC/Clang now default to <code>-fno-common</code>, so each is a real definition and you get "multiple definition of <code>counter</code>". Correct pattern: exactly one <code>.c</code> has the definition (<code>int counter = 0;</code>) and a shared header has the declaration (<code>extern int counter;</code>) which every other <code>.c</code> includes.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Walk through lazy binding: what happens the first time a dynamically-linked program calls <code>printf</code>, and every time after.</summary><div class="answer-box">
+The compiler emits <code>call printf@plt</code> &mdash; a jump to this program's <strong>PLT</strong> stub for <code>printf</code>, not to <code>printf</code> itself (whose address isn't known until load time and varies by ASLR). <strong>First call:</strong> the PLT stub does an indirect jump through the corresponding <strong>GOT</strong> slot. Initially that slot points back into the PLT (to a small trampoline) which pushes an identifying index and jumps to the dynamic linker's resolver (<code>_dl_runtime_resolve</code>). The resolver looks up <code>printf</code> in the symbol tables of the loaded shared objects (respecting symbol interposition / <code>LD_PRELOAD</code> order), <strong>writes the real address into the GOT slot</strong>, and tail-calls <code>printf</code>. <strong>Every later call:</strong> the PLT stub's indirect jump through the GOT now lands directly on <code>printf</code> &mdash; one extra indirection, no resolver. This "resolve on first use" amortises startup cost across only the functions actually called. Controls: <code>LD_BIND_NOW=1</code> or linking with <code>-z now</code> resolves everything at load (slower start, but the GOT can then be made read-only via <strong>RELRO</strong> &mdash; <code>-z relro -z now</code> &mdash; a hardening measure against GOT-overwrite attacks). <code>-fno-plt</code> makes calls go straight through the GOT, skipping the PLT stub. For data symbols there is no lazy option &mdash; the GOT entries for variables are always resolved at load time.
+</div></details>
+<details class="answer-reveal"><summary>What is position-independent code, why is it needed for shared libraries, and what does it cost?</summary><div class="answer-box">
+<strong>Why:</strong> a shared library must work when mapped at an address chosen at load time (different per process under ASLR, and different libraries can't all get their "preferred" base). So its code cannot contain hard-coded absolute addresses of its own functions/globals. <strong>How (<code>-fPIC</code>):</strong> the code addresses its own global data <em>relative to the instruction pointer</em> or through the <strong>GOT</strong> &mdash; a per-module table, filled in by the loader, holding the real addresses of globals and imported symbols. A reference to a global becomes "load the address from GOT[n], then dereference" instead of "load from absolute address". Function calls within the module can be PC-relative; calls to other modules go via the PLT. The GOT/PLT themselves are the only parts patched at load time, so <code>.text</code> stays shared read-only across processes. <strong>Cost:</strong> an extra indirection (and a register tied up for the GOT pointer on some ABIs) for global-data access and cross-module calls &mdash; usually a few percent, more in globals-heavy code; historically worse on x86-32 (scarce registers, no PC-relative addressing) than on x86-64 (RIP-relative addressing makes PIC nearly free for local data). Modern distros compile <em>executables</em> as PIE too (so the main program also benefits from ASLR), accepting the same small cost. <code>-fPIE</code> is the executable variant; fully static non-PIE binaries avoid it entirely but lose ASLR on the main image and can't use <code>dlopen</code> of PIC libs cleanly.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:source-to-exe -->
+
+<!-- TOPIC:c:memory-mgmt -->
+<section class="view topic" id="v-c-memory-mgmt" data-skill="c" data-title="Memory Management &amp; Every Segment">
+<div class="layout">
+<nav class="sidebar" data-sidebar="c"></nav>
+<div class="topic-body">
+<h1>Memory Management &amp; Every Segment</h1>
+<p class="subtitle">How a process gets memory from the kernel, what every region of its address space is for, and how <code>malloc</code> is actually built.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The complete address space</h3>
+<p>A 64-bit Linux process has a huge virtual address space carved into regions with different
+<strong>permissions</strong> and <strong>lifetimes</strong>. Reading <code>/proc/self/maps</code> shows the
+real thing; conceptually, low&rarr;high:</p>
+<figure class="diagram">
+<svg viewBox="0 0 500 470" role="img" aria-labelledby="d-cmm-space-t">
+<title id="d-cmm-space-t">Every segment of a running process, low to high addresses</title>
+<text class="d-t-sm" x="10" y="14">0x0</text>
+<text class="d-t-sm" x="10" y="462">high (top of user space)</text>
+<!-- null guard -->
+<rect class="d-box-alt" x="120" y="20" width="250" height="26"/>
+<text class="d-t-sm" x="245" y="37" text-anchor="middle">unmapped &mdash; NULL page (deref &rarr; SIGSEGV)</text>
+<!-- text -->
+<rect class="d-box-alt" x="120" y="48" width="250" height="30"/>
+<text class="d-t-b" x="245" y="63" text-anchor="middle">.text  (r-x)</text>
+<text class="d-t-sm" x="245" y="75" text-anchor="middle">machine code, shared, read-only</text>
+<!-- rodata -->
+<rect class="d-box-alt" x="120" y="80" width="250" height="26"/>
+<text class="d-t-b" x="200" y="97" text-anchor="middle">.rodata (r--)</text>
+<text class="d-t-sm" x="360" y="97" text-anchor="end">literals, const globals</text>
+<!-- relro / got -->
+<rect class="d-box-alt" x="120" y="108" width="250" height="24"/>
+<text class="d-t-sm" x="245" y="124" text-anchor="middle">.init_array / GOT / PLT (RELRO: r-- after startup)</text>
+<!-- data -->
+<rect class="d-box-soft" x="120" y="134" width="250" height="26"/>
+<text class="d-t-b" x="200" y="151" text-anchor="middle">.data (rw-)</text>
+<text class="d-t-sm" x="360" y="151" text-anchor="end">non-zero-init globals/statics</text>
+<!-- bss -->
+<rect class="d-box-soft" x="120" y="162" width="250" height="26"/>
+<text class="d-t-b" x="200" y="179" text-anchor="middle">.bss (rw-)</text>
+<text class="d-t-sm" x="360" y="179" text-anchor="end">zero/uninit globals/statics</text>
+<!-- heap -->
+<rect class="d-box" x="120" y="190" width="250" height="44"/>
+<text class="d-t-b" x="200" y="210" text-anchor="middle">heap (rw-)</text>
+<text class="d-t-sm" x="245" y="226" text-anchor="middle">malloc via brk; grows up &nbsp;&uarr;</text>
+<path class="d-line" d="M355 228 L355 196" marker-end="url(#cmm-ah)"/>
+<defs><marker id="cmm-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<!-- gap -->
+<rect class="d-box-alt" x="120" y="238" width="250" height="70"/>
+<text class="d-t-sm" x="245" y="268" text-anchor="middle">large unused gap</text>
+<text class="d-t-sm" x="245" y="286" text-anchor="middle">(each region separated by ASLR)</text>
+<!-- mmap region -->
+<rect class="d-box" x="120" y="312" width="250" height="70"/>
+<text class="d-t-b" x="200" y="330" text-anchor="middle">mmap region</text>
+<text class="d-t-sm" x="245" y="346" text-anchor="middle">shared libs (libc.so, ld.so),</text>
+<text class="d-t-sm" x="245" y="360" text-anchor="middle">big malloc blocks, file mappings,</text>
+<text class="d-t-sm" x="245" y="374" text-anchor="middle">thread stacks &amp; TLS &nbsp;&darr; grows down</text>
+<!-- gap2 -->
+<rect class="d-box-alt" x="120" y="386" width="250" height="20"/>
+<text class="d-t-sm" x="245" y="401" text-anchor="middle">gap + stack guard page</text>
+<!-- stack -->
+<rect class="d-box" x="120" y="408" width="250" height="40"/>
+<text class="d-t-b" x="200" y="426" text-anchor="middle">main stack (rw-)</text>
+<text class="d-t-sm" x="245" y="441" text-anchor="middle">frames; grows down &nbsp;&darr;</text>
+<path class="d-line" d="M355 414 L355 446" marker-end="url(#cmm-ah)"/>
+<!-- argv/env -->
+<rect class="d-box-alt" x="120" y="450" width="250" height="18"/>
+<text class="d-t-sm" x="245" y="463" text-anchor="middle">argv[], envp[], auxv (top of stack)</text>
+</svg>
+<figcaption>The kernel also keeps a region (the "vDSO"/"vvar") for fast syscalls. Addresses shown low&rarr;high; the classic textbook picture flips it so the stack is on top.</figcaption>
+</figure>
+<table>
+<tr><th>Region</th><th>Contents</th><th>Perms</th><th>Lifetime / notes</th></tr>
+<tr><td><code>.text</code></td><td>Machine code</td><td>r-x</td><td>Whole run; shared read-only between processes running the same binary.</td></tr>
+<tr><td><code>.rodata</code></td><td>String literals, <code>const</code> globals, jump tables</td><td>r--</td><td>Writing here faults.</td></tr>
+<tr><td>GOT / PLT / <code>.init_array</code></td><td>Dynamic-link fixups, constructor list</td><td>rw- then r-- (RELRO)</td><td>Made read-only after startup with <code>-z relro -z now</code>.</td></tr>
+<tr><td><code>.data</code></td><td>Globals/<code>static</code>s with a non-zero initialiser</td><td>rw-</td><td>Bytes stored in the file.</td></tr>
+<tr><td><code>.bss</code></td><td>Zero / uninitialised globals/<code>static</code>s</td><td>rw-</td><td>No file bytes; loader zero-fills. Also thread-local <code>.tbss</code>.</td></tr>
+<tr><td>Heap</td><td><code>malloc</code>/<code>calloc</code>/<code>realloc</code> blocks (small/medium)</td><td>rw-</td><td>Grown/shrunk with <code>brk</code>; contiguous just above <code>.bss</code>.</td></tr>
+<tr><td>mmap area</td><td>Shared libraries, large <code>malloc</code>s, <code>mmap</code>'d files, thread stacks, TLS blocks</td><td>varies</td><td>Independent mappings; freed with <code>munmap</code>.</td></tr>
+<tr><td>Stack</td><td>Call frames: locals, saved registers, return addresses, spilled args</td><td>rw-</td><td>Grows down; a <strong>guard page</strong> faults on overflow. Default 8&nbsp;MB (<code>ulimit -s</code>).</td></tr>
+</table>
+
+<h3>How the process gets memory from the kernel</h3>
+<p>User code never talks to physical RAM. It asks the kernel to add <strong>mappings</strong> to its
+virtual address space; physical pages are attached lazily on first touch (<strong>demand
+paging</strong>).</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 190" role="img" aria-labelledby="d-cmm-brk-t">
+<title id="d-cmm-brk-t">brk grows the one heap; mmap gives each big block its own region</title>
+<!-- brk side -->
+<text class="d-t-b" x="14" y="16">brk / sbrk &mdash; one contiguous heap</text>
+<rect class="d-box-soft" x="14" y="24" width="70" height="30"/><text class="d-t-sm" x="49" y="43" text-anchor="middle">.bss</text>
+<rect class="d-box" x="84" y="24" width="60" height="30"/><text class="d-t-sm" x="114" y="43" text-anchor="middle">used</text>
+<rect class="d-box" x="144" y="24" width="50" height="30"/><text class="d-t-sm" x="169" y="43" text-anchor="middle">free</text>
+<rect class="d-box-alt" x="194" y="24" width="40" height="30"/>
+<path class="d-line" d="M234 39 L262 39" marker-end="url(#cmm-ah2)"/>
+<defs><marker id="cmm-ah2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="238" y="20">program break</text>
+<text class="d-t-sm" x="270" y="43">sbrk(+64K) moves it up</text>
+<!-- mmap side -->
+<text class="d-t-b" x="14" y="86">mmap &mdash; a separate region per large request</text>
+<rect class="d-box" x="14" y="94" width="120" height="26"/><text class="d-t-sm" x="74" y="111" text-anchor="middle">heap (small allocs)</text>
+<rect class="d-box-alt" x="140" y="94" width="40" height="26"/>
+<rect class="d-box-soft" x="200" y="94" width="150" height="26"/><text class="d-t-sm" x="275" y="111" text-anchor="middle">mmap: malloc(1 MB)</text>
+<rect class="d-box-alt" x="360" y="94" width="20" height="26"/>
+<rect class="d-box-soft" x="400" y="94" width="120" height="26"/><text class="d-t-sm" x="460" y="111" text-anchor="middle">libc.so mapping</text>
+<text class="d-t-sm" x="14" y="146">Default threshold ~128 KB (<tspan class="d-t-mono">M_MMAP_THRESHOLD</tspan>, adaptive): below &rarr; carve from the</text>
+<text class="d-t-sm" x="14" y="162">heap; at/above &rarr; its own anonymous <tspan class="d-t-mono">mmap</tspan>, returned to the OS immediately on <tspan class="d-t-mono">free</tspan>.</text>
+<text class="d-t-sm" x="14" y="182">Pages are only backed by RAM when first written (demand paging + copy-on-write).</text>
+</svg>
+<figcaption><code>brk</code>/<code>sbrk</code> just move the top of the single heap segment. <code>mmap(MAP_ANONYMOUS)</code> creates an independent zero-filled region anywhere in the gap.</figcaption>
+</figure>
+
+<h3>Inside <code>malloc</code> (glibc / ptmalloc style)</h3>
+<ul>
+<li>The allocator manages the heap as a list of <strong>chunks</strong>. Each chunk has a small header: its own <strong>size</strong> (with the low bits reused as flags &mdash; e.g. "previous chunk in use"), and for <em>free</em> chunks, forward/back pointers <code>fd</code>/<code>bk</code> stored <em>in the user area</em>. So a freed 24-byte allocation and an in-use one look different in memory.</li>
+<li><code>malloc(n)</code> rounds <code>n</code> up (for alignment &mdash; 16 bytes on x86-64 &mdash; and the header) and searches <strong>bins</strong>: <em>fastbins</em> and <em>tcache</em> (per-thread, LIFO, for small sizes, very fast), then <em>small/large bins</em> (size-segregated free lists), then the <em>unsorted bin</em>, then splits the <strong>top chunk</strong> (the "wilderness" at the end of the heap), then <code>sbrk</code>/<code>mmap</code> for more.</li>
+<li><code>free(p)</code> puts the chunk back in a bin and <strong>coalesces</strong> it with adjacent free chunks (using the neighbouring headers) to fight fragmentation. Fastbin/tcache chunks are <em>not</em> immediately coalesced (speed).</li>
+<li><code>realloc</code>: if the next chunk is free and big enough it grows in place; otherwise it <code>malloc</code>s a new block, <code>memcpy</code>s, and <code>free</code>s the old &mdash; which is why the pointer can move.</li>
+<li><strong>Arenas</strong>: to reduce lock contention, glibc gives each thread its own arena (its own heap + bins, up to <code>~8&times;cores</code>); the main arena uses <code>brk</code>, others use <code>mmap</code>.</li>
+</ul>
+<figure class="diagram">
+<svg viewBox="0 0 540 168" role="img" aria-labelledby="d-cmm-chunk-t">
+<title id="d-cmm-chunk-t">An allocated chunk vs a free chunk</title>
+<text class="d-t-b" x="14" y="16">allocated chunk</text>
+<rect class="d-box-alt" x="14" y="22" width="70" height="26"/><text class="d-t-sm" x="49" y="39" text-anchor="middle">prev_size*</text>
+<rect class="d-box-alt" x="84" y="22" width="70" height="26"/><text class="d-t-sm" x="119" y="39" text-anchor="middle">size |flags</text>
+<rect class="d-box-soft" x="154" y="22" width="230" height="26"/><text class="d-t-sm" x="269" y="39" text-anchor="middle">your bytes (what malloc returns &rarr;)</text>
+<path class="d-line" d="M154 60 L154 46" marker-end="url(#cmm-ah3)"/>
+<defs><marker id="cmm-ah3" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="120" y="72">pointer you get</text>
+<text class="d-t-b" x="14" y="104">same chunk after free()</text>
+<rect class="d-box-alt" x="14" y="110" width="70" height="26"/><text class="d-t-sm" x="49" y="127" text-anchor="middle">prev_size</text>
+<rect class="d-box-alt" x="84" y="110" width="70" height="26"/><text class="d-t-sm" x="119" y="127" text-anchor="middle">size |flags</text>
+<rect class="d-box" x="154" y="110" width="90" height="26"/><text class="d-t-sm" x="199" y="127" text-anchor="middle">fd &rarr;</text>
+<rect class="d-box" x="244" y="110" width="90" height="26"/><text class="d-t-sm" x="289" y="127" text-anchor="middle">bk &rarr;</text>
+<rect class="d-box-soft" x="334" y="110" width="50" height="26"/><text class="d-t-sm" x="359" y="127" text-anchor="middle">&hellip;</text>
+<text class="d-t-sm" x="14" y="158">Overwriting <tspan class="d-t-mono">size</tspan>/<tspan class="d-t-mono">fd</tspan>/<tspan class="d-t-mono">bk</tspan> (heap overflow, use-after-free write) is the basis of heap exploits.</text>
+</svg>
+<figcaption>The allocator's bookkeeping lives <em>between and inside</em> your allocations. This is why a 1-byte overrun "works" until later, when <code>malloc</code>/<code>free</code> trips over the mangled header.</figcaption>
+</figure>
+
+<h3>Fragmentation &amp; why RAM doesn't drop after <code>free</code></h3>
+<ul>
+<li><strong>Internal fragmentation</strong>: you asked for 100 bytes, got a 112-byte chunk &mdash; 12 wasted inside the block (rounding + header).</li>
+<li><strong>External fragmentation</strong>: total free space is plenty, but it's scattered in small gaps between live blocks, so a large request still fails / needs new OS memory.</li>
+<li><code>free</code> returns memory to the <em>allocator</em>, not usually to the OS. The heap can only shrink from the <em>top</em> (via <code>sbrk</code> down), so one live chunk near the top pins the whole heap. Only <code>mmap</code>'d chunks (large ones) are <code>munmap</code>'d back immediately. <code>malloc_trim(0)</code> asks glibc to give back free top space.</li>
+</ul>
+
+<h3>The stack in detail</h3>
+<ul>
+<li>Per call: return address, saved frame pointer (<code>rbp</code>), callee-saved registers, local variables, and space for arguments to further calls. Set up by the function <em>prologue</em>, torn down by the <em>epilogue</em>.</li>
+<li>The <strong>red zone</strong> (x86-64 SysV): 128 bytes below <code>rsp</code> a leaf function may use without adjusting <code>rsp</code>.</li>
+<li>A <strong>guard page</strong> below the stack turns overflow into <code>SIGSEGV</code> instead of silently clobbering the mmap region. Large local arrays / <code>alloca</code> / VLAs can jump <em>past</em> the guard page &mdash; compilers add <em>stack probing</em> to prevent that.</li>
+<li>Each thread gets its <strong>own stack</strong> (default 8&nbsp;MB, in the mmap area) and its own guard page. <code>alloca</code>/VLA memory is freed at function return, not scope exit.</li>
+</ul>
+
+<h3>Thread-local storage (TLS)</h3>
+<p><code>_Thread_local</code> / <code>__thread</code> variables get one instance <em>per thread</em>. Initialised
+ones live in a template section <code>.tdata</code>, zero ones in <code>.tbss</code>; on thread creation
+the runtime allocates a per-thread block from that template and points the thread's TLS register
+(<code>fs</code> on x86-64) at it. Access compiles to "<code>fs</code>-relative load", not a normal
+global load.</p>
+
+<h3>Tools</h3>
+<pre><code>cat /proc/$$/maps          <span class="c"># every mapping: range, perms, file</span>
+pmap -x PID                <span class="c"># mappings with RSS/dirty sizes</span>
+size a.out                 <span class="c"># text / data / bss sizes</span>
+valgrind --tool=massif ./a <span class="c"># heap usage over time</span>
+./a with -fsanitize=address <span class="c"># overruns, UAF, double free, leaks</span>
+mallinfo2() / malloc_stats()/ malloc_info()  <span class="c"># allocator introspection</span>
+mallopt(M_MMAP_THRESHOLD, ...) <span class="c"># tune brk-vs-mmap cutoff</span></code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Low&rarr;high: NULL guard, <code>.text</code> r-x, <code>.rodata</code> r--, GOT/PLT (RELRO), <code>.data</code> rw-, <code>.bss</code> rw-, <strong>heap &uarr;</strong>, big gap, <strong>mmap area</strong> (libs, big mallocs, thread stacks, TLS) <strong>&darr;</strong>, guard page, <strong>stack &darr;</strong>, argv/env/auxv.</li>
+<li>Get memory: <code>brk</code>/<code>sbrk</code> move the one heap's top; <code>mmap(MAP_ANON)</code> makes an independent region. Pages backed by RAM only on first touch.</li>
+<li><code>malloc</code>: round up (align 16 + header) &rarr; search tcache/fastbins &rarr; small/large bins &rarr; unsorted &rarr; split top chunk &rarr; <code>sbrk</code>/<code>mmap</code>. Big requests (&ge; ~128 KB) go straight to <code>mmap</code>.</li>
+<li>A <strong>chunk</strong> = header (size + flags) + user area; free chunks store <code>fd</code>/<code>bk</code> in the user area and get <strong>coalesced</strong> with free neighbours.</li>
+<li><code>realloc</code> may move the block (malloc + memcpy + free) if it can't grow in place.</li>
+<li><strong>Arenas</strong> = per-thread heaps + bins to avoid lock contention.</li>
+<li>Fragmentation: <strong>internal</strong> (waste inside a block) vs <strong>external</strong> (scattered free gaps). <code>free</code> gives memory to the allocator, not the OS; heap shrinks only from the top; only <code>mmap</code>'d chunks are returned on <code>free</code>.</li>
+<li>Stack: per-call prologue/epilogue frames, red zone (128 B), guard page; per-thread 8 MB stacks. TLS = per-thread copy of <code>.tdata</code>/<code>.tbss</code>, reached via the <code>fs</code> register.</li>
+<li>Inspect: <code>/proc/PID/maps</code>, <code>pmap -x</code>, <code>size</code>, ASan, <code>massif</code>, <code>malloc_stats</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between <code>brk</code> and <code>mmap</code> for allocation?</dt>
+<dd><code>brk</code>/<code>sbrk</code> adjust a single "program break" pointer, growing or shrinking the one contiguous heap segment that sits just above <code>.bss</code>. <code>mmap</code> creates a brand-new, independently-sized anonymous mapping somewhere in the address-space gap. <code>malloc</code> uses <code>brk</code> for small/medium blocks (cheap, reuses freed space) and <code>mmap</code> for large ones (so a huge free returns the memory to the OS at once, and one giant block doesn't pin the whole heap).</dd>
+<dt>Where does <code>malloc</code> store its bookkeeping?</dt>
+<dd>In a header immediately <em>before</em> the pointer it returns (chunk size + flags), and for free chunks, in the user-data area itself (the <code>fd</code>/<code>bk</code> free-list links). It also keeps global bin arrays in the arena. This is why writing one byte before <code>p[0]</code> or past <code>p[n-1]</code> corrupts the allocator, and why the crash surfaces later inside <code>malloc</code>/<code>free</code>.</dd>
+<dt>Why doesn't my program's RSS go down after I <code>free</code> a lot of memory?</dt>
+<dd><code>free</code> returns chunks to the allocator's free lists, not to the kernel. The <code>brk</code> heap can only be trimmed from its top, so any still-live allocation near the top keeps the whole region mapped. Only large, <code>mmap</code>-backed allocations are <code>munmap</code>'d immediately. You can call <code>malloc_trim(0)</code>, or design to allocate big transient buffers so they're <code>mmap</code>'d, or use an allocator like jemalloc/tcmalloc with different return policies.</dd>
+<dt>Internal vs external fragmentation?</dt>
+<dd>Internal: space wasted <em>inside</em> an allocated block because the allocator rounded your request up (to an alignment/size class, plus its header). External: enough total free memory exists, but it's split into many small non-contiguous holes, so a large contiguous request can't be met. Coalescing adjacent free blocks fights external fragmentation; size classes trade a little internal fragmentation for speed.</dd>
+<dt>What is a stack guard page?</dt>
+<dd>An unmapped page placed just past the end of a stack. If recursion or a large local array pushes the stack pointer into it, the access faults (<code>SIGSEGV</code>) instead of silently overwriting whatever mapping is adjacent. Because a single huge local can leap <em>over</em> a one-page guard, compilers emit "stack probes" that touch each page as the frame grows.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which direction does the heap grow, and which way the stack?</summary><div class="answer-box">
+Heap grows toward higher addresses (up); the stack grows toward lower addresses (down).
+</div></details>
+<details class="answer-reveal"><summary>Which segment holds an uninitialised global <code>int</code>, and does it take space in the executable file?</summary><div class="answer-box">
+<code>.bss</code>. It takes no file space &mdash; only its size is recorded; the loader zero-fills it.
+</div></details>
+<details class="answer-reveal"><summary>What syscall grows the classic heap?</summary><div class="answer-box">
+<code>brk</code> / <code>sbrk</code> (move the program break). Large allocations use <code>mmap</code> instead.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A loop does <code>p = malloc(100)</code> then <code>free(p)</code> a million times and memory stays flat; changing it to <code>malloc(1&nbsp;MB)</code> each time also stays flat but is slower. Explain both.</summary><div class="answer-box">
+The 100-byte case: each <code>free</code> puts the chunk into tcache/a fastbin, and the next <code>malloc(100)</code> pops that exact chunk straight back &mdash; no syscall, no growth, effectively a hot cache. Memory is flat because the same chunk is reused. The 1&nbsp;MB case: 1&nbsp;MB is above the mmap threshold, so each <code>malloc</code> is an <code>mmap</code> syscall (kernel sets up a fresh zero-filled mapping, page tables, etc.) and each <code>free</code> is a <code>munmap</code> syscall. Memory is still flat (returned to the OS every iteration) but the per-iteration cost is two syscalls plus page-fault handling on first touch &mdash; far slower than a free-list pop. Lesson: reuse large buffers instead of reallocating them in a loop.
+</div></details>
+<details class="answer-reveal"><summary>You <code>malloc</code> 1000 blocks, <code>free</code> every other one, then try to <code>malloc</code> a block twice the size. It fails or extends the heap despite ~half the heap being free. Why?</summary><div class="answer-box">
+External fragmentation. The freed blocks are interleaved with live ones, so the free space is a sequence of small holes, none individually large enough for the big request, and they can't be merged because live chunks sit between them (coalescing only joins <em>adjacent</em> free chunks). The allocator therefore either finds nothing suitable and grows the heap (<code>sbrk</code>/<code>mmap</code>), or fails. Mitigations: allocate objects of similar lifetime together (pool/arena allocators), use size classes so same-size frees are reusable, compact by copying (not possible in place in C), or over-allocate large buffers up front. This pattern is exactly why long-running C servers use custom pool allocators.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Trace a <code>malloc(48)</code> in a multithreaded glibc program from the call to the returned pointer, naming every structure it touches.</summary><div class="answer-box">
+(1) <strong>Size adjustment</strong>: request 48 &rarr; add the chunk header and round to the 16-byte alignment and the minimum chunk size &rarr; an internal request size (e.g. 64). (2) <strong>tcache</strong> (per-thread cache, glibc &ge; 2.26): index by size class; if <code>tcache-&gt;entries[idx]</code> is non-empty, unlink the head (a single-linked LIFO), do the <code>tcache</code> integrity/count check, and return it &mdash; no lock, a handful of instructions. (3) If tcache is empty for that class, take the <strong>arena</strong>: the thread has a cached arena pointer; <code>arena_get</code> tries to lock it, and if contended may spin up or reuse another arena (up to <code>~8&times;ncores</code>; extra arenas are <code>mmap</code>-based). (4) With the arena locked, check <strong>fastbins</strong> for that size (singly-linked LIFO, no coalescing) &mdash; if hit, possibly refill tcache from it, return one. (5) Else consolidate fastbins into the <strong>unsorted bin</strong>, then scan the unsorted bin: exact fit &rarr; return; otherwise sort each entry into its <strong>small bin</strong> (exact size classes) or <strong>large bin</strong> (ranges, kept sorted). (6) Try the appropriate small/large bin for a fit or a chunk to <strong>split</strong> (return the front, put the remainder back as a "last remainder"). (7) Else carve from the <strong>top chunk</strong> (the wilderness at the current end of the heap): split off 64 bytes, shrink the top. (8) If the top chunk is too small, <strong>extend the heap</strong>: main arena calls <code>sbrk</code> (or <code>mmap</code> if <code>sbrk</code> fails / arena is mmap-based); a non-main arena grows its <code>mmap</code>'d heap or maps a new one. (9) The chunk's <code>size</code> field low bits are set (PREV_INUSE etc.), the next chunk's <code>prev_size</code>/flags updated, the arena unlocked, and the address of the user area (header + 16 bytes in) returned. Structures touched: the tcache struct (thread-local), the arena/<code>malloc_state</code> (bins arrays, top, fastbins, mutex), individual <code>malloc_chunk</code> headers, and possibly <code>sbrk</code>/<code>mmap</code>. A request &ge; <code>M_MMAP_THRESHOLD</code> (~128 KB, adaptive) skips almost all of this and goes straight to a dedicated <code>mmap</code>.
+</div></details>
+<details class="answer-reveal"><summary>Explain how the same physical page can appear in many places, using: shared libraries, <code>fork</code>, <code>.bss</code>, and <code>calloc</code>.</summary><div class="answer-box">
+The MMU maps <em>virtual</em> pages to <em>physical</em> frames, and the kernel is free to point many virtual pages (in one process or many) at one frame, marking it read-only or copy-on-write to keep them consistent. <strong>Shared libraries</strong>: <code>libc.so</code>'s <code>.text</code> is mapped file-backed and read-only into every process that uses it &mdash; all of them share the same physical frames; only the per-process GOT/PLT and writable data get private copies. <strong><code>fork</code></strong>: the child's entire address space is created by pointing its page tables at the <em>parent's</em> frames, all marked <strong>copy-on-write</strong>. Reads in either process hit shared frames; the first <em>write</em> to a page triggers a fault, the kernel copies that one page, and the two diverge. This is why <code>fork</code> is cheap and why a child that immediately <code>execve</code>s copies almost nothing. <strong><code>.bss</code></strong> and fresh <code>mmap(MAP_ANONYMOUS)</code>: the kernel maps every page to a single shared, read-only <strong>zero page</strong>. Reads anywhere in a 1&nbsp;GB <code>.bss</code> cost zero physical RAM; the first write to a page faults and gets a private zeroed frame. <strong><code>calloc</code></strong>: when it obtains memory via <code>mmap</code>, that memory is already zero-page-backed, so <code>calloc</code> can skip the <code>memset</code> entirely &mdash; the "zeroing" is lazy, per-page, on first write. (When <code>calloc</code> instead reuses a chunk from the free list, it does have to <code>memset</code>.) Common thread: physical memory is allocated on <em>write</em>, not on <em>map</em>, and the kernel aggressively shares frames until someone dirties them &mdash; which also means a program's committed virtual size (<code>VSZ</code>) can hugely exceed its resident size (<code>RSS</code>).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:c:memory-mgmt -->
+
 <!-- ============================== SHELL TOPICS ============================== -->
 <!-- TOPIC:shell:basics -->
 <section class="view topic" id="v-shell-basics" data-skill="shell">
@@ -25566,7 +26060,9 @@ Config parity &mdash; keeping cache/WAF/purge/edge behavior identical across pro
       ["qualifiers-linkage",  "const, volatile, static, extern & Linkage",     "Translation units, ODR in C, internal vs external linkage, header hygiene."],
       ["bit-manipulation",    "Bit Manipulation Tricks",                       "Masks, set/clear/toggle/test, shifts, count bits, power-of-two checks."],
       ["undefined-behaviour", "Undefined Behaviour & Classic Pitfalls",        "Signed overflow, strict aliasing, sequence points, OOB, use-after-free."],
-      ["stdlib-fileio",       "File I/O & Standard Library Essentials",        "FILE* vs fd, buffering, fread/fwrite, str* funcs, errno, format strings."]
+      ["stdlib-fileio",       "File I/O & Standard Library Essentials",        "FILE* vs fd, buffering, fread/fwrite, str* funcs, errno, format strings."],
+      ["source-to-exe",       "From Source to Executable: the Toolchain",      "Preprocess, compile, assemble, link, load & run; ELF, symbols, relocations, static vs dynamic, GOT/PLT, _start."],
+      ["memory-mgmt",         "Memory Management & Every Segment",             "brk/sbrk/mmap, the malloc allocator (chunks, bins, arenas), fragmentation; text/rodata/data/bss/heap/mmap/stack/TLS/guard pages/GOT/PLT."]
     ],
     shell: [
       ["basics",           "Shell Basics, the Shebang & Execution Model", "sh vs bash, source vs execute, #!/usr/bin/env, command search order, $?."],
