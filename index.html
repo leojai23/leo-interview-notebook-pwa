@@ -11536,6 +11536,1053 @@ Both started with microkernel ambitions (XNU wraps the Mach microkernel; NT was 
 </section>
 <!-- /TOPIC:os:syscalls-kernel -->
 
+<!-- ============================== CONCURRENCY TOPICS ============================== -->
+<!-- TOPIC:concurrency:race-critical -->
+<section class="view topic" id="v-concurrency-race-critical" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Races &amp; the Critical Section</h1>
+<p class="subtitle">Why <code>count++</code> from two threads loses increments &mdash; and the vocabulary for it.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The classic bug</h3>
+<pre><code><span class="c">// two threads run this; count starts at 0, ends at... maybe 1, not 2</span>
+count = count + 1;
+<span class="c">//   load count -&gt; reg      (both read 0)</span>
+<span class="c">//   add 1                  (both compute 1)</span>
+<span class="c">//   store reg -&gt; count     (both write 1)  -- one increment lost</span></code></pre>
+<p>The read-modify-write isn't atomic; a thread switch between the load and the store loses an
+update. This is a <strong>data race</strong>: two threads access the same location, at least one writes,
+with no synchronisation and no defined ordering &mdash; undefined behaviour in C/C++/Java's model.</p>
+
+<h3>Data race vs race condition</h3>
+<ul>
+<li><strong>Data race</strong> &mdash; the concrete "unsynchronised concurrent access" defect above. Tools (TSan) detect these.</li>
+<li><strong>Race condition</strong> &mdash; a broader logic bug where correctness depends on timing/ordering, even with each individual operation synchronised (e.g. check-then-act on shared state).</li>
+</ul>
+
+<h3>Critical section</h3>
+<p>A region of code that accesses shared state and must run <strong>atomically with respect to other
+threads</strong> &mdash; only one thread inside at a time. Protect it with a lock (or make the operation
+a single atomic instruction, or avoid sharing).</p>
+
+<h3>TOCTOU</h3>
+<p>Time-of-check to time-of-use: <code>if (!exists(f)) create(f);</code> &mdash; another thread/process
+can create <code>f</code> in the gap. Fix with an atomic operation (<code>open(O_CREAT|O_EXCL)</code>,
+<code>putIfAbsent</code>, <code>CAS</code>) that checks and acts as one step.</p>
+
+<h3>Invariants</h3>
+<p>A critical section usually exists to keep an invariant true (a doubly-linked list's forward and
+backward pointers agree; an account's debits and credits balance). Mid-update the invariant is
+temporarily broken &mdash; which is exactly why no other thread may observe that state.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>x++</code> is load + add + store &mdash; <strong>not atomic</strong>; concurrent increments lose updates.</li>
+<li>Data race = unsynchronised concurrent access, &ge;1 writer &rarr; UB. Race condition = timing-dependent logic bug (superset).</li>
+<li>Critical section = code that must execute atomically w.r.t. other threads; guard with a lock / atomic / no-sharing.</li>
+<li>TOCTOU = check-then-act with a gap; fix with an atomic check-and-act (<code>O_EXCL</code>, <code>compare_exchange</code>, <code>putIfAbsent</code>).</li>
+<li>Shared mutable state is the root cause &mdash; prefer immutability, confinement (thread-local), or message passing.</li>
+<li>"Works on my machine" proves nothing &mdash; races are nondeterministic and load-dependent.</li>
+<li>Keep critical sections short; hold the lock only while the invariant is being read/repaired.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why can two threads doing <code>count++</code> a million times each leave <code>count</code> less than 2 million?</dt>
+<dd><code>count++</code> compiles to load, increment, store. If thread B loads <code>count</code> after thread A loaded but before A stored, both compute the same new value and one store overwrites the other &mdash; that increment is lost.</dd>
+<dt>Data race vs race condition?</dt>
+<dd>A data race is a specific defect: concurrent access to the same memory with at least one write and no synchronisation. A race condition is any bug where the outcome depends on the relative timing of operations &mdash; you can have a race condition even when every individual access is properly locked (e.g. releasing a lock between "check" and "act").</dd>
+<dt>What is a critical section?</dt>
+<dd>A block of code accessing shared data that must not be executed by more than one thread at a time, so that partial updates (a broken invariant) are never observed by another thread.</dd>
+<dt>Give a TOCTOU example and its fix.</dt>
+<dd><code>if (!file_exists(p)) fd = open(p, O_CREAT)</code> &mdash; a race between the check and the create lets two processes both "win". Fix: <code>open(p, O_CREAT | O_EXCL)</code>, which atomically fails if the file already exists.</dd>
+<dt>Best way to avoid races entirely?</dt>
+<dd>Don't share mutable state: use immutable data, confine state to one thread (thread-local, an actor's mailbox), or communicate by passing messages/ownership instead of sharing memory.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Is <code>x++</code> atomic?</summary><div class="answer-box">
+No &mdash; it's a read, a modify, and a write. Use an atomic type / atomic increment, or a lock.
+</div></details>
+<details class="answer-reveal"><summary>What are the conditions for a data race?</summary><div class="answer-box">
+Two or more threads access the same memory location concurrently, at least one access is a write, and there's no synchronisation ordering them.
+</div></details>
+<details class="answer-reveal"><summary>How many threads may be inside a critical section at once?</summary><div class="answer-box">
+One.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A cache uses <code>if (map.get(k) == null) map.put(k, compute(k));</code> from many threads. What's wrong?</summary><div class="answer-box">
+Check-then-act race: two threads can both see <code>null</code> and both call <code>compute</code> (wasteful, and wrong if <code>compute</code> has side effects or must be single). Fix with an atomic operation: <code>map.computeIfAbsent(k, this::compute)</code> or <code>putIfAbsent</code> on a concurrent map, or hold a lock across check-and-put.
+</div></details>
+<details class="answer-reveal"><summary>Two threads each acquire a lock, increment a shared counter, release &mdash; and the total is still wrong sometimes. What could it be?</summary><div class="answer-box">
+Likely they're locking <em>different</em> lock objects (e.g. a per-instance lock when the counter is static, or a freshly-created lock each call), so the mutual exclusion never actually applies. Or the counter is read outside the lock elsewhere. The lock must be the <em>same</em> object guarding <em>every</em> access to that state.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is a benign-looking data race on a <code>bool stop</code> flag still undefined behaviour, and what actually goes wrong?</summary><div class="answer-box">
+In the C/C++/Java memory model, <em>any</em> data race is UB &mdash; the compiler is allowed to assume no other thread touches the variable. Concretely: the compiler may hoist the read of <code>stop</code> out of the worker's loop (it "can't change"), so the loop never sees the update and spins forever; it may reorder the write of <code>stop</code> relative to other writes the worker depends on; a non-atomic write can tear on some architectures; and the value may sit in a register/cache and never become visible. Marking it <code>volatile</code> (Java) or <code>std::atomic&lt;bool&gt;</code> with at least relaxed ordering (C++) tells the compiler and CPU it's shared, forcing an actual memory access each time and preventing the reordering &mdash; that's the minimum correct fix.
+</div></details>
+<details class="answer-reveal"><summary>Explain sequential consistency as a correctness model and why real hardware/languages don't give it by default.</summary><div class="answer-box">
+Sequential consistency (Lamport): the result of any execution is <em>as if</em> all threads' operations were executed in some single global interleaving that respects each thread's program order. It's the intuitive model programmers reason with. Hardware doesn't provide it for free because store buffers, out-of-order execution, and cache-coherence protocols let a core's writes become visible to different cores at different times, and its own later reads can bypass the store buffer &mdash; so thread 1 can see its own write before thread 2 does. Compilers also reorder independent memory ops for scheduling/register allocation. Enforcing SC everywhere would mean a full memory barrier on essentially every shared access &mdash; a large, usually-wasted cost. So languages expose a <em>relaxed</em> model with explicit ordering primitives (acquire/release, <code>seq_cst</code> fences, <code>synchronized</code>) and guarantee SC only for data-race-free programs ("SC-DRF"): if you synchronise all conflicting accesses, you get to keep reasoning as if it were sequentially consistent.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:race-critical -->
+
+<!-- TOPIC:concurrency:mutex-condvar -->
+<section class="view topic" id="v-concurrency-mutex-condvar" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Mutexes &amp; Condition Variables</h1>
+<p class="subtitle">Locking correctly, and waiting for a condition without missing the wakeup.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Using a mutex</h3>
+<ul>
+<li>Guard <em>every</em> access (read and write) to the shared state with the <em>same</em> mutex.</li>
+<li>Use RAII / scope guards (<code>std::lock_guard</code>, <code>synchronized</code>, <code>with lock:</code>) so the lock is released on every exit path, including exceptions.</li>
+<li>Hold it for as short a time as possible; never do I/O or call unknown callbacks while holding it (deadlock / latency risk).</li>
+</ul>
+
+<h3>Lock granularity</h3>
+<table>
+<tr><th></th><th>Coarse</th><th>Fine</th></tr>
+<tr><td>Locks</td><td>one big lock for everything</td><td>many small locks (per bucket, per node)</td></tr>
+<tr><td>Pros</td><td>simple, no deadlock, easy to reason</td><td>more parallelism</td></tr>
+<tr><td>Cons</td><td>contention bottleneck</td><td>deadlock risk, overhead, complexity</td></tr>
+</table>
+<p>Start coarse; refine only where profiling shows lock contention.</p>
+
+<h3>Condition variables</h3>
+<pre><code>lock(m);
+while (!predicate())      <span class="c">// WHILE, not if</span>
+    cv.wait(m);           <span class="c">// atomically unlocks m + sleeps; relocks on wake</span>
+// predicate() is true here, m is held
+consume();
+unlock(m);</code></pre>
+<ul>
+<li><strong>Spurious wakeups</strong>: <code>wait</code> can return without a signal &mdash; the <code>while</code> re-checks.</li>
+<li><strong>Lost wakeup</strong>: if you <code>signal</code> before the waiter is waiting, it's missed. Prevented by holding the mutex while changing the predicate and signalling, and by the waiter checking the predicate <em>before</em> waiting.</li>
+<li><code>notify_one</code> vs <code>notify_all</code>: use <code>all</code> when waiters wait on different predicates; <code>one</code> is enough (and cheaper) when any waiter can make progress.</li>
+</ul>
+
+<h3>Reentrancy</h3>
+<p>A plain mutex deadlocks if the same thread locks it twice. Recursive mutexes allow it but
+usually signal a design smell &mdash; restructure so the lock is taken once at the top.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Same mutex guards every read <em>and</em> write of the state.</li>
+<li>RAII lock guards &rarr; released on all exit paths (exceptions included).</li>
+<li>Short critical sections; no I/O / callbacks / blocking under a lock.</li>
+<li>Start with one coarse lock; split only where contention is measured.</li>
+<li>Condvar idiom: hold mutex &rarr; <code>while (!pred) cv.wait(m)</code> &rarr; act &rarr; unlock.</li>
+<li>Always <code>while</code> not <code>if</code> (spurious wakeups); change predicate + signal under the mutex (lost-wakeup).</li>
+<li><code>notify_all</code> when waiters have different conditions; <code>notify_one</code> when any can proceed.</li>
+<li>Plain mutex is non-reentrant &mdash; don't re-lock on the same thread.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why check the predicate in a <code>while</code> loop, not an <code>if</code>?</dt>
+<dd>Spurious wakeups (the thread wakes with no signal) and the possibility that another thread changed the state back between the signal and this thread reacquiring the lock. Re-checking guarantees the predicate actually holds before proceeding.</dd>
+<dt>What is a lost wakeup and how is it prevented?</dt>
+<dd>A signal sent before the consumer starts waiting is never seen, so the consumer sleeps forever with data available. Prevented by: holding the mutex while you both change the predicate and signal, and having the waiter check the predicate under the mutex before calling <code>wait</code> (which atomically releases the mutex and sleeps).</dd>
+<dt>Why not do network I/O while holding a mutex?</dt>
+<dd>The I/O can take arbitrarily long (or block), during which no other thread can enter the critical section &mdash; a huge contention stall &mdash; and if the I/O path itself tries to acquire another lock, you risk deadlock. Copy what you need out under the lock, release, then do the I/O.</dd>
+<dt>Coarse vs fine-grained locking trade-off?</dt>
+<dd>Coarse (one lock) is simple and deadlock-free but serialises everything. Fine-grained (many locks) allows concurrent operations on disjoint data but adds overhead and deadlock risk from multi-lock acquisition. Refine only where contention is proven.</dd>
+<dt>notify_one vs notify_all?</dt>
+<dd><code>notify_one</code> wakes a single waiter &mdash; correct and efficient when any waiter can handle the new state. <code>notify_all</code> wakes everyone &mdash; needed when waiters are blocked on different conditions and you don't know which one(s) can now proceed; costs a thundering herd.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does a condition variable's <code>wait</code> do to the associated mutex?</summary><div class="answer-box">
+Atomically releases it and puts the thread to sleep; reacquires it before <code>wait</code> returns.
+</div></details>
+<details class="answer-reveal"><summary>Why use RAII lock guards?</summary><div class="answer-box">
+They release the lock automatically when the scope ends &mdash; on normal return, early return, or an exception &mdash; so you can't forget to unlock.
+</div></details>
+<details class="answer-reveal"><summary>Is a standard mutex reentrant?</summary><div class="answer-box">
+No &mdash; re-locking it on the same thread deadlocks. Use a recursive mutex only if you truly must.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two mutexes, and you sometimes need both. How do you avoid deadlock?</summary><div class="answer-box">
+Always acquire them in a fixed global order (e.g. by address or an assigned id), everywhere. Or use a deadlock-avoiding lock of both at once (<code>std::scoped_lock(m1, m2)</code> / <code>std::lock</code>), which uses a back-off algorithm. Or a <code>try_lock</code> on the second with release-and-retry on failure.
+</div></details>
+<details class="answer-reveal"><summary>A worker sometimes hangs on a condvar even though the producer clearly signalled. Diagnose.</summary><div class="answer-box">
+Classic lost wakeup: the producer changed the predicate and/or signalled <em>without</em> holding the mutex, or the consumer checked the predicate and then called <code>wait</code> in two separate locked regions with a gap. Fix: producer sets the predicate and signals while holding the same mutex the consumer uses; consumer does <code>lock; while(!pred) wait(m); ... ; unlock</code> as one locked region.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Compare "Mesa" and "Hoare" condition-variable semantics and why real systems use Mesa.</summary><div class="answer-box">
+<strong>Hoare semantics</strong>: <code>signal</code> immediately transfers control (and the mutex) to a waiting thread, which runs before the signaller continues &mdash; so the predicate is guaranteed true on wake and an <code>if</code> would suffice. But it requires precise scheduler cooperation, extra context switches, and careful handling of the signaller's suspended state. <strong>Mesa semantics</strong> (used by pthreads, Java, C++, C#): <code>signal</code> just marks a waiter runnable; the signaller keeps the lock and runs on; the woken thread competes for the lock later, by which time <em>another</em> thread may have consumed the condition. Hence you must re-check in a <code>while</code>. Mesa is chosen because it's far simpler to implement, imposes no scheduling constraints, composes with multiple signallers/waiters, and the <code>while</code>-loop discipline also transparently handles spurious wakeups. The cost is that discipline &mdash; forgetting the loop is a common bug.
+</div></details>
+<details class="answer-reveal"><summary>When is a reader-writer lock actually slower than a plain mutex, despite allowing concurrent readers?</summary><div class="answer-box">
+An RW lock has more internal state (reader count + writer flag/queue) so its lock/unlock fast path does more atomic work and more cache-line contention than a simple mutex &mdash; every reader still performs a synchronised update to the shared reader count, bouncing that cache line between cores. If critical sections are very short (a few reads), that bookkeeping overhead can exceed the time saved by parallelism, so a plain mutex (or better, an atomic/seqlock/RCU) wins. RW locks pay off only when read critical sections are long enough that reader parallelism dominates, reads vastly outnumber writes, and reader-count contention isn't itself the bottleneck. Also watch for writer starvation (reader-preferring implementations) or reader starvation (writer-preferring) depending on the fairness policy.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:mutex-condvar -->
+
+<!-- TOPIC:concurrency:semaphores-classic -->
+<section class="view topic" id="v-concurrency-semaphores-classic" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Semaphores &amp; Classic Problems</h1>
+<p class="subtitle">Counting resources, and the three textbook problems every interview draws from.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Semaphore</h3>
+<p>An integer with two atomic operations: <code>acquire</code>/<code>wait</code>/<code>P</code> (decrement; block if it
+would go negative) and <code>release</code>/<code>signal</code>/<code>V</code> (increment; wake a waiter).</p>
+<ul>
+<li><strong>Counting semaphore(N)</strong> &mdash; up to N threads may proceed; models "N units of a resource" (a connection pool, N parking spots).</li>
+<li><strong>Binary semaphore(1)</strong> &mdash; acts like a lock, but with <em>no owner</em>: any thread can <code>release</code>, which enables using it for signalling between threads.</li>
+</ul>
+
+<h3>Producer&ndash;consumer (bounded buffer)</h3>
+<pre><code>sem empty = N;   sem full = 0;   mutex m;
+producer: empty.acquire(); m.lock(); buf.push(x); m.unlock(); full.release();
+consumer: full.acquire();  m.lock(); x=buf.pop();  m.unlock(); empty.release();</code></pre>
+<p><code>empty</code> counts free slots, <code>full</code> counts items; the mutex protects the buffer itself.
+Acquire the counting semaphore <em>before</em> the mutex to avoid holding the mutex while blocked.</p>
+
+<h3>Readers&ndash;writers</h3>
+<p>Many readers concurrently, or one writer exclusively. Naive "reader-preference" starves writers;
+"writer-preference" starves readers; a fair version bounds waiting for both. Usually solved with
+an RW lock or by a "turnstile" semaphore that new readers must pass, which a waiting writer can
+hold.</p>
+
+<h3>Dining philosophers</h3>
+<p>5 philosophers, 5 forks, each needs both neighbouring forks to eat. Grab-left-then-right by all
+&rarr; deadlock. Fixes: limit to 4 seated at once (a counting semaphore); asymmetric order (odd grabs
+left first, even grabs right first); pick up both forks atomically under a mutex; or a waiter/arbitrator.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Semaphore = atomic counter; <code>acquire</code> (P, dec/block), <code>release</code> (V, inc/wake). No ownership.</li>
+<li>Counting(N) = N concurrent permits (resource pool). Binary(1) = lock-like but any thread can release &rarr; good for signalling.</li>
+<li>Producer&ndash;consumer: <code>empty=N</code>, <code>full=0</code>, plus a mutex for the buffer; acquire the count semaphore before the mutex.</li>
+<li>Readers&ndash;writers: many readers XOR one writer; watch for starvation &mdash; use a fair RW lock.</li>
+<li>Dining philosophers deadlock fix: cap concurrent diners at N&minus;1, asymmetric fork order, atomic two-fork grab, or an arbitrator.</li>
+<li>Prefer higher-level constructs (blocking queues, RW locks, <code>Semaphore</code> classes) to hand-rolled P/V.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Counting vs binary semaphore?</dt>
+<dd>Counting allows up to N threads through (N units of a resource). Binary is initialised to 1 and behaves like a lock &mdash; but unlike a mutex it has no owner, so any thread can <code>release</code> it, which is what makes it usable for one thread signalling another.</dd>
+<dt>In bounded-buffer producer&ndash;consumer, what do the two semaphores count?</dt>
+<dd><code>empty</code> counts free slots (starts at N), <code>full</code> counts filled slots (starts at 0). A producer waits on <code>empty</code>, a consumer waits on <code>full</code>; a separate mutex protects the buffer data structure.</dd>
+<dt>Why acquire the counting semaphore before the mutex, not after?</dt>
+<dd>If you locked the mutex first and then blocked on a full/empty semaphore, you'd hold the mutex while sleeping &mdash; no one else could touch the buffer, and the counterpart thread that would unblock you can't get in. Acquire the resource count first, then briefly take the mutex only to mutate the buffer.</dd>
+<dt>What causes deadlock in dining philosophers and one fix?</dt>
+<dd>Every philosopher picks up their left fork, then all wait forever for the right (held as someone's left) &mdash; circular wait. Fix: allow at most 4 to attempt eating simultaneously (a semaphore initialised to 4), so at least one can always get both forks.</dd>
+<dt>What's the starvation risk in readers&ndash;writers?</dt>
+<dd>A steady stream of readers can keep the resource read-locked forever, so a writer never gets exclusive access (reader preference). The mirror problem gives writers priority and starves readers. Fair implementations queue requests so both make progress.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>acquire()</code> (P) do when the semaphore is 0?</summary><div class="answer-box">
+Blocks the calling thread until another thread calls <code>release()</code>.
+</div></details>
+<details class="answer-reveal"><summary>Which classic problem models "many readers or one writer"?</summary><div class="answer-box">
+The readers&ndash;writers problem.
+</div></details>
+<details class="answer-reveal"><summary>Semaphore to limit concurrent access to 3 printers?</summary><div class="answer-box">
+A counting semaphore initialised to 3.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Implement a rate limiter allowing N concurrent requests, blocking the rest.</summary><div class="answer-box">
+A counting semaphore initialised to N. Each request does <code>sem.acquire()</code> before proceeding and <code>sem.release()</code> in a <code>finally</code> when done (even on error/exception). When N are in flight, the N+1th blocks until one finishes. For a <em>per-second</em> rate (not concurrency), use a token bucket instead: refill tokens on a timer, <code>acquire</code> a token per request.
+</div></details>
+<details class="answer-reveal"><summary>Solve dining philosophers without deadlock <em>and</em> without a global arbitrator.</summary><div class="answer-box">
+Asymmetric acquisition: philosophers with an even id pick up the right fork first then the left; odd id pick up left first then right. This breaks the uniform cycle &mdash; at least one philosopher's acquisition order is "reversed" relative to a neighbour, so a full circular wait can't form. Combine with fair fork mutexes (FIFO) to also guarantee no individual philosopher starves.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is a semaphore easy to misuse compared to a mutex + condition variable?</summary><div class="answer-box">
+A semaphore conflates two roles &mdash; mutual exclusion and counting/signalling &mdash; and carries no association with the data it protects or the predicate it represents. Common errors: forgetting a <code>release</code> on an error path (permanent permit leak, eventual deadlock); calling <code>release</code> more times than <code>acquire</code> (silently raising the count, letting too many threads in); using one semaphore for two different conditions (a wake meant for condition A satisfies a waiter for condition B); and the count drifting out of sync with reality after an exception. A mutex+condvar makes the invariant explicit (the predicate is re-checked in a <code>while</code>), the mutex has a clear owner, and RAII guards the release. Dijkstra's semaphores are a minimal primitive; higher-level constructs (blocking queues, latches, barriers, <code>CompletableFuture</code>) encode the intent and are harder to get wrong.
+</div></details>
+<details class="answer-reveal"><summary>Design a fair readers&ndash;writers lock and prove neither side starves.</summary><div class="answer-box">
+Use a single FIFO queue of waiters (a ticket lock / a <code>Semaphore</code> with fairness, or a condvar with an explicit queue). State: <code>activeReaders</code>, <code>activeWriter</code> (bool), and the FIFO wait queue. A thread joins the tail of the queue; it may proceed when it reaches the head <em>and</em> the lock's state permits it (reader: no active writer; writer: no active readers or writer). Crucially, a reader at the head does <em>not</em> jump ahead of a writer that's queued earlier &mdash; that's what makes it fair. <strong>No writer starvation</strong>: once a writer is enqueued, only readers already ahead of it in the queue (a bounded set) can go first; new readers queue behind it, so the writer waits for a bounded number of predecessors. <strong>No reader starvation</strong>: symmetrically, a queued reader waits only for the bounded set of earlier writers plus at most one in-progress writer. Bounded waiting on both sides &rArr; both make progress. The cost vs a reader-preference lock is slightly lower read throughput under heavy read load, since readers can't all barge in past a waiting writer.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:semaphores-classic -->
+
+<!-- TOPIC:concurrency:deadlock-livelock -->
+<section class="view topic" id="v-concurrency-deadlock-livelock" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Deadlock, Livelock &amp; Starvation</h1>
+<p class="subtitle">Three ways a concurrent system can stop making progress &mdash; and how to design them out.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Deadlock</h3>
+<p>Threads permanently blocked, each waiting for a resource another holds (the four Coffman
+conditions: mutual exclusion, hold-and-wait, no preemption, circular wait &mdash; see the OS
+Deadlock topic). Practical prevention in application code:</p>
+<ul>
+<li><strong>Consistent global lock ordering</strong> &mdash; assign every lock a rank; always acquire in increasing rank.</li>
+<li><strong>Lock-both-at-once</strong> &mdash; <code>std::scoped_lock(a, b)</code> / <code>tryLock</code>-both with back-off.</li>
+<li><strong>Don't call out under a lock</strong> &mdash; no user callbacks, no acquiring a second subsystem's lock, no blocking I/O.</li>
+<li><strong>Coarser locking</strong> &mdash; one lock can't deadlock with itself.</li>
+<li><strong>Timeouts</strong> &mdash; <code>tryLock(timeout)</code> converts a deadlock into a detectable, recoverable failure.</li>
+</ul>
+
+<h3>Livelock</h3>
+<p>Threads are running and changing state but making no progress &mdash; e.g. two threads that each
+detect contention, release everything, and retry in lockstep forever. Fix: <strong>randomised
+exponential back-off</strong> so the retry timing desynchronises, or a priority/tie-breaker so one
+thread wins.</p>
+
+<h3>Starvation</h3>
+<p>A thread is perpetually denied progress though the system as a whole advances: always lower
+priority, always loses the lock race, or a stream of readers blocks a writer. Fixes: <strong>fair
+locks</strong> (FIFO), <strong>ageing</strong> (raise priority with wait time), bounded-waiting guarantees.</p>
+
+<h3>Priority inversion</h3>
+<p>A high-priority thread waits on a lock held by a low-priority thread that a medium-priority
+thread keeps preempting &mdash; the high thread is effectively blocked by the medium one. Fix:
+<strong>priority inheritance</strong> (the lock holder temporarily runs at the waiter's priority) or a
+<strong>priority ceiling</strong>.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Deadlock = permanently blocked cycle. Livelock = busy but no progress. Starvation = one party perpetually denied.</li>
+<li>Deadlock prevention: global lock order; lock-multiple atomically; no callbacks/I-O under a lock; coarser locks; <code>tryLock</code> + timeout.</li>
+<li>Livelock fix: randomised exponential back-off; a deterministic tie-breaker so someone always wins.</li>
+<li>Starvation fix: fair (FIFO) locks, ageing, bounded-waiting.</li>
+<li>Priority inversion fix: priority inheritance or priority ceiling on the lock.</li>
+<li>Detect deadlocks in prod: thread dumps / <code>jstack</code>, watchdog timers on lock acquisition, lock-order checkers (TSan, lockdep).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Deadlock vs livelock?</dt>
+<dd>In deadlock the threads are blocked and idle. In livelock they're actively executing &mdash; typically retrying an operation &mdash; but their actions keep cancelling each other out so no useful work completes.</dd>
+<dt>Simplest reliable way to prevent lock-ordering deadlocks?</dt>
+<dd>Define a total order over all locks (by id/address) and always acquire them in that order. A cycle in the wait-for graph then can't form.</dd>
+<dt>How does randomised back-off cure livelock?</dt>
+<dd>Livelock usually comes from threads reacting in perfect synchrony. Adding a random delay before each retry breaks the symmetry, so one thread arrives first, acquires what it needs, and makes progress while the other waits.</dd>
+<dt>What is priority inversion?</dt>
+<dd>A high-priority thread is blocked on a resource held by a low-priority thread, which itself is preempted by unrelated medium-priority threads &mdash; so the high-priority thread waits on the medium ones indirectly. Priority inheritance fixes it by boosting the holder to the waiter's priority.</dd>
+<dt>How do you detect a deadlock in a running JVM service?</dt>
+<dd>Take a thread dump (<code>jstack</code>, <code>kill -3</code>, or a profiler). The JVM annotates detected deadlocks explicitly ("Found one Java-level deadlock") showing which threads hold and wait for which monitors. Watchdogs that alert when a lock acquisition exceeds a threshold catch it proactively.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which is running-but-stuck: deadlock or livelock?</summary><div class="answer-box">
+Livelock &mdash; the threads are executing but not progressing. Deadlock threads are blocked.
+</div></details>
+<details class="answer-reveal"><summary>Name a lock-ordering-free way to acquire two mutexes safely.</summary><div class="answer-box">
+<code>std::scoped_lock(m1, m2)</code> / <code>std::lock(m1, m2)</code> &mdash; it uses a deadlock-avoidance algorithm (try/back-off).
+</div></details>
+<details class="answer-reveal"><summary>What fixes writer starvation in a readers&ndash;writers lock?</summary><div class="answer-box">
+A fair (FIFO) policy or bounding how long a writer can be made to wait &mdash; e.g. blocking new readers once a writer is queued.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your service occasionally freezes; a thread dump shows two threads each holding one lock and waiting for the other. Fix approach?</summary><div class="answer-box">
+It's a lock-ordering deadlock. Identify the two locks and every code path that takes both; impose one consistent acquisition order and refactor all paths to follow it. Where a natural order doesn't exist, switch to <code>std::scoped_lock</code>/<code>tryLock</code>-with-backoff, merge the two locks into one, or restructure so only one is held at a time (copy data out under lock A, release, then take lock B).
+</div></details>
+<details class="answer-reveal"><summary>A retry loop with <code>while(!tryLock(a) || !tryLock(b)) { unlockAll(); }</code> spins forever under load. Why and fix?</summary><div class="answer-box">
+Livelock: two threads keep grabbing one lock, failing the other, releasing, and retrying in sync. Fix: after a failed attempt, <code>sleep(random exponential backoff)</code> before retrying, so the threads desynchronise; or give threads a priority so one consistently wins; or use <code>std::lock</code>, which is designed to acquire multiple locks without livelock.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does priority inheritance actually work, and what's its cost / a subtlety with nested locks?</summary><div class="answer-box">
+When a high-priority thread H blocks trying to acquire a mutex held by low-priority thread L, the runtime raises L's effective (scheduling) priority to H's, so L is scheduled promptly, finishes its critical section, releases the mutex (at which point L's priority drops back and H acquires it). With <strong>nested</strong> locks it must be <em>transitive</em>: if L is itself blocked on a mutex held by even-lower thread K, K must also be boosted to H's priority &mdash; the boost propagates down the whole chain. Costs and subtleties: each block/unblock updates a priority-inheritance chain (bookkeeping, and the scheduler must re-evaluate run queues); the boost is per-mutex, so a thread holding several PI mutexes runs at the max of its waiters' priorities and must recompute on each acquire/release; there's a risk of "priority inheritance chains" causing latency spikes; and it only helps if the mutex implementation supports it (pthreads needs <code>PTHREAD_PRIO_INHERIT</code> set explicitly &mdash; the default doesn't, which is the Mars Pathfinder bug). Priority ceiling avoids the chains by pre-boosting on acquire, at the cost of needing to know the max waiter priority per lock up front.
+</div></details>
+<details class="answer-reveal"><summary>Give a definition of lock-freedom and starvation-freedom and explain why a lock-based algorithm can't be lock-free.</summary><div class="answer-box">
+<strong>Lock-free</strong>: at any point, <em>some</em> thread is guaranteed to make progress within a bounded number of steps of the whole system (individual threads may still stall or retry forever). <strong>Wait-free</strong> (stronger): <em>every</em> thread completes its operation in a bounded number of its own steps &mdash; no starvation. <strong>Starvation-free</strong> (a liveness property applicable to lock-based code too): every thread that wants to enter its critical section eventually does. A mutex-based algorithm cannot be lock-free because if the thread holding the lock is descheduled (or crashes) inside the critical section, <em>every other</em> thread that needs the lock is blocked indefinitely &mdash; no thread makes progress, violating the lock-free guarantee. Lock-free algorithms achieve their guarantee by using atomic RMW (CAS) with retry: a stalled thread's incomplete operation doesn't block others because there's no held lock &mdash; others just win the CAS and proceed. The trade-off is complexity, the ABA problem, and reclamation difficulty (see the Lock-free topic).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:deadlock-livelock -->
+
+<!-- TOPIC:concurrency:atomics-cas -->
+<section class="view topic" id="v-concurrency-atomics-cas" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Atomics &amp; Compare-and-Swap</h1>
+<p class="subtitle">Lock-free updates built from one hardware primitive &mdash; and the ABA trap.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Atomic operations</h3>
+<p>An <strong>atomic</strong> read-modify-write completes indivisibly &mdash; no other thread sees a partial
+state. Hardware provides: atomic load/store, <code>fetch_add</code>/<code>fetch_sub</code>,
+<code>exchange</code>, and the universal primitive <strong>compare-and-swap (CAS)</strong>:</p>
+<pre><code><span class="c">// atomically: if (*p == expected) { *p = desired; return true; } else { expected = *p; return false; }</span>
+bool compare_exchange(p, &amp;expected, desired);</code></pre>
+
+<h3>The CAS loop</h3>
+<pre><code>old = x.load();
+<span class="k">do</span> {
+    new = f(old);                    <span class="c">// compute the update</span>
+} <span class="k">while</span> (!x.compare_exchange_weak(old, new));  <span class="c">// retry if someone changed x</span></code></pre>
+<p>This implements any atomic transformation without a lock: read, compute, and swap only if
+nothing changed in between. Under low contention it's a single successful CAS; under high
+contention threads retry (which can livelock-ish &mdash; add back-off).</p>
+
+<h3>When atomics beat locks</h3>
+<ul>
+<li>Single-word updates: counters, flags, statistics, sequence numbers, a lock-free stack/queue head.</li>
+<li>No blocking &rarr; no deadlock, no priority inversion, resilient to a thread being descheduled mid-operation.</li>
+<li><em>But</em>: multi-word invariants, complex data structures, and anything needing several coordinated updates still want a lock (or a carefully-designed lock-free algorithm).</li>
+</ul>
+
+<h3>The ABA problem</h3>
+<p>A CAS on a pointer sees the value is still <code>A</code> and succeeds &mdash; but between your read and
+your CAS, another thread changed it <code>A &rarr; B &rarr; A</code> (freed <code>A</code>, reused the address).
+Your CAS wrongly thinks nothing happened. Fixes: a <strong>tagged pointer</strong> (pointer + version
+counter, CAS the whole double-word), <strong>hazard pointers</strong> / epoch-based reclamation to
+prevent premature reuse, or <code>LL/SC</code> (load-linked/store-conditional) which fails if the
+location was written at all.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Atomic RMW = indivisible read-modify-write; hardware gives <code>fetch_add</code>, <code>exchange</code>, and <strong>CAS</strong> (the universal one).</li>
+<li>CAS loop: <code>load &rarr; compute &rarr; compare_exchange; retry on failure</code> &mdash; lock-free single-word transform.</li>
+<li><code>compare_exchange_weak</code> may fail spuriously (cheaper on LL/SC archs) &mdash; fine inside a loop; use <code>_strong</code> for a one-shot.</li>
+<li>Use atomics for counters/flags/single-pointer updates; use locks for multi-word invariants.</li>
+<li>Atomics: no deadlock, no priority inversion, robust to preemption &mdash; but retries under contention.</li>
+<li><strong>ABA</strong>: value goes A&rarr;B&rarr;A, CAS falsely succeeds. Fix: version-tagged pointer, hazard pointers / epochs, or LL/SC.</li>
+<li>Contended atomics still bounce a cache line between cores &mdash; not free at scale; consider sharding/striping counters.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does compare-and-swap do?</dt>
+<dd>Atomically: check whether a memory location still holds an expected value; if so, write a new value and report success; if not, report failure (and typically load the current value). It's the building block for lock-free updates.</dd>
+<dt>Why is CAS used in a loop?</dt>
+<dd>Between reading the current value and attempting the swap, another thread may have changed it, so the CAS fails. You recompute the new value from the fresh current value and retry until the CAS succeeds &mdash; meaning your update was applied to an unchanged base.</dd>
+<dt>When would you use an atomic instead of a mutex?</dt>
+<dd>For a single-word operation &mdash; incrementing a counter, flipping a flag, swapping a pointer &mdash; where a lock would be pure overhead and a source of contention/blocking. Multi-variable invariants still need a lock or a dedicated lock-free design.</dd>
+<dt>What is the ABA problem?</dt>
+<dd>Your CAS expects value A and succeeds because the location currently reads A &mdash; but it was changed to B and back to A (often via free-and-reuse of a pointer) in between, so "unchanged" is an illusion and your logic acts on stale assumptions (e.g. reattaching a freed node).</dd>
+<dt>How do you defend against ABA?</dt>
+<dd>Attach a monotonically increasing tag/version to the value and CAS the {value, tag} pair as one wide word; or use a memory-reclamation scheme (hazard pointers, epoch-based, RCU) so an address can't be reused while any thread might still CAS on it; or use LL/SC hardware, which detects <em>any</em> intervening write.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which atomic operation is considered "universal" for building lock-free structures?</summary><div class="answer-box">
+Compare-and-swap (CAS) &mdash; or its LL/SC equivalent.
+</div></details>
+<details class="answer-reveal"><summary>How do you atomically increment a shared counter without a lock?</summary><div class="answer-box">
+<code>atomic&lt;int&gt;::fetch_add(1)</code> (C++), <code>AtomicInteger.incrementAndGet()</code> (Java), <code>atomic.AddInt64</code> (Go).
+</div></details>
+<details class="answer-reveal"><summary>Does an atomic operation block?</summary><div class="answer-box">
+No &mdash; it completes without waiting. Contended CAS loops may <em>retry</em>, but no thread is put to sleep.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Implement a lock-free push onto a singly linked stack.</summary><div class="answer-box">
+<pre><code>node-&gt;next = head.load();
+<span class="k">while</span> (!head.compare_exchange_weak(node-&gt;next, node)) { }
+<span class="c">// on failure, compare_exchange reloads node-&gt;next to the current head, then retry</span></code></pre>
+Pop is symmetric (<code>head.compare_exchange(old, old-&gt;next)</code>) but is where ABA and reclamation bite &mdash; another thread may free the node whose <code>next</code> you're about to read.
+</div></details>
+<details class="answer-reveal"><summary>A heavily contended atomic counter is a bottleneck. Options?</summary><div class="answer-box">
+The single cache line ping-pongs between all cores. Options: <strong>striped/sharded counters</strong> &mdash; N sub-counters on separate cache lines, each thread increments <code>counter[threadId % N]</code>, sum them on read (Java's <code>LongAdder</code>). <strong>Per-thread counters</strong> aggregated periodically. Or accept approximate counts and batch updates. The read cost rises (sum N cells) but writes stop contending.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why does <code>compare_exchange_weak</code> exist alongside <code>_strong</code>, and when do you use each?</summary><div class="answer-box">
+On architectures using LL/SC (ARM, PowerPC, RISC-V), the store-conditional can fail <em>spuriously</em> &mdash; not because the value changed, but because of an interrupt, a context switch, or another (even unrelated, same-cache-line) access between the load-linked and store-conditional. <code>compare_exchange_weak</code> is allowed to report such spurious failures, which lets the compiler emit the bare LL/SC pair with no retry wrapper &mdash; the cheapest possible code. <code>compare_exchange_strong</code> must not fail spuriously, so on LL/SC it wraps the pair in its own internal retry loop. Rule: use <code>_weak</code> when you're <em>already</em> in a loop (the classic CAS loop) &mdash; a spurious failure just costs one extra harmless iteration, and you get the faster codegen. Use <code>_strong</code> for a one-shot CAS not in a loop (e.g. "try once to claim this slot, otherwise take a different path"), where a spurious failure would incorrectly send you down the fallback path. On x86 (which has a real CAS instruction, <code>cmpxchg</code>) there's no spurious failure and the two compile identically.
+</div></details>
+<details class="answer-reveal"><summary>Explain hazard pointers as a solution to safe memory reclamation in lock-free code.</summary><div class="answer-box">
+The core problem: in a lock-free pop, thread T1 reads pointer <code>p</code> to a node it's about to dereference/CAS; thread T2 concurrently removes and <code>free</code>s that node &mdash; T1 now has a dangling pointer. <strong>Hazard pointers</strong>: each thread has a small set of single-writer, multi-reader "hazard" slots. Before dereferencing <code>p</code>, a thread publishes <code>p</code> into one of its hazard slots and then re-validates that <code>p</code> is still reachable (still the head, etc.). When a thread <em>retires</em> a node (logically removes it), instead of freeing immediately it adds the node to a per-thread "retired" list; periodically it scans <em>all</em> threads' hazard slots and frees only retired nodes that appear in nobody's hazard set. Guarantees: a node in use by some thread is always protected (its pointer is in that thread's hazard slot, so the scanner skips it), and memory is bounded (each thread retires at most a constant per operation, and reclaims once hazards clear). Costs: a store + fence to publish a hazard pointer on the read path (cheaper than a lock, pricier than nothing), an O(threads &times; hazards) scan amortised over reclamation, and API intrusiveness. Alternatives with different trade-offs: epoch-based reclamation (lower read-path cost, but a stalled thread can pin memory indefinitely) and RCU (near-zero read cost, deferred bulk reclamation).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:atomics-cas -->
+
+<!-- TOPIC:concurrency:memory-model -->
+<section class="view topic" id="v-concurrency-memory-model" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Memory Models &amp; Ordering</h1>
+<p class="subtitle">Why one thread's writes appear out of order to another &mdash; and how to pin the order down.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Reordering</h3>
+<p>Compilers reorder independent memory operations for optimisation; CPUs reorder via store
+buffers and out-of-order execution. Within one thread this is invisible (program order is
+preserved for that thread's own view). Across threads, another thread can observe the writes in
+a different order &mdash; unless you add synchronisation.</p>
+
+<h3>Happens-before</h3>
+<p>The formal ordering guarantee: if action A <em>happens-before</em> B, then A's effects are visible
+to B. It's established by program order within a thread, and across threads by matched
+synchronisation: unlock&rarr;lock of the same mutex, a release store&rarr;an acquire load of the same
+atomic, thread start/join, etc. No happens-before edge between two accesses to the same
+data &rarr; data race &rarr; UB.</p>
+
+<h3>The memory orders (C++ / similar)</h3>
+<table>
+<tr><th>Order</th><th>Guarantee</th></tr>
+<tr><td><code>relaxed</code></td><td>Atomicity only &mdash; no ordering w.r.t. other memory. Fine for counters/stats.</td></tr>
+<tr><td><code>acquire</code> (on a load)</td><td>No reads/writes after it can be reordered before it. Pairs with a release.</td></tr>
+<tr><td><code>release</code> (on a store)</td><td>No reads/writes before it can be reordered after it. Publishes prior writes.</td></tr>
+<tr><td><code>acq_rel</code></td><td>Both, for a RMW.</td></tr>
+<tr><td><code>seq_cst</code> (default)</td><td>Acquire/release <em>plus</em> a single total order all threads agree on. Simplest to reason about, most expensive.</td></tr>
+</table>
+<p>The <strong>release/acquire pair</strong> is the workhorse: thread A writes data then does a
+<em>release</em> store to a flag; thread B does an <em>acquire</em> load of the flag and, if it sees
+the new value, is guaranteed to see all of A's prior writes.</p>
+
+<h3><code>volatile</code> is not atomic</h3>
+<p>In C/C++, <code>volatile</code> prevents the compiler eliding/reordering accesses to <em>that</em>
+variable (for memory-mapped I/O, signal handlers) but gives <strong>no atomicity, no cross-thread
+ordering, no CPU barrier</strong>. It is not a threading tool. (Java's <code>volatile</code> is different &mdash;
+it <em>does</em> provide acquire/release semantics.)</p>
+
+<h3>Fences</h3>
+<p><code>atomic_thread_fence(memory_order)</code> imposes ordering without being tied to a specific
+variable &mdash; used to separate groups of relaxed atomics, or in lock-free algorithms.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Compilers + CPUs reorder memory ops; a thread sees its own order, other threads may not.</li>
+<li><strong>Happens-before</strong>: A hb B &rArr; A's effects visible to B. Established by program order + matched sync (unlock/lock, release/acquire, start/join).</li>
+<li>Data-race-free program &rArr; you may reason as if sequentially consistent (SC-DRF).</li>
+<li>Orders: <code>relaxed</code> (atomic only) &lt; <code>acquire</code>/<code>release</code> (pairwise publish/consume) &lt; <code>seq_cst</code> (global total order, default, priciest).</li>
+<li>Publish pattern: write data &rarr; <code>store(flag, release)</code>; reader <code>load(flag, acquire)</code> then read data.</li>
+<li>C/C++ <code>volatile</code> &ne; atomic: no atomicity, no ordering, no barrier. Use <code>std::atomic</code>. (Java <code>volatile</code> does give acquire/release.)</li>
+<li>Prefer <code>seq_cst</code> unless profiling shows the barrier cost matters; relax carefully with a written argument.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why can thread B see thread A's writes in a different order than A performed them?</dt>
+<dd>Compiler reordering of independent operations, and CPU features (store buffers, out-of-order execution, per-core cache visibility) mean A's stores can become visible to other cores at different times. Only synchronisation establishing happens-before forces an observable order.</dd>
+<dt>What is happens-before?</dt>
+<dd>A partial order on memory operations. If A happens-before B, B is guaranteed to see A's effects. It comes from program order within a thread plus cross-thread edges like unlock&rarr;lock of the same mutex or release-store&rarr;acquire-load of the same atomic.</dd>
+<dt>Explain the release/acquire pattern.</dt>
+<dd>Writer: set up data, then do a <em>release</em> store to a flag. Reader: <em>acquire</em> load of the flag; if it observes the flag's new value, all writes the writer did before the release are visible. It's a one-way barrier pair &mdash; cheaper than full sequential consistency.</dd>
+<dt>Is <code>volatile</code> enough for a thread-shared flag in C++?</dt>
+<dd>No. It stops the compiler optimising away accesses but provides no atomicity and no memory ordering/barriers, so other writes around it can still be reordered and the value can tear. Use <code>std::atomic&lt;bool&gt;</code>. (In Java, <code>volatile</code> <em>does</em> give the needed acquire/release semantics.)</dd>
+<dt>When is <code>memory_order_relaxed</code> acceptable?</dt>
+<dd>When you need atomicity but not ordering relative to other memory &mdash; e.g. a statistics counter, or an id generator, where no other data's visibility depends on it. If any "if I see this, I must also see that" reasoning is involved, you need acquire/release or stronger.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which memory order is the default for <code>std::atomic</code> operations?</summary><div class="answer-box">
+<code>memory_order_seq_cst</code> (sequential consistency).
+</div></details>
+<details class="answer-reveal"><summary>Does C++ <code>volatile</code> make a variable safe to share between threads?</summary><div class="answer-box">
+No. It's for memory-mapped I/O and signal handlers, not threading.
+</div></details>
+<details class="answer-reveal"><summary>A release store pairs with what kind of load?</summary><div class="answer-box">
+An acquire load of the same atomic variable.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Thread A: <code>data = 42; ready = true;</code> Thread B: <code>if (ready) print(data);</code> &mdash; can B print 0?</summary><div class="answer-box">
+Yes, with plain variables (data race, UB) or with relaxed atomics: B can see <code>ready == true</code> while <code>data</code> is still stale, because the two stores can be reordered / become visible independently. Fix: make <code>ready</code> a <code>std::atomic&lt;bool&gt;</code>, store it with <code>release</code>, load it with <code>acquire</code>; then seeing <code>ready == true</code> guarantees <code>data == 42</code>.
+</div></details>
+<details class="answer-reveal"><summary>Why is a <code>seq_cst</code> atomic store more expensive than a <code>release</code> store on x86?</summary><div class="answer-box">
+A <code>release</code> store on x86 is essentially a plain <code>mov</code> (x86's memory model already gives release semantics for stores). A <code>seq_cst</code> store additionally needs to be globally ordered with respect to <code>seq_cst</code> <em>loads</em> on other variables, which requires draining the store buffer &mdash; emitted as an <code>xchg</code> or a trailing <code>mfence</code>. That full barrier stalls the pipeline until pending stores are visible, costing tens of cycles.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain the "IRIW" (independent reads of independent writes) litmus test and what it distinguishes.</summary><div class="answer-box">
+Four threads: T1 does <code>x = 1</code>; T2 does <code>y = 1</code>; T3 reads <code>x</code> then <code>y</code>; T4 reads <code>y</code> then <code>x</code>. Question: can T3 see <code>x=1, y=0</code> while T4 sees <code>y=1, x=0</code> &mdash; i.e. the two reader threads disagree on the order in which the two independent writes happened? Under <strong>sequential consistency</strong> (and under C++ <code>seq_cst</code> on all four accesses), this outcome is <em>forbidden</em>: there's a single global order, so T3 and T4 must agree. Under weaker models &mdash; C++ acquire/release (not seq_cst), or POWER/ARM hardware &mdash; it is <em>allowed</em>, because write propagation isn't required to be multi-copy atomic: T1's store to <code>x</code> can reach T3's core before T4's, and independently for <code>y</code>. IRIW is the canonical test that separates "release/acquire is enough" from "you actually need seq_cst": release/acquire gives you per-pair ordering and cache coherence per-location, but not a single total order across <em>different</em> locations that all threads observe identically. x86-TSO happens to forbid IRIW (it's "multi-copy atomic"), which is why code that's buggy-in-theory often passes on Intel and fails on ARM.
+</div></details>
+<details class="answer-reveal"><summary>What is <code>memory_order_consume</code>, why was it deprecated in practice, and what replaced it?</summary><div class="answer-box">
+<code>consume</code> was meant to be a weaker, cheaper <code>acquire</code>: instead of ordering <em>all</em> subsequent reads after the load, it would order only those <em>data-dependent</em> on the loaded value (following the pointer you just loaded). On weakly-ordered hardware like ARM/POWER, dependent loads are already ordered by the hardware's respect for data dependencies &mdash; so <code>consume</code> could compile to a bare load with no fence, ideal for RCU-style "load a pointer, then dereference it" patterns. In practice, no compiler implemented it correctly: tracking the "dependency chain" through arbitrary code (across function calls, through the optimiser which loves to break dependencies by turning <code>p + (x - x)</code> into <code>p</code>, etc.) proved intractable. Every compiler silently promoted <code>consume</code> to <code>acquire</code>, giving correctness but not the performance win. C++17 discouraged it, and work continues on a redesigned dependency-ordering facility (<code>std::dependency</code>-style, or marking pointer types). For now: use <code>acquire</code>; the Linux kernel gets the <code>consume</code> effect via <code>rcu_dereference</code> plus a documented rule that you must not break the dependency chain.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:memory-model -->
+
+<!-- TOPIC:concurrency:lock-free -->
+<section class="view topic" id="v-concurrency-lock-free" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Lock-free &amp; Wait-free Basics</h1>
+<p class="subtitle">Progress guarantees, a lock-free stack, and why it's usually not worth it.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Progress guarantees (weakest to strongest)</h3>
+<table>
+<tr><th>Property</th><th>Guarantee</th></tr>
+<tr><td>Blocking</td><td>A stalled thread (holding a lock) can block everyone.</td></tr>
+<tr><td>Obstruction-free</td><td>A thread running in isolation (others paused) finishes in bounded steps.</td></tr>
+<tr><td>Lock-free</td><td><em>Some</em> thread always makes progress system-wide; individual threads may starve.</td></tr>
+<tr><td>Wait-free</td><td><em>Every</em> thread finishes in a bounded number of its own steps. No starvation. Hardest to build.</td></tr>
+</table>
+
+<h3>Lock-free stack (Treiber)</h3>
+<pre><code>push(n): <span class="k">do</span> { n-&gt;next = head; } <span class="k">while</span> (!CAS(&amp;head, n-&gt;next, n));
+pop():   <span class="k">do</span> { old = head; <span class="k">if</span> (!old) <span class="k">return</span> null; nx = old-&gt;next; }
+         <span class="k">while</span> (!CAS(&amp;head, old, nx));
+         <span class="c">// ... now safe to reclaim 'old'?  -- this is the hard part</span></code></pre>
+<p>The algorithm is short; <strong>safe memory reclamation</strong> is the real work &mdash; another thread
+may still be reading <code>old</code> when you free it (and ABA if you reuse the address). Solutions:
+hazard pointers, epoch-based reclamation, RCU, or a garbage-collected runtime (which is why
+lock-free is much easier in Java/C#/Go).</p>
+
+<h3>When is it worth it?</h3>
+<ul>
+<li><strong>Yes</strong>: extreme contention on a hot single-word structure (a counter, a queue head), hard real-time (can't tolerate a lock holder being descheduled), signal handlers / interrupt context (can't take a lock).</li>
+<li><strong>Usually no</strong>: a well-designed lock with short critical sections is simpler, easier to verify, and often <em>faster</em> under realistic contention. Lock-free code is notoriously hard to get right (ordering, ABA, reclamation) and hard to test.</li>
+</ul>
+<p>Prefer proven library structures (<code>ConcurrentLinkedQueue</code>, <code>folly::MPMCQueue</code>, Go
+channels) over rolling your own.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Blocking &lt; obstruction-free &lt; lock-free (some thread progresses) &lt; wait-free (every thread progresses, bounded).</li>
+<li>Lock-free = no mutex; built from CAS-retry loops; a descheduled thread can't block others.</li>
+<li>Treiber stack / Michael-Scott queue: the algorithm is easy; <strong>reclamation + ABA</strong> is the hard part.</li>
+<li>Reclamation: hazard pointers, epochs, RCU, or a GC runtime.</li>
+<li>Worth it for: hot single-word contention, real-time, interrupt/signal context.</li>
+<li>Not worth it for: general data structures &mdash; a short-critical-section lock is simpler, verifiable, often faster.</li>
+<li>Use battle-tested library implementations; don't hand-roll.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Lock-free vs wait-free?</dt>
+<dd>Lock-free guarantees that <em>the system</em> makes progress &mdash; at least one thread completes an operation in bounded steps &mdash; but a particular thread could keep losing CAS races and never finish. Wait-free guarantees <em>every</em> thread completes in a bounded number of its own steps, so no starvation. Wait-free is much harder and rarer.</dd>
+<dt>Why can't a mutex-based algorithm be lock-free?</dt>
+<dd>If the thread holding the lock is descheduled (or crashes) inside the critical section, every other thread that needs the lock is stuck &mdash; no thread makes progress, violating the definition.</dd>
+<dt>What's the hardest part of a lock-free linked structure?</dt>
+<dd>Safe memory reclamation: knowing when it's safe to free a node that was unlinked, given another thread may still hold a pointer to it &mdash; plus avoiding ABA when addresses are reused. The CAS-based linking itself is a few lines.</dd>
+<dt>When is lock-free genuinely the right choice?</dt>
+<dd>Hard real-time or interrupt/signal context where you can't afford a lock holder being preempted or can't sleep; and extreme contention on a tiny hot structure where lock overhead dominates. Otherwise a well-scoped lock is usually simpler and competitive.</dd>
+<dt>Why is lock-free easier in Java/Go than C++?</dt>
+<dd>The garbage collector solves reclamation for free &mdash; you never explicitly free a node, so "another thread still has a pointer" is fine and ABA-via-reuse largely disappears. In C++ you must add hazard pointers / epochs / RCU yourself.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Does "lock-free" mean no thread ever waits?</summary><div class="answer-box">
+No &mdash; it means the system as a whole always progresses. An individual thread can retry indefinitely (that's wait-freedom, which is stronger).
+</div></details>
+<details class="answer-reveal"><summary>What primitive is a lock-free stack built from?</summary><div class="answer-box">
+Compare-and-swap (CAS) on the head pointer, in a retry loop.
+</div></details>
+<details class="answer-reveal"><summary>Name one memory-reclamation technique for lock-free structures.</summary><div class="answer-box">
+Hazard pointers, epoch-based reclamation, or RCU.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your lock-free queue works in tests but crashes under load in production. Likely cause?</summary><div class="answer-box">
+Use-after-free / ABA in the reclamation path: a node is dequeued and freed while another thread is mid-way through reading its <code>next</code> pointer or CASing on it. Tests don't hit the exact interleaving; production load does. You need a reclamation scheme (hazard pointers / epochs), or switch to a well-tested library queue, or a lock-based bounded queue if the contention doesn't actually warrant lock-free.
+</div></details>
+<details class="answer-reveal"><summary>Why might a lock-free queue be <em>slower</em> than a mutex-guarded one under moderate contention?</summary><div class="answer-box">
+Every operation does one or more CAS retries, each an atomic RMW that bounces the head/tail cache line between cores; under contention the retry rate climbs and threads burn CPU spinning. A mutex with a very short critical section does one atomic to lock, a few instructions, one to unlock, and blocks (yielding the CPU) when contended rather than spinning. Lock-free wins at the extremes (either near-zero contention where the single CAS is cheap, or pathological contention where blocking's context-switch cost dominates), and loses in the messy middle.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Sketch the Michael-Scott lock-free queue and the role of its "helping" mechanism.</summary><div class="answer-box">
+It's a singly linked list with atomic <code>head</code> and <code>tail</code> pointers and a dummy first node. <strong>Enqueue</strong>: read <code>tail</code> and <code>tail-&gt;next</code>; if <code>tail</code> is still the last node (<code>next == null</code>), CAS <code>tail-&gt;next</code> from null to the new node; then CAS <code>tail</code> forward to the new node. <strong>Dequeue</strong>: read <code>head</code>, <code>tail</code>, <code>head-&gt;next</code>; if the queue isn't empty, read the value from <code>head-&gt;next</code>, CAS <code>head</code> to <code>head-&gt;next</code>, then reclaim the old dummy. The <strong>"helping"</strong>: because enqueue is two CAS steps (link the node, then swing <code>tail</code>), another thread can observe a "half-finished" enqueue where <code>tail-&gt;next != null</code>. Instead of blocking, that thread <em>helps</em> complete the operation &mdash; it does the second CAS (swing <code>tail</code> forward) itself before proceeding. This is what makes the queue lock-free rather than merely obstruction-free: no thread's stall between the two CAS steps can block others, because anyone who notices will finish the job. Every lock-free multi-step algorithm needs some form of this cooperative completion.
+</div></details>
+<details class="answer-reveal"><summary>What is the theoretical significance of CAS having "consensus number infinity"?</summary><div class="answer-box">
+Herlihy's consensus hierarchy ranks synchronisation primitives by the maximum number of threads for which they can solve <em>wait-free consensus</em> (all threads agree on one value, each finishing in bounded steps). Atomic registers (plain reads/writes) have consensus number 1 &mdash; they can't solve consensus for even 2 threads wait-free. <code>test-and-set</code>, <code>fetch-and-add</code>, and <code>swap</code> have consensus number 2. <strong>CAS</strong> (and LL/SC) have consensus number <strong>&infin;</strong> &mdash; they can solve wait-free consensus for any number of threads. The practical consequence: CAS is <em>universal</em> &mdash; any sequential object has a wait-free concurrent implementation built from CAS (Herlihy's universal construction). That's why every modern architecture provides a CAS-class instruction and why lock-free/wait-free data structures are all ultimately CAS loops: nothing weaker is expressive enough, and nothing stronger is needed.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:lock-free -->
+
+<!-- TOPIC:concurrency:thread-pools -->
+<section class="view topic" id="v-concurrency-thread-pools" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Thread Pools &amp; Work Queues</h1>
+<p class="subtitle">Reuse a fixed set of threads to run a stream of tasks &mdash; and size it right.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Why pools</h3>
+<p>Creating a thread per task is expensive (stack allocation, kernel setup) and unbounded (a spike
+of tasks spawns thousands of threads &rarr; memory blow-up, scheduler thrash). A pool caps
+concurrency, amortises thread creation, and gives a place to apply backpressure.</p>
+
+<h3>Anatomy</h3>
+<ul>
+<li>N worker threads, each looping: take a task from the queue, run it, repeat.</li>
+<li>A <strong>bounded</strong> task queue (blocking or with a rejection policy) so a producer flood can't OOM you.</li>
+<li>A <strong>rejection / backpressure</strong> policy when full: block the submitter, drop, run on the caller's thread, or fail fast.</li>
+</ul>
+
+<h3>Sizing</h3>
+<table>
+<tr><th>Workload</th><th>Pool size</th></tr>
+<tr><td>CPU-bound</td><td>&asymp; number of cores (or cores + 1)</td></tr>
+<tr><td>I/O-bound</td><td>higher &mdash; roughly <code>cores &times; (1 + wait_time / compute_time)</code>; often set empirically</td></tr>
+<tr><td>Mixed</td><td>separate pools per workload class so slow I/O tasks don't starve CPU tasks</td></tr>
+</table>
+
+<h3>Work stealing</h3>
+<p>Each worker has its own deque; it pushes/pops its own tasks from one end (cache-friendly, no
+contention), and when idle <strong>steals</strong> from the other end of a random busy worker's deque.
+Great for recursive divide-and-conquer (fork/join) where task counts are uneven. Used by Java's
+<code>ForkJoinPool</code>, Go's scheduler, Rust's Rayon, .NET TPL.</p>
+
+<h3>Shutdown</h3>
+<p>Graceful: stop accepting new tasks, let in-flight and queued tasks drain, then join workers
+(with a timeout &rarr; force). Never just kill worker threads &mdash; tasks may hold locks or leave
+state half-updated.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Pool = fixed workers + a task queue; caps concurrency, amortises thread creation, enables backpressure.</li>
+<li>Always use a <strong>bounded</strong> queue + an explicit rejection policy (block / caller-runs / drop / fail).</li>
+<li>Size: CPU-bound &asymp; #cores; I/O-bound &asymp; cores &times; (1 + wait/compute); measure.</li>
+<li>Separate pools per workload class &mdash; don't let blocking I/O tasks starve CPU tasks (or deadlock via task dependencies).</li>
+<li>Work stealing: per-worker deque + steal-when-idle &mdash; best for fork/join / recursive tasks.</li>
+<li>Graceful shutdown: stop intake &rarr; drain &rarr; join with timeout &rarr; force. Never kill workers mid-task.</li>
+<li>Beware: submitting a task that waits on another task in the <em>same</em> bounded pool &rarr; deadlock.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why use a thread pool instead of creating a thread per task?</dt>
+<dd>Thread creation/teardown is costly, and an unbounded task rate would create unbounded threads (memory exhaustion, scheduler overhead, cache thrash). A pool bounds concurrency, reuses threads, and provides a queue where you can apply backpressure.</dd>
+<dt>How big should a CPU-bound pool be?</dt>
+<dd>About the number of hardware cores (sometimes cores + 1 to cover the occasional page fault / brief block). More than that just adds context-switching without more parallelism.</dd>
+<dt>Why bound the task queue?</dt>
+<dd>An unbounded queue silently converts a load spike into unbounded memory growth and ever-rising latency until an OOM. A bounded queue plus a rejection policy makes overload visible and controllable (block the producer, shed load, or fail fast).</dd>
+<dt>What is work stealing and when does it shine?</dt>
+<dd>Idle workers take tasks from busy workers' local deques instead of a single shared queue. It minimises contention and balances load automatically &mdash; ideal for fork/join workloads where subtasks are spawned recursively and unevenly.</dd>
+<dt>What's the danger of submitting a task that blocks waiting on another task in the same pool?</dt>
+<dd>If the pool's threads are all occupied by tasks waiting on queued tasks that can't be scheduled, you deadlock the pool. Use a separate pool for the dependent work, or a design that doesn't block a pool thread on another pool task (e.g. continuation-based / async).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What sits between task submitters and worker threads in a pool?</summary><div class="answer-box">
+A task queue (ideally bounded).
+</div></details>
+<details class="answer-reveal"><summary>Rough pool size for pure number-crunching on an 8-core box?</summary><div class="answer-box">
+About 8 (cores), maybe 9.
+</div></details>
+<details class="answer-reveal"><summary>What technique lets idle workers grab work from busy ones?</summary><div class="answer-box">
+Work stealing (per-worker deques).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Java's <code>Executors.newCachedThreadPool()</code> caused an OOM under load. Why, and what to use instead?</summary><div class="answer-box">
+It has an unbounded implicit queue (<code>SynchronousQueue</code> handoff) and an effectively unbounded max thread count &mdash; a burst of submissions spawns a thread each, until memory is exhausted. Use a <code>ThreadPoolExecutor</code> with a fixed core/max pool size, a <em>bounded</em> <code>ArrayBlockingQueue</code>, and an explicit <code>RejectedExecutionHandler</code> (<code>CallerRunsPolicy</code> for natural backpressure, or fail-fast with alerting).
+</div></details>
+<details class="answer-reveal"><summary>Estimate the pool size for tasks that spend 90ms on I/O and 10ms on CPU, on 4 cores.</summary><div class="answer-box">
+Target: keep the 4 cores busy. Each task uses a core only 10% of its wall time, so you need ~10 tasks in flight per core to saturate it: <code>4 &times; (1 + 90/10) = 4 &times; 10 = 40</code> threads. In practice you'd verify empirically and cap it, and prefer async I/O (which needs far fewer threads) if the platform supports it.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does a work-stealing deque avoid locks between the owner and thieves?</summary><div class="answer-box">
+The owner operates on the <strong>bottom</strong> of its deque (push/pop) and thieves on the <strong>top</strong> (steal), so they touch opposite ends and only conflict when the deque has 0&ndash;1 elements. The classic Chase-Lev design uses a growable circular array with atomic <code>top</code> and <code>bottom</code> indices: <code>push</code> is a plain store of the element then a relaxed store of <code>bottom+1</code> (owner only, no CAS); <code>pop</code> decrements <code>bottom</code>, and only if it's now racing a thief for the last element does it CAS <code>top</code> to resolve the tie; <code>steal</code> reads <code>top</code>, reads the element, then CASes <code>top</code> forward &mdash; failing (and retrying) if another thief or the owner won. So the common case (non-empty deque, owner pushing/popping) is lock-free and CAS-free for the owner, thieves pay one CAS, and the only contended point is the last element. Subtleties: memory fences between the <code>bottom</code> decrement and the <code>top</code> read to prevent reordering, and safe reclamation / ABA handling on the underlying array when it grows.
+</div></details>
+<details class="answer-reveal"><summary>What is "thread pool induced deadlock" via task dependencies, and how do fork/join frameworks avoid it?</summary><div class="answer-box">
+If task A, running on a pool thread, submits subtasks B and C to the <em>same</em> bounded pool and then <em>blocks</em> waiting for their results, it occupies a pool thread while needing pool threads. With enough such A's, every pool thread is a blocked A and no B/C can ever run &mdash; deadlock. Fork/join frameworks (Java <code>ForkJoinPool</code>) avoid it with <strong>join-time work donation / continuation</strong>: when a worker calls <code>join()</code> on a subtask that isn't done, instead of blocking it <em>executes other pending tasks</em> from its own or others' deques (including possibly the very subtask it's waiting on), so the thread stays useful and the dependency graph always makes progress as long as it's acyclic. It may also spin up a <em>compensation thread</em> temporarily to maintain target parallelism when a worker genuinely must block (managed blockers). The general lesson: never block a pool thread on work that must run in the same pool &mdash; use a separate pool, or an async/continuation style where "waiting" doesn't hold a thread.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:thread-pools -->
+
+<!-- TOPIC:concurrency:futures-async -->
+<section class="view topic" id="v-concurrency-futures-async" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Futures, Promises &amp; async/await</h1>
+<p class="subtitle">Representing "a value that isn't ready yet" and composing work without blocking a thread.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Future / Promise</h3>
+<ul>
+<li>A <strong>future</strong> is a read handle to a result that will exist later; a <strong>promise</strong> is the write handle the producer uses to fulfil it (or fail it with an exception).</li>
+<li>You can <code>get()</code> (block until ready), poll <code>isDone()</code>, or &mdash; better &mdash; attach a <strong>continuation</strong> (<code>then</code>/<code>thenApply</code>/<code>.then()</code>) that runs when the value arrives, so no thread blocks waiting.</li>
+<li>Composition: <code>thenCompose</code>/<code>flatMap</code> (chain a dependent async step), <code>thenCombine</code> (join two), <code>allOf</code>/<code>anyOf</code> (fan-in / race).</li>
+</ul>
+
+<h3>async / await &amp; the event loop</h3>
+<p><code>async</code> functions return a future; <code>await</code> suspends the function until the awaited
+future completes, <em>without blocking the underlying thread</em> &mdash; the runtime saves the
+continuation and runs other ready work on the <strong>event loop</strong>. When the awaited operation
+finishes (an I/O completion, a timer), the continuation is scheduled and the function resumes.
+One or a few OS threads can drive thousands of concurrent async operations.</p>
+
+<h3>The cardinal sin: blocking in async code</h3>
+<p>Calling a synchronous blocking operation (a blocking socket read, <code>Thread.sleep</code>, a lock
+wait, CPU-heavy work) inside an <code>async</code> function <em>ties up the event-loop thread</em>, so
+every other task on that loop stalls. Offload blocking/CPU work to a dedicated thread pool
+(<code>run_in_executor</code>, <code>Task.Run</code>, <code>tokio::spawn_blocking</code>).</p>
+
+<h3>Structured concurrency</h3>
+<p>Child tasks are scoped to a block: the scope doesn't exit until all children complete, an error
+in one cancels the siblings, and cancellation propagates down. Prevents "fire and forget" leaks
+and orphaned tasks. Kotlin coroutine scopes, Java's <code>StructuredTaskScope</code>, Python's
+<code>TaskGroup</code>, Trio's nurseries, Swift task groups.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Future = read side of a pending result; Promise = write side (fulfil / reject).</li>
+<li>Prefer continuations (<code>then</code>/<code>await</code>) over blocking <code>get()</code>.</li>
+<li>Compose: <code>thenCompose</code>/<code>flatMap</code> (dependent), <code>thenCombine</code> (join), <code>allOf</code>/<code>anyOf</code> (fan-in / first-wins).</li>
+<li><code>await</code> suspends the coroutine, not the thread &mdash; the event loop runs other tasks meanwhile.</li>
+<li><strong>Never</strong> block (sync I/O, <code>sleep</code>, locks, CPU crunch) on an event-loop thread &mdash; offload to a thread pool.</li>
+<li>Always handle a future's failure path; an unobserved failed future can swallow exceptions.</li>
+<li>Structured concurrency: scope child tasks, propagate cancellation + errors, no leaked tasks.</li>
+<li>Cancellation should be cooperative &mdash; check a token / catch <code>CancelledError</code> and clean up.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between a future and a promise?</dt>
+<dd>They're two ends of the same one-shot channel: the future is the consumer's read-only handle to the eventual value; the promise is the producer's handle used to set the value (or an error). The consumer gets the future; the producer keeps the promise.</dd>
+<dt>What does <code>await</code> block &mdash; the thread or the task?</dt>
+<dd>Only the async task/coroutine. The underlying OS thread is released back to the event loop to run other ready tasks; the awaiting task resumes later when its awaited future completes.</dd>
+<dt>Why is <code>time.sleep(5)</code> (blocking) a bug inside an async handler?</dt>
+<dd>It blocks the event-loop thread for 5 seconds, during which no other coroutine on that loop can run &mdash; all concurrent requests stall. Use the async sleep (<code>await asyncio.sleep(5)</code>) which yields to the loop.</dd>
+<dt>How do you run CPU-bound work from async code without stalling the loop?</dt>
+<dd>Hand it to a separate thread or process pool: <code>loop.run_in_executor(pool, fn)</code> / <code>await Task.Run(...)</code> / <code>spawn_blocking</code>, and <code>await</code> that. The loop stays free while the pool thread does the heavy work.</dd>
+<dt>What problem does structured concurrency solve?</dt>
+<dd>"Fire and forget" tasks that outlive their logical parent, leak resources, swallow exceptions, or can't be cancelled together. Structured concurrency ties child task lifetimes to a lexical scope, propagates cancellation and errors, and guarantees no task is left running when the scope exits.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does an <code>async</code> function return?</summary><div class="answer-box">
+A future/promise/task representing the eventual result &mdash; not the value directly.
+</div></details>
+<details class="answer-reveal"><summary>Better than calling <code>future.get()</code> and blocking?</summary><div class="answer-box">
+Attach a continuation/callback (<code>then</code>/<code>await</code>) that runs when the value is ready, freeing the thread meanwhile.
+</div></details>
+<details class="answer-reveal"><summary>How many OS threads does an event-loop server typically use to handle thousands of connections?</summary><div class="answer-box">
+One per core (or just one), plus a small pool for blocking/CPU offload.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Fetch three URLs concurrently and combine the results, in async style.</summary><div class="answer-box">
+Start all three without awaiting individually, then await them together: Python <code>a, b, c = await asyncio.gather(f(u1), f(u2), f(u3))</code>; JS <code>const [a,b,c] = await Promise.all([f(u1),f(u2),f(u3)])</code>; Java <code>CompletableFuture.allOf(a,b,c).thenApply(...)</code>. Awaiting them one at a time (<code>await f(u1); await f(u2); ...</code>) would serialise them.
+</div></details>
+<details class="answer-reveal"><summary>An async web service's latency spikes whenever one endpoint is hit. That endpoint parses a large file synchronously. Explain and fix.</summary><div class="answer-box">
+The synchronous parse runs on the event-loop thread, monopolising it for the parse duration; every other in-flight request on that loop is frozen until it finishes &mdash; hence the correlated spikes. Fix: move the CPU-bound parse to a thread/process pool (<code>run_in_executor</code> / worker) and <code>await</code> it, so the loop keeps servicing other requests. Chunk the work if it must stay on the loop.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is "colored functions" and the async/await criticism it names?</summary><div class="answer-box">
+From Bob Nystrom's essay: in languages with <code>async</code>/<code>await</code>, functions come in two "colors" &mdash; sync and async. An async function can only be meaningfully called from another async function (you need <code>await</code>, which needs an async context); a sync function can't <code>await</code>. So "async-ness" is viral: making one leaf function async forces every caller up the chain to become async too, you often need duplicate sync/async versions of libraries, and bridging (calling async from sync) requires blocking on the event loop or spawning one, which is awkward and deadlock-prone. Languages that avoid the split: Go (goroutines &mdash; every function can block cheaply because the runtime multiplexes; no <code>await</code> keyword), and Java's virtual threads (project Loom &mdash; blocking a virtual thread is cheap, so ordinary synchronous code scales without coloring). The trade-off: colored async makes suspension points explicit (you can see where interleaving happens, aiding reasoning about races and cancellation), whereas transparent lightweight threads hide them.
+</div></details>
+<details class="answer-reveal"><summary>How does cooperative cancellation work in a coroutine runtime, and what are its failure modes?</summary><div class="answer-box">
+Cancellation is a <em>request</em>, not a forced stop: the runtime marks the task cancelled, and at the next suspension point (<code>await</code>) the awaited operation throws a cancellation exception (Python <code>CancelledError</code>, Kotlin <code>CancellationException</code>, .NET <code>OperationCanceledException</code> via the token). The coroutine unwinds, running <code>finally</code>/<code>defer</code> blocks and <code>with</code> exits to release resources, then propagates. Failure modes: (1) a coroutine that never awaits (a tight CPU loop) is never cancellable &mdash; it must poll the token explicitly. (2) Swallowing the cancellation exception in a broad <code>except Exception</code> (Python distinguishes <code>BaseException</code> for exactly this reason) turns cancellation into a silent no-op. (3) Doing more <code>await</code>s during cleanup after cancellation can re-raise or hang unless run in a shielded / non-cancellable scope. (4) Not awaiting the cancelled task means you don't know when (or whether) it actually stopped &mdash; structured concurrency fixes this by making the scope wait for cancelled children to finish unwinding.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:futures-async -->
+
+<!-- TOPIC:concurrency:concurrency-bugs -->
+<section class="view topic" id="v-concurrency-concurrency-bugs" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Common Concurrency Bugs &amp; Tools</h1>
+<p class="subtitle">The failure patterns that recur, and how to actually find nondeterministic bugs.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The recurring bug catalogue</h3>
+<table>
+<tr><th>Bug</th><th>Signature</th></tr>
+<tr><td>Data race</td><td>unsynchronised shared access; intermittent wrong values/crashes, worse under load</td></tr>
+<tr><td>Deadlock</td><td>threads permanently blocked in a lock cycle</td></tr>
+<tr><td>Livelock</td><td>threads busy, retrying, no progress</td></tr>
+<tr><td>Atomicity violation</td><td>each op is locked but the <em>sequence</em> isn't (check-then-act)</td></tr>
+<tr><td>Order violation</td><td>code assumes A runs before B; sometimes it doesn't</td></tr>
+<tr><td>Lost wakeup / missed signal</td><td>condvar signalled before waiter waits</td></tr>
+<tr><td>Broken double-checked locking</td><td>publishing a partially-constructed object (needs a memory barrier / <code>volatile</code>)</td></tr>
+<tr><td>Non-thread-safe library used concurrently</td><td>e.g. a shared <code>SimpleDateFormat</code>, <code>Random</code>, non-reentrant lib</td></tr>
+</table>
+
+<h3>Double-checked locking, done right</h3>
+<pre><code><span class="c">// BROKEN in old Java / naive C++: another thread can see 'instance' non-null</span>
+<span class="c">// but pointing at a not-yet-constructed object.</span>
+<span class="c">// FIX: the field must be volatile (Java) / std::atomic with acquire/release (C++),</span>
+<span class="c">// or just use a static local (C++11 thread-safe) / holder-class idiom (Java).</span></code></pre>
+
+<h3>Tools</h3>
+<ul>
+<li><strong>ThreadSanitizer (TSan)</strong> &mdash; instruments the binary, detects data races and some deadlocks at runtime with low-ish overhead. Run your test suite under it.</li>
+<li><strong>Helgrind / DRD</strong> (Valgrind) &mdash; race and lock-order detection, slower.</li>
+<li><strong>Go</strong>: <code>go test -race</code>. <strong>Java</strong>: <code>jstack</code>/thread dumps for deadlocks, <code>jcstress</code> for memory-model litmus tests, FindBugs/SpotBugs static checks.</li>
+<li><strong>Stress testing</strong> &mdash; run the concurrent code with many threads, randomised delays / <code>yield</code>s / thread counts, for a long time, on varied hardware (weak-memory ARM surfaces bugs x86 hides).</li>
+<li><strong>Model checkers</strong> &mdash; CHESS, Loom (Rust), TLA+/PlusCal for the design &mdash; exhaustively explore interleavings for small models.</li>
+</ul>
+
+<h3>Prevention beats detection</h3>
+<p>Minimise shared mutable state; prefer immutability, confinement, and message passing; use
+high-level concurrent collections and structured concurrency; keep critical sections tiny; write
+down the locking discipline and enforce it in review / with a checker.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Common bugs: data race, deadlock, livelock, atomicity violation (check-then-act), order violation, lost wakeup, broken DCL, misused non-thread-safe library.</li>
+<li>Double-checked locking needs a <code>volatile</code>/atomic field (or use a static local / holder idiom).</li>
+<li>Detect races: TSan (<code>-fsanitize=thread</code>), Go <code>-race</code>, Valgrind Helgrind/DRD.</li>
+<li>Detect deadlocks: thread dumps / <code>jstack</code>, lock-order checkers (lockdep), watchdog timers.</li>
+<li>Stress test: many threads, randomised delays/yields, long runs, weak-memory hardware (ARM).</li>
+<li>Design-level: model checkers (TLA+, Loom, jcstress) for interleavings.</li>
+<li>Best defence: less shared mutable state &mdash; immutability, confinement, message passing, concurrent collections.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why are concurrency bugs so hard to reproduce?</dt>
+<dd>They depend on a specific interleaving of thread execution, which varies with load, core count, scheduler decisions, and hardware memory model. A test can pass a million times and fail on the machine that matters. This is why deterministic tooling (sanitizers, model checkers) is essential.</dd>
+<dt>What is an atomicity violation?</dt>
+<dd>Individual operations are each synchronised, but a <em>group</em> of them that should be atomic isn't &mdash; e.g. <code>if (list.contains(x)) list.remove(x)</code> with a lock released between the two calls. Another thread can interleave and invalidate the check.</dd>
+<dt>Why was the classic double-checked locking idiom broken?</dt>
+<dd>Without a memory barrier, the write that publishes the singleton reference can become visible to another thread <em>before</em> the writes that initialise the object's fields, so a second thread sees a non-null but half-constructed instance. Marking the field <code>volatile</code> (Java 5+) or using acquire/release atomics fixes the ordering; simpler still is a lazily-initialised static.</dd>
+<dt>What does ThreadSanitizer detect and how?</dt>
+<dd>Primarily data races: it instruments every memory access and synchronisation operation, maintains a happens-before relation, and reports when two accesses to the same location (one a write) are not ordered by any happens-before edge. It also catches some lock-order inversions and misuse.</dd>
+<dt>How do you stress-test concurrent code effectively?</dt>
+<dd>Run it with far more threads than cores, insert randomised <code>sleep</code>/<code>yield</code> at suspected interleaving points, vary thread counts and iteration counts, run for minutes not milliseconds, and test on weakly-ordered hardware (ARM) as well as x86 &mdash; combined with running under TSan.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What flag runs Go tests with the race detector?</summary><div class="answer-box">
+<code>go test -race</code>.
+</div></details>
+<details class="answer-reveal"><summary>Name a tool that detects data races in C/C++ at runtime.</summary><div class="answer-box">
+ThreadSanitizer (<code>-fsanitize=thread</code>), or Valgrind's Helgrind/DRD.
+</div></details>
+<details class="answer-reveal"><summary>What one keyword fixes the classic Java double-checked-locking bug?</summary><div class="answer-box">
+<code>volatile</code> on the instance field (Java 5+ semantics).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A shared <code>HashMap</code> occasionally causes an infinite loop or corrupted reads under concurrent writes. Explain.</summary><div class="answer-box">
+<code>HashMap</code> isn't thread-safe. Concurrent <code>put</code>s during a resize can corrupt the bucket linked lists &mdash; historically producing a cyclic list, so a later <code>get</code> spins forever; in newer JDKs you get lost entries or size inconsistencies instead. Fix: use <code>ConcurrentHashMap</code>, or guard every access with the same lock, or confine the map to one thread. Never "it seems to work" &mdash; it's UB in the library's contract.
+</div></details>
+<details class="answer-reveal"><summary>You suspect a race but can't reproduce it. Systematic approach?</summary><div class="answer-box">
+Build the test suite with TSan / run <code>-race</code> and exercise the concurrent paths. Add a targeted stress test (many threads, high iteration count, randomised <code>yield</code>/<code>sleep</code> at the suspected window). Run on ARM as well as x86. If it's a design question, model the protocol in TLA+ or jcstress. Once TSan flags it, the report gives you both stacks and the missing happens-before edge &mdash; add the synchronisation there.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why can't testing alone give you confidence in lock-free / weak-memory code, and what closes the gap?</summary><div class="answer-box">
+The state space of interleavings is astronomically large and the scheduler explores a biased, tiny, hardware-dependent slice of it &mdash; a bug may require a 1-in-10&#8313; interleaving plus a specific store-buffer state that only occurs on one microarchitecture. Passing tests sample that space almost not at all. What closes the gap: (1) <strong>exhaustive model checking</strong> of a reduced model &mdash; TLA+/PlusCal for the algorithm's design, or CHESS/rr-chaos/Loom(Rust)/jcstress which systematically enumerate or perturb interleavings for the actual code up to a bound, catching bugs that need N context switches. (2) <strong>Formal proof</strong> of the linearizability/memory-ordering argument (many published lock-free structures come with one; deviating from the paper invalidates it). (3) <strong>Weak-memory-aware tools</strong>: running under TSan (which models happens-before, not just observed order), and litmus-testing the specific access patterns against a formal hardware model (herd7, RMEM). (4) Preferring <strong>verified library implementations</strong> so you inherit someone else's proof. The pragmatic stance: only write lock-free code you can cite a proof for, keep it tiny, and gate it behind model-checked tests in CI.
+</div></details>
+<details class="answer-reveal"><summary>Explain the "benign race" fallacy with a concrete miscompilation.</summary><div class="answer-box">
+Developers often reason "this race is harmless &mdash; worst case a thread reads a slightly stale value". But in the C/C++/Java model <em>any</em> data race is UB, and the compiler optimises assuming races don't happen, producing outcomes no interleaving of the source could. Concrete: <code>if (cfg != null &amp;&amp; cfg.ready) use(cfg);</code> racing with <code>cfg = new Config(...)</code>. The compiler may (a) load <code>cfg</code> twice &mdash; once for the null check, once for <code>.ready</code> &mdash; so you null-check a non-null value then dereference null; (b) hoist the <code>cfg</code> read out of a loop so an update is never seen; (c) with <code>x = shared; if (x==0) a(); if (x==0) b();</code>, re-read <code>shared</code> for the second check and run <code>a()</code> but not <code>b()</code> though "x==0" was the condition for both &mdash; a state unreachable in any sequential execution ("out-of-thin-air"-adjacent). Real cases: the Linux kernel has hit compiler-introduced double-loads breaking security checks; hence <code>READ_ONCE</code>/<code>WRITE_ONCE</code> macros. The fix is never "it's probably fine" &mdash; it's to make the access atomic (even relaxed), which restores the "compiler must emit exactly one honest load/store" guarantee.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:concurrency-bugs -->
+
 </main>
 
 <footer class="site-footer">
@@ -11691,26 +12738,23 @@ Both started with microkernel ambitions (XNU wraps the Mach microkernel; NT was 
       ["deadlock",        "Deadlock: Conditions, Prevention",     "Coffman conditions, prevention vs avoidance (banker's) vs detection vs ostrich."],
       ["ipc",             "Inter-Process Communication",          "Pipes, FIFOs, message queues, shared memory, sockets, signals, trade-offs."],
       ["syscalls-kernel", "System Calls & the Kernel Boundary",   "Trap instruction, user vs kernel space, syscall cost, vDSO, monolithic vs micro."]
+    ],
+    concurrency: [
+      ["race-critical",     "Races & the Critical Section",         "Data race vs race condition, atomicity, interleavings, TOCTOU, invariants."],
+      ["mutex-condvar",     "Mutexes & Condition Variables",        "Lock granularity, RAII locks, wait/notify, spurious wakeups, lost wakeups."],
+      ["semaphores-classic","Semaphores & Classic Problems",        "Counting vs binary, producer-consumer, readers-writers, dining philosophers."],
+      ["deadlock-livelock", "Deadlock, Livelock & Starvation",      "Lock ordering, try-lock backoff, fairness, priority inversion, progress."],
+      ["atomics-cas",       "Atomics & Compare-and-Swap",           "Read-modify-write, CAS loop, ABA problem, fetch_add, when atomics beat locks."],
+      ["memory-model",      "Memory Models & Ordering",             "Reordering, happens-before, acquire/release/seq-cst, fences, volatile != atomic."],
+      ["lock-free",         "Lock-free & Wait-free Basics",         "Progress guarantees, lock-free stack/queue, hazard pointers, when it's worth it."],
+      ["thread-pools",      "Thread Pools & Work Queues",           "Pool sizing, task queue, work stealing, backpressure, graceful shutdown."],
+      ["futures-async",     "Futures, Promises & async/await",      "Future/promise, composition, event loop, blocking in async, structured concurrency."],
+      ["concurrency-bugs",  "Common Concurrency Bugs & Tools",      "Data races, deadlocks, double-checked locking, sanitizers, stress testing, model checking."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    concurrency: [
-      "Threads, races & the critical section",
-      "Mutexes & lock granularity",
-      "Condition variables & monitors",
-      "Semaphores",
-      "Producer-consumer & readers-writers",
-      "Deadlock, livelock & starvation",
-      "Atomics & compare-and-swap",
-      "Memory models & reordering",
-      "Memory ordering (acquire/release/seq-cst)",
-      "Lock-free & wait-free basics",
-      "Thread pools & work queues",
-      "Futures, promises & async",
-      "Common concurrency bugs & tools (TSan)"
-    ],
     linux: [
       "The file descriptor model",
       "open/read/write/close & short reads",
