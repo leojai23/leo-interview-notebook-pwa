@@ -8369,6 +8369,1064 @@ A suffix array is the sorted order of all <code>n</code> suffixes of <code>T</co
 </section>
 <!-- /TOPIC:algo:string-matching -->
 
+<!-- ============================== DBMS TOPICS ============================== -->
+<!-- TOPIC:db:relational-model -->
+<section class="view topic" id="v-db-relational-model" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Relational Model, Keys &amp; Constraints</h1>
+<p class="subtitle">Tables as sets of tuples, and the keys that give rows identity and link them together.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The model</h3>
+<p>A <strong>relation</strong> (table) is a set of <strong>tuples</strong> (rows) over named, typed
+<strong>attributes</strong> (columns). Rows are unordered and, in the pure model, unique. SQL relaxes
+this (bag semantics &mdash; duplicates allowed unless a key forbids them).</p>
+
+<h3>Keys</h3>
+<table>
+<tr><th>Key</th><th>Meaning</th></tr>
+<tr><td>Super key</td><td>Any attribute set that uniquely identifies a row.</td></tr>
+<tr><td>Candidate key</td><td>A minimal super key (no attribute can be removed).</td></tr>
+<tr><td>Primary key</td><td>The chosen candidate key; implies <code>NOT NULL</code> + <code>UNIQUE</code>, usually the clustering key.</td></tr>
+<tr><td>Alternate key</td><td>A candidate key not chosen as primary.</td></tr>
+<tr><td>Foreign key</td><td>Attribute(s) referencing another table's primary/unique key &mdash; enforces referential integrity.</td></tr>
+<tr><td>Composite key</td><td>A key spanning multiple columns.</td></tr>
+</table>
+<p><strong>Natural</strong> key = meaningful data (email, ISBN). <strong>Surrogate</strong> key = a synthetic
+id (auto-increment, UUID) &mdash; stable, uniform, no business meaning. Most schemas use surrogates
+as primary keys and enforce natural keys with <code>UNIQUE</code> constraints.</p>
+
+<h3>Constraints</h3>
+<ul>
+<li><code>NOT NULL</code>, <code>UNIQUE</code>, <code>PRIMARY KEY</code>, <code>FOREIGN KEY</code> (with <code>ON DELETE</code>/<code>UPDATE</code>: <code>CASCADE</code>, <code>SET NULL</code>, <code>RESTRICT</code>, <code>NO ACTION</code>).</li>
+<li><code>CHECK</code> (domain rules, e.g. <code>price &gt;= 0</code>), <code>DEFAULT</code>.</li>
+<li>Constraints move integrity rules into the DB so <em>every</em> writer obeys them, not just the app.</li>
+</ul>
+
+<h3>NULL</h3>
+<p>Means "unknown / not applicable", not zero or empty string. Three-valued logic:
+<code>NULL = NULL</code> is <em>unknown</em> (not true); use <code>IS NULL</code>. Aggregates skip NULLs;
+<code>COUNT(*)</code> counts rows, <code>COUNT(col)</code> counts non-NULLs.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Relation = set of tuples over typed attributes; rows unordered.</li>
+<li>Super key &supe; candidate key (minimal) &rarr; one chosen as primary key (NOT NULL + UNIQUE).</li>
+<li>Foreign key &rarr; references another table's key; enforces referential integrity; choose <code>ON DELETE</code> behaviour deliberately.</li>
+<li>Surrogate key (auto id / UUID) as PK + <code>UNIQUE</code> on the natural key is the common pattern.</li>
+<li>Constraints: <code>NOT NULL</code>, <code>UNIQUE</code>, <code>CHECK</code>, <code>DEFAULT</code>, <code>PRIMARY/FOREIGN KEY</code>.</li>
+<li>NULL = unknown; comparisons yield unknown; use <code>IS [NOT] NULL</code>; 3-valued logic.</li>
+<li><code>COUNT(*)</code> = rows; <code>COUNT(col)</code> = non-NULL values.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Candidate key vs primary key?</dt>
+<dd>A candidate key is any minimal set of columns that uniquely identifies rows; a table can have several. The primary key is the one you designate as the row's official identifier &mdash; it becomes <code>NOT NULL</code> and typically the clustering key.</dd>
+<dt>Surrogate vs natural key &mdash; trade-offs?</dt>
+<dd>Natural keys carry meaning and avoid an extra column, but can change (someone's email), may be wide/composite (slower joins, bigger indexes), and can leak data. Surrogates are stable, compact, uniform, and meaningless &mdash; at the cost of an extra column and a join to get human-readable identity.</dd>
+<dt>What does a foreign key enforce?</dt>
+<dd>Referential integrity: a child row's FK value must match an existing parent key (or be NULL). The <code>ON DELETE</code>/<code>ON UPDATE</code> action defines what happens to children when the parent changes.</dd>
+<dt>Why is <code>WHERE col = NULL</code> wrong?</dt>
+<dd>Comparing anything to NULL yields <em>unknown</em>, which the WHERE clause treats as not-true, so the row is excluded. Use <code>WHERE col IS NULL</code>.</dd>
+<dt>Where should data-integrity rules live &mdash; app or database?</dt>
+<dd>Core invariants belong in the database as constraints, so they hold regardless of which application, script, or admin writes the data. The app can add friendlier validation on top, but shouldn't be the only guard.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What two properties does a primary key imply?</summary><div class="answer-box">
+<code>NOT NULL</code> and <code>UNIQUE</code>.
+</div></details>
+<details class="answer-reveal"><summary>What does a foreign key point to?</summary><div class="answer-box">
+A primary key (or unique key) in another (or the same) table.
+</div></details>
+<details class="answer-reveal"><summary>Difference between <code>COUNT(*)</code> and <code>COUNT(email)</code>?</summary><div class="answer-box">
+<code>COUNT(*)</code> counts all rows; <code>COUNT(email)</code> counts rows where <code>email</code> is not NULL.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You delete a customer who has orders. What are the FK options and their effects?</summary><div class="answer-box">
+<code>RESTRICT</code>/<code>NO ACTION</code>: the delete fails while orders reference them. <code>CASCADE</code>: the orders are deleted too. <code>SET NULL</code>: the orders' <code>customer_id</code> becomes NULL (orphaned but kept). <code>SET DEFAULT</code>: set to a default customer. Choice depends on whether order history must survive customer deletion.
+</div></details>
+<details class="answer-reveal"><summary>Why can composite natural keys hurt performance as a primary key?</summary><div class="answer-box">
+Every secondary index and every child table's FK stores a copy of the full PK. A wide composite key (several columns, strings) bloats those indexes and FK columns, makes joins compare more bytes, and worsens cache/page utilisation. A narrow surrogate (4&ndash;8 byte integer) keeps indexes and joins tight.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Discuss auto-increment integer vs UUID vs ULID as a surrogate primary key at scale.</summary><div class="answer-box">
+<strong>Auto-increment int/bigint</strong>: smallest, fastest joins, and monotonic so inserts append to the end of a clustered index (no page splits) &mdash; but reveals row counts, needs coordination across shards/nodes (a central sequence or ranges), and complicates multi-master. <strong>Random UUID v4</strong>: globally unique with no coordination, safe to expose &mdash; but 16 bytes, and randomness scatters inserts across the clustered index causing page splits, fragmentation, and worse cache locality; also poor as a covering-index prefix. <strong>ULID / UUID v7 (time-ordered)</strong>: keeps global uniqueness and non-coordination while restoring insert locality by prefixing a timestamp, so it's become the preferred distributed-friendly choice. Rule: single-node OLTP &rarr; bigint; distributed / offline-generated ids &rarr; time-ordered UUID.
+</div></details>
+<details class="answer-reveal"><summary>What is referential integrity's interaction with concurrent transactions and deferred constraints?</summary><div class="answer-box">
+By default FK checks are <em>immediate</em> (checked at each statement), which can force an awkward insert order for cyclic references (A references B and B references A). <code>DEFERRABLE INITIALLY DEFERRED</code> constraints are checked only at <code>COMMIT</code>, letting you insert both rows then commit. Concurrency: a transaction inserting a child takes a shared/key-share lock on the referenced parent row so another transaction can't delete it before commit &mdash; this can cause lock contention or deadlocks on hot parent rows (e.g. a "everything references the same tenant" row). Mitigations: deferred constraints, avoiding needless FKs on ultra-hot rows, or application-level integrity where the contention cost outweighs the safety.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:relational-model -->
+
+<!-- TOPIC:db:normalization -->
+<section class="view topic" id="v-db-normalization" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Normalization (1NF to BCNF)</h1>
+<p class="subtitle">Removing redundancy so an update can't leave the data contradicting itself.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The anomalies normalization prevents</h3>
+<ul>
+<li><strong>Update anomaly</strong> &mdash; a fact stored in many rows; updating one misses the others.</li>
+<li><strong>Insertion anomaly</strong> &mdash; can't record fact A without also knowing unrelated fact B.</li>
+<li><strong>Deletion anomaly</strong> &mdash; deleting a row loses an unrelated fact.</li>
+</ul>
+
+<h3>Functional dependencies</h3>
+<p><code>X &rarr; Y</code>: X determines Y (same X always has the same Y). Normalization is about making every
+non-key attribute depend on <strong>the key, the whole key, and nothing but the key</strong>.</p>
+
+<h3>The normal forms</h3>
+<table>
+<tr><th>Form</th><th>Requires</th></tr>
+<tr><td>1NF</td><td>Atomic values, no repeating groups / arrays-in-a-column; each row unique.</td></tr>
+<tr><td>2NF</td><td>1NF + no non-key attribute depends on only <em>part</em> of a composite key (no partial dependency).</td></tr>
+<tr><td>3NF</td><td>2NF + no non-key attribute depends on another non-key attribute (no transitive dependency).</td></tr>
+<tr><td>BCNF</td><td>For every FD <code>X &rarr; Y</code>, X is a super key. Stricter than 3NF; matters when there are overlapping candidate keys.</td></tr>
+</table>
+<p>Higher: 4NF (multivalued dependencies), 5NF (join dependencies) &mdash; rarely cited in interviews.</p>
+
+<h3>Denormalization</h3>
+<p>Deliberately reintroducing redundancy (duplicated columns, precomputed aggregates, wide "read
+models") to cut join cost on read-heavy workloads &mdash; at the cost of write complexity and the
+anomalies you must now handle in application code or triggers. Common in reporting tables,
+caches, and NoSQL document design. Normalize first; denormalize with evidence.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Goal: every non-key column depends on "the key, the whole key, and nothing but the key".</li>
+<li>1NF: atomic cells, no repeating groups.</li>
+<li>2NF: 1NF + no partial dependency on part of a composite key.</li>
+<li>3NF: 2NF + no transitive dependency (non-key &rarr; non-key).</li>
+<li>BCNF: every determinant is a super key (stricter; needed with overlapping candidate keys).</li>
+<li>Normalization removes update/insert/delete anomalies and redundancy.</li>
+<li>Denormalize only for measured read performance; then own the consistency cost.</li>
+<li>OLTP &rarr; normalized; OLAP / analytics &rarr; star schema (denormalized dimensions).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What problem does normalization solve?</dt>
+<dd>Redundancy and the resulting update/insert/delete anomalies &mdash; storing a fact in one place so it can't become inconsistent.</dd>
+<dt>What is a partial dependency (2NF violation)?</dt>
+<dd>A non-key attribute that depends on only part of a composite primary key. E.g. key = (order_id, product_id), and <code>product_name</code> depends only on <code>product_id</code> &mdash; move it to a products table.</dd>
+<dt>What is a transitive dependency (3NF violation)?</dt>
+<dd>A non-key attribute determined by another non-key attribute. E.g. key = <code>employee_id</code>, and <code>department_name</code> depends on <code>department_id</code> (also non-key) &mdash; split departments out.</dd>
+<dt>3NF vs BCNF?</dt>
+<dd>3NF allows an FD <code>X &rarr; Y</code> where X isn't a super key <em>if</em> Y is part of some candidate key. BCNF forbids that entirely: every determinant must be a super key. They differ only when candidate keys overlap.</dd>
+<dt>When is denormalization justified?</dt>
+<dd>Read-heavy workloads where join/aggregate cost dominates and the write path can absorb the extra work of keeping duplicates in sync (via app logic, triggers, or materialized views). Analytics/reporting and document stores routinely denormalize.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does 1NF require?</summary><div class="answer-box">
+Atomic column values &mdash; no lists, arrays, or repeating groups in a single field &mdash; and uniquely identifiable rows.
+</div></details>
+<details class="answer-reveal"><summary>Name the three anomalies.</summary><div class="answer-box">
+Update, insertion, and deletion anomalies.
+</div></details>
+<details class="answer-reveal"><summary>Which normal form removes transitive dependencies?</summary><div class="answer-box">
+3NF.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A table <code>(student_id, course_id, student_name, grade)</code> with PK (student_id, course_id). Which NF is violated and how do you fix it?</summary><div class="answer-box">
+2NF &mdash; <code>student_name</code> depends only on <code>student_id</code>, part of the composite key (partial dependency). Split into <code>students(student_id, student_name)</code> and <code>enrollments(student_id, course_id, grade)</code>.
+</div></details>
+<details class="answer-reveal"><summary>Give an example where a schema is in 3NF but not BCNF.</summary><div class="answer-box">
+<code>(student, subject, teacher)</code> where each teacher teaches one subject, and each (student, subject) pair has one teacher. Candidate keys: (student, subject) and (student, teacher). FD <code>teacher &rarr; subject</code> holds, but <code>teacher</code> is not a super key &rarr; not BCNF. It <em>is</em> 3NF because <code>subject</code> is a prime attribute (part of a candidate key). BCNF decomposition: <code>(teacher, subject)</code> and <code>(student, teacher)</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>BCNF decomposition can lose dependency preservation. Explain the trade-off with 3NF.</summary><div class="answer-box">
+Every schema can be decomposed into BCNF <em>losslessly</em> (you can rejoin without spurious rows), but not always in a way that lets every original functional dependency be checked within a single resulting table &mdash; some FDs become "inter-table", enforceable only with a join or an assertion. 3NF decomposition (via the synthesis algorithm from a minimal cover) is always both lossless <em>and</em> dependency-preserving, at the cost of possibly retaining a little redundancy. Practical guidance: aim for BCNF; if the only BCNF option sacrifices a business-critical FD that you'd then have to enforce with expensive triggers, staying at 3NF for that table is a legitimate engineering choice.
+</div></details>
+<details class="answer-reveal"><summary>How does dimensional modelling (star schema) deliberately violate normalization, and why is that correct for analytics?</summary><div class="answer-box">
+A star schema has a central <em>fact</em> table (measurements, foreign keys to dimensions) surrounded by <em>dimension</em> tables that are intentionally denormalized &mdash; a <code>date</code> dimension stores year, quarter, month, day-name, is-holiday all in one wide row (transitive dependencies galore), and a <code>product</code> dimension embeds category and brand names rather than IDs. This is correct for OLAP because: queries are read-mostly (few or no updates, so update anomalies don't bite), analysts filter/group on dimension attributes directly (fewer joins &rarr; faster, simpler SQL), the query optimiser handles the star-join pattern specially, and dimensions are small relative to facts so the redundancy is cheap. Slowly-changing-dimension techniques (type 2 rows with validity ranges) handle the history that normalization would otherwise give you.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:normalization -->
+
+<!-- TOPIC:db:sql-basics -->
+<section class="view topic" id="v-db-sql-basics" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>SQL Query Fundamentals</h1>
+<p class="subtitle">The logical evaluation order &mdash; get that right and the rest of SQL clicks.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Logical processing order</h3>
+<pre><code>FROM / JOIN     -&gt; produce the working row set
+WHERE          -&gt; filter individual rows (no aggregates yet)
+GROUP BY       -&gt; collapse into groups
+HAVING         -&gt; filter groups (can use aggregates)
+SELECT         -&gt; compute output columns, aliases, window functions
+DISTINCT
+ORDER BY       -&gt; sort (can use SELECT aliases)
+LIMIT / OFFSET -&gt; slice</code></pre>
+<p>This is why you can't reference a <code>SELECT</code> alias in <code>WHERE</code> (WHERE runs first) but
+can in <code>ORDER BY</code>, and why aggregate filters go in <code>HAVING</code> not <code>WHERE</code>.</p>
+
+<h3>Aggregates &amp; GROUP BY</h3>
+<ul>
+<li><code>COUNT</code>, <code>SUM</code>, <code>AVG</code>, <code>MIN</code>, <code>MAX</code> &mdash; ignore NULLs (except <code>COUNT(*)</code>).</li>
+<li>Every non-aggregated <code>SELECT</code> column must be in <code>GROUP BY</code> (standard SQL; some engines relax this).</li>
+<li><code>HAVING COUNT(*) &gt; 1</code> to keep only groups meeting a condition.</li>
+</ul>
+
+<h3>Subqueries &amp; CTEs</h3>
+<ul>
+<li>Scalar subquery (returns one value), <code>IN (SELECT &hellip;)</code>, <code>EXISTS (SELECT 1 &hellip;)</code> (correlated, stops at first match &mdash; often faster than <code>IN</code>).</li>
+<li><strong>CTE</strong> (<code>WITH x AS (&hellip;)</code>) names a subquery for readability; <strong>recursive CTE</strong> walks hierarchies/graphs (org charts, bill of materials).</li>
+</ul>
+
+<h3>Window functions</h3>
+<pre><code>SELECT name, dept, salary,
+       RANK()       OVER (PARTITION BY dept ORDER BY salary DESC) AS rnk,
+       AVG(salary)  OVER (PARTITION BY dept)                      AS dept_avg,
+       SUM(salary)  OVER (ORDER BY hire_date
+                          ROWS UNBOUNDED PRECEDING)               AS running_total
+FROM employees;</code></pre>
+<p>Windows compute <em>per row</em> without collapsing them (unlike <code>GROUP BY</code>).
+<code>ROW_NUMBER</code>/<code>RANK</code>/<code>DENSE_RANK</code>, <code>LAG</code>/<code>LEAD</code>, running sums, moving averages,
+"top N per group".</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Logical order: FROM &rarr; WHERE &rarr; GROUP BY &rarr; HAVING &rarr; SELECT &rarr; DISTINCT &rarr; ORDER BY &rarr; LIMIT.</li>
+<li><code>WHERE</code> filters rows (pre-aggregation); <code>HAVING</code> filters groups (post-aggregation).</li>
+<li>SELECT aliases usable in <code>ORDER BY</code>, not in <code>WHERE</code>/<code>GROUP BY</code>/<code>HAVING</code> (mostly).</li>
+<li>Aggregates skip NULLs; <code>COUNT(*)</code> counts rows regardless.</li>
+<li>Every non-aggregated selected column must appear in <code>GROUP BY</code>.</li>
+<li><code>EXISTS</code> (correlated, short-circuits) often beats <code>IN (subquery)</code>; beware <code>NOT IN</code> with NULLs (returns no rows).</li>
+<li>CTE = named subquery; recursive CTE for hierarchies/graphs.</li>
+<li>Window function = per-row calculation over a partition/frame; doesn't collapse rows.</li>
+<li>Pagination: keyset (<code>WHERE id &gt; :last ORDER BY id LIMIT n</code>) scales better than <code>OFFSET</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why can't you use a column alias defined in <code>SELECT</code> inside <code>WHERE</code>?</dt>
+<dd><code>WHERE</code> is evaluated before <code>SELECT</code> in the logical processing order, so the alias doesn't exist yet. Repeat the expression, or wrap the query in a subquery/CTE.</dd>
+<dt><code>WHERE</code> vs <code>HAVING</code>?</dt>
+<dd><code>WHERE</code> filters rows before grouping and can't reference aggregates. <code>HAVING</code> filters after grouping and is where aggregate conditions (<code>SUM(x) &gt; 100</code>) go.</dd>
+<dt><code>IN (subquery)</code> vs <code>EXISTS</code>?</dt>
+<dd>Both test membership. <code>EXISTS</code> is correlated and stops at the first matching row, often faster and NULL-safe. <code>NOT IN</code> with a subquery that can yield NULL is a trap &mdash; it returns no rows because the comparison becomes unknown; use <code>NOT EXISTS</code>.</dd>
+<dt>What does a window function do that <code>GROUP BY</code> doesn't?</dt>
+<dd>It computes an aggregate/ranking <em>alongside each row</em> without collapsing the result set, so you can show a salary and its department average on the same line.</dd>
+<dt>Why prefer keyset pagination over <code>OFFSET</code>?</dt>
+<dd><code>OFFSET n</code> still scans and discards the first <code>n</code> rows, so page 10,000 is slow. Keyset ("seek") uses <code>WHERE (sort_key) &gt; (last_seen)</code> with an index, so each page costs the same.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which clause filters groups after aggregation?</summary><div class="answer-box">
+<code>HAVING</code>.
+</div></details>
+<details class="answer-reveal"><summary>Does <code>AVG(col)</code> include NULLs?</summary><div class="answer-box">
+No &mdash; NULLs are skipped, so the average is over the non-NULL values only.
+</div></details>
+<details class="answer-reveal"><summary>What runs first logically: <code>FROM</code> or <code>WHERE</code>?</summary><div class="answer-box">
+<code>FROM</code> (and its joins) &mdash; it builds the row set that <code>WHERE</code> then filters.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Second-highest salary in a table (handle ties and "no such row").</summary><div class="answer-box">
+<code>SELECT MAX(salary) FROM emp WHERE salary &lt; (SELECT MAX(salary) FROM emp);</code> &mdash; returns NULL if there's no second value. Or <code>SELECT DISTINCT salary ... ORDER BY salary DESC LIMIT 1 OFFSET 1</code>. Or a window: <code>DENSE_RANK() OVER (ORDER BY salary DESC) = 2</code>.
+</div></details>
+<details class="answer-reveal"><summary>Top 3 earners per department.</summary><div class="answer-box">
+<pre><code>SELECT * FROM (
+  SELECT *, DENSE_RANK() OVER (PARTITION BY dept ORDER BY salary DESC) AS r
+  FROM employees
+) t WHERE r &lt;= 3;</code></pre>
+<code>DENSE_RANK</code> keeps all ties at rank 3; use <code>ROW_NUMBER</code> for exactly 3 rows.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Write a recursive CTE to list every subordinate of a manager in an <code>employees(id, manager_id)</code> table.</summary><div class="answer-box">
+<pre><code>WITH RECURSIVE reports AS (
+  SELECT id, manager_id, 1 AS depth
+  FROM employees WHERE id = :manager
+  UNION ALL
+  SELECT e.id, e.manager_id, r.depth + 1
+  FROM employees e JOIN reports r ON e.manager_id = r.id
+)
+SELECT * FROM reports;</code></pre>
+The anchor selects the root; the recursive term joins children of the current level; <code>UNION ALL</code> accumulates. Add a <code>depth &lt; N</code> guard or cycle detection (<code>UNION</code> instead of <code>UNION ALL</code>, or track a path array) if the hierarchy might contain loops.
+</div></details>
+<details class="answer-reveal"><summary>Explain the difference between <code>ROWS</code> and <code>RANGE</code> in a window frame, with a gotcha.</summary><div class="answer-box">
+<code>ROWS BETWEEN 2 PRECEDING AND CURRENT ROW</code> counts <em>physical</em> rows &mdash; exactly the current row and the two before it. <code>RANGE BETWEEN 2 PRECEDING AND CURRENT ROW</code> counts rows whose <em>ORDER BY value</em> is within 2 of the current row's value &mdash; peer rows with the same sort value are all included together. Gotcha: the default frame when you specify <code>ORDER BY</code> but no frame is <code>RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW</code>, which means a running <code>SUM ... OVER (ORDER BY d)</code> over data with duplicate <code>d</code> values includes <em>all</em> rows sharing the current <code>d</code>, not a per-row cumulative &mdash; often surprising. Specify <code>ROWS</code> explicitly for a true row-by-row running total.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:sql-basics -->
+
+<!-- TOPIC:db:joins -->
+<section class="view topic" id="v-db-joins" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Joins in Depth</h1>
+<p class="subtitle">The join types, the NULL edge cases, and the three algorithms underneath.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Join types</h3>
+<table>
+<tr><th>Join</th><th>Returns</th></tr>
+<tr><td><code>INNER JOIN</code></td><td>Only rows with a match on both sides.</td></tr>
+<tr><td><code>LEFT [OUTER] JOIN</code></td><td>All left rows; right columns NULL where no match.</td></tr>
+<tr><td><code>RIGHT JOIN</code></td><td>Mirror of LEFT (rarely used &mdash; just swap tables).</td></tr>
+<tr><td><code>FULL OUTER JOIN</code></td><td>All rows from both; NULLs where either side is missing.</td></tr>
+<tr><td><code>CROSS JOIN</code></td><td>Cartesian product (every left row &times; every right row).</td></tr>
+<tr><td>Self join</td><td>A table joined to itself (employee&ndash;manager, adjacency).</td></tr>
+<tr><td>Semi join (<code>EXISTS</code>)</td><td>Left rows that have &ge; 1 match &mdash; no right columns, no duplication.</td></tr>
+<tr><td>Anti join (<code>NOT EXISTS</code>)</td><td>Left rows with no match.</td></tr>
+</table>
+
+<h3>NULL &amp; predicate placement</h3>
+<ul>
+<li>A condition in the <code>ON</code> clause of a <code>LEFT JOIN</code> filters the <em>right</em> table before joining (keeps unmatched left rows). The same condition in <code>WHERE</code> runs after the join and discards the NULL-extended left rows &mdash; effectively turning it into an inner join.</li>
+<li><code>col = NULL</code> never matches; joins compare with <code>=</code>, so NULL keys don't join.</li>
+</ul>
+
+<h3>Join algorithms (what the planner picks)</h3>
+<table>
+<tr><th>Algorithm</th><th>How</th><th>Good when</th></tr>
+<tr><td>Nested loop</td><td>for each outer row, probe the inner (ideally via index)</td><td>small outer side, indexed inner</td></tr>
+<tr><td>Hash join</td><td>build a hash table on the smaller side, probe with the larger</td><td>large unsorted inputs, equijoin, enough memory</td></tr>
+<tr><td>Merge join</td><td>sort both by the join key, walk in lockstep</td><td>inputs already sorted / indexed on the key, or range joins</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>INNER = matches only. LEFT = all left + NULLs. FULL = all + NULLs both ways. CROSS = product.</li>
+<li>RIGHT JOIN is just a LEFT JOIN with the tables swapped &mdash; prefer LEFT for readability.</li>
+<li>Filter on the joined (right) table: in <code>ON</code> to keep unmatched left rows, in <code>WHERE</code> to drop them.</li>
+<li><code>WHERE right.col IS NULL</code> after a LEFT JOIN = anti-join ("rows with no match").</li>
+<li>Semi-join = <code>EXISTS</code> (no duplication); anti-join = <code>NOT EXISTS</code>.</li>
+<li>NULL join keys never match (<code>= NULL</code> is unknown).</li>
+<li>Planner chooses nested-loop (small + indexed), hash (big equijoin), or merge (sorted inputs).</li>
+<li>Join order and predicates matter: index the join columns; filter early.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>INNER vs LEFT JOIN?</dt>
+<dd>INNER returns only rows that match in both tables. LEFT returns every row from the left table, filling right-side columns with NULL when there's no match.</dd>
+<dt>Why does moving a condition from <code>ON</code> to <code>WHERE</code> change a LEFT JOIN's result?</dt>
+<dd>In <code>ON</code>, the condition limits which right rows can match, but unmatched left rows still appear (with NULLs). In <code>WHERE</code>, it's applied after the join, and <code>right.col = 'x'</code> is false for the NULL-extended rows, so they're dropped &mdash; the LEFT JOIN behaves like an INNER JOIN.</dd>
+<dt>How do you find rows in A with no corresponding row in B?</dt>
+<dd>Anti-join: <code>SELECT ... FROM A LEFT JOIN B ON A.k = B.k WHERE B.k IS NULL</code>, or <code>WHERE NOT EXISTS (SELECT 1 FROM B WHERE B.k = A.k)</code>.</dd>
+<dt>When does the optimizer choose a hash join?</dt>
+<dd>For an equijoin on large, unsorted inputs when there's enough memory to build a hash table on the smaller side. It's O(n + m) versus nested loop's O(n &times; m) without an index.</dd>
+<dt>What's a self join used for?</dt>
+<dd>Relating rows within one table &mdash; employees to their managers, comparing consecutive rows, finding pairs (e.g. products with the same price), traversing an adjacency list one hop.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which join returns the Cartesian product?</summary><div class="answer-box">
+<code>CROSS JOIN</code> (or an inner join with no join condition).
+</div></details>
+<details class="answer-reveal"><summary>After a LEFT JOIN, how do you keep only the non-matching left rows?</summary><div class="answer-box">
+<code>WHERE right_table.key IS NULL</code>.
+</div></details>
+<details class="answer-reveal"><summary>Does a NULL in a join key match another NULL?</summary><div class="answer-box">
+No. <code>NULL = NULL</code> is unknown, so those rows don't join.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>List all customers and their order count, including customers with zero orders.</summary><div class="answer-box">
+<code>SELECT c.id, c.name, COUNT(o.id) AS orders FROM customers c LEFT JOIN orders o ON o.customer_id = c.id GROUP BY c.id, c.name;</code>. <code>COUNT(o.id)</code> (not <code>COUNT(*)</code>) so no-order customers show 0, not 1.
+</div></details>
+<details class="answer-reveal"><summary>A three-table join is slow. What do you check first?</summary><div class="answer-box">
+<code>EXPLAIN</code> the plan: are the join columns indexed? Is there a full scan on a big table that a filter could use an index for? Is the estimated row count wildly off (stale statistics)? Is the join order sensible (small/filtered tables first)? Is a hash join spilling to disk (raise <code>work_mem</code>)? Are you accidentally producing a partial cross join (missing/incorrect ON condition)?
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is <code>NOT IN (SELECT col FROM t)</code> dangerous when <code>col</code> can be NULL, and what's the mechanism?</summary><div class="answer-box">
+<code>x NOT IN (a, b, NULL)</code> is evaluated as <code>x &lt;&gt; a AND x &lt;&gt; b AND x &lt;&gt; NULL</code>. The last term is <em>unknown</em>, so the whole conjunction can never be <code>TRUE</code> &mdash; it's either <code>FALSE</code> (if x matches something) or <code>UNKNOWN</code>. Result: the query returns <strong>zero rows</strong> the moment the subquery contains a single NULL, silently. Fixes: <code>NOT EXISTS</code> (uses <code>=</code> semantics per row and is NULL-safe here), add <code>WHERE col IS NOT NULL</code> to the subquery, or an anti-join with an explicit <code>IS NULL</code> check. This is one of the most common "the query worked in dev and returned nothing in prod" bugs.
+</div></details>
+<details class="answer-reveal"><summary>Explain when a merge join beats a hash join even though both are O(n + m)-ish.</summary><div class="answer-box">
+A hash join needs to build the whole hash table on one input (blocking, memory-hungry; spills to disk and degrades if it doesn't fit) and only supports <em>equi</em>-joins. A merge join needs both inputs sorted on the join key &mdash; but if they're <em>already</em> sorted (covering index on the key, or output of an earlier sort/merge), it does a single streaming pass with O(1) extra memory, produces output in sorted order (free for a downstream <code>ORDER BY</code> or another merge join), and handles <em>range</em> / inequality joins and band joins that hashing can't. So merge join wins for pre-sorted large inputs, pipelines of joins on the same key, and non-equijoins; hash join wins for ad hoc equijoins on unsorted data with enough RAM.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:joins -->
+
+<!-- TOPIC:db:indexes -->
+<section class="view topic" id="v-db-indexes" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Indexes</h1>
+<p class="subtitle">The single biggest lever on query speed &mdash; and a tax on every write.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What an index is</h3>
+<p>A separate, ordered data structure mapping key values to row locations, so the engine can
+<em>seek</em> instead of <em>scan</em>. Turns O(n) lookups into O(log n). Costs storage and slows
+<code>INSERT</code>/<code>UPDATE</code>/<code>DELETE</code> (every index must be maintained).</p>
+
+<h3>Index types</h3>
+<table>
+<tr><th>Type</th><th>Good for</th></tr>
+<tr><td>B-tree</td><td>Default. Equality <em>and</em> range (<code>&lt;</code>, <code>BETWEEN</code>, <code>ORDER BY</code>, prefix <code>LIKE 'abc%'</code>).</td></tr>
+<tr><td>Hash</td><td>Equality only, slightly faster for that; no ranges, no ordering.</td></tr>
+<tr><td>Bitmap</td><td>Low-cardinality columns in analytics (Oracle); cheap AND/OR of predicates.</td></tr>
+<tr><td>GiST / GIN / inverted</td><td>Full-text, arrays, JSON, geospatial.</td></tr>
+</table>
+
+<h3>Clustered vs secondary</h3>
+<ul>
+<li><strong>Clustered</strong> (InnoDB primary key, SQL Server): the table rows <em>are</em> stored in index order. One per table. Secondary indexes then store the PK value and do a second lookup.</li>
+<li><strong>Secondary / non-clustered</strong>: separate structure pointing back to the row (via PK or row id).</li>
+<li><strong>Covering index</strong>: contains every column the query needs (<code>INCLUDE</code> columns), so the engine never touches the table &mdash; "index-only scan".</li>
+</ul>
+
+<h3>Composite index column order</h3>
+<p><code>INDEX(a, b, c)</code> serves <code>WHERE a = ?</code>, <code>a = ? AND b = ?</code>, <code>a = ? AND b = ? AND c = ?</code>,
+and <code>a = ? AND b &gt; ?</code> &mdash; a <strong>left-most prefix</strong>. It does <em>not</em> help
+<code>WHERE b = ?</code> alone. Put equality columns first, then the range/sort column.</p>
+
+<h3>When NOT to index</h3>
+<p>Small tables, columns with very low cardinality (a boolean &mdash; unless combined), write-heavy
+tables where the index maintenance cost outweighs read benefit, columns wrapped in functions in
+the query (<code>WHERE UPPER(name) = ?</code> won't use a plain index &mdash; needs a functional/expression
+index), or leading-wildcard <code>LIKE '%x'</code>.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Index = ordered lookup structure &rarr; seek not scan; O(log n) reads, slower writes + storage.</li>
+<li>B-tree: equality + range + ordering + prefix <code>LIKE 'x%'</code>. Hash: equality only.</li>
+<li>Clustered index = table stored in key order (one per table). Secondary indexes point back via PK.</li>
+<li>Covering / index-only: index has all needed columns &rarr; no table access.</li>
+<li>Composite index: usable only by a <strong>left-most prefix</strong>; equality columns first, range/sort last.</li>
+<li>Function on the column (<code>UPPER(x)</code>, <code>x + 0</code>) or leading <code>%</code> in LIKE &rarr; index not used (non-SARGable). Use an expression index or rewrite.</li>
+<li>Don't index tiny tables, ultra-low-cardinality columns alone, or hot write paths without cause.</li>
+<li>Check usage with <code>EXPLAIN</code>; drop unused indexes &mdash; they only cost.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does an index speed up reads but slow down writes?</dt>
+<dd>Reads use the ordered structure to jump straight to matching rows. Writes must additionally insert/move/delete entries in every index on the table, and can cause page splits &mdash; more I/O per modification.</dd>
+<dt>What's a covering index?</dt>
+<dd>An index that includes all columns a query references (in the key or as INCLUDE columns), so the query is answered entirely from the index without reading the table rows &mdash; an "index-only scan".</dd>
+<dt>Given <code>INDEX(country, city, name)</code>, which queries use it?</dt>
+<dd>Anything filtering on a leftmost prefix: <code>country=?</code>; <code>country=? AND city=?</code>; <code>country=? AND city=? AND name=?</code>; <code>country=? AND city&gt;?</code>. Not <code>city=?</code> alone, and not <code>country=? AND name=?</code> efficiently (it can seek on country then filter name).</dd>
+<dt>Why doesn't <code>WHERE YEAR(created_at) = 2024</code> use an index on <code>created_at</code>?</dt>
+<dd>The column is wrapped in a function, so the index's ordering of raw <code>created_at</code> values no longer maps to the predicate. Rewrite as a range: <code>created_at &gt;= '2024-01-01' AND created_at &lt; '2025-01-01'</code>, or create a functional index on <code>YEAR(created_at)</code>.</dd>
+<dt>Clustered vs non-clustered index?</dt>
+<dd>Clustered defines the physical row order of the table (one allowed); a lookup lands directly on the row. Non-clustered is a separate structure whose leaf entries point to the row (via the clustering key or a row locator), often needing a second read.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Default index type in most relational databases?</summary><div class="answer-box">
+B-tree.
+</div></details>
+<details class="answer-reveal"><summary>How many clustered indexes can a table have?</summary><div class="answer-box">
+One &mdash; it dictates the physical storage order of the rows.
+</div></details>
+<details class="answer-reveal"><summary>Can a hash index support <code>ORDER BY</code> or range scans?</summary><div class="answer-box">
+No &mdash; hash indexes only support equality lookups.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A query filters on <code>status = 'active'</code> (5% of rows) and sorts by <code>created_at</code>. Best index?</summary><div class="answer-box">
+<code>INDEX(status, created_at)</code>. The equality on <code>status</code> narrows to the 5%, and because <code>created_at</code> is the next key column, the rows come out already sorted &mdash; no separate sort step. Add the selected columns as INCLUDE to make it covering.
+</div></details>
+<details class="answer-reveal"><summary>You added five indexes and writes got much slower. How do you decide which to keep?</summary><div class="answer-box">
+Look at index usage stats (<code>pg_stat_user_indexes</code>, <code>sys.dm_db_index_usage_stats</code>): drop indexes with zero or near-zero scans. Consolidate overlapping ones (an index on <code>(a)</code> is redundant if you have <code>(a, b)</code>). Keep only those that back real, frequent query patterns or FK/unique constraints. Measure write throughput before/after.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain why random UUID primary keys hurt insert performance on a clustered index, and the mitigations.</summary><div class="answer-box">
+With a clustered index, rows are stored in PK order. A monotonically increasing key (bigint identity) always inserts at the "right edge" &mdash; one hot page, sequential I/O, high fill. A random UUID inserts at random positions throughout the B-tree, causing constant <em>page splits</em> (a full page is torn in two to make room), index fragmentation, low page fill factor, more buffer-pool churn (every insert dirties a different page), and worse read locality later. Mitigations: use a time-ordered UUID (v7 / ULID / <code>NEWSEQUENTIALID</code>) so inserts are mostly append; keep the surrogate bigint as the clustered PK and store the UUID in a secondary unique index; or lower the fill factor to absorb splits (trades space for fewer splits).
+</div></details>
+<details class="answer-reveal"><summary>What is a partial (filtered) index and when is it a big win?</summary><div class="answer-box">
+An index with a <code>WHERE</code> predicate, so it only contains rows matching that condition (<code>CREATE INDEX ... ON orders (created_at) WHERE status = 'pending'</code>). Wins when queries always target a small, well-defined subset: the index is far smaller (fits in cache, faster to scan/maintain), and writes to rows outside the predicate don't touch it at all. Classic uses: "active"/"pending"/"not deleted" flags where 99% of rows are the boring value, enforcing uniqueness only among non-deleted rows (<code>UNIQUE ... WHERE deleted_at IS NULL</code>), and hot queues within a huge history table.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:indexes -->
+
+<!-- TOPIC:db:query-planning -->
+<section class="view topic" id="v-db-query-planning" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Query Planning &amp; Optimization</h1>
+<p class="subtitle">How SQL (declarative) becomes an execution plan &mdash; and how to read it.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>From SQL to plan</h3>
+<p>Parse &rarr; bind (resolve names/types) &rarr; <strong>logical plan</strong> (relational-algebra tree) &rarr;
+rewrite/normalize &rarr; <strong>cost-based optimization</strong> (enumerate plans, estimate cost) &rarr;
+<strong>physical plan</strong> (specific scan &amp; join operators). SQL says <em>what</em>; the planner
+decides <em>how</em>.</p>
+
+<h3>Reading <code>EXPLAIN</code></h3>
+<ul>
+<li><code>EXPLAIN</code> shows the estimated plan; <code>EXPLAIN ANALYZE</code> actually runs it and shows real rows/time.</li>
+<li>Look for: <strong>Seq Scan / Full Table Scan</strong> on a big table (often a missing index), <strong>estimated vs actual rows</strong> far apart (stale statistics &rarr; bad plan), expensive <strong>Sort</strong> or <strong>Hash</strong> spilling to disk, <strong>nested loop</strong> over many outer rows.</li>
+<li>Cost is in arbitrary units; compare alternatives, don't read absolute values.</li>
+</ul>
+
+<h3>Cardinality estimation</h3>
+<p>The optimizer relies on <strong>statistics</strong> (row counts, column histograms, distinct-value
+estimates, correlation) to guess how many rows each operator produces. Bad estimates &rarr; wrong
+join algorithm/order. Keep stats fresh (<code>ANALYZE</code> / auto-stats); multi-column correlation
+often needs extended statistics.</p>
+
+<h3>Scan vs seek &amp; SARGability</h3>
+<ul>
+<li><strong>Index seek</strong>: navigate the B-tree to the matching range. <strong>Index/table scan</strong>: read everything.</li>
+<li>A predicate is <strong>SARGable</strong> (Search-ARGument-able) if it can drive an index seek: <code>col = ?</code>, <code>col &gt; ?</code>, <code>col LIKE 'x%'</code>. Non-SARGable: <code>func(col) = ?</code>, <code>col + 1 = ?</code>, <code>col LIKE '%x'</code>, implicit type casts, <code>OR</code> across different columns.</li>
+</ul>
+
+<h3>Common fixes</h3>
+<p>Add/adjust an index; rewrite non-SARGable predicates; update statistics; break a giant query
+into steps / temp tables; add <code>LIMIT</code>; avoid <code>SELECT *</code> (prevents covering indexes);
+watch for implicit conversions (<code>varchar</code> column vs <code>N'...'</code> parameter).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Pipeline: parse &rarr; bind &rarr; logical plan &rarr; cost-based optimize &rarr; physical plan.</li>
+<li><code>EXPLAIN</code> = estimate; <code>EXPLAIN ANALYZE</code> = run + measure. Compare estimated vs actual rows.</li>
+<li>Red flags: seq/full scan on big tables, estimate wildly off actual, sort/hash spilling to disk, nested loop with a huge outer.</li>
+<li>Optimizer decisions rely on <strong>statistics</strong> &mdash; keep them fresh; use extended/multi-column stats for correlated predicates.</li>
+<li>SARGable predicate &rarr; index seek. <code>func(col)</code>, <code>col+1</code>, leading <code>%</code>, implicit casts &rarr; scan.</li>
+<li>Avoid <code>SELECT *</code> (blocks covering indexes, moves extra data).</li>
+<li>Fixes: index it, rewrite the predicate, <code>ANALYZE</code>, simplify, add <code>LIMIT</code>, fix type mismatches.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What's the difference between <code>EXPLAIN</code> and <code>EXPLAIN ANALYZE</code>?</dt>
+<dd><code>EXPLAIN</code> prints the planner's chosen plan with <em>estimated</em> costs and row counts without executing. <code>EXPLAIN ANALYZE</code> actually executes the query and shows <em>actual</em> timing and row counts alongside the estimates &mdash; the gap between them reveals bad statistics.</dd>
+<dt>Why does the optimizer need statistics?</dt>
+<dd>To estimate how many rows each filter/join produces, which determines the best join algorithm and order. Without accurate stats it might pick a nested loop expecting 10 rows when there are 10 million.</dd>
+<dt>What makes a predicate non-SARGable?</dt>
+<dd>Anything that stops the engine from using the index's key ordering: a function or arithmetic on the column, a leading wildcard in <code>LIKE</code>, an implicit type conversion on the column side, or <code>OR</code>ing conditions on different columns.</dd>
+<dt>Your query's plan changed overnight and got slow. Likely cause?</dt>
+<dd>Statistics changed (auto-stats update after a big data load), data distribution shifted, or parameter-sniffing produced a plan optimal for one parameter value but bad for another. Also: an index was dropped, or the DB was upgraded.</dd>
+<dt>Why avoid <code>SELECT *</code> for performance?</dt>
+<dd>It forces the engine to fetch every column from the base table, defeating covering indexes (index-only scans), increasing I/O and network transfer, and breaking if the schema changes.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does a "Seq Scan" / "Full Table Scan" in a plan usually indicate?</summary><div class="answer-box">
+The engine is reading every row because no useful index exists for the query's predicate (or the optimizer thinks a scan is cheaper, e.g. the filter matches most rows).
+</div></details>
+<details class="answer-reveal"><summary>Is SQL imperative or declarative?</summary><div class="answer-box">
+Declarative &mdash; you state the result you want; the query planner decides the execution strategy.
+</div></details>
+<details class="answer-reveal"><summary>Command to refresh a table's statistics (PostgreSQL)?</summary><div class="answer-box">
+<code>ANALYZE table_name;</code> (or <code>VACUUM ANALYZE</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Rewrite <code>WHERE substring(phone, 1, 3) = '415'</code> to be SARGable.</summary><div class="answer-box">
+<code>WHERE phone &gt;= '415' AND phone &lt; '416'</code> (range on the raw column), assuming phone is stored as text with the area code first. Or add a functional index on <code>substring(phone, 1, 3)</code>. The point is to let the index on <code>phone</code> drive a seek.
+</div></details>
+<details class="answer-reveal"><summary>Plan shows "estimated rows: 1, actual rows: 2,000,000" on a join input. What now?</summary><div class="answer-box">
+The optimizer badly under-estimated, likely picking a nested loop that's now catastrophic. Update statistics; if the mis-estimate is from correlated columns (<code>city</code> + <code>state</code>), add multi-column/extended statistics. If it's a complex expression, materialise it or add a stats object on it. As a stopgap, a query hint to force a hash join or a different order.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain parameter sniffing and the strategies to deal with it.</summary><div class="answer-box">
+On first execution of a parameterised query/prepared statement, the optimizer "sniffs" the actual parameter values and builds a plan optimal for them, then caches and reuses that plan. If later executions pass values with very different selectivity (e.g. first call filters <code>country = 'VA'</code> = 0.1% of rows &rarr; index seek plan; later call <code>country = 'US'</code> = 60% &rarr; that seek plan does millions of random lookups), performance tanks. Strategies: <code>OPTIMIZE FOR</code> a representative value or <code>OPTIMIZE FOR UNKNOWN</code> (use average density); <code>RECOMPILE</code> the statement each run (trades CPU for a fresh plan); split into separate queries/branches per data shape; disable parameter sniffing at DB or query level; use plan guides / forced plans for the known-good one. Postgres mitigates this with its "custom vs generic plan" heuristic after 5 executions.
+</div></details>
+<details class="answer-reveal"><summary>Why is join-order selection hard, and how do optimizers bound the search?</summary><div class="answer-box">
+The number of possible join orders for n tables grows factorially (n! left-deep, more counting bushy trees), and each order's cost depends on cardinality estimates that compound error at each step. Optimizers bound it with: <strong>dynamic programming</strong> over subsets (System R style, exact but 2&#8319; &mdash; practical to ~12 tables), then <strong>heuristic search</strong> (greedy, genetic &mdash; Postgres's GEQO) beyond a threshold; restricting to <strong>left-deep trees</strong> to shrink the space; <strong>pruning</strong> dominated sub-plans; and pushing selections/projections down first so estimates are on smaller inputs. Even so, a 20-table query can get a poor order, which is why breaking huge queries up, providing hints, or using materialised intermediates is sometimes necessary.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:query-planning -->
+
+<!-- TOPIC:db:transactions-acid -->
+<section class="view topic" id="v-db-transactions-acid" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Transactions &amp; ACID</h1>
+<p class="subtitle">All-or-nothing units of work, and the four guarantees that make them safe.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>ACID</h3>
+<table>
+<tr><th></th><th>Property</th><th>Means</th></tr>
+<tr><td><strong>A</strong></td><td>Atomicity</td><td>All statements commit or none do. A failure rolls back everything.</td></tr>
+<tr><td><strong>C</strong></td><td>Consistency</td><td>A transaction moves the DB from one valid state to another &mdash; constraints, FKs, triggers hold at commit.</td></tr>
+<tr><td><strong>I</strong></td><td>Isolation</td><td>Concurrent transactions don't see each other's uncommitted (or, at higher levels, in-flight) changes.</td></tr>
+<tr><td><strong>D</strong></td><td>Durability</td><td>Once committed, the change survives crash / power loss (flushed to non-volatile storage).</td></tr>
+</table>
+
+<h3>How the engine delivers it</h3>
+<ul>
+<li><strong>Atomicity + Durability</strong> &mdash; <strong>write-ahead logging</strong> (WAL / redo log): log the change durably <em>before</em> modifying data pages. On crash, redo committed transactions, undo uncommitted ones.</li>
+<li><strong>Isolation</strong> &mdash; locking (2PL) or multi-version concurrency control (MVCC) &mdash; see the Locking topic.</li>
+<li><strong>Consistency</strong> &mdash; constraint checking + the app writing correct logic; the DB enforces the declared rules.</li>
+</ul>
+
+<h3>Transaction control</h3>
+<pre><code>BEGIN;
+  UPDATE accounts SET balance = balance - 100 WHERE id = 1;
+  SAVEPOINT s1;
+  UPDATE accounts SET balance = balance + 100 WHERE id = 2;
+  -- ROLLBACK TO s1;   -- partial undo
+COMMIT;               -- or ROLLBACK;</code></pre>
+<p>Auto-commit mode wraps each statement in its own transaction. Long-running transactions hold
+resources (locks, old row versions) &mdash; keep them short.</p>
+
+<h3>Distributed transactions</h3>
+<p>Across databases/services, atomicity needs <strong>two-phase commit</strong> (prepare &rarr; commit),
+which blocks if the coordinator fails. Many systems avoid it with the <strong>Saga pattern</strong>:
+a sequence of local transactions plus compensating actions to undo earlier steps on failure
+(eventual consistency, not atomic).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>A</strong>tomicity: all-or-nothing (rollback on failure). <strong>C</strong>onsistency: valid state &rarr; valid state (constraints hold). <strong>I</strong>solation: concurrent txns don't interfere. <strong>D</strong>urability: committed = survives a crash.</li>
+<li>WAL / redo log: log durably before touching data pages &rarr; atomicity + durability + crash recovery (redo committed, undo in-flight).</li>
+<li><code>BEGIN</code> / <code>COMMIT</code> / <code>ROLLBACK</code>; <code>SAVEPOINT</code> + <code>ROLLBACK TO</code> for partial undo.</li>
+<li>Keep transactions short &mdash; long ones hold locks and bloat old-version storage.</li>
+<li>Cross-service atomicity: 2PC (blocking, coordinator SPOF) or Sagas (compensating actions, eventual consistency).</li>
+<li>Consistency in ACID (constraints) &ne; consistency in CAP (replica agreement).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does atomicity guarantee?</dt>
+<dd>A transaction's statements all take effect together or not at all. If any step fails (or you <code>ROLLBACK</code>), the database is left as if the transaction never ran.</dd>
+<dt>How does a database provide durability without an <code>fsync</code> on every data page?</dt>
+<dd>Write-ahead logging: it appends the change to a sequential log and <code>fsync</code>s <em>that</em> before acknowledging commit. Data pages are flushed lazily later; if the server crashes, recovery replays the log to reconstruct committed changes.</dd>
+<dt>Is "Consistency" in ACID the same as in CAP?</dt>
+<dd>No. ACID consistency = the database's own integrity rules (constraints, triggers, FKs) hold after each transaction. CAP consistency = all replicas return the same latest value (linearizability). Different concerns.</dd>
+<dt>What is a savepoint for?</dt>
+<dd>A named point within a transaction you can partially roll back to (<code>ROLLBACK TO savepoint</code>) without aborting the whole transaction &mdash; useful for retrying a sub-step or handling an expected error.</dd>
+<dt>Why is two-phase commit avoided in microservices?</dt>
+<dd>It's a blocking protocol: if the coordinator crashes after "prepare", participants hold locks indefinitely; it couples service availability and hurts throughput. Sagas trade atomicity for availability, using compensating transactions to undo prior steps.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Expand ACID.</summary><div class="answer-box">
+Atomicity, Consistency, Isolation, Durability.
+</div></details>
+<details class="answer-reveal"><summary>What log ensures a committed transaction survives a crash?</summary><div class="answer-box">
+The write-ahead log (WAL) / redo log &mdash; written and flushed before commit is acknowledged.
+</div></details>
+<details class="answer-reveal"><summary>What statement discards all changes in the current transaction?</summary><div class="answer-box">
+<code>ROLLBACK</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Walk through crash recovery using the WAL.</summary><div class="answer-box">
+On restart, the engine reads the log from the last checkpoint. <strong>Redo</strong> phase: re-apply every logged change (committed or not) to bring pages up to the log's end. <strong>Undo</strong> phase: for transactions that were active (no COMMIT record) at crash time, walk their log records backward and apply the compensating (undo) records, writing CLRs so undo is itself idempotent. Result: committed work is present, uncommitted work is gone. (This is ARIES.)
+</div></details>
+<details class="answer-reveal"><summary>A money transfer debits account A and credits B. Which ACID properties are at stake if the server crashes mid-way?</summary><div class="answer-box">
+Atomicity (must not leave A debited without B credited &mdash; roll back on recovery) and Durability (once the transfer commits, both effects must persist through the crash). Isolation matters for concurrent transfers reading the balances; Consistency for a <code>CHECK (balance &gt;= 0)</code> constraint.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What durability guarantees do you actually get, and where can they silently weaken?</summary><div class="answer-box">
+"Durable" means the commit record survived to stable storage &mdash; but the chain has weak links: the DB may be configured for <em>group commit</em> / delayed <code>fsync</code> (<code>synchronous_commit=off</code>, <code>innodb_flush_log_at_trx_commit=2</code>) trading a few ms of committed data for throughput; the OS page cache may buffer the write; the disk's own write cache may lie about <code>fsync</code> unless barriers/FUA are honoured; on a single node a disk failure still loses everything. Real durability for important data means synchronous replication to another node/AZ (so a quorum has the commit) plus verified <code>fsync</code> behaviour and battery-backed/enterprise storage. Interview point: "durable" is a spectrum set by configuration and topology, not a binary the DB gives you for free.
+</div></details>
+<details class="answer-reveal"><summary>Compare the Saga pattern's orchestration vs choreography styles.</summary><div class="answer-box">
+<strong>Orchestration</strong>: a central saga coordinator explicitly invokes each service's local transaction and, on failure, invokes the compensations in reverse. Pros: the workflow is in one place, easy to reason about, add steps, and monitor; clear timeout/retry handling. Cons: the orchestrator is a component to build and scale, and can become a hidden monolith of business logic. <strong>Choreography</strong>: each service reacts to events and emits its own; there's no central controller. Pros: loose coupling, no single bottleneck, services evolve independently. Cons: the end-to-end flow is implicit and spread across services (hard to see, debug, or change), risk of cyclic event dependencies, and compensation ordering is harder to guarantee. Rule of thumb: choreography for 2&ndash;4 simple steps; orchestration once the workflow has branching, many steps, or needs observability.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:transactions-acid -->
+
+<!-- TOPIC:db:isolation -->
+<section class="view topic" id="v-db-isolation" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Isolation Levels &amp; Anomalies</h1>
+<p class="subtitle">The dial between "fast but weird" and "correct but contended".</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The read anomalies</h3>
+<table>
+<tr><th>Anomaly</th><th>What happens</th></tr>
+<tr><td>Dirty read</td><td>You read another transaction's <em>uncommitted</em> change (which may roll back).</td></tr>
+<tr><td>Non-repeatable read</td><td>You read a row twice in one transaction and get different values (someone committed an update between).</td></tr>
+<tr><td>Phantom read</td><td>You run the same range query twice and new rows appear/disappear (someone inserted/deleted matching rows).</td></tr>
+<tr><td>Lost update</td><td>Two transactions read-modify-write the same row; one overwrites the other's change.</td></tr>
+<tr><td>Write skew</td><td>Two transactions read an overlapping set, each makes a decision valid alone, but together they violate an invariant.</td></tr>
+</table>
+
+<h3>The SQL standard levels</h3>
+<table>
+<tr><th>Level</th><th>Prevents</th></tr>
+<tr><td>Read Uncommitted</td><td>(nothing &mdash; dirty reads allowed)</td></tr>
+<tr><td>Read Committed</td><td>dirty reads</td></tr>
+<tr><td>Repeatable Read</td><td>+ non-repeatable reads</td></tr>
+<tr><td>Serializable</td><td>+ phantoms; result equivalent to <em>some</em> serial order</td></tr>
+</table>
+<p><strong>Reality check:</strong> the standard defines levels by which anomalies they forbid, but engines
+implement them differently. PostgreSQL "Read Committed" is the default; its "Repeatable Read" is
+actually snapshot isolation (also blocks phantoms but allows write skew); its "Serializable" adds
+SSI (serializable snapshot isolation) to catch write skew. Oracle's max is snapshot isolation
+labelled "Serializable". Know your engine.</p>
+
+<h3>Choosing</h3>
+<p>Higher isolation &rarr; more locking / more aborts / lower throughput. Most OLTP runs at Read
+Committed and handles lost updates explicitly (<code>SELECT ... FOR UPDATE</code>, optimistic version
+columns, atomic <code>UPDATE ... SET x = x + 1</code>). Use Serializable for logic where correctness
+under concurrency is subtle and you'd rather retry than reason.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Dirty read: see uncommitted data. Non-repeatable read: same row changes mid-transaction. Phantom: same range query returns different row sets.</li>
+<li>Read Uncommitted &rarr; allows all. Read Committed &rarr; no dirty reads. Repeatable Read &rarr; + no non-repeatable reads. Serializable &rarr; + no phantoms, as-if-serial.</li>
+<li>Lost update &amp; write skew are not in the classic table but matter &mdash; snapshot isolation still allows write skew.</li>
+<li>Postgres default = Read Committed; its "Repeatable Read" = snapshot isolation; "Serializable" = SSI.</li>
+<li>Higher level = more aborts/blocking, less throughput.</li>
+<li>Prevent lost updates at Read Committed with <code>SELECT ... FOR UPDATE</code>, optimistic version column, or atomic in-place update.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Dirty read vs non-repeatable read?</dt>
+<dd>Dirty read: you see data another transaction hasn't committed (and might roll back). Non-repeatable read: you see data that <em>was</em> committed, but it changed between your two reads within the same transaction.</dd>
+<dt>What is a phantom read?</dt>
+<dd>Re-running a range/predicate query in the same transaction returns a different set of rows because another transaction inserted or deleted rows matching your predicate.</dd>
+<dt>Which anomaly does Repeatable Read not prevent (in the standard)?</dt>
+<dd>Phantom reads. (Many MVCC implementations of Repeatable Read do prevent phantoms via snapshots but then allow write skew.)</dd>
+<dt>What is write skew and which level stops it?</dt>
+<dd>Two transactions read an overlapping data set, each individually preserves an invariant, but their combined writes break it (e.g. both doctors go off-call because each sees the other still on-call). Only true Serializable (e.g. Postgres SSI or strict 2PL) prevents it; snapshot isolation does not.</dd>
+<dt>How do you prevent a lost update at Read Committed?</dt>
+<dd>Lock the row on read (<code>SELECT ... FOR UPDATE</code>), use an atomic update (<code>UPDATE t SET n = n + 1 WHERE id = ?</code>), or optimistic concurrency: read a version/timestamp, then <code>UPDATE ... WHERE id = ? AND version = ?</code> and retry if zero rows changed.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which isolation level allows dirty reads?</summary><div class="answer-box">
+Read Uncommitted.
+</div></details>
+<details class="answer-reveal"><summary>What's the strongest standard isolation level?</summary><div class="answer-box">
+Serializable &mdash; the outcome is equivalent to running the transactions one at a time in some order.
+</div></details>
+<details class="answer-reveal"><summary>Default isolation level in PostgreSQL?</summary><div class="answer-box">
+Read Committed.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two users book the last seat at the same time; both succeed. Which anomaly, and how do you fix it?</summary><div class="answer-box">
+A lost update (or write skew, depending on the check). Fixes: <code>SELECT ... FOR UPDATE</code> on the seat row so the second transaction blocks; a unique constraint on (event, seat) so the second insert fails; an atomic conditional update <code>UPDATE seats SET taken = true WHERE id = ? AND taken = false</code> and check the row count; or Serializable isolation with retry.
+</div></details>
+<details class="answer-reveal"><summary>Why might raising isolation to Serializable make throughput <em>worse</em> without any errors?</summary><div class="answer-box">
+More lock contention (strict 2PL) &mdash; transactions wait longer for shared/exclusive locks and range locks &mdash; or, under SSI, more transactions get aborted with serialization failures and must retry, wasting the work already done. Both reduce effective throughput even though every committed result is correct.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how PostgreSQL's Serializable Snapshot Isolation (SSI) catches write skew that plain snapshot isolation misses.</summary><div class="answer-box">
+SSI runs transactions on snapshots (like Repeatable Read) but additionally tracks read/write <em>dependencies</em> between concurrent transactions using predicate locks (SIReadLocks) on the rows and index ranges each transaction reads. A non-serializable execution always contains a specific pattern: a "dangerous structure" of two consecutive rw-antidependency edges (T1 reads something T2 writes, and T2 reads something T3 writes) forming a cycle in the dependency graph. When the engine detects a transaction that is the "pivot" of such a structure, it aborts one of them with a serialization failure at commit time. So write skew &mdash; which is exactly a cycle of rw-dependencies with no ww-conflict &mdash; is caught, at the cost of tracking reads and occasional false-positive aborts. Applications must be prepared to retry on <code>40001</code>.
+</div></details>
+<details class="answer-reveal"><summary>What is the "read committed" behaviour on a row that gets updated by another transaction mid-statement, and how does it differ between engines?</summary><div class="answer-box">
+Under Read Committed, each <em>statement</em> sees a fresh snapshot. If an <code>UPDATE ... WHERE</code> in transaction B tries to modify a row that concurrent transaction A has updated but not committed, B blocks until A ends. If A commits, PostgreSQL then <em>re-evaluates</em> B's <code>WHERE</code> against A's new version ("EvalPlanQual" / update-chasing) &mdash; if it still matches, B updates the new version; if not, B skips it. This can produce non-serializable results and even "lost update"-like surprises where B's <code>WHERE</code> saw the old value but wrote based on it. Oracle behaves similarly with statement-level restart. MySQL (InnoDB) Read Committed releases locks after each statement and also re-reads. The subtle, engine-specific point: at Read Committed, a single multi-row <code>UPDATE</code> is <em>not</em> a consistent point-in-time operation under concurrency &mdash; use <code>FOR UPDATE</code> or a higher level when that matters.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:isolation -->
+
+<!-- TOPIC:db:locking-mvcc -->
+<section class="view topic" id="v-db-locking-mvcc" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Locking, MVCC &amp; Deadlocks</h1>
+<p class="subtitle">Two strategies for isolation &mdash; block writers, or keep multiple versions.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Lock-based concurrency</h3>
+<ul>
+<li><strong>Shared (S)</strong> lock for reads, <strong>Exclusive (X)</strong> for writes. S&ndash;S compatible; anything with X conflicts.</li>
+<li><strong>Two-Phase Locking (2PL)</strong>: a growing phase (acquire locks) then a shrinking phase (release, no new acquires). Guarantees serializability. <strong>Strict 2PL</strong> holds all locks until commit/abort &mdash; also prevents cascading aborts.</li>
+<li>Granularity: row &rarr; page &rarr; table. Fine locks = more concurrency but more overhead; the engine may <strong>escalate</strong> to a coarser lock under memory pressure.</li>
+<li><strong>Intent locks</strong> (IS/IX) on the table signal "I hold row locks below", so a table-level lock request can detect the conflict without scanning every row.</li>
+</ul>
+
+<h3>MVCC</h3>
+<p>Each write creates a <strong>new version</strong> of the row tagged with the transaction's id/timestamp;
+readers see the version consistent with their snapshot. <strong>Readers never block writers and
+writers never block readers.</strong> Used by PostgreSQL, Oracle, MySQL/InnoDB, SQL Server (RCSI).
+Cost: old versions accumulate and must be cleaned up (<code>VACUUM</code> in Postgres, undo/purge in
+InnoDB); long transactions hold back cleanup and bloat storage.</p>
+
+<h3>Deadlocks</h3>
+<p>Two transactions each hold a lock the other needs &mdash; a cycle in the wait-for graph. The engine
+detects the cycle and <strong>aborts a victim</strong> (usually the one with least work done), which the
+app must retry.</p>
+<ul>
+<li>Prevent by <strong>acquiring locks in a consistent order</strong> everywhere, keeping transactions short, using lower isolation where safe, and adding indexes so updates lock fewer rows.</li>
+</ul>
+
+<h3>Explicit locking</h3>
+<p><code>SELECT ... FOR UPDATE</code> (X lock the read rows), <code>FOR SHARE</code>, <code>SKIP LOCKED</code> (job
+queues &mdash; grab the next unlocked row), <code>NOWAIT</code> (fail instead of wait), advisory locks.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>S lock (read) compatible with S; X lock (write) conflicts with everything.</li>
+<li>2PL &rarr; serializable; strict 2PL holds locks to commit (no cascading aborts).</li>
+<li>Lock granularity row/page/table; engine may escalate under pressure; intent locks (IX/IS) coordinate levels.</li>
+<li>MVCC: writes make new versions; readers use a snapshot &rarr; readers don't block writers or vice versa.</li>
+<li>MVCC cost: dead-tuple/undo cleanup (<code>VACUUM</code>/purge); long transactions block it &rarr; bloat.</li>
+<li>Deadlock = cycle in wait-for graph &rarr; engine kills a victim &rarr; app retries.</li>
+<li>Avoid deadlocks: consistent lock ordering, short transactions, proper indexes, lower isolation if safe.</li>
+<li><code>FOR UPDATE</code> / <code>SKIP LOCKED</code> / <code>NOWAIT</code> for explicit control (e.g. queue workers).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What's the core advantage of MVCC over pure locking?</dt>
+<dd>Reads don't take locks and don't block writes (and aren't blocked by them) &mdash; each reader sees a consistent snapshot from its start time. This dramatically improves read-heavy concurrency.</dd>
+<dt>What does the second "phase" in two-phase locking refer to?</dt>
+<dd>The shrinking phase: once a transaction releases any lock it may not acquire another. (Strict 2PL just defers all releases to commit/abort.) It's unrelated to two-phase <em>commit</em>.</dd>
+<dt>What causes a deadlock and how does the DB resolve it?</dt>
+<dd>A cycle where each transaction waits on a lock held by another. The engine's deadlock detector finds the cycle and aborts one transaction (the victim) with a deadlock error; the application retries it.</dd>
+<dt>Why can long-running transactions hurt an MVCC database even if they're read-only?</dt>
+<dd>The old row versions visible to that transaction's snapshot can't be garbage-collected while it runs, so dead tuples / undo logs accumulate, tables and indexes bloat, and vacuum/purge falls behind &mdash; degrading everyone's performance.</dd>
+<dt>What is <code>SELECT ... FOR UPDATE SKIP LOCKED</code> good for?</dt>
+<dd>Concurrent job queues: each worker grabs the next available (unlocked) row, skipping rows other workers have locked, so N workers pull distinct jobs without blocking each other.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Are two shared locks on the same row compatible?</summary><div class="answer-box">
+Yes &mdash; multiple readers can hold S locks simultaneously. An X lock conflicts with any other lock.
+</div></details>
+<details class="answer-reveal"><summary>In MVCC, does a writer block a reader?</summary><div class="answer-box">
+No. The reader sees an older committed version from its snapshot while the writer creates a new one.
+</div></details>
+<details class="answer-reveal"><summary>What does the database do when it detects a deadlock?</summary><div class="answer-box">
+Aborts one transaction (the victim) and returns a deadlock error; that transaction must be retried.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your service gets frequent deadlocks on two tables A and B. First thing to change?</summary><div class="answer-box">
+Make every code path lock A before B (a consistent global ordering), so no cycle can form. Also shorten the transactions, ensure the <code>UPDATE</code>s use indexed predicates (so they lock few rows), and consider batching in a fixed key order.
+</div></details>
+<details class="answer-reveal"><summary>What is lock escalation and when does it bite?</summary><div class="answer-box">
+When a transaction holds many row/page locks, the engine may convert them to a single table lock to save memory. It bites during large bulk <code>UPDATE</code>/<code>DELETE</code>: suddenly the whole table is locked and concurrent access stalls. Mitigate by batching the operation into smaller chunks, or (SQL Server) disabling escalation for that table.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How do gap locks / next-key locks in InnoDB Repeatable Read prevent phantoms, and what's the downside?</summary><div class="answer-box">
+InnoDB's <em>next-key lock</em> = a lock on an index record plus the <em>gap</em> before it. A range query like <code>SELECT ... WHERE x BETWEEN 10 AND 20 FOR UPDATE</code> locks not just existing rows but the gaps between index values in that range, so another transaction can't <code>INSERT</code> a new row with <code>x = 15</code> &mdash; no phantom. Downside: gap locks are taken on <em>index ranges</em>, not just rows, so they block inserts into ranges you merely scanned; on a poorly-indexed query the "gap" can be huge (or the whole table), causing surprising insert blocking and deadlocks between transactions that only touched disjoint rows but overlapping gaps. Fixes: index the predicate tightly, use Read Committed (which disables most gap locking), or restructure to avoid range locks on hot key spaces.
+</div></details>
+<details class="answer-reveal"><summary>Compare optimistic and pessimistic concurrency control, including where each wins.</summary><div class="answer-box">
+<strong>Pessimistic</strong> (locking / 2PL): acquire locks before touching data, block conflicters. Wins under <em>high contention</em> (many transactions fighting over the same rows) &mdash; you pay the wait once instead of doing work and throwing it away; predictable, no wasted computation. Loses to lock overhead, reduced parallelism, and deadlocks. <strong>Optimistic</strong> (version check at commit, or MVCC/SSI): assume conflicts are rare, do the work on a snapshot, validate at commit, abort+retry on conflict. Wins under <em>low contention</em> and read-heavy workloads &mdash; no locking overhead, maximum concurrency, no deadlocks. Loses when contention is high: lots of aborts and re-executed work (livelock-ish), and the retry loop must be idempotent and bounded. Many systems blend them: MVCC for reads, row locks (<code>FOR UPDATE</code>) for the hot write path.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:locking-mvcc -->
+
+<!-- TOPIC:db:sql-vs-nosql -->
+<section class="view topic" id="v-db-sql-vs-nosql" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>SQL vs NoSQL &amp; the CAP Trade-off</h1>
+<p class="subtitle">Different data models for different access patterns &mdash; and what you give up in a partition.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The NoSQL families</h3>
+<table>
+<tr><th>Family</th><th>Model</th><th>Fits</th></tr>
+<tr><td>Key-value</td><td>opaque value by key (Redis, DynamoDB)</td><td>caching, sessions, simple lookups, very high throughput</td></tr>
+<tr><td>Document</td><td>JSON-ish documents, flexible schema (MongoDB, Couchbase)</td><td>aggregates read/written whole; evolving schema; content, catalogs</td></tr>
+<tr><td>Wide-column</td><td>rows with dynamic column families (Cassandra, HBase, Bigtable)</td><td>huge write volume, time-series, known query patterns, linear scale-out</td></tr>
+<tr><td>Graph</td><td>nodes + edges (Neo4j, Neptune)</td><td>relationship-heavy traversal: social, fraud, recommendations</td></tr>
+</table>
+
+<h3>SQL vs NoSQL, honestly</h3>
+<ul>
+<li>SQL: strong schema + constraints, ad-hoc queries &amp; joins, ACID transactions, mature tooling. Scales up easily; scales out with effort (read replicas, sharding, or NewSQL like CockroachDB/Spanner).</li>
+<li>NoSQL: horizontal scale and high availability by design, flexible/denormalized schema, simple queries fast &mdash; but you <strong>model for your queries</strong> up front, joins/transactions are limited or absent, and consistency is often eventual.</li>
+<li>Modern SQL engines have JSON columns, and NoSQL engines have added transactions &mdash; the line is blurrier than "SQL vs NoSQL" implies. Choose by <strong>access pattern, scale, and consistency needs</strong>.</li>
+</ul>
+
+<h3>CAP theorem</h3>
+<p>In the presence of a network <strong>P</strong>artition, a distributed store must choose between
+<strong>C</strong>onsistency (every read sees the latest write) and <strong>A</strong>vailability (every
+request gets a non-error response). You can't have both <em>during a partition</em>. When there's
+no partition, a system can offer both.</p>
+<ul>
+<li><strong>CP</strong>: refuse requests on the minority side to stay consistent (HBase, ZooKeeper, etcd, Spanner).</li>
+<li><strong>AP</strong>: keep serving, reconcile later (Cassandra, DynamoDB, Riak) &mdash; "eventual consistency", conflict resolution (last-write-wins, vector clocks, CRDTs).</li>
+<li><strong>PACELC</strong> extends it: else (no partition), trade <strong>L</strong>atency vs <strong>C</strong>onsistency.</li>
+</ul>
+<p><strong>BASE</strong> (Basically Available, Soft state, Eventual consistency) is the AP-world counterpart
+to ACID.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Key-value: fastest simple lookups / cache. Document: whole-aggregate access, flexible schema. Wide-column: massive writes, known queries, scale-out. Graph: traversal-heavy relationships.</li>
+<li>SQL: schema + constraints + joins + ACID + ad-hoc queries; harder to scale out.</li>
+<li>NoSQL: horizontal scale + availability + flexible schema; model for queries, limited joins/transactions, often eventual consistency.</li>
+<li>CAP: during a partition, pick C or A (not both). No partition &rarr; can have both.</li>
+<li>CP examples: etcd, ZooKeeper, HBase, Spanner. AP examples: Cassandra, DynamoDB, Riak.</li>
+<li>PACELC: else, latency vs consistency. BASE is ACID's eventually-consistent counterpart.</li>
+<li>Default to a relational DB; adopt NoSQL for a specific scale/model/availability need &mdash; polyglot persistence.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>State the CAP theorem correctly.</dt>
+<dd>A distributed data store cannot simultaneously guarantee Consistency and Availability <em>when a network partition occurs</em>. It must sacrifice one. Without a partition, it can provide both.</dd>
+<dt>Is a single-node PostgreSQL "CP" or "CA"?</dt>
+<dd>CAP is about <em>distributed</em> systems. A single node isn't partition-tolerant at all; "CA" is often used loosely for it, but really CAP doesn't apply until you replicate/shard.</dd>
+<dt>When would you choose a document database over relational?</dt>
+<dd>When you consistently read and write whole aggregates (a product with its variants and reviews), the schema varies per document or evolves fast, you don't need cross-document transactions or ad-hoc joins, and you want easy horizontal scaling.</dd>
+<dt>What does "eventual consistency" mean practically?</dt>
+<dd>If writes stop, all replicas will <em>eventually</em> converge to the same value. In the meantime, different reads can return different (stale) values, and the app must tolerate that or use stronger read modes (quorum, read-your-writes).</dd>
+<dt>What does PACELC add to CAP?</dt>
+<dd>It addresses the non-partition case: <strong>P</strong>artition &rarr; choose <strong>A</strong> or <strong>C</strong>; <strong>E</strong>lse (normal operation) &rarr; choose lower <strong>L</strong>atency or stronger <strong>C</strong>onsistency. E.g. Dynamo-style systems are PA/EL; Spanner is PC/EC.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which NoSQL family fits a shopping-cart-by-user-id lookup?</summary><div class="answer-box">
+Key-value (or a document store) &mdash; direct access by a single key, no querying across carts needed.
+</div></details>
+<details class="answer-reveal"><summary>In CAP, what forces the C-vs-A choice?</summary><div class="answer-box">
+A network partition &mdash; nodes can't communicate, so you either stop serving to stay consistent or keep serving and risk divergence.
+</div></details>
+<details class="answer-reveal"><summary>What does the E in PACELC stand for?</summary><div class="answer-box">
+"Else" &mdash; the behaviour when there is no partition (latency vs consistency trade-off).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You're designing a feed for 100M users with heavy writes and known read patterns. SQL or wide-column, and why?</summary><div class="answer-box">
+Wide-column (Cassandra-style): the write volume and need for linear horizontal scale-out with no single master suit it; you design the table around the exact query ("posts by user, newest first" &rarr; partition key = user, clustering key = timestamp desc). A relational DB would need sharding and would struggle with the write rate; you'd lose ad-hoc query flexibility either way, and the feed doesn't need it.
+</div></details>
+<details class="answer-reveal"><summary>Give a case where you'd keep the relational database despite scale pressure.</summary><div class="answer-box">
+Financial ledgers / anything needing multi-row ACID transactions, strong constraints, and auditability, plus varied ad-hoc reporting. Scale it with read replicas, careful indexing, partitioning, caching, and only shard (or move to a NewSQL system like CockroachDB/Spanner that keeps SQL + ACID) when a single primary genuinely can't keep up. The correctness guarantees are worth more than the scaling convenience.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How do Dynamo-style systems resolve concurrent conflicting writes, and what are the options' trade-offs?</summary><div class="answer-box">
+<strong>Last-write-wins</strong> (timestamp): simple, but clock skew silently drops a legitimate write. <strong>Vector clocks / version vectors</strong>: detect true concurrency and surface conflicting versions ("siblings") to the client to merge &mdash; correct, but pushes merge logic to the app and vectors can grow. <strong>CRDTs</strong> (conflict-free replicated data types &mdash; G-counters, OR-sets, LWW-registers): the data type's merge is mathematically commutative/associative/idempotent, so replicas converge automatically with no coordination and no lost updates &mdash; but only certain data shapes have a CRDT, and they carry metadata overhead. <strong>Read repair / quorums</strong> (<code>R + W &gt; N</code>): tune per-operation to trade latency for the chance of reading stale data. Choice depends on whether the domain can tolerate app-side merges and whether its operations fit a CRDT.
+</div></details>
+<details class="answer-reveal"><summary>"NoSQL means no schema" is a myth. Explain.</summary><div class="answer-box">
+NoSQL stores are <em>schema-flexible at write time</em> (the engine won't reject a document with new/missing fields), but the schema doesn't disappear &mdash; it moves into the <strong>application code</strong> and the <strong>access-pattern-driven data model</strong> you commit to up front. You must decide partition keys, what to embed vs reference, and denormalization strategy before you can query efficiently, and every reader must handle every historical shape of the data ("schema on read"). Changing that model later (re-partitioning, backfilling a new field, splitting an embedded array into its own collection) is often <em>harder</em> than an <code>ALTER TABLE</code> because there's no engine-level migration and the data is huge. So the trade is not "schema vs no schema" but "explicit, enforced, centrally-migratable schema" vs "implicit, app-enforced, manually-migrated schema".
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:sql-vs-nosql -->
+
 </main>
 
 <footer class="site-footer">
@@ -8488,25 +9546,23 @@ A suffix array is the sorted order of all <code>n</code> suffixes of <code>T</co
       ["shortest-paths",  "Shortest Paths",                          "BFS, Dijkstra, Bellman-Ford (neg edges), Floyd-Warshall (all pairs), A*."],
       ["mst-topo",        "MST & Topological Sort",                  "Kruskal + union-find, Prim + heap, cut property, Kahn's, DFS ordering."],
       ["string-matching", "String Matching",                        "Naive, Rabin-Karp rolling hash, KMP prefix function, Z-algorithm."]
+    ],
+    db: [
+      ["relational-model",  "Relational Model, Keys & Constraints",   "Relations/tuples, primary/foreign/candidate keys, constraints, schema design."],
+      ["normalization",     "Normalization (1NF to BCNF)",            "Functional dependencies, anomalies, 1NF/2NF/3NF/BCNF, when to denormalize."],
+      ["sql-basics",        "SQL Query Fundamentals",                "SELECT pipeline, WHERE vs HAVING, GROUP BY, aggregates, subqueries, CTEs, windows."],
+      ["joins",             "Joins in Depth",                        "INNER/LEFT/RIGHT/FULL/CROSS, self-join, semi/anti, join algorithms, NULL behaviour."],
+      ["indexes",           "Indexes",                              "B-tree vs hash, clustered vs secondary, composite order, covering, when NOT to index."],
+      ["query-planning",    "Query Planning & Optimization",         "Logical vs physical plan, EXPLAIN, cardinality estimation, scan vs seek, SARGability."],
+      ["transactions-acid", "Transactions & ACID",                   "Atomicity/consistency/isolation/durability, commit/rollback, WAL, savepoints."],
+      ["isolation",         "Isolation Levels & Anomalies",          "Dirty/non-repeatable/phantom reads, read committed, repeatable read, serializable."],
+      ["locking-mvcc",      "Locking, MVCC & Deadlocks",             "Shared/exclusive locks, 2PL, MVCC snapshots, deadlock detection, lock escalation."],
+      ["sql-vs-nosql",      "SQL vs NoSQL & the CAP Trade-off",      "Document/KV/column/graph stores, CAP, BASE, when to pick each, polyglot persistence."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    db: [
-      "The relational model & keys",
-      "Normalization (1NF to BCNF)",
-      "SQL query fundamentals",
-      "Joins in depth",
-      "Indexes (B-tree, hash, covering)",
-      "Query planning & optimization",
-      "Transactions & ACID",
-      "Isolation levels & the anomalies",
-      "Locking, MVCC & deadlocks",
-      "Aggregation, window functions & CTEs",
-      "Schema design & constraints",
-      "SQL vs NoSQL & the CAP trade-off"
-    ],
     net: [
       "The OSI & TCP/IP models",
       "IP addressing, subnets & routing",
