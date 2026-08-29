@@ -6241,6 +6241,1098 @@ Enum + switch: all transitions visible in one place, trivial to serialize the st
 </section>
 <!-- /TOPIC:oops:design-patterns -->
 
+<!-- ============================== DATA STRUCTURES TOPICS ============================== -->
+<!-- TOPIC:ds:complexity -->
+<section class="view topic" id="v-ds-complexity" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Complexity Analysis &amp; Big-O</h1>
+<p class="subtitle">The language for "how does this scale" &mdash; and the traps (amortised, average, hidden constants).</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The notations</h3>
+<ul>
+<li><strong>O(f)</strong> &mdash; upper bound (grows no faster than <code>f</code>).</li>
+<li><strong>&Omega;(f)</strong> &mdash; lower bound. <strong>&Theta;(f)</strong> &mdash; tight bound (both).</li>
+<li>We drop constants and lower-order terms: <code>3n&sup2; + 5n + 9</code> is <code>O(n&sup2;)</code>.</li>
+<li>Big-O describes <em>asymptotic</em> behaviour &mdash; for small <code>n</code>, constants can dominate (which is why <code>std::sort</code> switches to insertion sort for tiny ranges).</li>
+</ul>
+
+<h3>The common growth rates</h3>
+<table>
+<tr><th>Class</th><th>Name</th><th>Example</th></tr>
+<tr><td>O(1)</td><td>constant</td><td>array index, hash lookup (avg), stack push</td></tr>
+<tr><td>O(log n)</td><td>logarithmic</td><td>binary search, balanced-tree op</td></tr>
+<tr><td>O(n)</td><td>linear</td><td>scan, single loop</td></tr>
+<tr><td>O(n log n)</td><td>linearithmic</td><td>merge/quick/heap sort, building a heap of sorted output</td></tr>
+<tr><td>O(n&sup2;)</td><td>quadratic</td><td>nested loop, bubble/insertion sort</td></tr>
+<tr><td>O(2&#8319;), O(n!)</td><td>exponential / factorial</td><td>subsets, permutations, naive TSP</td></tr>
+</table>
+
+<h3>Best / average / worst</h3>
+<p>Quicksort: O(n log n) average, O(n&sup2;) worst (bad pivots). Hash lookup: O(1) average, O(n) worst
+(all collisions). Always know which case an interviewer means &mdash; and whether the worst case is
+adversarially triggerable.</p>
+
+<h3>Amortised analysis</h3>
+<p><code>vector::push_back</code> is O(n) on the occasional reallocation, but O(1) <em>amortised</em>: over
+<code>n</code> pushes the total work is O(n) because capacity doubles, so the expensive copies happen
+rarely and geometrically. Amortised O(1) &ne; worst-case O(1) &mdash; matters for real-time systems.</p>
+
+<h3>Space complexity</h3>
+<p>Count extra memory beyond the input: recursion stack depth (O(log n) for balanced recursion,
+O(n) for a bad quicksort), auxiliary arrays (merge sort O(n)), or O(1) "in-place".</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>O = upper, &Omega; = lower, &Theta; = tight. Drop constants and lower terms.</li>
+<li>Growth order: 1 &lt; log n &lt; n &lt; n log n &lt; n&sup2; &lt; n&sup3; &lt; 2&#8319; &lt; n!.</li>
+<li>Nested loop over n &rarr; O(n&sup2;); halving each step &rarr; O(log n); loop with a doubling index &rarr; O(log n).</li>
+<li>Recursion cost = (number of calls) &times; (work per call); use the recursion tree or Master Theorem.</li>
+<li>Amortised = average over a sequence of ops (dynamic array push = O(1) amortised, O(n) worst single).</li>
+<li>Average case often assumes random input; worst case may be attacker-controlled (hash flooding, quicksort pivots).</li>
+<li>Space: input excluded; count aux arrays + recursion depth. "In-place" = O(1) extra.</li>
+<li>Log base is irrelevant in O() (differ by a constant), but matters for exact counts.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between O and &Theta;?</dt>
+<dd>O(f) is an upper bound &mdash; the algorithm is no worse than <code>f</code> asymptotically. &Theta;(f) is a tight bound &mdash; it grows exactly like <code>f</code> (both O and &Omega;). Saying merge sort is O(n&sup2;) is technically true but weak; &Theta;(n log n) is precise.</dd>
+<dt>Why is dynamic-array append O(1) amortised but not worst-case O(1)?</dt>
+<dd>Most appends just write to a free slot (O(1)), but when capacity is exhausted it allocates a bigger buffer and copies everything (O(n)). Because capacity grows geometrically (usually &times;2), those copies happen rarely enough that the total over <code>n</code> appends is O(n), i.e. O(1) each on average.</dd>
+<dt>What's the time complexity of a loop that does <code>i *= 2</code> until <code>i &gt; n</code>?</dt>
+<dd>O(log n) &mdash; <code>i</code> takes values 1, 2, 4, &hellip;, n, which is about log&#8322;(n) iterations.</dd>
+<dt>Does O(1) mean "fast"?</dt>
+<dd>No &mdash; it means "independent of input size". An O(1) operation with a huge constant (e.g. a fixed 10,000-iteration setup) can be slower than an O(n) one for realistic <code>n</code>. Big-O is about scaling, not absolute speed.</dd>
+<dt>What's the space complexity of recursive merge sort?</dt>
+<dd>O(n) &mdash; the merge step needs an auxiliary array of size n. The recursion stack adds O(log n), which is dominated by the O(n) buffer.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What is the time complexity of binary search?</summary><div class="answer-box">
+O(log n) &mdash; each comparison halves the remaining search space.
+</div></details>
+<details class="answer-reveal"><summary>Simplify O(2n&sup2; + 100n + 7).</summary><div class="answer-box">
+O(n&sup2;). Constants and lower-order terms drop.
+</div></details>
+<details class="answer-reveal"><summary>Two nested loops each from 0 to n &mdash; complexity?</summary><div class="answer-box">
+O(n&sup2;).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>What's the complexity of <code>for i in 0..n: for j in i..n:</code>?</summary><div class="answer-box">
+Still O(n&sup2;). The inner loop runs n, n-1, &hellip;, 1 times; the sum is n(n+1)/2 &asymp; n&sup2;/2, which is &Theta;(n&sup2;).
+</div></details>
+<details class="answer-reveal"><summary>Give the recurrence and solution for merge sort.</summary><div class="answer-box">
+T(n) = 2&middot;T(n/2) + &Theta;(n). By the Master Theorem (a=2, b=2, f(n)=n, n^(log_b a)=n) it's case 2 &rarr; &Theta;(n log n).
+</div></details>
+<details class="answer-reveal"><summary>An algorithm is O(n) time but O(n) space; another is O(n log n) time, O(1) space. Which to prefer?</summary><div class="answer-box">
+It depends on constraints. If memory is tight or n is huge (won't fit), the O(1)-space one wins despite the log factor. If speed dominates and memory is ample, the linear-time one wins. Interviewers usually want you to state the trade-off, not pick blindly.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain amortised analysis via the accounting (banker's) method for dynamic array push.</summary><div class="answer-box">
+Charge each <code>push</code> 3 units: 1 to insert the element, and 2 saved as "credit" on that element. When the array is full (say <code>k</code> elements) and doubles, you must copy <code>k</code> elements &mdash; but the <code>k/2</code> elements added since the last resize each carry 2 credits = <code>k</code> units saved, exactly paying for the <code>k</code> copies. So every operation costs O(1) amortised even though individual resizes are O(n). The potential method formalises this with &Phi; = 2&middot;(size) &minus; capacity.
+</div></details>
+<details class="answer-reveal"><summary>Why can average-case complexity be misleading for security-sensitive code?</summary><div class="answer-box">
+Average case assumes a benign input distribution. An attacker who controls inputs can force the worst case every time: crafted keys that all collide turn a hash map's O(1) into O(n) (hash-flooding DoS); adversarial arrays make naive quicksort O(n&sup2;); pathological regexes cause exponential backtracking (ReDoS). Mitigations: randomised/seeded hashing, introsort (quicksort that falls back to heapsort), non-backtracking regex engines &mdash; i.e. pick structures with acceptable <em>worst</em>-case bounds for untrusted input.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:complexity -->
+
+<!-- TOPIC:ds:arrays-lists -->
+<section class="view topic" id="v-ds-arrays-lists" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Arrays, Dynamic Arrays &amp; Linked Lists</h1>
+<p class="subtitle">Contiguous vs pointer-chased &mdash; the trade-off that decides most container choices.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Static &amp; dynamic arrays</h3>
+<ul>
+<li>Contiguous memory; <code>O(1)</code> index by address arithmetic; excellent cache locality and prefetching.</li>
+<li>Insert/delete in the middle is <code>O(n)</code> (shift elements). Append is <code>O(1)</code> amortised for a dynamic array (geometric growth); prepend is <code>O(n)</code>.</li>
+<li>Dynamic array (<code>vector</code>, <code>ArrayList</code>, Python <code>list</code>): keeps <code>size</code> and <code>capacity</code>; grows by ~1.5&ndash;2&times; when full.</li>
+</ul>
+
+<h3>Linked lists</h3>
+<table>
+<tr><th>Type</th><th>Nodes point to</th><th>Notes</th></tr>
+<tr><td>Singly</td><td>next</td><td>O(1) push_front; can't go backwards; O(n) to reach the tail unless you keep a tail pointer.</td></tr>
+<tr><td>Doubly</td><td>next + prev</td><td>O(1) delete given a node; O(1) both ends with head+tail; 2 pointers per node.</td></tr>
+<tr><td>Circular</td><td>tail.next = head</td><td>round-robin, ring buffers.</td></tr>
+</table>
+<p>Insert/delete is <code>O(1)</code> <em>if you already hold the node</em>; but <em>finding</em> a position is
+<code>O(n)</code>, and each node is a separate heap allocation with poor locality &mdash; so linked lists
+lose to arrays in practice for most workloads.</p>
+
+<h3>Array vs linked list</h3>
+<table>
+<tr><th>Operation</th><th>Array</th><th>Linked list</th></tr>
+<tr><td>Index access</td><td>O(1)</td><td>O(n)</td></tr>
+<tr><td>Insert/erase at known position</td><td>O(n) (shift)</td><td>O(1) (relink)</td></tr>
+<tr><td>Append</td><td>O(1) amortised</td><td>O(1)</td></tr>
+<tr><td>Memory per element</td><td>just the value</td><td>value + 1&ndash;2 pointers + alloc overhead</td></tr>
+<tr><td>Cache behaviour</td><td>excellent</td><td>poor (pointer chasing)</td></tr>
+</table>
+
+<h3>Classic techniques</h3>
+<p>Two pointers (fast/slow for cycle detection &mdash; Floyd's; middle-of-list), reversing a list
+iteratively (prev/curr/next), dummy head node to simplify edge cases, in-place partition.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Array: O(1) index, O(n) middle insert, O(1) amortised append, best cache locality.</li>
+<li>Dynamic array grows geometrically; <code>reserve</code> when size is known.</li>
+<li>Linked list: O(1) insert/delete <em>given the node</em>, O(n) to find it, O(n) index, extra pointer + alloc per node.</li>
+<li>Singly: O(1) front ops. Doubly: O(1) both ends + O(1) delete-by-node. Circular: rings / round-robin.</li>
+<li>Default to a dynamic array; pick a list only for O(1) splice or stable node addresses with frequent mid-list edits.</li>
+<li>Dummy/sentinel head node removes null-check special cases.</li>
+<li>Floyd's cycle detection: slow +1, fast +2; they meet iff there's a cycle.</li>
+<li>Reverse a list: track prev, curr, next; O(n) time, O(1) space.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is array indexing O(1)?</dt>
+<dd>Elements are contiguous and equal-sized, so <code>address = base + i &times; elementSize</code> &mdash; one multiply-add, no traversal.</dd>
+<dt>When does a linked list actually beat a dynamic array?</dt>
+<dd>When you do many insertions/deletions in the middle <em>and already hold iterators/nodes</em> to those positions (so no O(n) search), or you need element addresses to stay stable across edits, or you splice whole sublists between lists in O(1).</dd>
+<dt>What's the cost of <code>push_front</code> on a <code>std::vector</code>?</dt>
+<dd>O(n) &mdash; every existing element shifts up one slot. Use <code>std::deque</code> for O(1) front insertion.</dd>
+<dt>How do you find the middle of a singly linked list in one pass?</dt>
+<dd>Two pointers: advance <code>slow</code> by 1 and <code>fast</code> by 2 each step; when <code>fast</code> reaches the end, <code>slow</code> is at the middle.</dd>
+<dt>Why are linked lists slow in practice despite good asymptotic insert?</dt>
+<dd>Each node is a separate allocation scattered in memory, so traversal is a chain of cache misses; and you usually pay O(n) to <em>find</em> the insertion point anyway. Arrays' contiguous layout and hardware prefetching win for typical sizes.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Time to access the k-th element of a singly linked list?</summary><div class="answer-box">
+O(k) &mdash; you must walk from the head. O(n) in the worst case.
+</div></details>
+<details class="answer-reveal"><summary>What two fields does a dynamic array track?</summary><div class="answer-box">
+<code>size</code> (elements in use) and <code>capacity</code> (slots allocated).
+</div></details>
+<details class="answer-reveal"><summary>Which list type lets you delete a node in O(1) given a pointer to it?</summary><div class="answer-box">
+Doubly linked list (you have both neighbours to relink). In a singly linked list you'd need the previous node.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Detect whether a linked list has a cycle, O(1) space.</summary><div class="answer-box">
+Floyd's tortoise and hare: move <code>slow</code> one step and <code>fast</code> two steps per iteration. If <code>fast</code> (or <code>fast.next</code>) becomes null, no cycle. If <code>slow == fast</code> at some point, there is a cycle. To find the start, reset one pointer to the head and advance both by 1 until they meet again.
+</div></details>
+<details class="answer-reveal"><summary>Reverse a singly linked list in place.</summary><div class="answer-box">
+<pre><code>prev = null; curr = head
+<span class="k">while</span> curr:
+    nxt = curr.next
+    curr.next = prev
+    prev = curr
+    curr = nxt
+head = prev</code></pre>
+O(n) time, O(1) space.
+</div></details>
+<details class="answer-reveal"><summary>You need frequent random access <em>and</em> frequent middle insertion. What structure?</summary><div class="answer-box">
+Neither array nor list is great. Options: a balanced BST / order-statistics tree (O(log n) both), a skip list, a gap buffer or rope (for text), or a "tiered" / unrolled linked list. If insertions cluster, a <code>std::deque</code> or segmented array can be enough.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why might <code>std::list</code> be slower than <code>std::vector</code> even for a workload with many middle insertions?</summary><div class="answer-box">
+Finding the insertion point in a list is O(n) pointer-chasing through cache-cold nodes; the vector's O(n) shift is a single <code>memmove</code> over contiguous, prefetched memory that the CPU does at near-bandwidth speed. Unless you already hold the iterator (from a prior traversal) and the elements are large, the vector's constant factor is small enough that it wins up to surprisingly large n. Benchmarks (Stroustrup's) show vector beating list for insert-sorted workloads into the thousands of elements.
+</div></details>
+<details class="answer-reveal"><summary>What is an unrolled linked list and what does it optimise?</summary><div class="answer-box">
+Each node holds a small array of elements (say 16&ndash;64) plus the next pointer. This amortises the per-element pointer/allocation overhead, restores some cache locality (a whole block is contiguous), and keeps O(1)-ish splicing at block granularity. Trade-offs: partially-full blocks waste space, and insert/delete within a block still shifts up to <code>blockSize</code> elements. Used in some database and editor buffer implementations; the CPU-cache-aware middle ground between array and list.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:arrays-lists -->
+
+<!-- TOPIC:ds:stacks-queues -->
+<section class="view topic" id="v-ds-stacks-queues" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Stacks &amp; Queues</h1>
+<p class="subtitle">LIFO and FIFO &mdash; simple structures that power parsing, scheduling, and traversal.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Stack (LIFO)</h3>
+<ul>
+<li><code>push</code>, <code>pop</code>, <code>peek/top</code>, <code>isEmpty</code> &mdash; all O(1).</li>
+<li>Implement on a dynamic array (push/pop at the back) or a singly linked list (push/pop at the head).</li>
+<li>Uses: function call stack, expression evaluation &amp; balanced-parens, DFS, undo, backtracking, "next greater element" (monotonic stack).</li>
+</ul>
+
+<h3>Queue (FIFO)</h3>
+<ul>
+<li><code>enqueue</code> (back), <code>dequeue</code> (front), <code>front</code>, <code>isEmpty</code> &mdash; O(1).</li>
+<li>Array implementation: use a <strong>circular buffer</strong> (head/tail indices mod capacity) so <code>dequeue</code> isn't O(n). Linked list: keep head + tail pointers.</li>
+<li>Uses: BFS, task/job scheduling, producer&ndash;consumer buffers, rate limiting, streaming.</li>
+</ul>
+
+<h3>Variants</h3>
+<table>
+<tr><th>Structure</th><th>What it adds</th></tr>
+<tr><td>Deque</td><td>push/pop at <em>both</em> ends in O(1). Superset of stack and queue.</td></tr>
+<tr><td>Circular / ring buffer</td><td>Fixed-capacity FIFO with O(1) ops and no allocation; overwrites oldest when full (or blocks).</td></tr>
+<tr><td>Priority queue</td><td>Dequeue the min/max, not the oldest. Backed by a heap (see Heaps topic) &mdash; O(log n).</td></tr>
+<tr><td>Monotonic stack/queue</td><td>Keeps elements in sorted order by discarding dominated ones &mdash; sliding-window max/min, histogram, stock span in O(n).</td></tr>
+</table>
+
+<h3>Two stacks &harr; queue</h3>
+<p>A queue can be built from two stacks: push onto <code>in</code>; to dequeue, if <code>out</code> is empty pour
+<code>in</code> into <code>out</code> (reversing order) then pop <code>out</code>. Amortised O(1) per operation.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Stack = LIFO: push/pop/peek O(1). Array back, or linked-list head.</li>
+<li>Queue = FIFO: enqueue back / dequeue front O(1). Use a circular buffer for the array version.</li>
+<li>Deque = both ends O(1); is a superset of stack + queue.</li>
+<li>Ring buffer: fixed capacity, no alloc, head/tail mod N, overwrite-or-block when full.</li>
+<li>Priority queue: pop by priority, heap-backed, O(log n).</li>
+<li>Stack uses: DFS, parsing, balanced brackets, undo, call frames, monotonic-stack range problems.</li>
+<li>Queue uses: BFS, scheduling, buffering, level-order traversal.</li>
+<li>Queue from two stacks: amortised O(1); stack from two queues: O(n) on one side.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why use a circular buffer for an array-backed queue?</dt>
+<dd>So <code>dequeue</code> is O(1). A naive array queue that removes from index 0 must shift every element down (O(n)); a circular buffer just advances a <code>head</code> index modulo capacity.</dd>
+<dt>Which traversal uses a stack and which uses a queue?</dt>
+<dd>DFS uses a stack (explicit, or the call stack via recursion); BFS uses a queue (process level by level).</dd>
+<dt>What is a monotonic stack good for?</dt>
+<dd>Problems asking "next/previous greater (or smaller) element", largest rectangle in a histogram, sliding-window maximum &mdash; it maintains a stack whose values are monotonic, popping dominated elements, giving overall O(n).</dd>
+<dt>How do you implement a queue with two stacks?</dt>
+<dd>An <code>inStack</code> for pushes and an <code>outStack</code> for pops. On <code>dequeue</code>, if <code>outStack</code> is empty, pop everything from <code>inStack</code> into <code>outStack</code> (which reverses it), then pop from <code>outStack</code>. Each element is moved at most once &rarr; amortised O(1).</dd>
+<dt>What does a priority queue change about "queue" semantics?</dt>
+<dd>It dequeues the highest-priority element rather than the earliest-inserted one. It's not FIFO; it's backed by a heap and costs O(log n) per push/pop.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does LIFO stand for and which structure is it?</summary><div class="answer-box">
+Last-In-First-Out &mdash; a stack.
+</div></details>
+<details class="answer-reveal"><summary>Which structure would you use to check balanced parentheses?</summary><div class="answer-box">
+A stack: push opening brackets, pop and match on closing brackets; balanced iff the stack is empty at the end and never mismatches.
+</div></details>
+<details class="answer-reveal"><summary>Enqueue and dequeue happen at the same end or different ends?</summary><div class="answer-box">
+Different ends &mdash; enqueue at the back, dequeue from the front.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Design a fixed-size ring buffer. How do you tell "full" from "empty" when head == tail?</summary><div class="answer-box">
+Two common fixes: (a) keep an explicit <code>count</code>; full when <code>count == capacity</code>, empty when <code>count == 0</code>. (b) Leave one slot unused: <code>full</code> when <code>(tail + 1) % cap == head</code>, so head == tail always means empty. (a) uses the whole buffer; (b) avoids a separate counter.
+</div></details>
+<details class="answer-reveal"><summary>Sliding-window maximum over an array, O(n). Sketch it.</summary><div class="answer-box">
+Use a deque of <em>indices</em> whose values are decreasing. For each <code>i</code>: pop from the back while the back's value &le; <code>a[i]</code>; push <code>i</code>; pop from the front if it's outside the window (<code>&le; i - k</code>); the front index's value is the window max. Each index is pushed and popped once &rarr; O(n).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How would you build a lock-free single-producer/single-consumer queue?</summary><div class="answer-box">
+A ring buffer with an atomic <code>head</code> (consumer) and atomic <code>tail</code> (producer). The producer writes the element then does a <em>release</em> store to <code>tail</code>; the consumer does an <em>acquire</em> load of <code>tail</code> before reading. Because there's exactly one writer per index, no CAS is needed &mdash; just the acquire/release fence pair to publish the data before the index. Pad <code>head</code> and <code>tail</code> onto separate cache lines to avoid false sharing. Multi-producer or multi-consumer needs CAS loops and is much harder to get right.
+</div></details>
+<details class="answer-reveal"><summary>Prove the two-stack queue is amortised O(1) using the potential method.</summary><div class="answer-box">
+Let &Phi; = size of <code>inStack</code>. <code>push</code>: real cost 1, &Delta;&Phi; = +1 &rarr; amortised 2. <code>dequeue</code> when <code>outStack</code> non-empty: real cost 1, &Delta;&Phi; = 0 &rarr; amortised 1. <code>dequeue</code> that transfers <code>k</code> elements: real cost k (moves) + 1 (pop), &Delta;&Phi; = &minus;k &rarr; amortised (k + 1) &minus; k = 1. Every operation is amortised &le; 2 = O(1), even though a single transfer is O(k).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:stacks-queues -->
+
+<!-- TOPIC:ds:hash-tables -->
+<section class="view topic" id="v-ds-hash-tables" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Hash Tables &amp; Collision Handling</h1>
+<p class="subtitle">O(1) average lookup &mdash; and everything that has to go right for that to hold.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The idea</h3>
+<p>Map a key to a bucket index with <code>hash(key) % capacity</code>. Good average-case O(1) for
+insert/find/delete, at the cost of no ordering and a worst case of O(n).</p>
+
+<h3>A good hash function</h3>
+<ul>
+<li>Deterministic, fast, and spreads keys <em>uniformly</em> across buckets (avalanche: one input bit flips ~half the output bits).</li>
+<li>For hash <em>tables</em> you want speed + distribution (FNV, MurmurHash, xxHash, SipHash for DoS-resistance) &mdash; not a cryptographic hash.</li>
+<li><code>% capacity</code> with a power-of-two capacity is a fast bitmask, but only mixes the low bits &mdash; hash functions must pre-mix.</li>
+</ul>
+
+<h3>Collision resolution</h3>
+<table>
+<tr><th></th><th>Separate chaining</th><th>Open addressing</th></tr>
+<tr><td>Structure</td><td>Each bucket is a list (or tree)</td><td>All entries in the array; on collision, probe for the next free slot</td></tr>
+<tr><td>Probing</td><td>&mdash;</td><td>linear (+1), quadratic (+i&sup2;), or double hashing</td></tr>
+<tr><td>Load factor</td><td>can exceed 1</td><td>must stay &lt; 1 (typically &le; 0.7)</td></tr>
+<tr><td>Cache</td><td>pointer-chasing per bucket</td><td>contiguous &mdash; faster in practice</td></tr>
+<tr><td>Delete</td><td>simple</td><td>needs tombstones or backward-shift</td></tr>
+</table>
+
+<h3>Load factor &amp; resizing</h3>
+<p><code>load factor &alpha; = n / capacity</code>. As <code>&alpha;</code> rises, collisions and probe lengths grow.
+When it crosses a threshold (~0.75), <strong>rehash</strong>: allocate a larger table (usually 2&times;) and
+reinsert every element &mdash; O(n), but amortised O(1) per insert. This is why iterators are
+invalidated on insert.</p>
+
+<h3>Worst case &amp; defence</h3>
+<p>All keys colliding &rarr; O(n) per operation (a linked list). Causes: bad hash, or an attacker
+choosing colliding keys (hash-flooding DoS). Defences: randomised per-process seed, SipHash,
+switching a bucket to a balanced tree above a threshold (Java 8 <code>HashMap</code>), or a tree map for
+untrusted keys.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Average O(1) insert/find/delete; worst O(n); no ordering.</li>
+<li>Hash must be deterministic, fast, well-distributed (avalanche). Not cryptographic for tables.</li>
+<li><strong>Chaining</strong>: bucket = list/tree; tolerates &alpha; &gt; 1; simple delete; pointer-chasing.</li>
+<li><strong>Open addressing</strong>: probe sequence; &alpha; &lt; 1; cache-friendly; delete needs tombstones.</li>
+<li>Probing: linear (clustering), quadratic (less clustering), double hashing (best spread).</li>
+<li>Resize (rehash) at &alpha; &asymp; 0.7&ndash;0.75, grow &times;2, reinsert all &mdash; O(n), amortised O(1); invalidates iterators.</li>
+<li>DoS defence: seeded hash / SipHash / treeify overpopulated buckets.</li>
+<li>A <code>set</code> is a hash table storing only keys; a <code>map</code> stores key&rarr;value.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Chaining vs open addressing?</dt>
+<dd>Chaining stores colliding entries in a per-bucket list, tolerates load factor &gt; 1, and deletes easily, but chases pointers. Open addressing keeps everything in the array and probes for a free slot &mdash; better cache behaviour and less memory, but the load factor must stay below 1 and deletion needs tombstones or shifting.</dd>
+<dt>What is the load factor and why does it matter?</dt>
+<dd>&alpha; = entries / buckets. Higher &alpha; means more collisions and longer probe/chain lengths, degrading the O(1) average toward O(n). Tables rehash to a bigger array when &alpha; passes a threshold.</dd>
+<dt>Why is resizing O(n) but insertion still amortised O(1)?</dt>
+<dd>Resizing reinserts all <code>n</code> elements, but capacity doubles each time, so resizes happen geometrically rarely; summed over <code>n</code> inserts the total rehash work is O(n).</dd>
+<dt>What makes a hash function good for a hash table?</dt>
+<dd>Speed, determinism, and uniform distribution so different keys land in different buckets (small input changes should scatter the output). Cryptographic strength isn't needed unless you're defending against adversarial keys.</dd>
+<dt>How does Java 8's HashMap mitigate collision attacks?</dt>
+<dd>When a single bucket's chain exceeds 8 entries (and the table is large enough), it converts that bucket from a linked list to a red-black tree, bounding that bucket's operations at O(log n) instead of O(n).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Average and worst-case lookup time for a hash table?</summary><div class="answer-box">
+O(1) average, O(n) worst case (all keys collide).
+</div></details>
+<details class="answer-reveal"><summary>What is a collision?</summary><div class="answer-box">
+When two distinct keys hash to the same bucket index.
+</div></details>
+<details class="answer-reveal"><summary>Name two collision-resolution strategies.</summary><div class="answer-box">
+Separate chaining and open addressing (linear/quadratic probing, double hashing).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>In open addressing, why can't you just set a deleted slot to "empty"?</summary><div class="answer-box">
+A later search for a key whose probe sequence passed through that slot would stop early at the "empty" and wrongly report "not found". You mark it as a <em>tombstone</em> (deleted-but-was-occupied) so searches keep probing, or you do a backward-shift deletion that repairs the probe sequence. Tombstones accumulate and eventually require a rehash.
+</div></details>
+<details class="answer-reveal"><summary>Why is a power-of-two capacity with <code>hash &amp; (cap-1)</code> risky, and how is it fixed?</summary><div class="answer-box">
+It only uses the low bits of the hash, so a hash function that varies mostly in its high bits produces heavy clustering. Fixes: a hash function with good avalanche across all bits, an extra mixing step on the stored hash (Java's <code>h ^ (h &gt;&gt;&gt; 16)</code>), or a prime-number capacity with true modulo (better distribution, slower operation).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Compare linear probing, quadratic probing, and double hashing for clustering behaviour.</summary><div class="answer-box">
+<strong>Linear</strong> (+1, +2, &hellip;): suffers <em>primary clustering</em> &mdash; runs of occupied slots grow and merge, so probe lengths blow up near high load; but it's the most cache-friendly (sequential access). <strong>Quadratic</strong> (+1, +4, +9, &hellip;): avoids primary clustering but has <em>secondary clustering</em> (keys with the same initial bucket follow the same probe path) and may not visit every slot unless capacity and constants are chosen carefully. <strong>Double hashing</strong> (step = <code>hash2(key)</code>): each key gets its own probe stride, eliminating both clustering types &mdash; best distribution, but two hash computations and random-access probing (cache-unfriendly). Modern implementations (Google's SwissTable, Rust's hashbrown) use SIMD-scanned linear probing to get linear's locality without its clustering pain.
+</div></details>
+<details class="answer-reveal"><summary>How does a concurrent hash map allow safe multi-threaded access without a global lock?</summary><div class="answer-box">
+Techniques: <strong>lock striping</strong> (Java 7 <code>ConcurrentHashMap</code> &mdash; N segment locks, so writers to different segments don't contend); <strong>per-bucket / CAS-based</strong> updates (Java 8 &mdash; CAS to install the first node, synchronise only on the bucket head for chains, help with resize); fully <strong>lock-free</strong> designs using atomic pointers and a "resize in progress" forwarding marker; or <strong>RCU / epoch</strong> schemes where readers never block and writers publish new versions. Reads are usually wait-free. Trade-offs: memory overhead, weaker iteration guarantees (weakly consistent iterators), and <code>size()</code> becoming approximate or expensive.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:hash-tables -->
+
+<!-- TOPIC:ds:trees-bst -->
+<section class="view topic" id="v-ds-trees-bst" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Trees &amp; Binary Search Trees</h1>
+<p class="subtitle">Traversals, the BST invariant, and why an unbalanced BST is just a slow linked list.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Terminology</h3>
+<p>Root, parent/child, leaf, internal node, edge, <strong>depth</strong> (root to node), <strong>height</strong>
+(node to deepest leaf), subtree. A binary tree: each node has &le; 2 children. Complete, full,
+perfect, balanced are distinct shapes.</p>
+
+<h3>Traversals</h3>
+<table>
+<tr><th>Order</th><th>Visit</th><th>Use</th></tr>
+<tr><td>In-order (L, N, R)</td><td>left, node, right</td><td>BST &rarr; sorted output</td></tr>
+<tr><td>Pre-order (N, L, R)</td><td>node first</td><td>copy/serialize a tree, prefix expression</td></tr>
+<tr><td>Post-order (L, R, N)</td><td>node last</td><td>delete/free a tree, postfix expression, compute subtree aggregates</td></tr>
+<tr><td>Level-order (BFS)</td><td>by depth, using a queue</td><td>shortest path in unweighted tree, printing by row</td></tr>
+</table>
+<p>DFS traversals are naturally recursive (call stack) or iterative with an explicit stack;
+level-order needs a queue.</p>
+
+<h3>Binary Search Tree</h3>
+<ul>
+<li><strong>Invariant:</strong> for every node, all keys in the left subtree are &lt; the node's key, all keys in the right subtree are &gt;.</li>
+<li><code>search</code>, <code>insert</code>, <code>delete</code>: O(h) where <code>h</code> is the height. Balanced &rarr; O(log n); degenerate (sorted insertions) &rarr; O(n).</li>
+<li><strong>Delete</strong> cases: leaf (remove), one child (splice), two children (replace with in-order successor/predecessor, then delete that).</li>
+<li>In-order traversal yields keys in ascending order &mdash; a free sorted iteration.</li>
+</ul>
+
+<h3>When BSTs degenerate</h3>
+<p>Inserting already-sorted (or reverse-sorted) data builds a path, not a bush &rarr; O(n) operations.
+Fixes: self-balancing trees (AVL, red-black &mdash; next topic), randomised insertion order, treaps,
+or just use a hash table if you don't need ordered iteration / range queries.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Height = longest root&rarr;leaf path; depth = node's distance from root.</li>
+<li>In-order = sorted (for a BST). Pre-order = serialize. Post-order = free / bottom-up aggregates. Level-order = BFS with a queue.</li>
+<li>BST invariant: left subtree &lt; node &lt; right subtree, recursively.</li>
+<li>search/insert/delete = O(h): O(log n) balanced, O(n) degenerate.</li>
+<li>Delete-with-two-children: swap with in-order successor (leftmost of right subtree), then delete that.</li>
+<li>Sorted input into a plain BST &rarr; linked-list shape &rarr; use a self-balancing tree.</li>
+<li>Use a BST/ordered map for range queries, floor/ceil, ordered iteration; use a hash map otherwise.</li>
+<li>DFS recursion depth = tree height &rarr; risk of stack overflow on skewed trees; go iterative if needed.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Which traversal prints a BST's keys in sorted order?</dt>
+<dd>In-order (left, node, right).</dd>
+<dt>Difference between height and depth of a node?</dt>
+<dd>Depth is the number of edges from the root down to the node; height is the number of edges from the node down to its deepest descendant leaf. The tree's height is the root's height.</dd>
+<dt>What's the time complexity of BST search, and what does it depend on?</dt>
+<dd>O(h), the height. For a balanced tree h &asymp; log&#8322;n; for a degenerate (linear) tree h = n.</dd>
+<dt>How do you delete a node with two children from a BST?</dt>
+<dd>Replace its key with its in-order successor (the smallest key in the right subtree) or predecessor, then recursively delete that successor node, which has at most one child.</dd>
+<dt>Why can inserting sorted data into a BST be a problem?</dt>
+<dd>Each new key is larger than all previous, so it always goes to the far right &mdash; the tree becomes a straight chain of height n, and every operation is O(n). Self-balancing trees restructure to keep height O(log n).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What data structure does level-order traversal use?</summary><div class="answer-box">
+A queue.
+</div></details>
+<details class="answer-reveal"><summary>State the BST property.</summary><div class="answer-box">
+For every node, all keys in its left subtree are smaller and all keys in its right subtree are larger than the node's key.
+</div></details>
+<details class="answer-reveal"><summary>Maximum number of nodes in a binary tree of height h (edges)?</summary><div class="answer-box">
+2^(h+1) &minus; 1 (a perfect tree).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Validate that a binary tree is a BST.</summary><div class="answer-box">
+Recurse with an allowed <code>(min, max)</code> range: each node's key must be strictly within its bounds; recurse left with <code>max = node.key</code>, right with <code>min = node.key</code>. Checking only <code>node.left.key &lt; node.key &lt; node.right.key</code> locally is <em>wrong</em> &mdash; it misses violations deeper down. Equivalent: an in-order traversal must be strictly increasing.
+</div></details>
+<details class="answer-reveal"><summary>Find the k-th smallest element in a BST.</summary><div class="answer-box">
+In-order traversal, counting nodes; return the k-th visited. O(k) with early stop, O(h + k) to reach it. If the tree stores subtree sizes (an order-statistics tree), it's O(h): at each node compare k with left-subtree size to go left, return, or go right with adjusted k.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How do you do an iterative in-order traversal with O(1) extra space?</summary><div class="answer-box">
+Morris traversal: for each node with a left child, find its in-order predecessor (rightmost node of the left subtree) and temporarily set that node's right pointer to the current node (a "thread"). Walk left; when you return via a thread, output the node, remove the thread, and go right. It mutates pointers during traversal but restores them, using no stack &mdash; O(n) time, O(1) space. Trade-off: not thread-safe / not usable on a shared immutable tree, and more complex to get right.
+</div></details>
+<details class="answer-reveal"><summary>Serialize and deserialize a binary tree. What's the key design choice?</summary><div class="answer-box">
+Choose a traversal and <em>explicitly mark null children</em> (e.g. pre-order with <code>#</code> for null). Pre-order + null markers lets deserialize rebuild recursively by consuming tokens in the same order. Level-order + null markers also works (LeetCode's format). Without null markers a single traversal is ambiguous &mdash; you'd need two (e.g. in-order + pre-order), which fails if keys aren't unique. Cost: null markers roughly double the token count for sparse trees.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:trees-bst -->
+
+<!-- TOPIC:ds:balanced-heaps -->
+<section class="view topic" id="v-ds-balanced-heaps" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Balanced Trees &amp; Heaps</h1>
+<p class="subtitle">Keeping tree height O(log n), and the array-as-tree trick behind priority queues.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Self-balancing BSTs</h3>
+<table>
+<tr><th>Tree</th><th>Balance rule</th><th>Character</th></tr>
+<tr><td>AVL</td><td>heights of the two subtrees differ by &le; 1</td><td>stricter balance &rarr; faster lookups, more rotations on write</td></tr>
+<tr><td>Red-black</td><td>colour rules keep the longest path &le; 2&times; the shortest</td><td>looser &rarr; fewer rotations, favoured for general maps (<code>std::map</code>, Java <code>TreeMap</code>)</td></tr>
+<tr><td>B-tree / B+tree</td><td>high branching factor, all leaves same depth</td><td>disk/SSD &amp; DB indexes &mdash; one node = one page, minimises I/O</td></tr>
+</table>
+<p>All give O(log n) search/insert/delete and, unlike a hash table, keep keys ordered (range
+queries, floor/ceil, sorted iteration). Balance is restored by <strong>rotations</strong> (local
+O(1) pointer rewires) after an insert/delete.</p>
+
+<h3>Binary heap</h3>
+<ul>
+<li>A <strong>complete</strong> binary tree stored in an array: node <code>i</code>'s children are <code>2i+1</code>, <code>2i+2</code>; parent is <code>(i-1)/2</code>. No pointers.</li>
+<li><strong>Heap property:</strong> min-heap &mdash; every parent &le; its children (root is the minimum). Max-heap is the mirror.</li>
+<li><code>push</code>: append, then <strong>sift up</strong> &mdash; O(log n). <code>pop</code> (min): swap root with last, shrink, <strong>sift down</strong> &mdash; O(log n). <code>peek</code>: O(1).</li>
+<li><strong>Build-heap</strong> from an unsorted array: sift down from the last internal node upward &mdash; O(n), not O(n log n).</li>
+</ul>
+
+<h3>Uses</h3>
+<p>Priority queue (Dijkstra, A*, task scheduling), heapsort (build max-heap, repeatedly pop),
+"top-k" (a size-k heap in O(n log k)), median maintenance (two heaps), merging k sorted lists.</p>
+
+<h3>Heap vs BST</h3>
+<p>A heap only gives you the min (or max) fast &mdash; no ordered iteration, no arbitrary search
+(that's O(n)). A balanced BST gives ordered operations but a larger constant and pointer
+overhead. Use a heap when you only ever want the extreme element.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>AVL: tightly balanced, more rotations, fastest reads. Red-black: looser, fewer rotations, default for library maps.</li>
+<li>B/B+ trees: wide fan-out, one node per disk page &rarr; database and filesystem indexes.</li>
+<li>Balanced BST ops all O(log n); rebalancing = O(1) rotations per level.</li>
+<li>Binary heap = complete tree in an array; children of <code>i</code> at <code>2i+1</code>/<code>2i+2</code>.</li>
+<li>push/pop O(log n) (sift up/down), peek O(1), build-heap O(n).</li>
+<li>Heap = priority queue; no search, no ordered traversal.</li>
+<li>Heapsort: build max-heap O(n), pop n times O(n log n), in-place, not stable.</li>
+<li>Top-k with a min-heap of size k: O(n log k). Streaming median: max-heap (low half) + min-heap (high half).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How is a binary heap stored without pointers?</dt>
+<dd>As an array representing a complete binary tree level by level. For index <code>i</code>: left child <code>2i+1</code>, right child <code>2i+2</code>, parent <code>(i-1)/2</code>. The completeness guarantee is what makes this indexing valid.</dd>
+<dt>Why is building a heap O(n), not O(n log n)?</dt>
+<dd>You sift <em>down</em> from the bottom up. Most nodes are near the leaves and sift down only a level or two; the work is &sum; (nodes at height h) &times; h, which converges to O(n). Inserting one-by-one with sift-up would be O(n log n).</dd>
+<dt>AVL vs red-black tree &mdash; when does each win?</dt>
+<dd>AVL keeps stricter balance, so lookups are slightly faster &mdash; better for read-heavy workloads. Red-black does fewer rotations per update, so it's better for write-heavy workloads and is the common choice for standard-library ordered maps.</dd>
+<dt>Can you search a heap for an arbitrary value efficiently?</dt>
+<dd>No &mdash; O(n). The heap property only orders parents vs children, not siblings or cousins. If you need search, use a balanced BST or keep a side hash map of value&rarr;index.</dd>
+<dt>Why do databases use B-trees instead of binary balanced trees?</dt>
+<dd>Disk/SSD reads happen in pages (4&ndash;16 KB). A B-tree node fills a page and has hundreds of children, so the tree is very shallow (3&ndash;4 levels for millions of keys) &mdash; each level is one I/O. A binary tree would need ~log&#8322;n &asymp; 20+ I/Os for the same data.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What's at the root of a min-heap?</summary><div class="answer-box">
+The smallest element. <code>peek</code> is O(1).
+</div></details>
+<details class="answer-reveal"><summary>Insert and extract-min complexity for a binary heap?</summary><div class="answer-box">
+Both O(log n) &mdash; sift up on insert, sift down after removing the root.
+</div></details>
+<details class="answer-reveal"><summary>Does a self-balancing BST keep keys in sorted order?</summary><div class="answer-box">
+Yes &mdash; in-order traversal is still sorted, which is why it supports range queries that a hash map can't.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Find the k largest elements of an n-element array efficiently.</summary><div class="answer-box">
+Maintain a <em>min</em>-heap of size k: push the first k, then for each remaining element, if it's larger than the heap's min, pop and push it. End with the k largest. O(n log k) time, O(k) space &mdash; better than sorting (O(n log n)) when k &laquo; n. (Quickselect gives O(n) average if you only need them unordered.)
+</div></details>
+<details class="answer-reveal"><summary>Maintain the running median of a stream.</summary><div class="answer-box">
+Two heaps: a max-heap for the lower half, a min-heap for the upper half, kept balanced in size (differ by &le; 1). Insert into the appropriate heap, then rebalance by moving one element across if sizes diverge. Median is the top of the larger heap, or the average of both tops when equal. O(log n) per insert, O(1) query.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Dijkstra with a binary heap is O((V+E) log V). What does a Fibonacci heap change, and why isn't it used much?</summary><div class="answer-box">
+A Fibonacci heap gives amortised O(1) <code>decrease-key</code> and O(1) <code>insert</code>, with O(log n) <code>extract-min</code>, lowering Dijkstra to O(E + V log V) &mdash; asymptotically better for dense graphs. In practice it's rarely used: large hidden constants, poor cache locality (lots of pointer manipulation and node cutting), and complex implementation. Pairing heaps or just a binary heap with "lazy deletion" (push duplicates, skip stale pops) are simpler and faster on real inputs. It's a "great in theory" structure.
+</div></details>
+<details class="answer-reveal"><summary>Why is heapsort O(n log n) worst-case and in-place, yet usually slower than quicksort in practice?</summary><div class="answer-box">
+Heapsort's sift-down repeatedly jumps between array positions <code>i</code> and <code>2i+1</code>/<code>2i+2</code> &mdash; a scattered, cache-unfriendly access pattern &mdash; and it does more comparisons/swaps with worse branch prediction than quicksort's mostly-sequential partition scan. Quicksort's O(n&sup2;) worst case is avoidable (introsort: switch to heapsort when recursion goes too deep), so the standard library gets quicksort's speed with heapsort's guarantee. Heapsort shines when you need a hard worst-case bound and O(1) space, e.g. embedded or adversarial contexts.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:balanced-heaps -->
+
+<!-- TOPIC:ds:graphs -->
+<section class="view topic" id="v-ds-graphs" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Graphs: Representation &amp; Traversal</h1>
+<p class="subtitle">Adjacency list vs matrix, BFS vs DFS, and the problems each traversal unlocks.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Representations</h3>
+<table>
+<tr><th></th><th>Adjacency list</th><th>Adjacency matrix</th></tr>
+<tr><td>Space</td><td>O(V + E)</td><td>O(V&sup2;)</td></tr>
+<tr><td>Edge exists?</td><td>O(degree)</td><td>O(1)</td></tr>
+<tr><td>Iterate neighbours</td><td>O(degree)</td><td>O(V)</td></tr>
+<tr><td>Best for</td><td>sparse graphs (most real graphs)</td><td>dense graphs, or when you query specific edges a lot</td></tr>
+</table>
+<p>Also: edge list (just pairs) &mdash; handy for Kruskal / Bellman-Ford. Store weights alongside.</p>
+
+<h3>BFS</h3>
+<ul>
+<li>Queue-based, explores by distance from the source.</li>
+<li>Gives the <strong>shortest path in an unweighted graph</strong> (fewest edges).</li>
+<li>O(V + E). Track <code>visited</code> to avoid revisiting; store <code>parent</code> to reconstruct paths.</li>
+<li>Also: bipartite check (2-colour), level/"minimum steps" problems, multi-source BFS.</li>
+</ul>
+
+<h3>DFS</h3>
+<ul>
+<li>Stack/recursion, goes deep before wide.</li>
+<li>O(V + E). Uses: cycle detection, <strong>topological sort</strong> (DAG), connected components, bridges/articulation points, strongly connected components (Tarjan/Kosaraju), maze/backtracking.</li>
+<li>Edge classification (tree / back / forward / cross edges) &mdash; a back edge means a cycle.</li>
+</ul>
+
+<h3>Cycle detection</h3>
+<ul>
+<li><strong>Undirected:</strong> DFS &mdash; a visited neighbour that isn't the parent means a cycle. Or union-find while adding edges.</li>
+<li><strong>Directed:</strong> DFS with three colours (white/grey/black) &mdash; an edge to a grey (in-progress) node is a back edge = cycle. Or Kahn's algorithm: if topological sort can't place all nodes, there's a cycle.</li>
+</ul>
+
+<h3>Topological sort</h3>
+<p>Linear ordering of a DAG so every edge points forward. <strong>Kahn's:</strong> repeatedly remove
+a node with in-degree 0. <strong>DFS:</strong> push nodes onto a stack on exit; reverse it. O(V + E).
+Used for build systems, task scheduling, dependency resolution.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Adjacency list: O(V+E) space, sparse graphs (default). Matrix: O(V&sup2;), O(1) edge test, dense graphs.</li>
+<li>BFS: queue, shortest path in <em>unweighted</em> graphs, level order, bipartite check. O(V+E).</li>
+<li>DFS: stack/recursion, cycle detection, topological sort, components, bridges/SCC. O(V+E).</li>
+<li>Always track <code>visited</code>; store <code>parent</code> to rebuild paths.</li>
+<li>Directed cycle = back edge to a grey node (3-colour DFS) or Kahn's leftover nodes.</li>
+<li>Undirected cycle = DFS hits a visited non-parent, or union-find sees both endpoints already joined.</li>
+<li>Topological sort: Kahn (in-degree 0 queue) or DFS finish-time reverse; DAG only.</li>
+<li>Weighted shortest path is a different tool (Dijkstra / Bellman-Ford &mdash; see Algorithms).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>When do you prefer an adjacency matrix?</dt>
+<dd>Dense graphs (E &asymp; V&sup2;), or when you frequently ask "is there an edge u&rarr;v?" and rarely iterate all neighbours. Otherwise the adjacency list's O(V+E) space wins for the sparse graphs that dominate practice.</dd>
+<dt>Which traversal finds the shortest path in an unweighted graph, and why?</dt>
+<dd>BFS. It expands nodes in non-decreasing order of distance from the source, so the first time it reaches a node is via a minimum-edge path.</dd>
+<dt>How do you detect a cycle in a directed graph with DFS?</dt>
+<dd>Mark nodes white (unvisited), grey (on the current DFS path), black (fully explored). If DFS finds an edge to a grey node, that's a back edge &rarr; there's a cycle.</dd>
+<dt>What does topological sort require of the graph?</dt>
+<dd>It must be a DAG (directed, acyclic). If a cycle exists, no valid linear ordering can exist.</dd>
+<dt>Time and space complexity of BFS/DFS on an adjacency list?</dt>
+<dd>O(V + E) time (each vertex and edge processed once). Space O(V) for the visited set plus the queue/stack (which can hold up to O(V)).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which structure backs BFS and which backs DFS?</summary><div class="answer-box">
+BFS uses a queue; DFS uses a stack (explicit or the recursion call stack).
+</div></details>
+<details class="answer-reveal"><summary>Space of an adjacency matrix for V vertices?</summary><div class="answer-box">
+O(V&sup2;), regardless of how many edges exist.
+</div></details>
+<details class="answer-reveal"><summary>Can topological sort be applied to a graph with a cycle?</summary><div class="answer-box">
+No &mdash; only to a DAG.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Count connected components in an undirected graph.</summary><div class="answer-box">
+Iterate all vertices; each time you find an unvisited one, run BFS/DFS from it to mark its whole component and increment a counter. O(V + E). (Union-find also works: components = number of distinct roots after unioning every edge.)
+</div></details>
+<details class="answer-reveal"><summary>Detect whether an undirected graph is bipartite.</summary><div class="answer-box">
+BFS/DFS 2-colouring: colour the start, colour each neighbour the opposite. If you ever try to give a node a colour it already has that conflicts (a same-colour edge), it's not bipartite. Do this per component. O(V + E).
+</div></details>
+<details class="answer-reveal"><summary>Implement Kahn's topological sort.</summary><div class="answer-box">
+Compute in-degrees. Push all in-degree-0 nodes to a queue. Repeatedly pop a node, append to the order, and decrement each successor's in-degree, pushing any that hit 0. If the final order has fewer than V nodes, the graph has a cycle. O(V + E).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain 0-1 BFS and when it beats Dijkstra.</summary><div class="answer-box">
+When every edge weight is 0 or 1, use a <em>deque</em>: relax an edge of weight 0 by <code>push_front</code>, weight 1 by <code>push_back</code>. The deque stays sorted by distance in two "layers", so each node is finalised in O(1) amortised &mdash; total O(V + E), beating Dijkstra's O(E log V) and avoiding the heap entirely. Generalises to "0-k BFS" with k buckets (dial's algorithm) for small integer weights. Common in grid problems where moving costs 0 or 1.
+</div></details>
+<details class="answer-reveal"><summary>How does Tarjan's algorithm find strongly connected components in one DFS pass?</summary><div class="answer-box">
+During DFS it assigns each node a discovery index and tracks <code>low[v]</code> = the smallest index reachable from <code>v</code>'s subtree via at most one back/cross edge to a node still on the stack. It keeps DFS-visited nodes on an explicit stack. When it finishes a node <code>v</code> with <code>low[v] == index[v]</code>, <code>v</code> is the "root" of an SCC: pop the stack down to <code>v</code> &mdash; those nodes form one SCC. O(V + E), single pass, versus Kosaraju's two passes (DFS, transpose, DFS in finish order).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:graphs -->
+
+<!-- TOPIC:ds:union-find -->
+<section class="view topic" id="v-ds-union-find" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Union-Find &amp; Tries</h1>
+<p class="subtitle">Two specialised structures: near-O(1) connectivity, and prefix-indexed strings.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Disjoint Set Union (Union-Find)</h3>
+<p>Maintains a partition of elements into disjoint sets, supporting:</p>
+<ul>
+<li><code>find(x)</code> &mdash; representative ("root") of x's set.</li>
+<li><code>union(x, y)</code> &mdash; merge the two sets.</li>
+<li><code>connected(x, y)</code> &mdash; <code>find(x) == find(y)</code>.</li>
+</ul>
+<p>Backed by a <code>parent[]</code> forest. Two optimisations make it nearly constant time:</p>
+<ul>
+<li><strong>Union by rank/size</strong> &mdash; attach the smaller tree under the larger, keeping trees shallow.</li>
+<li><strong>Path compression</strong> &mdash; during <code>find</code>, point every node on the path directly at the root.</li>
+</ul>
+<p>Together: O(&alpha;(n)) amortised per operation, where &alpha; (inverse Ackermann) is &le; 4 for any
+practical <code>n</code> &mdash; effectively O(1).</p>
+<pre><code><span class="k">int</span> find(<span class="k">int</span> x) { <span class="k">return</span> parent[x] == x ? x : (parent[x] = find(parent[x])); }
+<span class="k">void</span> unite(<span class="k">int</span> a, <span class="k">int</span> b) {
+    a = find(a); b = find(b);
+    <span class="k">if</span> (a == b) <span class="k">return</span>;
+    <span class="k">if</span> (size[a] &lt; size[b]) swap(a, b);
+    parent[b] = a; size[a] += size[b];
+}</code></pre>
+<p>Uses: Kruskal's MST, connected components in a stream of edges, cycle detection while adding
+edges, "number of islands II", equivalence classes, percolation.</p>
+
+<h3>Trie (prefix tree)</h3>
+<ul>
+<li>A tree where each edge is a character; a path from the root spells a prefix; nodes flagged as "end of word".</li>
+<li><code>insert</code>, <code>search</code>, <code>startsWith</code>: O(L) where L = key length &mdash; independent of the number of stored keys.</li>
+<li>Space can be large (a child pointer per possible character); compress with a <strong>radix/Patricia trie</strong> (merge single-child chains) or use a hash map per node.</li>
+<li>Uses: autocomplete, spell-check, IP routing (longest-prefix match), dictionary word games, replacing a hash set when you need prefix queries or lexicographic order.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Union-Find ops: <code>find</code>, <code>union</code>, <code>connected</code>, over a <code>parent[]</code> forest.</li>
+<li>Union by size/rank + path compression &rarr; O(&alpha;(n)) &asymp; O(1) amortised.</li>
+<li>Union-Find uses: Kruskal MST, dynamic connectivity, cycle detection on edge insertions, equivalence classes.</li>
+<li>Can't efficiently <em>split</em> sets or enumerate a set's members (unless you keep extra structures).</li>
+<li>Trie: edges = characters, mark word-ends. insert/search/prefix = O(key length).</li>
+<li>Trie lookup time is independent of dictionary size; space is the cost.</li>
+<li>Compress with radix/Patricia trie; or store children in a hash map for sparse alphabets.</li>
+<li>Trie uses: autocomplete, longest-prefix match (routing), lexicographic iteration, prefix counting.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What two optimisations make union-find near-constant-time?</dt>
+<dd>Union by rank/size (attach the shorter/smaller tree under the taller/larger one) and path compression (flatten the find path toward the root). Together they give O(&alpha;(n)) amortised.</dd>
+<dt>What is &alpha;(n) practically?</dt>
+<dd>The inverse Ackermann function &mdash; it grows so slowly it's &le; 4 for any n that fits in the universe. So union-find operations are effectively O(1).</dd>
+<dt>Name a classic use of union-find.</dt>
+<dd>Kruskal's minimum spanning tree: sort edges by weight, add an edge only if its endpoints are in different sets (no cycle), then union them.</dd>
+<dt>What's the time complexity of trie search, and why is that notable?</dt>
+<dd>O(L), the length of the search key &mdash; it doesn't depend on how many keys are stored, unlike a BST (O(L log n)) or even a hash set in the worst case.</dd>
+<dt>When is a trie better than a hash set?</dt>
+<dd>When you need prefix operations (autocomplete, "does any stored word start with X"), longest-prefix matching, sorted/lexicographic iteration, or counting words with a given prefix &mdash; things a hash set can't do without scanning everything.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>find(x)</code> return in a disjoint-set structure?</summary><div class="answer-box">
+The representative (root) element of the set containing <code>x</code>. Two elements are in the same set iff their <code>find</code> results are equal.
+</div></details>
+<details class="answer-reveal"><summary>What does each edge in a trie represent?</summary><div class="answer-box">
+A single character; the path from the root to a node spells out a string prefix.
+</div></details>
+<details class="answer-reveal"><summary>Trie operation to check if any word starts with "pre"?</summary><div class="answer-box">
+<code>startsWith("pre")</code> &mdash; walk the trie following p&rarr;r&rarr;e; success if all edges exist. O(3).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Use union-find to detect a cycle while building an undirected graph from a list of edges.</summary><div class="answer-box">
+For each edge (u, v): if <code>find(u) == find(v)</code>, adding this edge creates a cycle &mdash; report it. Otherwise <code>union(u, v)</code>. Processing all m edges is O(m &middot; &alpha;(n)).
+</div></details>
+<details class="answer-reveal"><summary>Why does path compression alone (without union by rank) still give good amortised bounds?</summary><div class="answer-box">
+Path compression alone gives O(log n) amortised per operation, and with union by rank/size added it drops to O(&alpha;(n)). Either optimisation alone is decent; both together are what reach inverse-Ackermann. Union by rank alone (no compression) is O(log n) worst case per op.
+</div></details>
+<details class="answer-reveal"><summary>Estimate a trie's memory for 100k English words vs a hash set.</summary><div class="answer-box">
+A naive array-of-26-children trie allocates 26 pointers per node; with millions of nodes that's tens of MB &mdash; often several times the hash set, which stores each string once plus a small overhead. Mitigations: hash-map children (only allocate used slots), radix/Patricia compression (collapse non-branching chains, big win for real dictionaries), or a DAWG (merge identical suffix subtrees). The trie "pays" memory to buy O(L) prefix queries.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How would you support <code>union</code> and <code>find</code> plus <em>rollback</em> (undo the last k unions)?</summary><div class="answer-box">
+Use union by rank/size <em>without</em> path compression (compression makes changes hard to undo), and keep a stack recording each union's effect (which root got a new parent, and the old rank/size). To roll back, pop the stack and restore <code>parent</code> and <code>rank</code>/<code>size</code>. Ops become O(log n) instead of O(&alpha;), but you get persistence &mdash; used in "offline dynamic connectivity" and segment-tree-on-time / DSU-on-tree techniques. A weighted / partially-persistent variant supports full history queries.
+</div></details>
+<details class="answer-reveal"><summary>What is a suffix trie / suffix automaton used for, and why not just a plain trie of all suffixes?</summary><div class="answer-box">
+A trie of all n suffixes of a length-n string has O(n&sup2;) nodes &mdash; too big. A <strong>suffix tree</strong> (Ukkonen's algorithm, O(n)) path-compresses it to O(n) nodes and answers substring queries, longest repeated substring, longest common substring of two strings, etc. in O(pattern length). A <strong>suffix automaton</strong> is an even more compact O(n) DAG recognising all substrings, great for counting distinct substrings. Both trade implementation complexity for powerful linear-time string analytics that a plain trie or hashing can't match.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:union-find -->
+
+<!-- TOPIC:ds:sorting -->
+<section class="view topic" id="v-ds-sorting" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Sorting Algorithms</h1>
+<p class="subtitle">Know the four that matter, their trade-offs, and when comparison sorts stop being optimal.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The comparison sorts</h3>
+<table>
+<tr><th>Algorithm</th><th>Avg / Worst</th><th>Space</th><th>Stable</th><th>Notes</th></tr>
+<tr><td>Quicksort</td><td>O(n log n) / O(n&sup2;)</td><td>O(log n)</td><td>No</td><td>Fastest in practice; partition around a pivot. Worst case on bad pivots &mdash; use random / median-of-three.</td></tr>
+<tr><td>Merge sort</td><td>O(n log n) / O(n log n)</td><td>O(n)</td><td>Yes</td><td>Predictable; great for linked lists and external sorting; needs a buffer.</td></tr>
+<tr><td>Heapsort</td><td>O(n log n) / O(n log n)</td><td>O(1)</td><td>No</td><td>In-place with a guaranteed bound; cache-unfriendly, so usually slower than quicksort.</td></tr>
+<tr><td>Insertion sort</td><td>O(n&sup2;) / O(n&sup2;)</td><td>O(1)</td><td>Yes</td><td>O(n) on nearly-sorted data; used as the base case for small subarrays inside quick/merge.</td></tr>
+</table>
+<p><strong>Introsort</strong> (C++ <code>std::sort</code>): quicksort, switch to heapsort when recursion goes too
+deep, insertion sort for tiny ranges &mdash; quicksort speed with an O(n log n) guarantee.
+<strong>Timsort</strong> (Python, Java objects): merge sort that exploits existing sorted "runs".</p>
+
+<h3>Stability</h3>
+<p>A stable sort preserves the relative order of equal keys. Matters when you sort by one field
+after another (sort by name, then stably by department). Merge/insertion/Tim are stable;
+quick/heap are not (without extra work).</p>
+
+<h3>The &Omega;(n log n) lower bound</h3>
+<p>Any sort that only <em>compares</em> elements needs &Omega;(n log n) comparisons in the worst case
+(there are n! orderings; each comparison gives 1 bit; log&#8322;(n!) &asymp; n log n).</p>
+
+<h3>Non-comparison sorts (beat the bound with structure)</h3>
+<ul>
+<li><strong>Counting sort</strong> &mdash; O(n + k) for integer keys in a small range k. Stable.</li>
+<li><strong>Radix sort</strong> &mdash; O(d &middot; (n + b)) for d digits in base b; sorts fixed-width integers/strings by repeated stable counting sort per digit.</li>
+<li><strong>Bucket sort</strong> &mdash; O(n) expected for uniformly distributed reals in [0, 1).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Quicksort: avg O(n log n), worst O(n&sup2;), in-place, not stable, fastest real-world. Randomise the pivot.</li>
+<li>Merge sort: always O(n log n), stable, O(n) space, ideal for linked lists / external sort.</li>
+<li>Heapsort: always O(n log n), O(1) space, not stable, cache-unfriendly.</li>
+<li>Insertion sort: O(n&sup2;), but O(n) on nearly-sorted; small-array base case.</li>
+<li><code>std::sort</code> = introsort; Python/Java-objects = Timsort (adaptive, stable).</li>
+<li>Comparison sorts can't beat &Omega;(n log n) worst case.</li>
+<li>Small integer range &rarr; counting sort O(n+k); fixed-width keys &rarr; radix sort; uniform reals &rarr; bucket sort.</li>
+<li>Need stability &rarr; merge / Tim / counting; not quick / heap.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is quicksort usually faster than merge sort despite the same average complexity?</dt>
+<dd>It sorts in place with a tight, cache-friendly partition loop and low constant factors; merge sort does extra data movement into and out of an O(n) buffer. Quicksort's downside is the O(n&sup2;) worst case, mitigated by randomised pivots / introsort.</dd>
+<dt>What does "stable" mean and when do you need it?</dt>
+<dd>Equal elements keep their original relative order. You need it for multi-key sorting done in passes (sort by secondary key, then stably by primary), or when equal keys carry associated data whose order is meaningful.</dd>
+<dt>Why can't a comparison sort be faster than O(n log n)?</dt>
+<dd>There are n! possible input orderings; a comparison yields one bit, so a decision tree distinguishing all of them has depth &ge; log&#8322;(n!) &asymp; n log n. Any algorithm restricted to comparisons hits this bound in the worst case.</dd>
+<dt>When is counting/radix sort applicable and what's the catch?</dt>
+<dd>When keys are integers (or fixed-width) in a bounded range. Counting sort is O(n + k); if k is huge (e.g. 64-bit values), that's worse than n log n. Radix sort handles large ranges by processing digit-by-digit but needs a stable per-digit sort and extra space.</dd>
+<dt>Which sort would you use for a nearly-sorted array?</dt>
+<dd>Insertion sort (O(n) when few elements are out of place) or Timsort, which detects and merges existing sorted runs.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Worst-case complexity of quicksort?</summary><div class="answer-box">
+O(n&sup2;) &mdash; when the pivot is consistently the smallest or largest element (e.g. already-sorted input with a naive first-element pivot).
+</div></details>
+<details class="answer-reveal"><summary>Which of merge sort and heapsort is stable?</summary><div class="answer-box">
+Merge sort. Heapsort is not stable.
+</div></details>
+<details class="answer-reveal"><summary>Which common sort is O(1) auxiliary space and always O(n log n)?</summary><div class="answer-box">
+Heapsort.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>How does introsort avoid quicksort's O(n&sup2;) worst case?</summary><div class="answer-box">
+It tracks recursion depth; if it exceeds ~2&middot;log&#8322;n (a sign of pathological pivots), it switches the current partition to heapsort, which is O(n log n) guaranteed. Small partitions are finished with insertion sort. So the common case runs at quicksort speed and the worst case is bounded.
+</div></details>
+<details class="answer-reveal"><summary>You must sort 100 million 32-bit integers, memory permitting. What's fast?</summary><div class="answer-box">
+LSD radix sort on the 4 bytes (four stable counting-sort passes, base 256) &mdash; O(4n) with a 256-entry histogram, typically beating comparison sorts for this size and key type. If memory is the constraint, an in-place MSD radix or introsort. If it doesn't fit in RAM, external merge sort.
+</div></details>
+<details class="answer-reveal"><summary>Sort a large singly linked list. Which algorithm and why?</summary><div class="answer-box">
+Merge sort. It needs only sequential access and O(1) extra pointers to split and merge (no random indexing, no shifting), it's stable, and it's O(n log n) worst case. Quicksort on a list is awkward (partitioning needs care) and heapsort needs random access.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how external merge sort handles data that doesn't fit in memory.</summary><div class="answer-box">
+Phase 1 (run formation): read chunks that fit in RAM, sort each in memory (e.g. with quicksort/heapsort), write each as a sorted "run" to disk &mdash; producing ceil(N/M) runs for N records and memory M. Phase 2 (merge): do a k-way merge of the runs using a min-heap over the current front element of each run, streaming output to disk; k is bounded by how many input buffers fit in memory. If there are more runs than one merge pass can handle, merge in multiple passes (each pass reduces run count by factor k), giving O(N log_k(N/M)) I/O. Large sequential I/O and double-buffering are what make it practical.
+</div></details>
+<details class="answer-reveal"><summary>Why does Timsort exist, and what real bug did its "galloping"/merge invariant have?</summary><div class="answer-box">
+Real-world data has pre-sorted runs (appended logs, partially updated lists); Timsort finds ascending/descending runs, extends short ones with binary insertion sort to a minimum length, and merges runs while maintaining size invariants on a stack, using "galloping mode" (exponential search) when one run is consistently winning the merge. A 2015 formal-verification effort found the run-merging stack invariant was too weak, allowing the merge stack to exceed its preallocated size &mdash; a latent <code>ArrayIndexOutOfBoundsException</code> for adversarial inputs. It was fixed by strengthening the invariant / enlarging the stack. Lesson: even widely-deployed, "obviously correct" library sorts had a subtle bound bug found only by proof.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:sorting -->
+
+<!-- TOPIC:ds:recursion-dp -->
+<section class="view topic" id="v-ds-recursion-dp" data-skill="ds">
+<div class="layout">
+<nav class="sidebar" data-sidebar="ds"></nav>
+<div class="topic-body">
+<h1>Recursion, Backtracking &amp; DP</h1>
+<p class="subtitle">From "solve it in terms of smaller subproblems" to "and remember the answers".</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Recursion</h3>
+<ul>
+<li>A function that calls itself on smaller input. Needs a <strong>base case</strong> and progress toward it.</li>
+<li>Each call uses a stack frame &rarr; recursion depth is bounded by the stack (~10k&ndash;100k frames). Deep or unbounded recursion &rarr; stack overflow &mdash; convert to iteration + explicit stack, or use tail recursion where the language optimises it.</li>
+<li>Cost = (number of calls) &times; (work per call). Draw the recursion tree.</li>
+</ul>
+
+<h3>Backtracking</h3>
+<p>Systematically build candidates and abandon ("prune") a partial candidate as soon as it can't
+lead to a solution. Template:</p>
+<pre><code><span class="k">def</span> backtrack(state, choices):
+    <span class="k">if</span> is_solution(state): record(state); <span class="k">return</span>
+    <span class="k">for</span> choice <span class="k">in</span> choices:
+        <span class="k">if</span> valid(state, choice):
+            apply(state, choice)          <span class="c"># choose</span>
+            backtrack(state, next_choices) <span class="c"># explore</span>
+            undo(state, choice)            <span class="c"># un-choose</span></code></pre>
+<p>Uses: permutations/combinations/subsets, N-Queens, Sudoku, word search, generating valid
+parentheses, graph colouring. Worst case is exponential; pruning is what makes it tractable.</p>
+
+<h3>Dynamic programming</h3>
+<p>Applies when a problem has <strong>optimal substructure</strong> (optimal answer built from optimal
+sub-answers) and <strong>overlapping subproblems</strong> (the same sub-answers recur). Two styles:</p>
+<table>
+<tr><th></th><th>Memoisation (top-down)</th><th>Tabulation (bottom-up)</th></tr>
+<tr><td>Form</td><td>recursion + a cache</td><td>fill a table in dependency order</td></tr>
+<tr><td>Computes</td><td>only needed states</td><td>all states</td></tr>
+<tr><td>Overhead</td><td>recursion + hashing</td><td>tight loops, often O(1) space with rolling arrays</td></tr>
+</table>
+<p>Steps: define the state, write the recurrence (transition), identify base cases, decide
+iteration order, optionally reduce space. Classics: Fibonacci, coin change, knapsack, longest
+common subsequence, edit distance, longest increasing subsequence, matrix-chain, grid paths.</p>
+
+<h3>DP vs greedy vs divide-and-conquer</h3>
+<p>Divide-and-conquer: subproblems are <em>independent</em> (merge sort). DP: subproblems
+<em>overlap</em>. Greedy: a locally optimal choice is provably globally optimal (needs a proof;
+fails for 0/1 knapsack, works for fractional knapsack / Huffman / MST).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Recursion needs a base case + strict progress toward it. Depth &le; stack size.</li>
+<li>Convert deep recursion to an explicit stack loop to avoid overflow.</li>
+<li>Backtracking = choose / explore / un-choose, with pruning; exponential worst case.</li>
+<li>DP requires optimal substructure + overlapping subproblems.</li>
+<li>Memoisation = recursion + cache (lazy). Tabulation = iterative table fill (eager, often O(1) space with rolling rows).</li>
+<li>DP recipe: state &rarr; recurrence &rarr; base cases &rarr; evaluation order &rarr; space optimisation.</li>
+<li>Overlapping subproblems &rarr; DP; independent subproblems &rarr; divide &amp; conquer; provable local-optimal &rarr; greedy.</li>
+<li>Time &asymp; (number of states) &times; (transitions per state).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What two properties must a problem have for DP to apply?</dt>
+<dd>Optimal substructure (the optimal solution is composed of optimal solutions to subproblems) and overlapping subproblems (the same subproblems are solved repeatedly in a naive recursion).</dd>
+<dt>Memoisation vs tabulation?</dt>
+<dd>Memoisation is top-down: normal recursion with a cache, computing only the states you actually reach. Tabulation is bottom-up: fill a table in an order where each entry's dependencies are already done, often allowing O(1)-space rolling arrays. Same complexity; different constant factors and stack usage.</dd>
+<dt>How is backtracking different from brute force?</dt>
+<dd>Brute force enumerates all candidates fully. Backtracking builds candidates incrementally and abandons a partial path the moment it violates a constraint (pruning), cutting the search space dramatically.</dd>
+<dt>When does greedy fail where DP succeeds?</dt>
+<dd>0/1 knapsack: taking the highest value-per-weight item first can be suboptimal because you can't take fractions. DP considers all combinations. Coin change with arbitrary denominations is another (greedy fails for {1, 3, 4} making 6).</dd>
+<dt>What limits recursion depth in practice?</dt>
+<dd>The call stack size (often ~1&ndash;8 MB &rarr; tens of thousands of frames). Beyond that you get a stack overflow; rewrite iteratively with an explicit stack or use an explicit work queue.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What must every recursive function have?</summary><div class="answer-box">
+A base case (a condition that returns without recursing) and recursive calls that move strictly toward it.
+</div></details>
+<details class="answer-reveal"><summary>What does memoisation add to plain recursion?</summary><div class="answer-box">
+A cache of already-computed results, so each distinct subproblem is solved once. Turns exponential recomputation into polynomial.
+</div></details>
+<details class="answer-reveal"><summary>Three steps of the backtracking pattern?</summary><div class="answer-box">
+Choose (apply a candidate), explore (recurse), un-choose (undo it before trying the next).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Coin change (min coins for amount N, unlimited coins). Give the DP.</summary><div class="answer-box">
+<code>dp[0] = 0</code>; for <code>a</code> from 1 to N: <code>dp[a] = 1 + min(dp[a - c])</code> over all coins <code>c &le; a</code> (infinity if none). Answer <code>dp[N]</code>. O(N &times; #coins) time, O(N) space. This is bottom-up tabulation; the state is "min coins to make amount a".
+</div></details>
+<details class="answer-reveal"><summary>Why is naive recursive Fibonacci O(&phi;&#8319;) and how does DP fix it?</summary><div class="answer-box">
+<code>fib(n)</code> calls <code>fib(n-1)</code> and <code>fib(n-2)</code>, recomputing the same values exponentially &mdash; the call tree has ~&phi;&#8319; nodes. Memoise (cache <code>fib(k)</code>) or tabulate (loop keeping the last two values) to make it O(n) time, and O(1) space with the rolling-variable version.
+</div></details>
+<details class="answer-reveal"><summary>Generate all subsets of a set. Recursion structure?</summary><div class="answer-box">
+For each element, branch on "include it" or "exclude it", recursing on the rest; at the end of the list, emit the current subset. 2&#8319; leaves. Equivalent iterative form: for each of the 2&#8319; bitmasks, pick the elements whose bit is set.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How do you reduce a 2-D DP (like edit distance) from O(nm) space to O(min(n, m))?</summary><div class="answer-box">
+Each cell <code>dp[i][j]</code> depends only on <code>dp[i-1][j]</code>, <code>dp[i][j-1]</code>, <code>dp[i-1][j-1]</code> &mdash; i.e. the current and previous row. Keep two 1-D arrays (prev row, current row), or even one array plus a saved "diagonal" scalar, iterating so you overwrite each entry only after its old value has been used. Space drops to O(m) (choose the shorter dimension as the row). The catch: you lose the ability to backtrack the actual alignment/path afterward &mdash; if you need the path, either keep the full table, or use Hirschberg's divide-and-conquer to recover it in O(nm) time and O(min(n,m)) space.
+</div></details>
+<details class="answer-reveal"><summary>What is "DP on subsets" (bitmask DP) and its complexity, with an example?</summary><div class="answer-box">
+State = a subset of up to ~20 items encoded as an integer bitmask, plus maybe a position. Transitions add/remove one element. Example: Travelling Salesman &mdash; <code>dp[mask][i]</code> = shortest path visiting exactly the set <code>mask</code>, ending at city <code>i</code>; transition <code>dp[mask | (1&lt;&lt;j)][j] = min(dp[mask][i] + dist[i][j])</code>. Complexity O(2&#8319; &middot; n&sup2;), feasible for n &le; ~20. Also used for assignment problems, "minimum number of groups", and Steiner-tree-style problems. The exponential factor is inherent (these are NP-hard); bitmask DP just makes small n practical and is far better than brute-forcing n! orders.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:ds:recursion-dp -->
+
 </main>
 
 <footer class="site-footer">
@@ -6336,27 +7428,23 @@ Enum + switch: all transitions visible in one place, trivial to serialize the st
       ["composition",        "Association, Aggregation & Composition",    "has-a vs owns-a lifetimes, 'favour composition over inheritance'."],
       ["solid",              "SOLID, Coupling & Cohesion",                "SRP/OCP/LSP/ISP/DIP, coupling vs cohesion, Law of Demeter, DRY/KISS/YAGNI."],
       ["design-patterns",    "Common Design Patterns",                    "Singleton, Factory, Builder, Adapter, Decorator, Observer, Strategy, and misuse."]
+    ],
+    ds: [
+      ["complexity",     "Complexity Analysis & Big-O",              "Big-O/Theta/Omega, amortised, best/avg/worst, space, common growth rates."],
+      ["arrays-lists",   "Arrays, Dynamic Arrays & Linked Lists",    "Contiguous vs linked, amortised push, singly/doubly/circular, cache effects."],
+      ["stacks-queues",  "Stacks & Queues",                          "LIFO/FIFO, array vs linked impl, deque, circular buffer, monotonic stack."],
+      ["hash-tables",    "Hash Tables & Collision Handling",         "Hash function, load factor, chaining vs open addressing, resizing, sets/maps."],
+      ["trees-bst",      "Trees & Binary Search Trees",              "Terminology, traversals (in/pre/post/level), BST ops, degeneration."],
+      ["balanced-heaps", "Balanced Trees & Heaps",                   "AVL/red-black/B-tree ideas, binary heap, heapify, priority queue, heapsort."],
+      ["graphs",         "Graphs: Representation & Traversal",       "Adjacency list vs matrix, BFS/DFS, cycle detection, topological sort."],
+      ["union-find",     "Union-Find & Tries",                       "Disjoint set, union by rank + path compression; trie insert/search/prefix."],
+      ["sorting",        "Sorting Algorithms",                       "Quick/merge/heap/insertion, stability, in-place, when each, non-comparison sorts."],
+      ["recursion-dp",   "Recursion, Backtracking & DP",             "Call stack, base cases, backtracking template, memoisation vs tabulation."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    ds: [
-      "Complexity analysis & Big-O",
-      "Arrays & dynamic arrays",
-      "Linked lists (singly, doubly, circular)",
-      "Stacks & queues (incl. deque, monotonic)",
-      "Hash tables & collision handling",
-      "Trees & binary search trees",
-      "Balanced trees (AVL, red-black, B-tree)",
-      "Heaps & priority queues",
-      "Graphs: representation & traversal",
-      "Union-find (disjoint set)",
-      "Tries & string structures",
-      "Segment trees & Fenwick trees",
-      "Sorting algorithms",
-      "Recursion, backtracking & intro to DP"
-    ],
     algo: [
       "Asymptotic analysis & recurrences",
       "Sorting algorithms in depth",
