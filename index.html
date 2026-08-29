@@ -3579,6 +3579,14 @@ The MMU maps <em>virtual</em> pages to <em>physical</em> frames, and the kernel 
 <code>/bin/sh</code> on Debian/Ubuntu), <code>zsh</code> (macOS default), <code>ksh</code>. Scripts that must be
 portable target POSIX <code>sh</code>; scripts that use <code>[[ ]]</code>, arrays, <code>local</code>, etc. require
 <code>bash</code>.</p>
+<pre><code><span class="c"># which shell am I in, and is it interactive?</span>
+echo <span class="s">"$0"</span>              <span class="c"># -bash (login), bash, /bin/sh ...</span>
+echo <span class="s">"$BASH_VERSION"</span>   <span class="c"># set only under bash; empty under dash/sh</span>
+<span class="k">case</span> $- <span class="k">in</span> *i*) echo interactive;; *) echo script;; <span class="k">esac</span>
+
+<span class="c"># portable POSIX sh vs bash-only feature:</span>
+<span class="k">if</span> [ <span class="s">"$x"</span> = <span class="s">"y"</span> ]; <span class="k">then</span> :; <span class="k">fi</span>      <span class="c"># works everywhere</span>
+<span class="k">if</span> [[ $x == y* ]]; <span class="k">then</span> :; <span class="k">fi</span>        <span class="c"># bash/zsh/ksh only ([[ ]], globbing)</span></code></pre>
 
 <h3>Three ways to run a script</h3>
 <figure class="diagram">
@@ -3608,6 +3616,14 @@ portable target POSIX <code>sh</code>; scripts that use <code>[[ ]]</code>, arra
 <tr><td><code>bash script.sh</code></td><td>Runs explicitly under <code>bash</code>; execute bit and shebang are ignored. New process.</td></tr>
 <tr><td><code>source script.sh</code> / <code>. script.sh</code></td><td>Executes each line in the <strong>current</strong> shell &mdash; no subprocess. Variable assignments, <code>cd</code>, and function definitions persist. Used for env setup (<code>. ~/.bashrc</code>).</td></tr>
 </table>
+<pre><code><span class="c"># goto.sh contains:  cd /var/log ;  FOO=bar</span>
+./goto.sh                 <span class="c"># runs in a child shell...</span>
+pwd; echo <span class="s">"$FOO"</span>         <span class="c"># ...your shell: unchanged dir, FOO empty</span>
+
+. ./goto.sh               <span class="c"># source: runs in THIS shell</span>
+pwd; echo <span class="s">"$FOO"</span>         <span class="c"># /var/log  and  bar</span>
+
+bash goto.sh              <span class="c"># explicit interpreter: no +x bit or shebang needed</span></code></pre>
 
 <h3>The shebang</h3>
 <pre><code><span class="c">#!/usr/bin/env bash</span>   <span class="c"># find bash via PATH -- portable across distros/macOS/Homebrew</span>
@@ -3623,12 +3639,31 @@ unreliable &mdash; put <code>set -e</code> in the script instead.</p>
 (bash caches hits &mdash; <code>hash -r</code> clears it). Inspect with <code>type -a name</code>; get just the
 path with <code>command -v name</code>. Avoid <code>which</code> (an external program, not aware of
 builtins/functions, behaviour varies).</p>
+<pre><code>type -a echo        <span class="c"># echo is a shell builtin  /  echo is /usr/bin/echo   (all matches, in order)</span>
+command -v ls       <span class="c"># /usr/bin/ls        -- just the resolved path; use in `if` guards</span>
+command -v ll       <span class="c"># alias ll='ls -l'   -- reports aliases/functions too</span>
+
+<span class="k">if</span> ! command -v jq &gt;/dev/null; <span class="k">then</span>
+    echo <span class="s">"jq is required"</span> &gt;&amp;2; exit <span class="s">1</span>   <span class="c"># dependency check, portable</span>
+<span class="k">fi</span>
+hash -r             <span class="c"># forget cached PATH lookups after installing/moving a binary</span></code></pre>
 
 <h3>Exit status</h3>
 <p>Every command returns 0&ndash;255. <code>0</code> means success; non-zero means failure. <code>$?</code> holds
 the last command's status. A process killed by signal <code>N</code> reports <code>128 + N</code> (so
 <code>130</code> = Ctrl-C / SIGINT, <code>137</code> = SIGKILL). <code>true</code>/<code>:</code> always succeed,
 <code>false</code> always fails.</p>
+<pre><code>grep -q root /etc/passwd
+echo $?              <span class="c"># 0  -> found (success)</span>
+grep -q nobody___ /etc/passwd
+echo $?              <span class="c"># 1  -> not found (failure, but not an error)</span>
+
+<span class="k">if</span> mkdir /tmp/out; <span class="k">then</span>            <span class="c"># `if` just tests the exit status</span>
+    echo <span class="s">"created"</span>
+<span class="k">else</span>
+    echo <span class="s">"mkdir failed with $?"</span> &gt;&amp;2
+<span class="k">fi</span>
+<span class="c"># sleep 5 then Ctrl-C -> $? == 130  (128 + SIGINT(2))</span></code></pre>
 
 <h3>Startup files (interactive shells)</h3>
 <ul>
@@ -3637,6 +3672,15 @@ the last command's status. A process killed by signal <code>N</code> reports <co
 <li>Common practice: put everything in <code>~/.bashrc</code> and have <code>~/.bash_profile</code> source it.</li>
 <li>Non-interactive scripts read neither &mdash; but honour <code>$BASH_ENV</code> if set.</li>
 </ul>
+<pre><code><span class="c"># ~/.bash_profile  (login shells) -- make login behave like a normal terminal:</span>
+<span class="k">if</span> [ -f ~/.bashrc ]; <span class="k">then</span> . ~/.bashrc; <span class="k">fi</span>
+
+<span class="c"># ~/.bashrc  (interactive non-login) -- aliases, prompt, functions go here</span>
+alias ll=<span class="s">'ls -alF'</span>
+export EDITOR=vim
+
+<span class="c"># a cron/CI script reads NEITHER file -> set what you need explicitly:</span>
+<span class="c">#   PATH=/usr/local/bin:/usr/bin:/bin  at the top of the script</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -3734,6 +3778,15 @@ cron runs a minimal non-interactive, non-login shell with a bare <code>PATH</cod
 command). Everything is a string. Read with <code>$name</code> or <code>${name}</code>; use braces when the
 name touches other text: <code>${file}_bak</code>. <code>export name</code> puts it in the environment of child
 processes; without <code>export</code> it's a shell-local variable.</p>
+<pre><code>name=<span class="s">"Leo"</span>             <span class="c"># no spaces around =</span>
+<span class="c"># name = "Leo"          # ERROR: shell tries to run the command `name`</span>
+echo <span class="s">"$name"</span>           <span class="c"># Leo</span>
+file=report
+echo <span class="s">"${file}_bak.txt"</span> <span class="c"># report_bak.txt  -- braces separate the name from trailing text</span>
+
+greeting=<span class="s">"hi"</span>          <span class="c"># shell-local: children do NOT see it</span>
+export PATH=<span class="s">"$HOME/bin:$PATH"</span>  <span class="c"># exported: every child process inherits a copy</span>
+API_KEY=secret ./deploy.sh    <span class="c"># set for just this one command's environment</span></code></pre>
 
 <h3>The three quoting modes</h3>
 <table>
@@ -3773,6 +3826,16 @@ exception is when you <em>want</em> splitting, e.g. <code>set -- $flags</code>.<
 characters (default space, tab, newline). <code>"$var"</code> is not split; <code>"$@"</code> expands to the
 positional parameters each individually quoted (the one form you almost always want);
 <code>"$*"</code> joins them with the first <code>$IFS</code> char.</p>
+<pre><code>line=<span class="s">"root:x:0:0:root:/root:/bin/bash"</span>
+
+<span class="c"># deliberate splitting: change IFS, let the shell split for you</span>
+IFS=: read -r user _ uid _ &lt;&lt;&lt; <span class="s">"$line"</span>
+echo <span class="s">"$user $uid"</span>       <span class="c"># root 0</span>
+
+<span class="c"># accidental splitting: the classic bug</span>
+files=<span class="s">"a.txt b c.txt"</span>
+<span class="k">for</span> f <span class="k">in</span> $files; <span class="k">do</span> echo <span class="s">"[$f]"</span>; <span class="k">done</span>   <span class="c"># [a.txt] [b] [c.txt] -- 3 words, not 1</span>
+<span class="k">for</span> f <span class="k">in</span> <span class="s">"$files"</span>; <span class="k">do</span> echo <span class="s">"[$f]"</span>; <span class="k">done</span> <span class="c"># [a.txt b c.txt] -- 1 word (quoted)</span></code></pre>
 
 <h3>Parameter expansion (bash / POSIX)</h3>
 <table>
@@ -3901,6 +3964,15 @@ works with no brackets at all.</p>
 </table>
 <p><strong>Rule of thumb:</strong> in bash scripts use <code>[[ ]]</code>; in strict POSIX <code>sh</code> use <code>[ ]</code>
 with every variable quoted.</p>
+<pre><code>x=<span class="s">""</span>
+<span class="c"># [ $x = y ]            # -> `[ = y ]` -> "unary operator expected" (word-split)</span>
+[ <span class="s">"$x"</span> = y ]              <span class="c"># POSIX-safe ONLY because of the quotes -> false, no error</span>
+[[ $x == y ]]            <span class="c"># bash: safe even unquoted; no splitting inside [[ ]]</span>
+
+f=archive.tar.gz
+[[ $f == *.tar.gz ]] &amp;&amp; echo <span class="s">"tarball"</span>       <span class="c"># glob match -- [[ ]] only</span>
+[[ $f =~ \.([a-z]+)$ ]] &amp;&amp; echo <span class="s">"${BASH_REMATCH[1]}"</span> <span class="c"># regex -> gz</span>
+[[ -f $f &amp;&amp; -r $f ]] &amp;&amp; echo <span class="s">"readable file"</span>       <span class="c"># &amp;&amp; inside the brackets</span></code></pre>
 
 <h3>Common test operators</h3>
 <table>
@@ -3910,6 +3982,17 @@ with every variable quoted.</p>
 <td><code>-e</code> exists<br><code>-f</code> regular file<br><code>-d</code> directory<br><code>-r -w -x</code> perms<br><code>-s</code> non-empty<br><code>f1 -nt f2</code> newer</td></tr>
 </table>
 <p>String vs numeric matters: <code>[ "10" = "10.0" ]</code> is false; <code>[ "10" -eq "010" ]</code> is true.</p>
+<pre><code>s=<span class="s">"hello"</span>
+[[ -n $s ]]     &amp;&amp; echo <span class="s">"string is non-empty"</span>
+[[ $s == h* ]]  &amp;&amp; echo <span class="s">"starts with h"</span>
+
+a=10 b=9
+[[ $a -gt $b ]]     &amp;&amp; echo <span class="s">"numeric: 10 > 9"</span>    <span class="c"># -gt/-lt/-eq = NUMBER compare</span>
+[[ $a &gt; $b ]]       &amp;&amp; echo <span class="s">"string: '10' sorts after '9'? no"</span>  <span class="c"># &gt; = LEXICAL compare (false!)</span>
+
+<span class="k">for</span> p <span class="k">in</span> /etc/passwd /nope; <span class="k">do</span>
+    [[ -f $p &amp;&amp; -s $p ]] &amp;&amp; echo <span class="s">"$p: exists and non-empty"</span>
+<span class="k">done</span></code></pre>
 
 <h3>Arithmetic: <code>(( ))</code></h3>
 <pre><code><span class="k">if</span> (( count &gt; 10 &amp;&amp; count % 2 == 0 )); <span class="k">then</span> ...; <span class="k">fi</span>
@@ -4073,6 +4156,18 @@ Fixes: redirect instead of pipe (<code>done &lt; file</code>), use a process sub
 
 <h3><code>break</code> / <code>continue</code></h3>
 <p><code>break N</code> and <code>continue N</code> act on the <code>N</code>-th enclosing loop.</p>
+<pre><code><span class="k">for</span> f <span class="k">in</span> *.csv; <span class="k">do</span>
+    [[ -s $f ]] || continue          <span class="c"># skip empty files, go to next iteration</span>
+    grep -q FATAL <span class="s">"$f"</span> &amp;&amp; break         <span class="c"># stop the whole loop on the first bad file</span>
+    process <span class="s">"$f"</span>
+<span class="k">done</span>
+
+<span class="k">for</span> dir <span class="k">in</span> proj/*/; <span class="k">do</span>
+    <span class="k">for</span> file <span class="k">in</span> <span class="s">"$dir"</span>*.log; <span class="k">do</span>
+        [[ $file == *skip* ]] &amp;&amp; continue 2  <span class="c"># jump to the NEXT dir (2nd enclosing loop)</span>
+        echo <span class="s">"$file"</span>
+    <span class="k">done</span>
+<span class="k">done</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -4215,6 +4310,20 @@ greet World               <span class="c"># call: no parentheses, args space-sep
 </svg>
 <figcaption>The single most common bug in wrapper scripts: <code>cmd $@</code> or <code>cmd "$*"</code> instead of <code>cmd "$@"</code>.</figcaption>
 </figure>
+<pre><code><span class="c">#!/usr/bin/env bash</span>
+<span class="c"># call:  ./deploy.sh --env prod app1 app2</span>
+echo <span class="s">"script  : $0"</span>      <span class="c"># ./deploy.sh</span>
+echo <span class="s">"count   : $#"</span>      <span class="c"># 4</span>
+echo <span class="s">"first   : $1"</span>      <span class="c"># --env</span>
+
+<span class="k">while</span> [[ $1 == --* ]]; <span class="k">do</span>
+    <span class="k">case</span> $1 <span class="k">in</span>
+        --env) env=$2; shift 2 ;;   <span class="c"># consume flag + value; $3 becomes $1</span>
+        *) echo <span class="s">"unknown: $1"</span> &gt;&amp;2; exit <span class="s">2</span> ;;
+    <span class="k">esac</span>
+<span class="k">done</span>
+echo <span class="s">"env=$env, targets: $*"</span>   <span class="c"># env=prod, targets: app1 app2</span>
+run_all <span class="s">"$@"</span>                 <span class="c"># forward the REMAINING args, each intact</span></code></pre>
 <p>Inside a function, <code>$1</code>&hellip; are the <em>function's</em> arguments; <code>$0</code> is still the script.</p>
 
 <h3>Returning results</h3>
@@ -4236,6 +4345,16 @@ parse result <span class="s">"data"</span>; echo <span class="s">"$result"</span
 <li><code>return</code> only takes 0&ndash;255; returning <code>-1</code> becomes <code>255</code>, and large numbers wrap mod 256.</li>
 <li><code>local x=$(cmd)</code> masks <code>cmd</code>'s exit status (it becomes <code>local</code>'s status, always 0). Split into two lines if you need <code>$?</code>.</li>
 </ul>
+<pre><code>count() { echo <span class="s">"counting..."</span>; ls | wc -l; }   <span class="c"># BUG: log line goes to stdout</span>
+n=$(count)                <span class="c"># n = "counting...\n42"  -- polluted</span>
+count() { echo <span class="s">"counting..."</span> &gt;&amp;2; ls | wc -l; } <span class="c"># FIX: log to stderr</span>
+
+get_id() { echo <span class="s">"$1"</span>; return -1; }
+get_id x; echo $?         <span class="c"># 255, not -1  (return wraps mod 256)</span>
+
+<span class="c"># local hides the exit status:</span>
+lookup() { local v=$(grep -q x file); echo $?; }  <span class="c"># always 0 (status of `local`)</span>
+lookup() { local v; v=$(grep x file) || return 1; }  <span class="c"># FIX: declare, then assign</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -4508,6 +4627,14 @@ Bash associative arrays don't preserve order, so keep two structures: an indexed
 </svg>
 <figcaption><strong>Redirections apply left to right.</strong> <code>2&gt;&amp;1</code> = "point fd 2 at a <em>copy</em> of fd 1's current target" &mdash; so it must come <em>after</em> <code>&gt; file</code>. <code>&amp;&gt; file</code> is the unambiguous bash shorthand for both.</figcaption>
 </figure>
+<pre><code>make &gt; out.log 2&gt;&amp;1      <span class="c"># both stdout and stderr into out.log  (order matters)</span>
+make &gt; out.log 2&gt; err.log <span class="c"># split them into two files</span>
+rm -f nope 2&gt;/dev/null   <span class="c"># run quietly: discard the error message</span>
+./gen &gt;&gt; results.txt      <span class="c"># append, don't truncate</span>
+sort &lt; unsorted.txt      <span class="c"># stdin from a file</span>
+
+echo <span class="s">"debug: starting"</span> &gt;&amp;2  <span class="c"># write to stderr so it stays off a captured stdout</span>
+x=$(./compute)           <span class="c"># ...so $x gets only the real result</span></code></pre>
 
 <h3>Pipes</h3>
 <p><code>a | b</code> connects <code>a</code>'s stdout to <code>b</code>'s stdin; stderr is <em>not</em> piped unless you
@@ -4799,6 +4926,16 @@ IFS=$'\n\t'          <span class="c"># optional: safer word-splitting</span></co
 </ul>
 <p>So <code>set -e</code> is a helpful safety net, not a guarantee. For critical steps, still check
 explicitly: <code>cmd || die "cmd failed"</code>.</p>
+<pre><code>set -e
+
+<span class="k">if</span> grep -q x file; <span class="k">then</span> :; <span class="k">fi</span>   <span class="c"># grep failing here does NOT abort (it's a condition)</span>
+false || echo <span class="s">"handled"</span>          <span class="c"># left of || -> not fatal</span>
+false | true                       <span class="c"># pipeline status is `true` -> not fatal (no pipefail)</span>
+
+check() { false; echo <span class="s">"still ran"</span>; }  <span class="c"># set -e is DISABLED inside a tested function</span>
+<span class="k">if</span> check; <span class="k">then</span> echo ok; <span class="k">fi</span>          <span class="c"># prints "still ran" then "ok" -- surprise!</span>
+
+deploy || { echo <span class="s">"deploy failed"</span> &gt;&amp;2; exit <span class="s">1</span>; }  <span class="c"># explicit check = the real guarantee</span></code></pre>
 
 <h3><code>trap</code> &mdash; run code on signals and on exit</h3>
 <figure class="diagram">
@@ -4967,6 +5104,15 @@ into a stream; stages run <em>concurrently</em>, not one-after-another.</p>
 </svg>
 <figcaption>Compose small tools over a line stream instead of writing one big script. Keep the most selective filter (<code>grep</code>) first so later stages process less.</figcaption>
 </figure>
+<pre><code><span class="c"># "top 5 client IPs causing 500s" -- each stage does one job on the line stream:</span>
+grep <span class="s">' 500 '</span> access.log \
+  | awk <span class="s">'{print $1}'</span> \          <span class="c"># field 1 = client IP</span>
+  | sort \                       <span class="c"># group identical IPs together (uniq needs adjacency)</span>
+  | uniq -c \                    <span class="c"># count each run -> "  42 10.0.0.9"</span>
+  | sort -rn \                   <span class="c"># rank by count, highest first</span>
+  | head -5
+
+<span class="c"># stages run concurrently: `head` closing early makes `grep` stop via SIGPIPE</span></code></pre>
 
 <h3><code>grep</code> &mdash; find lines</h3>
 <pre><code>grep -E <span class="s">'warn|error'</span> app.log      <span class="c"># -E extended regex</span>
@@ -5012,6 +5158,13 @@ tr -d <span class="s">'\r'</span> &lt; dosfile             <span class="c"># str
 <h3>When to stop chaining</h3>
 <p><code>grep | awk | sort | uniq -c</code> often collapses to a single <code>awk</code> program with an
 associative array. One process instead of four, and no "adjacent only" <code>uniq</code> trap.</p>
+<pre><code><span class="c"># the 4-stage pipeline above, as ONE awk pass:</span>
+awk <span class="s">'$9 == 500 { count[$1]++ }
+     END { for (ip in count) print count[ip], ip }'</span> access.log \
+  | sort -rn | head -5
+
+<span class="c"># awk holds the tally in an associative array -- no external sort until the very end,</span>
+<span class="c"># no "uniq only sees adjacent lines" bug, one process instead of four.</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -5179,6 +5332,15 @@ disown %1              <span class="c"># detach a job from the shell</span></cod
 <p><code>( cmds )</code> runs in a subshell &mdash; <code>cd</code>, <code>set</code>, variables don't leak out.
 <code>{ cmds; }</code> groups in the current shell (note the spaces and trailing <code>;</code>). Use
 <code>(cd "$dir" &amp;&amp; make)</code> to build elsewhere without changing your directory.</p>
+<pre><code>pwd                       <span class="c"># /home/leo</span>
+( cd /tmp &amp;&amp; tar xf pkg.tar )  <span class="c"># subshell: cd is local to the ( )</span>
+pwd                       <span class="c"># /home/leo  -- unchanged</span>
+
+<span class="c"># { } groups WITHOUT a subshell -- redirect several commands at once:</span>
+{ echo <span class="s">"=== report ==="</span>; date; df -h; } &gt; report.txt
+
+<span class="c"># subshell to sandbox `set` options:</span>
+( set -e; risky_step_1; risky_step_2 )   <span class="c"># -e applies only inside the parens</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -5308,6 +5470,17 @@ shift $((OPTIND - 1))     <span class="c"># drop parsed options; "$@" is now the
 <tr><td><code>shellcheck script</code></td><td>Static analysis &mdash; catches quoting bugs, <code>[ ]</code> mistakes, useless <code>cat</code>, etc. Run it in CI.</td></tr>
 <tr><td><code>trap '...' DEBUG</code> / <code>ERR</code></td><td>Hook every command / every failure.</td></tr>
 </table>
+<pre><code>bash -n deploy.sh          <span class="c"># syntax check only -- never runs a line</span>
+shellcheck deploy.sh      <span class="c"># static analysis: quoting bugs, SC2086, useless cat, ...</span>
+
+<span class="c"># rich xtrace: show file:line:function for every command</span>
+export PS4=<span class="s">'+ ${BASH_SOURCE##*/}:${LINENO}:${FUNCNAME[0]:-main}: '</span>
+set -x
+result=$(compute 2 3)
+set +x                    <span class="c"># stop tracing here</span>
+
+<span class="c"># print a location + message on any failing command:</span>
+trap <span class="s">'echo "FAILED at line $LINENO: $BASH_COMMAND" >&amp;2'</span> ERR</code></pre>
 
 <h3>POSIX <code>sh</code> vs bashisms</h3>
 <table>
@@ -5324,6 +5497,16 @@ shift $((OPTIND - 1))     <span class="c"># drop parsed options; "$@" is now the
 </table>
 <p>If the shebang is <code>#!/bin/sh</code>, assume <code>dash</code>. Run <code>checkbashisms</code> or
 <code>shellcheck -s sh</code>. If you need bash features, use <code>#!/usr/bin/env bash</code> and own it.</p>
+<pre><code><span class="c">#!/bin/sh</span>                <span class="c"># => dash on Debian/Ubuntu: bashisms below all FAIL</span>
+<span class="c"># arr=(a b c)             # syntax error -- no arrays in POSIX sh</span>
+<span class="c"># [[ $x == a* ]]          # syntax error -- no [[ ]]</span>
+<span class="c"># echo -e "a\tb"          # prints the literal: -e   a\tb</span>
+
+<span class="c"># portable equivalents:</span>
+x=hello
+[ <span class="s">"${x#h}"</span> != <span class="s">"$x"</span> ] &amp;&amp; echo <span class="s">"starts with h"</span>   <span class="c"># prefix test via ${x#...}</span>
+printf <span class="s">'%s\t%s\n'</span> a b                          <span class="c"># printf, not echo -e</span>
+i=1; <span class="k">while</span> [ <span class="s">"$i"</span> -le 3 ]; <span class="k">do</span> echo <span class="s">"$i"</span>; i=$((i+1)); <span class="k">done</span></code></pre>
 
 <h3>Classic gotchas (all covered elsewhere in this section)</h3>
 <ul>
@@ -5336,6 +5519,11 @@ shift $((OPTIND - 1))     <span class="c"># drop parsed options; "$@" is now the
 <li><code>echo</code> mangling <code>-n</code>, backslashes, leading <code>-</code> &rarr; prefer <code>printf '%s\n'</code>.</li>
 <li>Parsing <code>ls</code> output &rarr; use globs or <code>find</code>.</li>
 </ul>
+<pre><code>n=010
+echo $((n + 1))          <span class="c"># 9  -- leading zero =&gt; parsed as OCTAL (8), not 10</span>
+echo $((10#$n + 1))      <span class="c"># 11 -- force base 10</span>
+
+printf <span class="s">'%s\n'</span> <span class="s">"-n"</span>          <span class="c"># prints -n  (echo "-n" would print nothing)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -5487,6 +5675,15 @@ p = <span class="k">nullptr</span>;      <span class="c">// can be reseated, can
 <li><strong>Pass by pointer</strong> when "no object" is a valid argument (optional), or when you need to reseat, or for arrays/C APIs.</li>
 <li><strong>Pass by value</strong> for small/cheap types (<code>int</code>, <code>std::string_view</code>) or when the function needs its own copy anyway (then move from it).</li>
 </ul>
+<pre><code><span class="k">void</span> print(<span class="k">const</span> std::string&amp; s);   <span class="c">// read-only, no copy, never null</span>
+<span class="k">void</span> grow(std::vector&lt;<span class="k">int</span>&gt;&amp; v);       <span class="c">// in/out param that always exists</span>
+<span class="k">void</span> attach(Node* opt);              <span class="c">// nullptr is a meaningful "no node"</span>
+<span class="k">int</span>  square(<span class="k">int</span> n);                  <span class="c">// small/trivial -> by value</span>
+
+std::string name = <span class="s">"Leo"</span>;
+print(name);        <span class="c">// binds a reference -- no std::string copy made</span>
+grow(numbers);      <span class="c">// function mutates the caller's vector in place</span>
+attach(nullptr);    <span class="c">// legal: pointer parameter accepts "nothing"</span></code></pre>
 
 <h3>Dangling references</h3>
 <pre><code><span class="k">const</span> std::string&amp; f() {
@@ -5505,6 +5702,19 @@ scope &mdash; but only for the <em>immediate</em> temporary, not sub-objects rea
 <li>References, function/operator overloading, templates, namespaces, RAII, exceptions, the STL.</li>
 <li><code>nullptr</code> not <code>NULL</code>; <code>bool</code> is built in; <code>//</code> comments (also in C99).</li>
 </ul>
+<pre><code><span class="c">// C: this compiles. C++: error -- no implicit void* -> int* conversion</span>
+<span class="k">int</span>* p = malloc(<span class="k">sizeof</span>(<span class="k">int</span>));      <span class="c">// C++ needs static_cast&lt;int*&gt;(...)</span>
+
+<span class="c">// C++ way: types carry behaviour, cleanup is automatic (RAII)</span>
+<span class="k">struct</span> Timer {
+    Timer()  { start(); }             <span class="c">// constructor -- runs on creation</span>
+    ~Timer() { stop();  }             <span class="c">// destructor  -- runs at end of scope, always</span>
+};
+<span class="k">void</span> work() {
+    Timer t;                          <span class="c">// no malloc/free, no manual stop() call</span>
+    auto* buf = <span class="k">new</span> <span class="k">int</span>[<span class="n">64</span>];          <span class="c">// new runs constructors; delete[] runs destructors</span>
+    <span class="k">delete</span>[] buf;
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -5591,6 +5801,15 @@ When references-to-references arise through templates or <code>typedef</code>s, 
 <p>Construction runs when an object comes into existence (declaration, <code>new</code>, element
 insertion); the destructor runs deterministically when it leaves scope, is <code>delete</code>d, or its
 container is destroyed. This determinism &mdash; unlike GC languages &mdash; is what RAII exploits.</p>
+<pre><code><span class="k">struct</span> Noisy {
+    Noisy(<span class="k">const</span> <span class="k">char</span>* n) : n_(n) { std::cout &lt;&lt; <span class="s">"+"</span> &lt;&lt; n_ &lt;&lt; <span class="s">"\n"</span>; }
+    ~Noisy()                 { std::cout &lt;&lt; <span class="s">"-"</span> &lt;&lt; n_ &lt;&lt; <span class="s">"\n"</span>; }
+    <span class="k">const</span> <span class="k">char</span>* n_;
+};
+{
+    Noisy a(<span class="s">"a"</span>);            <span class="c">// +a</span>
+    Noisy b(<span class="s">"b"</span>);            <span class="c">// +b</span>
+}                          <span class="c">// -b then -a  (destroyed in REVERSE order, deterministically)</span></code></pre>
 
 <h3>Member initialisation</h3>
 <pre><code><span class="k">class</span> Widget {
@@ -5617,6 +5836,17 @@ container is destroyed. This determinism &mdash; unlike GC languages &mdash; is 
 </table>
 <p><code>= default</code> asks for the compiler's version; <code>= delete</code> forbids it (e.g. a non-copyable
 handle). Declaring a destructor or copy op suppresses the implicit move ops &mdash; see Rule of 5.</p>
+<pre><code><span class="k">class</span> FileHandle {
+    std::FILE* f_;
+<span class="k">public</span>:
+    <span class="k">explicit</span> FileHandle(<span class="k">const</span> <span class="k">char</span>* p) : f_(std::fopen(p, <span class="s">"r"</span>)) {}
+    ~FileHandle() { <span class="k">if</span> (f_) std::fclose(f_); }   <span class="c">// release in the destructor</span>
+
+    FileHandle(<span class="k">const</span> FileHandle&amp;)            = <span class="k">delete</span>;  <span class="c">// a file handle must not be copied</span>
+    FileHandle&amp; <span class="k">operator</span>=(<span class="k">const</span> FileHandle&amp;) = <span class="k">delete</span>;
+    FileHandle(FileHandle&amp;&amp;)                 = <span class="k">default</span>; <span class="c">// but moving it is fine</span>
+    FileHandle&amp; <span class="k">operator</span>=(FileHandle&amp;&amp;)      = <span class="k">default</span>;
+};</code></pre>
 
 <h3>RAII</h3>
 <p><strong>Resource Acquisition Is Initialisation:</strong> wrap every resource (heap memory, file
@@ -5662,6 +5892,14 @@ class or <code>std::unique_ptr</code> with a custom deleter.</p>
 (<code>void f(Widget); f(42);</code> silently building a <code>Widget</code> from <code>42</code>). <code>explicit</code> on
 conversion operators too. Rule of thumb: single-arg ctors are <code>explicit</code> unless you
 deliberately want the conversion (like <code>std::string</code> from <code>const char*</code>).</p>
+<pre><code><span class="k">struct</span> Seconds {
+    <span class="k">explicit</span> Seconds(<span class="k">int</span> s) : s_(s) {}   <span class="c">// remove `explicit` and the call below compiles</span>
+    <span class="k">int</span> s_;
+};
+<span class="k">void</span> wait(Seconds t);
+
+wait(Seconds{<span class="n">5</span>});   <span class="c">// OK -- intent is explicit</span>
+<span class="c">// wait(5);        // ERROR with `explicit`: no silent int -> Seconds conversion</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -5796,11 +6034,33 @@ double-free and aliasing bug. You then need a <strong>deep copy</strong> that du
 <tr><td>Rule of 5</td><td>C++11: add the move ctor and move assignment to that set.</td></tr>
 <tr><td>Rule of 0</td><td><strong>Best:</strong> design classes that need <em>none</em> of them &mdash; hold resources in RAII members (<code>vector</code>, <code>unique_ptr</code>) so the compiler-generated versions are correct.</td></tr>
 </table>
+<pre><code><span class="c">// Rule of 5: raw resource -> spell out all five</span>
+<span class="k">class</span> Buffer {
+    <span class="k">int</span>* p_ = <span class="k">nullptr</span>; size_t n_ = <span class="n">0</span>;
+<span class="k">public</span>:
+    <span class="k">explicit</span> Buffer(size_t n) : p_(<span class="k">new int</span>[n]{}), n_(n) {}
+    ~Buffer()                       { <span class="k">delete</span>[] p_; }                 <span class="c">// 1 dtor</span>
+    Buffer(<span class="k">const</span> Buffer&amp; o)          : p_(<span class="k">new int</span>[o.n_]), n_(o.n_) { std::copy(o.p_, o.p_+n_, p_); } <span class="c">// 2</span>
+    Buffer&amp; <span class="k">operator</span>=(Buffer o)      { swap(o); <span class="k">return</span> *<span class="k">this</span>; } <span class="c">// 3 (copy-and-swap covers 3+5)</span>
+    Buffer(Buffer&amp;&amp; o) <span class="k">noexcept</span>       : p_(o.p_), n_(o.n_) { o.p_ = <span class="k">nullptr</span>; o.n_ = <span class="n">0</span>; } <span class="c">// 4</span>
+    <span class="k">void</span> swap(Buffer&amp; o) <span class="k">noexcept</span>     { std::swap(p_, o.p_); std::swap(n_, o.n_); }
+};
+
+<span class="c">// Rule of 0: same job, ZERO special members -- vector manages the resource</span>
+<span class="k">class</span> Buffer0 { std::vector&lt;<span class="k">int</span>&gt; data_; <span class="k">public</span>: <span class="k">explicit</span> Buffer0(size_t n) : data_(n) {} };</code></pre>
 
 <h3>copy-and-swap</h3>
 <p>Take the parameter <em>by value</em> (invokes copy or move), then <code>swap</code> with <code>*this</code>. One
 implementation handles both copy and move assignment, is self-assignment safe, and gives the
 strong exception guarantee (the copy happens before any mutation).</p>
+<pre><code>Buffer&amp; <span class="k">operator</span>=(Buffer rhs) {   <span class="c">// rhs is a BY-VALUE copy (or move) of the argument</span>
+    swap(rhs);                    <span class="c">// take rhs's guts; rhs's dtor frees our old guts</span>
+    <span class="k">return</span> *<span class="k">this</span>;
+}
+Buffer a(<span class="n">4</span>), b(<span class="n">8</span>);
+a = b;                <span class="c">// rhs = copy of b, then swap  -> a now owns a copy, no leak</span>
+a = std::move(b);     <span class="c">// rhs = moved-from b, then swap -> no allocation at all</span>
+a = a;                <span class="c">// safe: rhs is an independent copy before any mutation</span></code></pre>
 
 <h3>Suppression rules</h3>
 <figure class="diagram">
@@ -5826,6 +6086,21 @@ strong exception guarantee (the copy happens before any mutation).</p>
 <li>Declaring a move op &rArr; copy ops are <strong>deleted</strong>.</li>
 <li>So: if you declare one special member, <code>= default</code> or <code>= delete</code> the rest explicitly.</li>
 </ul>
+<pre><code><span class="k">struct</span> Logged {
+    std::vector&lt;<span class="k">int</span>&gt; v;
+    ~Logged() { std::cout &lt;&lt; <span class="s">"destroyed\n"</span>; }   <span class="c">// added just for a log line...</span>
+};
+Logged a;
+Logged b = std::move(a);   <span class="c">// ...now COPIES the vector -- move ctor was suppressed by ~Logged</span>
+
+<span class="k">struct</span> Fixed {
+    std::vector&lt;<span class="k">int</span>&gt; v;
+    ~Fixed() { std::cout &lt;&lt; <span class="s">"destroyed\n"</span>; }
+    Fixed(Fixed&amp;&amp;)            = <span class="k">default</span>;   <span class="c">// restore the moves explicitly</span>
+    Fixed&amp; <span class="k">operator</span>=(Fixed&amp;&amp;) = <span class="k">default</span>;
+    Fixed(<span class="k">const</span> Fixed&amp;)            = <span class="k">default</span>;
+    Fixed&amp; <span class="k">operator</span>=(<span class="k">const</span> Fixed&amp;) = <span class="k">default</span>;
+};</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -5919,6 +6194,14 @@ No &mdash; if any member's copy assignment can throw (e.g. <code>std::string</co
 </ul>
 <p><code>T&amp;&amp;</code> is an <em>rvalue reference</em>: it binds to rvalues (prvalues/xvalues) and lets an overload
 "claim" a temporary's guts.</p>
+<pre><code>std::string s = <span class="s">"hi"</span>;
+std::string&amp;  lref = s;              <span class="c">// lvalue ref binds an lvalue (s has a name)</span>
+<span class="c">// std::string&amp; bad = s + s;         // ERROR: can't bind non-const lvalue ref to a prvalue</span>
+std::string&amp;&amp; rref = s + s;           <span class="c">// rvalue ref binds the prvalue (a + b)</span>
+std::string&amp;&amp; xref = std::move(s);    <span class="c">// std::move(s) is an xvalue -> binds &amp;&amp;</span>
+
+<span class="k">void</span> sink(std::string&amp;&amp;);             <span class="c">// only accepts rvalues -- "I will take ownership"</span>
+sink(std::move(s));                   <span class="c">// OK      sink(s);  // ERROR: s is an lvalue</span></code></pre>
 
 <h3><code>std::move</code> and <code>std::forward</code></h3>
 <pre><code>std::string a = <span class="s">"hello"</span>;
@@ -5959,6 +6242,13 @@ preserve the caller's lvalue/rvalue-ness ("perfect forwarding").</p>
 the caller's slot (guaranteed for prvalues since C++17, and NRVO for named locals as an
 optimisation). So <code>return std::move(local);</code> is an <strong>anti-pattern</strong>: it disables NRVO
 and forces a move.</p>
+<pre><code>std::vector&lt;<span class="k">int</span>&gt; makeData() {
+    std::vector&lt;<span class="k">int</span>&gt; v(<span class="n">1000</span>);
+    <span class="c">// ... fill v ...</span>
+    <span class="k">return</span> v;               <span class="c">// NRVO: v is built directly in the caller's variable, 0 copies/moves</span>
+    <span class="c">// return std::move(v);  // WORSE: forces a move ctor, defeats NRVO</span>
+}
+std::vector&lt;<span class="k">int</span>&gt; d = makeData();  <span class="c">// no temporary, no copy -- 'd' IS the object makeData built</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -6083,12 +6373,31 @@ indirect, non-inlinable call.</p>
 <p>If you ever <code>delete</code> a derived object through a base pointer, the base destructor
 <strong>must</strong> be <code>virtual</code> &mdash; otherwise only <code>~Base</code> runs and the derived part leaks / is
 UB. Any class with virtual functions should have a virtual (or protected) destructor.</p>
+<pre><code><span class="k">struct</span> Base    { ~Base() { } };                 <span class="c">// NON-virtual dtor -- the bug</span>
+<span class="k">struct</span> Derived : Base { std::vector&lt;<span class="k">int</span>&gt; big; };
+
+Base* p = <span class="k">new</span> Derived;
+<span class="k">delete</span> p;          <span class="c">// UB: only ~Base runs -> Derived::big never freed (leak)</span>
+
+<span class="k">struct</span> Base2   { <span class="k">virtual</span> ~Base2() = <span class="k">default</span>; };      <span class="c">// FIX</span>
+Base2* q = <span class="k">new</span> Derived2;
+<span class="k">delete</span> q;          <span class="c">// ~Derived2 then ~Base2, via the vtable</span></code></pre>
 
 <h3><code>override</code> and <code>final</code></h3>
 <ul>
 <li><code>override</code> &mdash; compiler error if it doesn't actually override (wrong signature, missing <code>const</code>). Always use it.</li>
 <li><code>final</code> &mdash; on a method: no further overriding; on a class: no further derivation. Can enable devirtualisation.</li>
 </ul>
+<pre><code><span class="k">struct</span> Base { <span class="k">virtual</span> <span class="k">void</span> tick(<span class="k">int</span>) <span class="k">const</span>; };
+
+<span class="k">struct</span> A : Base {
+    <span class="k">void</span> tick(<span class="k">int</span>) <span class="k">const</span> <span class="k">override</span>;      <span class="c">// OK: matches</span>
+    <span class="c">// void tick(long) override;        // ERROR: no base method with this signature</span>
+    <span class="c">// void tick(int) override;         // ERROR: missing const -> not an override</span>
+};
+<span class="k">struct</span> B <span class="k">final</span> : Base {              <span class="c">// no class may derive from B</span>
+    <span class="k">void</span> tick(<span class="k">int</span>) <span class="k">const</span> <span class="k">final</span>;         <span class="c">// no subclass may re-override tick</span>
+};</code></pre>
 
 <h3>Object slicing</h3>
 <pre><code>Circle c{{}, 2.0};
@@ -6101,6 +6410,18 @@ Store <code>std::unique_ptr&lt;Shape&gt;</code> in containers, not <code>Shape</
 <p>Unlike Java, C++ methods are <em>non</em>-virtual unless marked. Calling a non-virtual method
 through a base pointer uses the static type. Also: never call virtuals from a constructor or
 destructor &mdash; dispatch resolves to the currently-constructed class, not the derived one.</p>
+<pre><code><span class="k">struct</span> Base {
+    <span class="k">void</span>         name() <span class="k">const</span> { std::puts(<span class="s">"Base"</span>); }   <span class="c">// NOT virtual</span>
+    <span class="k">virtual</span> <span class="k">void</span> vname() <span class="k">const</span> { std::puts(<span class="s">"Base"</span>); }
+    Base() { vname(); }                          <span class="c">// calls Base::vname even when building a Derived</span>
+};
+<span class="k">struct</span> Derived : Base {
+    <span class="k">void</span> name()  <span class="k">const</span> { std::puts(<span class="s">"Derived"</span>); }
+    <span class="k">void</span> vname() <span class="k">const</span> <span class="k">override</span> { std::puts(<span class="s">"Derived"</span>); }
+};
+Base* p = <span class="k">new</span> Derived;
+p-&gt;name();     <span class="c">// "Base"    -- non-virtual: uses the STATIC type (Base*)</span>
+p-&gt;vname();    <span class="c">// "Derived" -- virtual: uses the DYNAMIC type</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -6197,6 +6518,24 @@ For a class with a virtual destructor, the compiler typically puts two destructo
 <li><strong>Member</strong>: <code>=</code>, <code>[]</code>, <code>()</code>, <code>-&gt;</code>, and anything that must have a class lvalue on the left.</li>
 <li><strong>Free (often <code>friend</code>)</strong>: symmetric binary operators (<code>+</code>, <code>==</code>, <code>&lt;&lt;</code>) so that implicit conversions work on <em>both</em> sides (<code>2 + mynum</code> as well as <code>mynum + 2</code>).</li>
 </ul>
+<pre><code><span class="k">struct</span> Money {
+    <span class="k">long</span> cents;
+    Money(<span class="k">long</span> c) : cents(c) {}          <span class="c">// allows int -> Money conversion</span>
+
+    Money <span class="k">operator</span>+(<span class="k">const</span> Money&amp; r) <span class="k">const</span>  <span class="c">// MEMBER: left side is *this</span>
+        { <span class="k">return</span> Money{cents + r.cents}; }
+};
+Money m{500};
+<span class="k">auto</span> a = m + <span class="n">100</span>;    <span class="c">// OK: 100 converts to Money for the parameter</span>
+<span class="c">// auto b = 100 + m;  // ERROR (member): the left `100` is not a Money, no `this`</span>
+
+<span class="k">struct</span> Money2 {
+    <span class="k">long</span> cents;
+    <span class="k">friend</span> Money2 <span class="k">operator</span>+(Money2 l, Money2 r)  <span class="c">// FREE friend: BOTH sides are params</span>
+        { <span class="k">return</span> {l.cents + r.cents}; }
+};
+Money2 n{500};
+<span class="k">auto</span> c = <span class="n">100</span> + n;    <span class="c">// OK now: left operand converts too</span></code></pre>
 
 <h3>Canonical arithmetic</h3>
 <pre><code><span class="k">struct</span> Vec2 {
@@ -6225,6 +6564,17 @@ free function taking the left operand <em>by value</em> and reusing <code>+=</co
 <li>Overload only when the meaning is <em>obvious</em>. Cute operators (<code>+</code> for "run pipeline") hurt readers.</li>
 <li>Conversion operators: make them <code>explicit</code> unless the implicit conversion is genuinely wanted (<code>explicit operator bool()</code> is the common case).</li>
 </ul>
+<pre><code><span class="k">struct</span> Counter {
+    <span class="k">int</span> n = <span class="n">0</span>;
+    Counter&amp; <span class="k">operator</span>++()    { ++n; <span class="k">return</span> *<span class="k">this</span>; }        <span class="c">// PREFIX: return T&amp;</span>
+    Counter  <span class="k">operator</span>++(<span class="k">int</span>) { Counter t = *<span class="k">this</span>; ++n; <span class="k">return</span> t; } <span class="c">// POSTFIX: dummy int, return old value</span>
+
+    <span class="k">explicit</span> <span class="k">operator</span> <span class="k">bool</span>() <span class="k">const</span> { <span class="k">return</span> n != <span class="n">0</span>; }     <span class="c">// explicit: no accidental int math</span>
+};
+Counter c;
+++c;  c++;                       <span class="c">// n == 2</span>
+<span class="k">if</span> (c) { }                       <span class="c">// OK: contextual conversion to bool</span>
+<span class="c">// int x = c + 1;                 // ERROR: `explicit` blocks the silent bool->int</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -6335,6 +6685,16 @@ of arguments actually used. Unused member functions of a class template aren't i
 <li>Deduction strips top-level <code>const</code> and references (unless the parameter is <code>T&amp;</code>/<code>T&amp;&amp;</code>).</li>
 <li><code>auto</code> uses the same rules; <code>decltype(auto)</code> preserves references/const.</li>
 </ul>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> T&gt; <span class="k">void</span> f(T x);          <span class="c">// by value: strips const &amp; ref</span>
+<span class="k">template</span>&lt;<span class="k">class</span> T&gt; <span class="k">void</span> g(<span class="k">const</span> T&amp; x);   <span class="c">// by const ref: keeps the referred-to type</span>
+
+<span class="k">const</span> <span class="k">int</span> ci = <span class="n">1</span>;
+f(ci);           <span class="c">// T = int        (const dropped, copy made)</span>
+g(ci);           <span class="c">// T = int        (x is const int&amp;)</span>
+
+std::vector v{<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>};   <span class="c">// C++17 CTAD: deduces std::vector&lt;int&gt; -- no &lt;int&gt; needed</span>
+<span class="k">auto</span> mx = max_of(<span class="n">3</span>, <span class="n">9</span>);    <span class="c">// function template: T = int deduced from the args</span>
+<span class="c">// Array&lt;double, 4&gt; a;         // class template: must write the args out</span></code></pre>
 
 <h3>Specialization</h3>
 <pre><code><span class="k">template</span>&lt;<span class="k">class</span> T&gt; <span class="k">struct</span> Hash { size_t operator()(<span class="k">const</span> T&amp;) <span class="k">const</span>; };
@@ -6346,11 +6706,31 @@ of arguments actually used. Unused member functions of a class template aren't i
 <p>Template definitions normally go <strong>in the header</strong>: the compiler needs the full definition
 at each instantiation point. Putting them in a <code>.cpp</code> gives "undefined reference" link errors
 unless you use explicit instantiation.</p>
+<pre><code><span class="c">// stack.hpp -- WHOLE definition in the header</span>
+<span class="k">template</span>&lt;<span class="k">class</span> T&gt; <span class="k">struct</span> Stack {
+    <span class="k">void</span> push(T v) { data_.push_back(std::move(v)); }  <span class="c">// defined inline, visible to every TU</span>
+    std::vector&lt;T&gt; data_;
+};
+
+<span class="c">// stack.cpp -- if you really want it here, force the instantiations you support:</span>
+<span class="k">template</span> <span class="k">struct</span> Stack&lt;<span class="k">int</span>&gt;;              <span class="c">// explicit instantiation</span>
+<span class="k">template</span> <span class="k">struct</span> Stack&lt;std::string&gt;;
+<span class="c">// Stack&lt;double&gt; s;  in another file -> LINK ERROR: never instantiated</span></code></pre>
 
 <h3>Two-phase lookup</h3>
 <p>Names that don't depend on <code>T</code> are looked up when the template is <em>defined</em>; dependent
 names when it's <em>instantiated</em>. Hence <code>this-&gt;member</code>, <code>typename T::iterator</code>, and
 <code>template</code> disambiguators in dependent contexts.</p>
+<pre><code><span class="k">template</span>&lt;<span class="k">class</span> T&gt; <span class="k">struct</span> Base { <span class="k">void</span> init(); };
+
+<span class="k">template</span>&lt;<span class="k">class</span> T&gt; <span class="k">struct</span> Derived : Base&lt;T&gt; {
+    <span class="k">void</span> run() {
+        <span class="c">// init();          // ERROR: non-dependent name, Base&lt;T&gt; not looked into at definition</span>
+        <span class="k">this</span>-&gt;init();          <span class="c">// OK: `this->` makes it dependent -> looked up at instantiation</span>
+
+        <span class="k">typename</span> T::value_type x{};  <span class="c">// `typename`: tell the parser T::value_type is a TYPE</span>
+    }
+};</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -6612,6 +6992,17 @@ When two candidate function templates are both viable and constrained, the one w
 </svg>
 <figcaption>Reach for <code>vector</code> by default. <code>list</code> is almost never faster in practice despite its O(1) insert &mdash; the constant factors and cache misses dominate.</figcaption>
 </figure>
+<pre><code>std::vector&lt;<span class="k">int</span>&gt; v{<span class="n">3</span>, <span class="n">1</span>, <span class="n">2</span>};
+v.push_back(<span class="n">4</span>);                  <span class="c">// O(1) amortised; O(1) random access via v[i]</span>
+
+std::map&lt;std::string, <span class="k">int</span>&gt; ages;  <span class="c">// sorted by key, O(log n)</span>
+ages[<span class="s">"leo"</span>] = <span class="n">30</span>;
+<span class="k">for</span> (<span class="k">auto</span>&amp; [name, age] : ages) { }  <span class="c">// iterates in key order</span>
+
+std::unordered_map&lt;std::string, <span class="k">int</span>&gt; cache; <span class="c">// O(1) average, no order</span>
+cache.reserve(<span class="n">1000</span>);               <span class="c">// avoid rehashing while filling</span>
+
+std::array&lt;<span class="k">int</span>, <span class="n">4</span>&gt; fixed{};        <span class="c">// size known at compile time, lives on the stack</span></code></pre>
 
 <h3>Iterator invalidation &mdash; the exam favourite</h3>
 <table>
@@ -6622,11 +7013,29 @@ When two candidate function templates are both viable and constrained, the one w
 <tr><td><code>unordered_*</code></td><td>iterators on rehash; refs never</td><td>only the erased element's</td></tr>
 </table>
 <p><code>reserve()</code> up front to avoid <code>vector</code> reallocation churn and invalidation.</p>
+<pre><code>std::vector&lt;<span class="k">int</span>&gt; v{<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>, <span class="n">4</span>};
+
+<span class="c">// WRONG: push_back may reallocate -> `it` dangles</span>
+<span class="k">for</span> (<span class="k">auto</span> it = v.begin(); it != v.end(); ++it)
+    <span class="k">if</span> (*it == <span class="n">2</span>) v.push_back(<span class="n">99</span>);          <span class="c">// UB after a reallocation</span>
+
+<span class="c">// RIGHT: erase returns an iterator to the next element</span>
+<span class="k">for</span> (<span class="k">auto</span> it = v.begin(); it != v.end(); )
+    <span class="k">if</span> (*it % <span class="n">2</span> == <span class="n">0</span>) it = v.erase(it);       <span class="c">// don't ++it on the erased slot</span>
+    <span class="k">else</span> ++it;</code></pre>
 
 <h3>Iterator categories</h3>
 <p>input &rarr; forward &rarr; bidirectional &rarr; random-access &rarr; contiguous. Algorithms require a minimum
 category: <code>std::sort</code> needs random-access (so it doesn't work on <code>std::list</code> &mdash; use
 <code>list::sort</code>). C++20 adds the <code>ranges</code> iterator concepts.</p>
+<pre><code>std::vector&lt;<span class="k">int</span>&gt; v{<span class="n">3</span>, <span class="n">1</span>, <span class="n">2</span>};
+std::sort(v.begin(), v.end());     <span class="c">// OK: vector iterators are random-access</span>
+
+std::list&lt;<span class="k">int</span>&gt; l{<span class="n">3</span>, <span class="n">1</span>, <span class="n">2</span>};
+<span class="c">// std::sort(l.begin(), l.end());   // COMPILE ERROR: list iterators are only bidirectional</span>
+l.sort();                          <span class="c">// list supplies its own member sort</span>
+<span class="k">auto</span> it = l.begin();
+std::advance(it, <span class="n">2</span>);              <span class="c">// no `it + 2` on a non-random-access iterator</span></code></pre>
 
 <h3>Lookup &amp; modification idioms</h3>
 <pre><code><span class="k">auto</span> it = m.find(key);
@@ -6754,12 +7163,31 @@ std::ranges::sort(v, std::greater{});</code></pre>
 </table>
 <p>A lambda is a compiler-generated functor. <code>mutable</code> lets it modify its by-copy captures.
 Non-capturing lambdas convert to a plain function pointer. Generic lambdas: <code>[](auto x){...}</code>.</p>
+<pre><code><span class="k">int</span> factor = <span class="n">3</span>, total = <span class="n">0</span>;
+std::vector&lt;<span class="k">int</span>&gt; v{<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>};
+
+std::for_each(v.begin(), v.end(),
+    [factor, &amp;total](<span class="k">int</span> x) { total += x * factor; });  <span class="c">// factor by copy, total by ref</span>
+
+<span class="k">auto</span> counter = [n = <span class="n">0</span>]() <span class="k">mutable</span> { <span class="k">return</span> ++n; }; <span class="c">// init-capture + mutable: own state</span>
+counter(); counter();                             <span class="c">// 1, 2</span>
+
+<span class="k">int</span> (*fp)(<span class="k">int</span>) = [](<span class="k">int</span> x) { <span class="k">return</span> x + <span class="n">1</span>; };       <span class="c">// non-capturing -> function pointer</span></code></pre>
 
 <h3><code>std::function</code> cost</h3>
 <p><code>std::function&lt;R(Args...)&gt;</code> is a type-erased callable wrapper: convenient for storing
 heterogeneous callables, but it may heap-allocate (unless the callable fits its small-buffer)
 and each call is an indirect call that can't inline. In hot paths prefer a template parameter
 (<code>template&lt;class F&gt; void run(F f)</code>) or a function pointer.</p>
+<pre><code><span class="c">// convenient: one type holds any matching callable (may heap-allocate, call not inlined)</span>
+std::vector&lt;std::function&lt;<span class="k">int</span>(<span class="k">int</span>)&gt;&gt; ops;
+ops.push_back([](<span class="k">int</span> x){ <span class="k">return</span> x + <span class="n">1</span>; });
+ops.push_back([k = <span class="n">10</span>](<span class="k">int</span> x){ <span class="k">return</span> x * k; });
+
+<span class="c">// hot path: take the callable as a template param -> concrete type, fully inlinable</span>
+<span class="k">template</span>&lt;<span class="k">class</span> F&gt;
+<span class="k">int</span> apply_n(<span class="k">int</span> x, <span class="k">int</span> n, F f) { <span class="k">while</span> (n--) x = f(x); <span class="k">return</span> x; }
+<span class="k">int</span> r = apply_n(<span class="n">1</span>, <span class="n">5</span>, [](<span class="k">int</span> x){ <span class="k">return</span> x * <span class="n">2</span>; });  <span class="c">// no std::function, no indirection</span></code></pre>
 
 <h3>Dangling-capture bug</h3>
 <pre><code><span class="k">auto</span> make() {
@@ -6889,6 +7317,15 @@ With <code>template&lt;class F&gt; void each(F f)</code>, the exact callable typ
 <li><code>make_shared</code> does one allocation for object + control block (faster, better locality); a separate <code>shared_ptr(new T)</code> does two.</li>
 <li>Twice the size of a raw pointer; copies touch atomics. Don't pass <code>shared_ptr</code> around when you only need to <em>use</em> the object &mdash; pass <code>T&amp;</code> or <code>T*</code>.</li>
 </ul>
+<pre><code><span class="k">auto</span> sp1 = std::make_shared&lt;Widget&gt;();  <span class="c">// strong count = 1, one allocation</span>
+{
+    <span class="k">auto</span> sp2 = sp1;                      <span class="c">// count = 2 (atomic increment)</span>
+    use(*sp2);
+}                                       <span class="c">// sp2 gone -> count = 1</span>
+std::cout &lt;&lt; sp1.use_count();            <span class="c">// 1</span>
+
+<span class="k">void</span> render(<span class="k">const</span> Widget&amp; w);            <span class="c">// only USES it -> take a reference...</span>
+render(*sp1);                            <span class="c">// ...not a shared_ptr copy (avoids the atomic bump)</span></code></pre>
 
 <h3><code>std::weak_ptr</code> &mdash; break cycles</h3>
 <pre><code>std::weak_ptr&lt;Node&gt; parent;          <span class="c">// child-&gt;parent is weak; parent-&gt;child is shared</span>
@@ -6904,6 +7341,14 @@ With <code>template&lt;class F&gt; void each(F f)</code>, the exact callable typ
 <tr><td><code>T&amp;</code> / <code>T*</code></td><td>"I just use it; caller keeps ownership"</td></tr>
 <tr><td><code>T*</code> (nullable) or <code>optional&lt;T&amp;&gt;</code>-ish</td><td>"use it if provided"</td></tr>
 </table>
+<pre><code><span class="k">void</span> store(std::unique_ptr&lt;Widget&gt; w);  <span class="c">// SINK: takes ownership</span>
+<span class="k">void</span> keep (std::shared_ptr&lt;Widget&gt; w);  <span class="c">// co-owns: keeps it alive too</span>
+<span class="k">void</span> tweak(Widget&amp; w);                  <span class="c">// borrows: caller still owns</span>
+<span class="k">void</span> maybe(Widget* w);                  <span class="c">// borrows, and nullptr is allowed</span>
+
+<span class="k">auto</span> w = std::make_unique&lt;Widget&gt;();
+tweak(*w);                              <span class="c">// still mine afterwards</span>
+store(std::move(w));                     <span class="c">// must move -> unique_ptr is move-only; w is now null</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -7021,6 +7466,17 @@ It creates a <em>second, independent</em> control block for an object that's pre
 <li>Destructors and (usually) move operations should be <code>noexcept</code>; the library optimises based on it (<code>move_if_noexcept</code>).</li>
 <li><code>noexcept(expr)</code> is also a compile-time query.</li>
 </ul>
+<pre><code><span class="k">struct</span> Buf {
+    Buf(Buf&amp;&amp;) <span class="k">noexcept</span>;              <span class="c">// promise: moving never throws</span>
+    ~Buf();                          <span class="c">// destructors are implicitly noexcept anyway</span>
+};
+
+std::vector&lt;Buf&gt; v;
+v.reserve(<span class="n">1</span>); v.emplace_back();
+v.emplace_back();   <span class="c">// on regrow: because Buf's move is noexcept, vector MOVES the old</span>
+                    <span class="c">// elements. Without noexcept it would COPY them (strong guarantee).</span>
+
+<span class="k">static_assert</span>(<span class="k">noexcept</span>(std::declval&lt;Buf&gt;() = Buf{}) == <span class="k">false</span>); <span class="c">// noexcept() is also a query</span></code></pre>
 
 <h3>The three exception-safety guarantees</h3>
 <table>
@@ -7029,6 +7485,15 @@ It creates a <em>second, independent</em> control block for an object that's pre
 <tr><td><strong>Strong</strong></td><td>If it throws, state is exactly as before &mdash; commit-or-rollback (e.g. copy-and-swap).</td></tr>
 <tr><td><strong>Basic</strong></td><td>If it throws, no leaks and all invariants hold, but state may have changed. The minimum acceptable.</td></tr>
 </table>
+<pre><code><span class="k">class</span> Registry {
+    std::vector&lt;Item&gt; items_;
+<span class="k">public</span>:
+    <span class="c">// STRONG: build the new vector first; only swap (nothrow) once it fully succeeds</span>
+    <span class="k">void</span> replace_all(<span class="k">const</span> std::vector&lt;Item&gt;&amp; incoming) {
+        std::vector&lt;Item&gt; tmp = incoming;   <span class="c">// may throw -> items_ untouched</span>
+        items_.swap(tmp);                  <span class="c">// noexcept commit point</span>
+    }                                      <span class="c">// old contents freed via tmp's dtor</span>
+};</code></pre>
 
 <h3>Writing exception-safe code</h3>
 <ul>
@@ -7037,6 +7502,17 @@ It creates a <em>second, independent</em> control block for an object that's pre
 <li>Never let an exception escape a destructor or a <code>noexcept</code> function.</li>
 <li>Exceptions are for <em>exceptional</em>, rare failures. For expected failures (parse error, key not found) prefer <code>std::optional</code> / <code>std::expected</code> / error codes &mdash; exceptions have near-zero cost when not thrown but are expensive when thrown.</li>
 </ul>
+<pre><code><span class="c">// BAD: if the second `new` throws, the first Widget leaks</span>
+<span class="k">void</span> bad(std::vector&lt;Widget*&gt;&amp; v) {
+    v.push_back(<span class="k">new</span> Widget);
+    v.push_back(<span class="k">new</span> Widget);   <span class="c">// throw here -> first raw pointer lost</span>
+}
+
+<span class="c">// GOOD: RAII owns each allocation; unwinding frees whatever was built</span>
+<span class="k">void</span> good(std::vector&lt;std::unique_ptr&lt;Widget&gt;&gt;&amp; v) {
+    <span class="k">auto</span> w = std::make_unique&lt;Widget&gt;();  <span class="c">// if make_unique throws, nothing to clean up</span>
+    v.push_back(std::move(w));            <span class="c">// commit</span>
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -7140,6 +7616,15 @@ It happens if a destructor (or other cleanup) throws <em>while</em> stack unwind
 </svg>
 <figcaption><code>consteval</code> removes the right branch &mdash; every call <em>must</em> fold at compile time. <code>constexpr</code> just says "eligible", not "always".</figcaption>
 </figure>
+<pre><code><span class="k">const</span> <span class="k">int</span> a = readInt();         <span class="c">// const: immutable, but value known only at RUN time</span>
+<span class="k">constexpr</span> <span class="k">int</span> b = <span class="n">4</span> * <span class="n">1024</span>;      <span class="c">// constexpr var: MUST be a compile-time constant</span>
+<span class="k">int</span> arr[b];                     <span class="c">// OK -- b is a core constant expression;  int arr[a]; would not compile</span>
+
+<span class="k">consteval</span> <span class="k">int</span> squared(<span class="k">int</span> x) { <span class="k">return</span> x * x; }
+<span class="k">constexpr</span> <span class="k">int</span> s = squared(<span class="n">9</span>);   <span class="c">// OK: folded by the compiler</span>
+<span class="c">// int t = squared(a);          // ERROR: consteval call with a run-time argument</span>
+
+<span class="k">constinit</span> <span class="k">int</span> counter = squared(<span class="n">2</span>); <span class="c">// init at compile time (no init-order fiasco), still mutable</span></code></pre>
 
 <h3>Example</h3>
 <pre><code><span class="k">constexpr</span> <span class="k">int</span> factorial(<span class="k">int</span> n) {
@@ -7159,6 +7644,17 @@ added <code>try</code>/<code>catch</code> (no throw), <code>constexpr</code> <co
 <code>std::vector</code>/<code>std::string</code> in <code>constexpr</code> context (if freed before the constant is
 finalised), virtual calls. Still no reinterpret_cast, no non-constexpr calls, no undefined
 behaviour (a <code>constexpr</code> eval that hits UB is a compile error &mdash; a nice bonus).</p>
+<pre><code><span class="k">constexpr</span> <span class="k">int</span> sum_to(<span class="k">int</span> n) {          <span class="c">// C++14+: loop + local + mutation all fine</span>
+    <span class="k">int</span> total = <span class="n">0</span>;
+    <span class="k">for</span> (<span class="k">int</span> i = <span class="n">1</span>; i &lt;= n; ++i) total += i;
+    <span class="k">return</span> total;
+}
+<span class="k">constexpr</span> <span class="k">int</span> checksum(<span class="k">int</span> n) {
+    <span class="c">// return 1 / (n - n);   // if constant-evaluated, this UB is a COMPILE ERROR, not a crash</span>
+    <span class="k">return</span> sum_to(n) % <span class="n">256</span>;         <span class="c">// calling another constexpr fn: OK</span>
+    <span class="c">// std::printf("...");   // ERROR: printf is not constexpr</span>
+}
+<span class="k">static_assert</span>(sum_to(<span class="n">100</span>) == <span class="n">5050</span>);  <span class="c">// verified entirely by the compiler</span></code></pre>
 
 <h3>Why it matters</h3>
 <ul>
@@ -7167,6 +7663,17 @@ behaviour (a <code>constexpr</code> eval that hits UB is a compile error &mdash;
 <li>UB in a constant-evaluated path is diagnosed by the compiler.</li>
 <li>Replaces most old template-metaprogramming "value computation" with ordinary code.</li>
 </ul>
+<pre><code><span class="c">// A CRC lookup table built at compile time -> no cost at program startup</span>
+<span class="k">constexpr</span> <span class="k">auto</span> crc_table = [] {
+    std::array&lt;uint32_t, <span class="n">256</span>&gt; t{};
+    <span class="k">for</span> (uint32_t i = <span class="n">0</span>; i &lt; <span class="n">256</span>; ++i) {
+        uint32_t c = i;
+        <span class="k">for</span> (<span class="k">int</span> k = <span class="n">0</span>; k &lt; <span class="n">8</span>; ++k) c = (c &amp; <span class="n">1</span>) ? <span class="n">0xEDB88320</span> ^ (c &gt;&gt; <span class="n">1</span>) : c &gt;&gt; <span class="n">1</span>;
+        t[i] = c;
+    }
+    <span class="k">return</span> t;
+}();                                   <span class="c">// immediately invoked; crc_table lives in .rodata</span>
+<span class="k">static_assert</span>(crc_table[<span class="n">1</span>] == <span class="n">0x77073096</span>);</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -7257,6 +7764,11 @@ A normal <code>if (constexpr_cond)</code> still compiles <em>both</em> branches 
 <li>Lambdas (init-capture &amp; generic lambdas in C++14), <code>constexpr</code>, <code>= default</code>/<code>= delete</code>, <code>override</code>/<code>final</code>.</li>
 <li><code>std::array</code>, <code>unordered_*</code>, <code>tuple</code>, <code>chrono</code>, variadic templates.</li>
 </ul>
+<pre><code><span class="k">enum class</span> Color { red, green };          <span class="c">// scoped: Color::red, no implicit int</span>
+<span class="k">auto</span> nums = std::vector&lt;<span class="k">int</span>&gt;{<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>};       <span class="c">// auto + brace init</span>
+<span class="k">for</span> (<span class="k">auto</span>&amp; n : nums) n *= <span class="n">2</span>;               <span class="c">// range-for by reference</span>
+<span class="k">auto</span> p = std::make_unique&lt;Color&gt;(Color::red); <span class="c">// smart pointer, no naked new</span>
+<span class="k">auto</span> add = [](<span class="k">auto</span> a, <span class="k">auto</span> b) { <span class="k">return</span> a + b; }; <span class="c">// C++14 generic lambda</span></code></pre>
 
 <h3>C++17</h3>
 <ul>
@@ -7266,6 +7778,15 @@ A normal <code>if (constexpr_cond)</code> still compiles <em>both</em> branches 
 <li><code>std::optional</code>, <code>std::variant</code>, <code>std::any</code>, <code>std::string_view</code>, <code>std::filesystem</code>.</li>
 <li>Guaranteed copy elision; parallel algorithms (<code>std::execution::par</code>).</li>
 </ul>
+<pre><code>std::map&lt;std::string, <span class="k">int</span>&gt; m;
+<span class="k">if</span> (<span class="k">auto</span> [it, inserted] = m.try_emplace(<span class="s">"k"</span>, <span class="n">1</span>); inserted)  <span class="c">// init + structured binding</span>
+    use(it-&gt;second);
+
+std::optional&lt;<span class="k">int</span>&gt; parse(std::string_view s);   <span class="c">// string_view: non-owning, no copy</span>
+<span class="k">if</span> (<span class="k">auto</span> n = parse(<span class="s">"42"</span>))                     <span class="c">// optional is contextually bool</span>
+    std::cout &lt;&lt; *n;
+
+<span class="k">template</span>&lt;<span class="k">class</span>... Ts&gt; <span class="k">auto</span> sum(Ts... xs) { <span class="k">return</span> (xs + ...); } <span class="c">// fold expression</span></code></pre>
 
 <h3>C++20 &mdash; the big one</h3>
 <ul>
@@ -7274,6 +7795,15 @@ A normal <code>if (constexpr_cond)</code> still compiles <em>both</em> branches 
 <li><code>std::span</code>, <code>std::format</code>, <code>std::jthread</code> (auto-join + stop token), <code>std::atomic_ref</code>.</li>
 <li><code>[[likely]]</code>/<code>[[unlikely]]</code>, <code>using enum</code>.</li>
 </ul>
+<pre><code><span class="k">template</span>&lt;std::integral T&gt;               <span class="c">// concept constrains the template</span>
+T twice(T x) { <span class="k">return</span> x * <span class="n">2</span>; }
+
+std::vector&lt;<span class="k">int</span>&gt; v{<span class="n">5</span>, <span class="n">2</span>, <span class="n">8</span>, <span class="n">1</span>};
+<span class="k">auto</span> evens = v | std::views::filter([](<span class="k">int</span> n){ <span class="k">return</span> n % <span class="n">2</span> == <span class="n">0</span>; })
+               | std::views::transform([](<span class="k">int</span> n){ <span class="k">return</span> n * <span class="n">10</span>; }); <span class="c">// lazy pipeline</span>
+
+std::cout &lt;&lt; std::format(<span class="s">"{:>6}\n"</span>, <span class="n">42</span>);   <span class="c">// type-safe formatting</span>
+std::jthread t{[](std::stop_token st){ <span class="k">while</span> (!st.stop_requested()) work(); }}; <span class="c">// auto-joins</span></code></pre>
 
 <h3>C++23 highlights</h3>
 <ul>
@@ -7282,6 +7812,16 @@ A normal <code>if (constexpr_cond)</code> still compiles <em>both</em> branches 
 <li><code>ranges::to</code> (materialise a view into a container), more <code>constexpr</code>, <code>if consteval</code>.</li>
 <li>Deducing <code>this</code> (explicit object parameter).</li>
 </ul>
+<pre><code>std::expected&lt;<span class="k">int</span>, std::string&gt; parse(std::string_view s) {
+    <span class="k">if</span> (s.empty()) <span class="k">return</span> std::unexpected(<span class="s">"empty"</span>);   <span class="c">// error path, no exception</span>
+    <span class="k">return</span> std::stoi(std::string{s});                <span class="c">// success path</span>
+}
+<span class="k">auto</span> r = parse(<span class="s">"7"</span>);
+<span class="k">if</span> (r) std::println(<span class="s">"got {}"</span>, *r);                    <span class="c">// std::print/println</span>
+<span class="k">else</span>   std::println(<span class="s">"error: {}"</span>, r.error());
+
+<span class="k">auto</span> doubled = v | std::views::transform([](<span class="k">int</span> n){ <span class="k">return</span> n*<span class="n">2</span>; })
+                | std::ranges::to&lt;std::vector&gt;();       <span class="c">// materialise the view</span></code></pre>
 
 <h3>Default toolkit today</h3>
 <pre><code><span class="k">auto</span> [name, age] = person;                 <span class="c">// structured bindings</span>
