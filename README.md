@@ -7,7 +7,7 @@ Every topic has four blocks: **Notes** (full explanation), **Cheat Sheet** (cond
 recall), **Q&A** (short self-check pairs), and **Interview Questions** graded
 Basic → Intermediate → Advanced with click-to-reveal answers. No quizzes.
 
-## Roadmap — 19 skill areas — ✅ all complete
+## Roadmap — 21 skill areas — ✅ all complete
 
 Built one skill at a time. Every area is written; open any topic at `#/<slug>/<topic>`.
 
@@ -27,6 +27,9 @@ Built one skill at a time. Every area is written; open any topic at `#/<slug>/<t
 
 **Observability**
 - ✅ Grafana (`grafana`) · Splunk (`splunk`) · Dashboards & Monitoring (`monitor`) — 10 topics each
+
+**Delivery & tools**
+- ✅ Jira & Agile Boards (`jira`) · CDN & Edge Delivery (`cdn`) — 10 topics each
 
 ## Files
 
