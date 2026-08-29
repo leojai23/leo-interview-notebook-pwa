@@ -7,7 +7,7 @@ Every topic has four blocks: **Notes** (full explanation), **Cheat Sheet** (cond
 recall), **Q&A** (short self-check pairs), and **Interview Questions** graded
 Basic → Intermediate → Advanced with click-to-reveal answers. No quizzes.
 
-## Roadmap — 16 skill areas — ✅ all complete
+## Roadmap — 19 skill areas — ✅ all complete
 
 Built one skill at a time. Every area is written; open any topic at `#/<slug>/<topic>`.
 
@@ -24,6 +24,9 @@ Built one skill at a time. Every area is written; open any topic at `#/<slug>/<t
 
 **Design & tools**
 - ✅ Low-Level Design (`lld`) · System Design (`sysd`) · Git (`git`) — 10 topics each
+
+**Observability**
+- ✅ Grafana (`grafana`) · Splunk (`splunk`) · Dashboards & Monitoring (`monitor`) — 10 topics each
 
 ## Files
 
