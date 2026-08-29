@@ -25155,6 +25155,13 @@ returns a hash (SHA-1 historically; SHA-256 in newer repos). The hash <em>is</em
 the same content always produces the same hash, and any change to the content produces a
 completely different hash. Objects live in <code>.git/objects/</code> (loose objects, then
 packed into <code>.pack</code> files for efficiency).</p>
+<pre># content-addressed: the hash IS the key; same bytes -> same hash, always
+$ echo 'hello' | git hash-object --stdin
+ce013625030ba8dba906f756967f9e9ca394464a
+$ printf 'hello' | git hash-object --stdin      # one byte different...
+b6fc4c620b67d95f953a5c1c1230aaab5db5a1b0      # ...totally different hash
+# so Git can't be fooled: any edit to a file changes its blob's name,
+# which changes its tree, which changes the commit hash.</pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-gitobj-t">
@@ -25185,6 +25192,17 @@ packed into <code>.pack</code> files for efficiency).</p>
 <tr><td><strong>commit</strong></td><td>A snapshot pointer: the hash of one <em>root</em> tree, zero or more parent commit hashes, author + committer (name, email, timestamp), and the commit message.</td></tr>
 <tr><td><strong>tag</strong> (annotated)</td><td>A named, described pointer to another object (usually a commit) with its own author, message, and optional signature. Lightweight tags are just a ref, not an object.</td></tr>
 </table>
+<pre># walk the types for the current commit
+$ git cat-file -p HEAD
+tree 9d1f2a...            # commit -> one root tree
+parent 4c7b8e...         #        -> previous commit
+author Leo &lt;x@y&gt; 172... +0000
+    Fix parser
+
+$ git cat-file -p HEAD^{tree}
+100644 blob a1b2c3...  README.md      # tree -> (mode, type, hash, name) rows
+040000 tree d4e5f6...  src            # ...pointing at blobs and subtrees
+$ git cat-file -p a1b2c3             # blob = just the file bytes, no name</pre>
 
 <h3>How a commit represents your whole project</h3>
 <p>A commit points to <em>one</em> tree &mdash; the root directory. That tree points to blobs
@@ -25194,6 +25212,13 @@ hash transitively names the exact content of every file and every directory. Git
 unchanged files across commits reuse the same blob and unchanged directories reuse the same
 tree. Packfiles then delta-compress similar objects on disk, but that's a storage
 optimisation invisible to the model.</p>
+<pre># unchanged files/dirs are REUSED, not re-stored: commit two versions,
+# compare the tree of a subdir that didn't change
+$ git rev-parse HEAD~1:docs
+7f3ab9c0e2...
+$ git rev-parse HEAD:docs
+7f3ab9c0e2...          # identical -> same tree object -> zero extra storage
+# only the path from the changed blob up to the root commit gets new hashes.</pre>
 
 <h3>History = a DAG of commits</h3>
 <p>Each commit records its parent(s), so commits form a <strong>directed acyclic graph</strong>.
@@ -25201,6 +25226,16 @@ A normal commit has one parent; the first commit has none (a "root commit"); a m
 has two or more. Branches and tags are just named pointers ("refs") into this graph, stored
 as files under <code>.git/refs/</code> (or in <code>packed-refs</code>). <code>HEAD</code>
 usually points at a branch ref.</p>
+<pre># the DAG made visible: parents, branches (refs), and a merge (2 parents)
+$ git log --graph --oneline --all
+*   e1a2b3c (HEAD -&gt; main) Merge branch 'feature'
+|\
+| * 9f8e7d6 (feature) Add cache layer      # feature's commits
+* | 4c5b6a7 Hotfix logging
+|/
+* 2b3c4d5 Base commit                      # common ancestor
+$ cat .git/refs/heads/main                 # a branch is literally a file...
+e1a2b3c9d0...                              # ...holding one commit hash</pre>
 
 <h3>Inspecting objects</h3>
 <pre>git hash-object -w file.txt      # store content as a blob, print its hash
@@ -25294,6 +25329,14 @@ Storing every object as its own zlib-compressed file ("loose objects") wastes sp
 <tr><td><strong>Index</strong> (staging area / cache)</td><td>A binary file (<code>.git/index</code>) listing the exact file contents (blob hashes) + metadata that will go into the <em>next</em> commit. "What I've proposed to commit."</td></tr>
 <tr><td><strong>Working tree</strong></td><td>The actual files on disk you edit. "What I'm working on right now."</td></tr>
 </table>
+<pre># one edit, seen in all three trees at once
+$ echo 'x' &gt;&gt; app.py           # working tree changed only
+$ git status --short
+ M app.py                      # column 2 = worktree vs index
+$ git add app.py
+$ git status --short
+M  app.py                      # column 1 = index vs HEAD (now staged)
+$ git commit -m 'x'            # index written as a commit; all three match again</pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 96" role="img" aria-labelledby="d-git3t-t">
@@ -25328,6 +25371,15 @@ working tree, not in index.</p>
 <p>So <code>git reset --soft HEAD~1</code> "uncommits" but keeps everything staged;
 <code>git reset HEAD~1</code> also unstages; <code>git reset --hard HEAD~1</code> throws the
 work away entirely.</p>
+<pre># squash the last 3 commits into one, keeping all their changes staged
+$ git reset --soft HEAD~3      # HEAD -> 3 back; index + worktree untouched
+$ git commit -m 'Combined feature'
+
+# "uncommit" but keep edits to re-split them
+$ git reset HEAD~1            # --mixed: HEAD + index back one; files still on disk, unstaged
+
+# nuke local commits AND edits (no recovery except reflog)
+$ git reset --hard origin/main</pre>
 
 <h3>checkout / restore / switch</h3>
 <ul>
@@ -25337,6 +25389,12 @@ work away entirely.</p>
 <li><code>git restore --staged &lt;file&gt;</code> &mdash; copy HEAD's version into the index (unstage), leaving the working tree alone. <code>git restore --staged --worktree &lt;file&gt;</code> resets both.</li>
 <li>Newer split: <code>git switch</code> for branches, <code>git restore</code> for files &mdash; less overloaded than <code>checkout</code>.</li>
 </ul>
+<pre># the one checkout did too many jobs; the split names the intent:
+$ git switch feature            # change branch (was: git checkout feature)
+$ git switch -c hotfix          # create + switch  (was: checkout -b)
+$ git restore app.py            # discard unstaged edits, from the index
+$ git restore --staged app.py   # unstage, from HEAD (worktree edit kept)
+$ git restore --source=HEAD~2 app.py   # bring back an old version of one file</pre>
 
 <h3>Other index operations</h3>
 <pre>git add -p          # stage selected hunks interactively
@@ -25429,6 +25487,13 @@ The index is a flat, sorted binary file listing every tracked path with its blob
 Creating a branch writes that file; it does not copy any files. When you commit <em>on</em> a
 branch, Git creates the commit and then updates the branch file to point at the new commit.
 That's the whole mechanism &mdash; branches are cheap because they're one line of text.</p>
+<pre># a branch really is just a file with a hash in it
+$ git branch feature           # no files copied, instant, even on a huge repo
+$ cat .git/refs/heads/feature
+4c7b8e1f09a2c3...              # same hash as main right now
+$ git commit -am 'work'        # commit, THEN this file is rewritten:
+$ cat .git/refs/heads/feature
+9d0e1a2b3c4d...               # advanced; main's file is untouched</pre>
 
 <h3>HEAD</h3>
 <ul>
@@ -25440,6 +25505,13 @@ That's the whole mechanism &mdash; branches are cheap because they're one line o
 <code>git checkout &lt;hash&gt;</code> or <code>git checkout v1.0</code>). Commits you make
 advance HEAD but no branch &mdash; create a branch to keep them.</li>
 </ul>
+<pre>$ cat .git/HEAD
+ref: refs/heads/main            # normal: symbolic ref to a branch
+$ git checkout v1.0
+$ cat .git/HEAD
+a1b2c3d4e5...                  # DETACHED: a raw hash, no branch
+# commits here are reachable only by hash; leaving loses them:
+$ git switch -c keep-this      # attach a branch before switching away</pre>
 
 <h3>Fast-forward vs true merge</h3>
 <p>Say <code>main</code> is at commit C and you branch <code>feature</code>, then add D and E
@@ -25484,6 +25556,13 @@ cache of where <code>main</code> was on <code>origin</code> at your last fetch. 
 when you <code>fetch</code>/<code>pull</code>. Your local <code>main</code> can be "ahead 2,
 behind 1" relative to it. <code>git status</code> reports this when your branch has an
 <em>upstream</em> set.</p>
+<pre>$ git fetch                     # updates origin/* only; your branches untouched
+$ git status -sb
+## main...origin/main [ahead 2, behind 1]   # measured against the cached ref
+$ git branch -vv
+* main  9d0e1a2 [origin/main: ahead 2, behind 1] local work
+# reconcile: git rebase origin/main   (replay your 2 on top of their 1)
+#        or: git merge  origin/main   (merge commit)   -- git pull does one of these</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -25609,6 +25688,14 @@ aside, moves <code>feature</code> to C, then <strong>replays</strong> D and E on
 pushed to a shared branch that teammates pulled). Rebasing rewrites hashes; when you
 force-push the rewritten branch, everyone else's history diverges from yours and they get
 painful conflicts. Rebase freely on <em>your own</em> unpushed / unshared commits.</p>
+<pre># SAFE: branch is yours and unpushed
+$ git log --oneline @{u}..     # commits not yet on the upstream -> free to rebase
+$ git rebase -i main
+
+# DANGER: teammate already pulled 'feature'
+$ git rebase main && git push --force     # their 'feature' now diverges from yours
+# if you must, use --force-with-lease so you don't clobber commits you haven't seen:
+$ git push --force-with-lease</pre>
 
 <h3>When to use which</h3>
 <table>
@@ -25618,6 +25705,15 @@ painful conflicts. Rebase freely on <em>your own</em> unpushed / unshared commit
 <tr><td>The branch is public and others use it</td><td>Cleaning up your own commits before opening/merging a PR</td></tr>
 <tr><td>Preserving context of parallel work</td><td>Avoiding "Merge branch 'main'" noise commits</td></tr>
 </table>
+<pre># typical solo feature branch: rebase to stay current, no merge noise
+$ git switch feature
+$ git fetch origin
+$ git rebase origin/main        # replay my work on the latest main
+$ git push --force-with-lease   # my branch only; nobody else is on it
+
+# integrating a shared release branch: merge, keep the join recorded
+$ git switch main
+$ git merge --no-ff release/2.4</pre>
 
 <h3>Related commands</h3>
 <pre>git pull --rebase             # fetch, then rebase your local commits onto the new upstream
@@ -25725,6 +25821,14 @@ list top to bottom.</p>
 <tr><td><code>exec</code> (x)</td><td>Run a shell command (e.g. tests) at that point; a non-zero exit pauses the rebase.</td></tr>
 <tr><td><code>break</code> (b)</td><td>Stop here unconditionally; resume with <code>--continue</code>.</td></tr>
 </table>
+<pre># the todo file Git opens (oldest at top); edit verbs + order, then save
+pick   a1b2c3d  Add user model
+reword b2c3d4e  Ad endpoint        # fix this typo'd message
+fixup  c3d4e5f  oops missing import # fold into the reword'd commit, drop its msg
+drop   d4e5f6a  debug printfs       # delete this commit
+pick   e5f6a7b  Add tests
+exec   npm test                     # run tests here; non-zero exit pauses rebase
+# lines replay top-to-bottom; deleting a line == dropping that commit</pre>
 
 <h3>Common recipes</h3>
 <pre># Fix the message of the last commit (nothing else)
@@ -25756,6 +25860,14 @@ git rebase -i HEAD~6     # 'edit' that commit, remove the file, amend, continue
 <li>Pushing a rebased branch needs <code>git push --force-with-lease</code> (safer than <code>--force</code>: it refuses if the remote moved since your last fetch).</li>
 <li><strong>Only do this on unshared commits</strong> &mdash; the golden rule from Merge vs Rebase applies.</li>
 </ul>
+<pre># a rebase went wrong -- two ways back
+$ git rebase --abort                 # while still mid-rebase (at a pause)
+
+$ git reflog                          # after it "finished" badly
+9d0e1a2 HEAD@{0}: rebase (finish): returning to refs/heads/feature
+4c7b8e1 HEAD@{1}: rebase (start): checkout main
+a1b2c3d HEAD@{2}: commit: my real work    # <- the tip before the rebase
+$ git reset --hard HEAD@{2}           # or: git reset --hard ORIG_HEAD</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -25883,12 +25995,24 @@ grace period via <code>gc.pruneExpire</code>). So recover sooner rather than lat
 <code>gc</code> will destroy unreachable history immediately &mdash; occasionally what you
 want (see the secrets question), usually not.</li>
 </ul>
+<pre># check what protects a lost commit and how long you have
+$ git config gc.reflogExpireUnreachable    # -> 30.days.ago (default)
+$ git reflog --date=iso | head -1
+9d0e1a2 HEAD@{2026-08-20 09:14:00 +0000}: reset: moving to HEAD~3
+# still within 30 days -> recoverable. To FORCE-destroy (e.g. leaked secret):
+$ git reflog expire --expire=now --all &amp;&amp; git gc --prune=now</pre>
 
 <h3>Other undo anchors</h3>
 <p><code>ORIG_HEAD</code> is set by reset, merge, rebase, and pull to the pre-operation tip
 &mdash; <code>git reset --hard ORIG_HEAD</code> is a quick one-step undo for the <em>last</em>
 such operation. <code>git merge --abort</code> / <code>git rebase --abort</code> /
 <code>git cherry-pick --abort</code> use it too.</p>
+<pre>$ git merge feature            # ...turns out to be a mistake
+$ git reset --hard ORIG_HEAD   # back to the exact tip from just before the merge
+
+$ git pull                     # pulled in noise you didn't want
+$ git reset --hard ORIG_HEAD   # ORIG_HEAD was refreshed by the pull -> undone
+# note: ORIG_HEAD holds only the LAST such op; use the reflog for anything older</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -25969,6 +26093,13 @@ Stage 1 &mdash; <strong>becomes unreachable</strong>: a ref move (reset, rebase,
 "good" commit). Somewhere between them one commit flipped it. <code>git bisect</code> checks
 out the midpoint, you test, tell it "good" or "bad", it halves the remaining range, and
 repeats. 1000 commits &rarr; ~10 tests.</p>
+<pre># binary search over history: each answer halves the suspect range
+# range = 1024 commits between good and bad:
+#   test 1 -> 512 left   test 2 -> 256   test 3 -> 128   ...   test 10 -> 1
+# git picks the midpoint for you:
+$ git bisect start HEAD v2.3
+Bisecting: 511 revisions left to test after this (roughly 9 steps)
+[c0ffee1] Refactor session store         # <- checked out for you to test</pre>
 
 <h3>Manual session</h3>
 <pre>git bisect start
@@ -26003,6 +26134,13 @@ exit 0                        # repro passes -> good</pre>
 <li><code>git bisect visualize</code> / <code>--stat</code> &mdash; see the remaining suspect range.</li>
 <li><code>git bisect start -- &lt;path&gt;</code> &mdash; only consider commits touching that path, shrinking the search.</li>
 </ul>
+<pre># skip commits you can't judge; narrow by path; save/replay the session
+$ git bisect skip                       # this one won't build -> Git picks another
+$ git bisect start -- src/auth/         # only bisect commits touching that dir
+$ git bisect log &gt; bisect.log           # ...realise you misjudged step 4
+$ git bisect reset
+$ sed -i 's/bad/good/' bisect.log       # fix the wrong answer
+$ git bisect replay bisect.log          # re-run from the corrected log</pre>
 
 <h3>Requirements &amp; pitfalls</h3>
 <ul>
@@ -26011,6 +26149,14 @@ exit 0                        # repro passes -> good</pre>
 <li>The "first bad commit" might be a <em>merge</em> that pulled in a bad branch &mdash; then bisect within that branch's commits.</li>
 <li>A regression that was introduced <em>and later temporarily masked</em> can confuse the good/bad monotonicity assumption.</li>
 </ul>
+<pre># make the repro deterministic BEFORE bisecting, or you'll converge on the wrong commit
+$ for i in $(seq 5); do ./repro.sh; echo $?; done
+0
+0
+0
+0
+0                      # 5/5 consistent -> safe to bisect
+# a flaky 3/5 repro -> a "good" commit that just got lucky -> garbage result</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -26141,6 +26287,16 @@ git reset --hard ORIG_HEAD        # undo the last reset/merge/rebase</pre>
 <li>Bring <strong>one specific commit</strong> from elsewhere &rarr; <code>git cherry-pick</code>.</li>
 <li>Discard <em>all</em> local changes to match upstream &rarr; <code>git reset --hard @{upstream}</code>.</li>
 </ul>
+<pre># same goal "make the bug go away", three right answers for three situations:
+
+# bad commit already on main, teammates have it:
+$ git revert 9f8e7d6            # adds an inverse commit; history intact, safe to push
+
+# bad commits only on your local branch, not pushed:
+$ git reset --hard HEAD~2       # just drop them
+
+# good fix lives on main, you need it on release/2.3 too:
+$ git switch release/2.3 &amp;&amp; git cherry-pick 9f8e7d6</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -26223,6 +26379,15 @@ region changed on <em>only one</em> side, Git takes that side automatically. A c
 raised only when the <em>same region</em> changed differently on <em>both</em> sides &mdash;
 Git can't know which you want. Also: file deleted on one side + modified on the other,
 rename/rename, add/add with different content.</p>
+<pre># base:   int timeout = 30;
+# ours:   int timeout = 60;      -> changed line 1
+# theirs: int timeout = 30;      -> line 1 untouched
+#         log("starting");       -> added a new line
+# result: NO conflict. Git takes our 60 AND their new log line (disjoint changes).
+
+# base:   int timeout = 30;
+# ours:   int timeout = 60;
+# theirs: int timeout = 45;      -> SAME line, different values -> CONFLICT</pre>
 
 <h3>Conflict markers</h3>
 <pre>&lt;&lt;&lt;&lt;&lt;&lt;&lt; HEAD            (ours)
@@ -26276,6 +26441,14 @@ git checkout -m path             # re-create conflict markers if you lost them</
 <li>Use <code>.gitattributes</code> merge drivers: <code>merge=union</code> for changelogs/lockfiles where "keep both" is fine; a custom driver for generated files; <code>-merge</code> (binary) for assets.</li>
 <li>Structure code so hot files aren't edited by everyone (split large modules).</li>
 </ul>
+<pre># .gitattributes &mdash; teach the merge which files can auto-resolve
+CHANGELOG.md      merge=union      # keep BOTH sides' added lines, no conflict
+package-lock.json merge=union
+*.png             -merge binary    # never try to merge; pick a side on conflict
+dist/*            -merge
+
+# reduce churn: rebase small + often instead of one huge integration
+$ git fetch &amp;&amp; git rebase origin/main   # daily, while the diff is still tiny</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -26360,6 +26533,15 @@ When a conflict occurs with <code>rerere.enabled</code>, Git computes a <strong>
 <tr><td><strong>Git Flow</strong></td><td><code>main</code> (released) + <code>develop</code> (integration) + <code>feature/*</code> + <code>release/*</code> + <code>hotfix/*</code>. Explicit, ceremonious.</td><td>Versioned/packaged software with scheduled releases and multiple supported versions. Overkill for continuous web delivery.</td></tr>
 <tr><td><strong>GitLab Flow</strong></td><td>GitHub Flow + environment branches (<code>staging</code>, <code>production</code>) or release branches; changes flow "downstream" via merges.</td><td>Teams needing staged promotion without full Git Flow.</td></tr>
 </table>
+<pre># GitHub Flow: one deployable trunk, branches live days
+main ---o-------o---------o--->        (always releasable, auto-deploys)
+         \     /         /
+          o-o-o (feat/x, PR)
+
+# Git Flow: extra long-lived integration + release/hotfix branches
+main    ---o-----------------o----o--> (tags: v1.4.0, v1.4.1)
+develop ---o--o--o--o--o--o--/    /
+feature      \-o-o-/            hotfix/1.4.1</pre>
 
 <h3>The pull / merge request workflow</h3>
 <ol>
@@ -26370,6 +26552,15 @@ When a conflict occurs with <code>rerere.enabled</code>, Git computes a <strong>
 <li>Keep current: rebase or merge <code>main</code> in; some teams <strong>require the branch to be up to date</strong> before merge (or use a merge queue).</li>
 <li>Merge via one of the strategies below; delete the branch; CI deploys.</li>
 </ol>
+<pre>$ git switch main &amp;&amp; git pull
+$ git switch -c feat/search
+$ git commit -am 'Add search endpoint'
+$ git push -u origin feat/search
+$ gh pr create --fill --draft            # open early for visibility; CI starts
+# ...address review, keep current:
+$ git fetch origin &amp;&amp; git rebase origin/main
+$ git push --force-with-lease
+$ gh pr ready &amp;&amp; gh pr merge --squash --delete-branch</pre>
 
 <h3>Merge strategies on the platform</h3>
 <table>
@@ -26378,6 +26569,15 @@ When a conflict occurs with <code>rerere.enabled</code>, Git computes a <strong>
 <tr><td><strong>Squash &amp; merge</strong></td><td>One commit per PR</td><td>Clean, linear <code>main</code>; loses intra-PR granularity; <code>main</code> commit != any real branch commit (bisect-friendly though).</td></tr>
 <tr><td><strong>Rebase &amp; merge</strong></td><td>Branch commits replayed, no merge commit</td><td>Linear history with every commit; requires each commit to be good; rewrites hashes.</td></tr>
 </table>
+<pre># PR with 3 commits (feature, fixup, typo), viewed on main after each option:
+
+# merge commit:  * Merge PR #42      squash & merge:  * Add search (#42)
+#                |\                                   |
+#                | * fix typo                         * (previous main)
+#                | * address review
+#                | * Add search
+#                |/
+# rebase & merge: * fix typo  * address review  * Add search   (no merge node)</pre>
 
 <h3>Protecting <code>main</code></h3>
 <ul>
@@ -26386,6 +26586,15 @@ When a conflict occurs with <code>rerere.enabled</code>, Git computes a <strong>
 <li><strong>Merge queue / train</strong>: serialises merges and tests each combined result, so two green PRs can't break <code>main</code> together (semantic conflicts).</li>
 <li><strong>CI gates</strong>: required checks are the real enforcement &mdash; tests, lint, coverage threshold, build, container scan, license check.</li>
 </ul>
+<pre># GitHub branch protection (via API/gh) &mdash; the machine-readable version of the rules
+gh api -X PUT repos/:owner/:repo/branches/main/protection -f - &lt;&lt;'JSON'
+{ "required_pull_request_reviews": { "required_approving_review_count": 2,
+                                     "dismiss_stale_reviews": true },
+  "required_status_checks": { "strict": true, "contexts": ["build","test","lint"] },
+  "enforce_admins": true, "required_linear_history": true,
+  "allow_force_pushes": false, "allow_deletions": false }
+JSON
+# CODEOWNERS:  src/payments/  @org/payments-team</pre>
 
 <h3>Releases &amp; hotfixes</h3>
 <ul>
@@ -26393,6 +26602,13 @@ When a conflict occurs with <code>rerere.enabled</code>, Git computes a <strong>
 <li><strong>Hotfix</strong>: branch from the release tag, fix, tag a patch release, then merge/cherry-pick the fix forward into <code>main</code> so it isn't lost.</li>
 <li><strong>Release branch</strong> (<code>release/1.4</code>) only when you must support older versions in parallel; backport fixes with <code>cherry-pick -x</code>.</li>
 </ul>
+<pre># hotfix an old release, then carry the fix forward so it's not lost
+$ git switch -c hotfix/1.4.1 v1.4.0
+$ git commit -am 'fix: null deref in export'
+$ git tag -s v1.4.1 -m 'Patch release 1.4.1'
+$ git push origin hotfix/1.4.1 v1.4.1
+$ git switch main
+$ git cherry-pick -x hotfix/1.4.1   # -x records "(cherry picked from ...)"</pre>
 
 <h3>Commit hygiene that makes workflows work</h3>
 <ul>
@@ -26401,6 +26617,14 @@ When a conflict occurs with <code>rerere.enabled</code>, Git computes a <strong>
 <li>One logical change per commit; every commit builds (so <code>bisect</code> works).</li>
 <li>Hooks: <code>pre-commit</code> for format/lint, <code>commit-msg</code> for message rules, server-side / CI for the hard gates.</li>
 </ul>
+<pre>feat(search): add fuzzy matching to the product endpoint
+
+Trigram index on name+brand; falls back to exact when the query
+is &lt;3 chars. Cuts "no results" rate on typos by ~40%.
+
+Fixes #812
+# ^ Conventional Commit type -> tooling bumps minor version + writes the changelog
+# imperative subject <=50 chars; body says WHY; every commit builds (bisect-safe)</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
