@@ -7333,6 +7333,1042 @@ State = a subset of up to ~20 items encoded as an integer bitmask, plus maybe a 
 </section>
 <!-- /TOPIC:ds:recursion-dp -->
 
+<!-- ============================== ALGORITHMS TOPICS ============================== -->
+<!-- TOPIC:algo:recurrences -->
+<section class="view topic" id="v-algo-recurrences" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Recurrences &amp; the Master Theorem</h1>
+<p class="subtitle">Turning "T(n) = 2T(n/2) + n" into "&Theta;(n log n)" without hand-waving.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Where recurrences come from</h3>
+<p>A divide-and-conquer algorithm that makes <code>a</code> recursive calls on inputs of size <code>n/b</code>,
+plus <code>f(n)</code> non-recursive work, has running time <code>T(n) = a&middot;T(n/b) + f(n)</code>.</p>
+
+<h3>The Master Theorem</h3>
+<p>Compare <code>f(n)</code> with the "watershed" <code>n^(log_b a)</code>:</p>
+<table>
+<tr><th>Case</th><th>Condition</th><th>Result</th></tr>
+<tr><td>1</td><td><code>f(n) = O(n^(log_b a - &epsilon;))</code> (leaves dominate)</td><td><code>T(n) = &Theta;(n^(log_b a))</code></td></tr>
+<tr><td>2</td><td><code>f(n) = &Theta;(n^(log_b a) &middot; log^k n)</code> (balanced)</td><td><code>T(n) = &Theta;(n^(log_b a) &middot; log^(k+1) n)</code></td></tr>
+<tr><td>3</td><td><code>f(n) = &Omega;(n^(log_b a + &epsilon;))</code> + regularity (root dominates)</td><td><code>T(n) = &Theta;(f(n))</code></td></tr>
+</table>
+<pre><code>Merge sort:  T = 2T(n/2) + n    a=2,b=2 -> n^1;  f=n  -> case 2 -> &Theta;(n log n)
+Binary srch: T = 1T(n/2) + 1    a=1,b=2 -> n^0;  f=1  -> case 2 -> &Theta;(log n)
+Strassen:    T = 7T(n/2) + n^2  a=7,b=2 -> n^2.81; f=n^2 -> case 1 -> &Theta;(n^2.81)
+Naive D&amp;C:   T = 2T(n/2) + n^2  -> f dominates -> case 3 -> &Theta;(n^2)</code></pre>
+
+<h3>When the Master Theorem doesn't apply</h3>
+<p>Unequal splits (<code>T(n) = T(n/3) + T(2n/3) + n</code>), varying subproblem count, subtractive
+recurrences (<code>T(n) = T(n-1) + n</code> &rarr; &Theta;(n&sup2;)), or gaps between the cases. Then use the
+<strong>recursion-tree</strong> method (sum the work per level &times; number of levels) or
+<strong>substitution</strong> (guess a bound, prove by induction). Akra&ndash;Bazzi generalises the Master
+Theorem to unequal splits.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>T(n) = a T(n/b) + f(n)</code>; watershed = <code>n^(log_b a)</code>.</li>
+<li>Case 1: f smaller &rarr; <code>&Theta;(n^(log_b a))</code>. Case 2: f equal (&times;log^k) &rarr; add one log. Case 3: f bigger (+ regularity) &rarr; <code>&Theta;(f(n))</code>.</li>
+<li>2T(n/2)+n &rarr; n log n. T(n/2)+1 &rarr; log n. 2T(n/2)+1 &rarr; n. T(n-1)+1 &rarr; n. T(n-1)+n &rarr; n&sup2;. 2T(n-1)+1 &rarr; 2&#8319;.</li>
+<li>Recursion tree: (work at level i) &times; (number of levels). Geometric &rarr; dominated by biggest term.</li>
+<li>Substitution: guess, plug into the recurrence, prove by induction, fix constants.</li>
+<li>Unequal splits &rarr; Akra&ndash;Bazzi or recursion tree, not the plain Master Theorem.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Solve <code>T(n) = 2T(n/2) + O(n)</code>.</dt>
+<dd>&Theta;(n log n) &mdash; Master Theorem case 2 (a=2, b=2, watershed n^1, f(n)=n matches).</dd>
+<dt>Solve <code>T(n) = T(n/2) + O(1)</code>.</dt>
+<dd>&Theta;(log n) &mdash; each level halves n and does constant work; there are log&#8322;n levels. (Binary search.)</dd>
+<dt>Solve <code>T(n) = T(n-1) + O(n)</code>.</dt>
+<dd>&Theta;(n&sup2;). It's not a Master-Theorem form (subtractive, not divisive); unrolling gives n + (n-1) + &hellip; + 1.</dd>
+<dt>Why does the Master Theorem sometimes not give an answer?</dt>
+<dd>There are "gaps" between the three cases (e.g. f(n) is polynomially larger than the watershed by less than any &epsilon;, like a log factor difference that case 3 doesn't cover), or the recurrence has unequal splits / varying a and b. Use a recursion tree or substitution.</dd>
+<dt>What does the "regularity condition" in case 3 ensure?</dt>
+<dd>That <code>a&middot;f(n/b) &le; c&middot;f(n)</code> for some c &lt; 1 &mdash; i.e. the work really does shrink geometrically down the tree so the root term dominates the sum. Without it, the top-level cost isn't necessarily the total.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What running time does <code>T(n) = 2T(n/2) + n</code> represent?</summary><div class="answer-box">
+&Theta;(n log n) &mdash; the merge sort / balanced divide-and-conquer recurrence.
+</div></details>
+<details class="answer-reveal"><summary>How many levels does a recurrence that divides n by b have?</summary><div class="answer-box">
+About log_b(n).
+</div></details>
+<details class="answer-reveal"><summary>What's the watershed function in the Master Theorem?</summary><div class="answer-box">
+<code>n^(log_b a)</code> &mdash; you compare <code>f(n)</code> against it to pick the case.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Use a recursion tree to solve <code>T(n) = 3T(n/2) + n</code>.</summary><div class="answer-box">
+Level i has 3^i nodes each doing n/2^i work &rarr; level cost (3/2)^i &middot; n. Summing a growing geometric series over log&#8322;n levels is dominated by the last level: 3^(log&#8322;n) = n^(log&#8322;3) &asymp; n^1.585. So T(n) = &Theta;(n^log&#8322;3). (Master Theorem case 1 agrees: watershed n^1.585 &gt; f(n)=n.)
+</div></details>
+<details class="answer-reveal"><summary>Quickselect's average recurrence is <code>T(n) = T(n/2) + O(n)</code>. Solve it and contrast with quicksort.</summary><div class="answer-box">
+&Theta;(n) &mdash; one recursive call on ~half, linear partition work; the sum n + n/2 + n/4 + &hellip; = 2n. Quicksort makes <em>two</em> recursive calls (<code>2T(n/2) + n</code>) &rarr; n log n. Recursing on only one side is what drops selection from n log n to linear.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>The median-of-medians selection recurrence is <code>T(n) = T(n/5) + T(7n/10) + O(n)</code>. Why is it O(n)?</summary><div class="answer-box">
+The two recursive sizes sum to <code>n/5 + 7n/10 = 9n/10 &lt; n</code>, a constant factor below n. A recursion tree then has per-level work forming a decreasing geometric series (ratio 9/10), so the total is O(n / (1 - 9/10)) = O(10n) = O(n). Substitution confirms: assume T(k) &le; ck for k &lt; n, then T(n) &le; c(n/5) + c(7n/10) + an = (9c/10)n + an &le; cn when c &ge; 10a. The key insight: any recurrence where the child sizes sum to (1-&epsilon;)n with linear extra work is linear &mdash; this is why the "5" in median-of-medians matters (groups of 3 would give sizes summing to &ge; n and break linearity).
+</div></details>
+<details class="answer-reveal"><summary>State the Akra&ndash;Bazzi method and one thing it handles that the Master Theorem can't.</summary><div class="answer-box">
+For <code>T(n) = &sum; a_i T(b_i n + h_i(n)) + g(n)</code> with <code>0 &lt; b_i &lt; 1</code>, find the unique <code>p</code> with <code>&sum; a_i b_i^p = 1</code>; then <code>T(n) = &Theta;(n^p (1 + &int;_1^n g(u)/u^(p+1) du))</code>. It handles <em>unequal</em> split sizes (different <code>b_i</code>) and multiple different-sized subproblems &mdash; e.g. <code>T(n) = T(n/3) + T(2n/3) + n</code>, where solving <code>(1/3)^p + (2/3)^p = 1</code> gives p = 1, and the integral contributes a log, yielding &Theta;(n log n). The plain Master Theorem requires all subproblems to be the same size n/b.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:recurrences -->
+
+<!-- TOPIC:algo:binary-search -->
+<section class="view topic" id="v-algo-binary-search" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Binary Search &amp; Search on the Answer</h1>
+<p class="subtitle">The algorithm everyone "knows" and half get wrong &mdash; plus its most powerful use.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Correct binary search</h3>
+<pre><code><span class="c"># find target in sorted a, or -1</span>
+lo, hi = 0, len(a) - 1
+<span class="k">while</span> lo &lt;= hi:
+    mid = lo + (hi - lo) // 2      <span class="c"># avoids overflow in fixed-width langs</span>
+    <span class="k">if</span> a[mid] == target: <span class="k">return</span> mid
+    <span class="k">elif</span> a[mid] &lt; target: lo = mid + 1
+    <span class="k">else</span>: hi = mid - 1
+<span class="k">return</span> -1</code></pre>
+<p>Pitfalls: <code>(lo+hi)/2</code> overflow; <code>lo &lt; hi</code> vs <code>&le;</code>; forgetting <code>mid&plusmn;1</code> (infinite
+loop); wrong half on ties. Prefer the <strong>half-open</strong> invariant style below.</p>
+
+<h3>lower_bound / upper_bound (the useful primitives)</h3>
+<pre><code><span class="c"># first index i with a[i] >= x  (lower_bound)</span>
+lo, hi = 0, len(a)                 <span class="c"># half-open [lo, hi)</span>
+<span class="k">while</span> lo &lt; hi:
+    mid = (lo + hi) // 2
+    <span class="k">if</span> a[mid] &lt; x: lo = mid + 1
+    <span class="k">else</span>: hi = mid
+<span class="k">return</span> lo</code></pre>
+<p><code>upper_bound</code> uses <code>a[mid] &le; x</code>. From these: count of <code>x</code> = <code>upper - lower</code>;
+insertion point; predecessor/successor.</p>
+
+<h3>Binary search on the answer (parametric search)</h3>
+<p>If you can write a <strong>monotonic predicate</strong> <code>feasible(v)</code> &mdash; false for small <code>v</code>,
+true for large <code>v</code> (or vice versa) &mdash; binary-search <code>v</code> over its range even if the data
+isn't sorted. The search space is the <em>answer</em>, not an array.</p>
+<pre><code><span class="c"># min ship capacity to move all packages in D days</span>
+lo, hi = max(w), sum(w)
+<span class="k">while</span> lo &lt; hi:
+    mid = (lo + hi) // 2
+    <span class="k">if</span> days_needed(w, mid) &lt;= D: hi = mid   <span class="c"># feasible -> try smaller</span>
+    <span class="k">else</span>: lo = mid + 1
+<span class="k">return</span> lo</code></pre>
+<p>Classic uses: "minimum largest sum" splits, Koko eating bananas, allocate books, sqrt/nth-root,
+"can we finish in T time", aggressive cows. Complexity: <code>O(log(range) &times; cost(feasible))</code>.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Requires a <strong>sorted</strong> array (for value search) or a <strong>monotonic predicate</strong> (for answer search).</li>
+<li><code>mid = lo + (hi - lo) // 2</code> to dodge overflow.</li>
+<li>Prefer half-open <code>[lo, hi)</code> with <code>while lo &lt; hi</code>; return <code>lo</code>. Fewer off-by-one bugs.</li>
+<li><code>lower_bound</code>: first <code>&ge; x</code> (branch <code>a[mid] &lt; x</code>). <code>upper_bound</code>: first <code>&gt; x</code> (branch <code>a[mid] &le; x</code>).</li>
+<li>count(x) = upper_bound(x) &minus; lower_bound(x).</li>
+<li>Search on the answer when: answer is an integer/real in a known range, and <code>feasible(v)</code> is monotonic.</li>
+<li>Complexity O(log n) for arrays; O(log(range) &times; check cost) for parametric search.</li>
+<li>For floats, iterate a fixed ~100 times or until <code>hi - lo &lt; eps</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why write <code>mid = lo + (hi - lo) / 2</code> instead of <code>(lo + hi) / 2</code>?</dt>
+<dd>In fixed-width integer languages, <code>lo + hi</code> can overflow when both are large; the subtraction form stays in range. (Famous bug in <code>java.util.Arrays.binarySearch</code>, fixed 2006.)</dd>
+<dt>What does <code>lower_bound</code> return?</dt>
+<dd>The index of the first element <code>&ge; x</code> (or <code>end</code> if all are smaller) &mdash; the position where <code>x</code> would be inserted to keep the array sorted, before any equal elements.</dd>
+<dt>What must be true to "binary search on the answer"?</dt>
+<dd>There's a predicate <code>feasible(v)</code> that is monotonic in <code>v</code> &mdash; once it becomes true (or false) it stays that way &mdash; so the boundary can be found by halving the value range.</dd>
+<dt>Give a problem solved by parametric binary search.</dt>
+<dd>"Split an array into k contiguous parts minimising the largest part sum": binary-search the answer S; <code>feasible(S)</code> = "greedily we can form &le; k parts each with sum &le; S", which is monotonic in S.</dd>
+<dt>Time complexity of binary search on a range of size R with an O(n) feasibility check?</dt>
+<dd>O(n log R).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Precondition for binary search on an array?</summary><div class="answer-box">
+The array must be sorted (by the key you're searching on).
+</div></details>
+<details class="answer-reveal"><summary>Complexity of binary search?</summary><div class="answer-box">
+O(log n) comparisons.
+</div></details>
+<details class="answer-reveal"><summary>How do you count occurrences of <code>x</code> in a sorted array in O(log n)?</summary><div class="answer-box">
+<code>upper_bound(x) - lower_bound(x)</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Find the minimum in a rotated sorted array (no duplicates).</summary><div class="answer-box">
+Binary search on the "is this half sorted" property: if <code>a[mid] &gt; a[hi]</code>, the min is in <code>(mid, hi]</code> &rarr; <code>lo = mid + 1</code>; else it's in <code>[lo, mid]</code> &rarr; <code>hi = mid</code>. Loop while <code>lo &lt; hi</code>; answer is <code>a[lo]</code>. O(log n). (Duplicates degrade it to O(n) worst case.)
+</div></details>
+<details class="answer-reveal"><summary>Koko eats bananas: n piles, she eats k/hour, wants to finish in H hours. Minimum k?</summary><div class="answer-box">
+Binary-search k in <code>[1, max(pile)]</code>. <code>feasible(k)</code> = <code>sum(ceil(pile/k)) &le; H</code>, which decreases monotonically as k grows. Take the smallest feasible k. O(n log(max pile)).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Find the median of two sorted arrays in O(log(min(m, n))).</summary><div class="answer-box">
+Binary-search a partition of the shorter array at index <code>i</code> (so <code>j = (m+n+1)/2 - i</code> partitions the other). The partition is correct when <code>A[i-1] &le; B[j]</code> and <code>B[j-1] &le; A[i]</code> &mdash; then everything left of both cuts is the lower half. If <code>A[i-1] &gt; B[j]</code>, move <code>i</code> left; else move it right. Handle &plusmn;&infin; sentinels at the ends. The median is derived from <code>max(A[i-1], B[j-1])</code> and (for even total) <code>min(A[i], B[j])</code>. The search space is only the shorter array, hence O(log(min(m,n))).
+</div></details>
+<details class="answer-reveal"><summary>When would you binary-search on a real-valued answer, and how do you decide the iteration count?</summary><div class="answer-box">
+For continuous optimisation with a monotone feasibility test &mdash; minimum radius to cover points, minimum speed, geometric thresholds. You can't compare to an exact target, so loop either until <code>hi - lo &lt; &epsilon;</code> (relative or absolute, chosen from the required output precision) or a fixed number of iterations. Each iteration halves the interval, so ~100 iterations shrinks a range of 10^9 to below 10^-21 &mdash; well past double precision &mdash; making a fixed count (60&ndash;100) a safe, loop-condition-free choice that also avoids infinite loops from floating-point rounding near the boundary.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:binary-search -->
+
+<!-- TOPIC:algo:two-pointers -->
+<section class="view topic" id="v-algo-two-pointers" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Two Pointers &amp; Sliding Window</h1>
+<p class="subtitle">Turning nested loops into a single linear pass over an array or string.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Two-pointer forms</h3>
+<ul>
+<li><strong>Opposite ends</strong> &mdash; <code>l = 0</code>, <code>r = n-1</code>, move inward. Sorted-array pair sum, container-with-most-water, palindrome check, reverse in place, 3-sum (fix one, two-pointer the rest).</li>
+<li><strong>Same direction / fast-slow</strong> &mdash; one pointer scans, another marks a boundary. Remove duplicates in place, partition, cycle detection (Floyd), nth-from-end of a list.</li>
+</ul>
+<pre><code><span class="c"># pair summing to target in a SORTED array</span>
+l, r = 0, len(a) - 1
+<span class="k">while</span> l &lt; r:
+    s = a[l] + a[r]
+    <span class="k">if</span> s == target: <span class="k">return</span> (l, r)
+    <span class="k">elif</span> s &lt; target: l += 1
+    <span class="k">else</span>: r -= 1</code></pre>
+
+<h3>Sliding window</h3>
+<ul>
+<li><strong>Fixed size k</strong> &mdash; slide a window of width k, updating an aggregate in O(1) (sum, or a deque for max/min).</li>
+<li><strong>Variable size</strong> &mdash; expand <code>right</code> to include elements; while the window is invalid, shrink from <code>left</code>. Track the best valid window. "Longest substring without repeats", "smallest subarray with sum &ge; S", "min window substring".</li>
+</ul>
+<pre><code>left = 0; best = 0; seen = {}
+<span class="k">for</span> right, ch <span class="k">in</span> enumerate(s):
+    <span class="k">if</span> ch <span class="k">in</span> seen <span class="k">and</span> seen[ch] &gt;= left:
+        left = seen[ch] + 1
+    seen[ch] = right
+    best = max(best, right - left + 1)</code></pre>
+
+<h3>When it applies</h3>
+<p>The array/string is traversed once, the window's validity is <strong>monotonic</strong> (growing the
+window can only make it "more invalid", shrinking only "more valid"), and each element enters
+and leaves the window O(1) times &rarr; overall O(n).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Opposite-end pointers: sorted pair/triplet sums, palindrome, in-place reverse, two-way partition.</li>
+<li>Fast/slow pointers: dedup in place, list cycle (Floyd), middle of list, nth-from-end.</li>
+<li>Fixed window: slide, add the entering element, remove the leaving one; deque for window max/min.</li>
+<li>Variable window: expand right; while invalid, advance left; record best when valid.</li>
+<li>Each index moves forward only &rarr; O(n) time, O(1)&ndash;O(k) space.</li>
+<li>Needs monotonic feasibility (shrinking always helps validity). Otherwise it doesn't work.</li>
+<li>Unsorted "pair sum" &rarr; hash set, not two pointers (two pointers needs order).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does the two-pointer pair-sum need a sorted array?</dt>
+<dd>Movement decisions rely on order: if the sum is too small you must increase it, which (in a sorted array) means moving the left pointer right; too big &rarr; move the right pointer left. Without order, neither move is guaranteed to help.</dd>
+<dt>Fixed vs variable sliding window?</dt>
+<dd>Fixed: the window is always exactly k wide; you slide it and update an aggregate. Variable: the window grows and shrinks to stay valid under some constraint, and you track the largest/smallest valid window seen.</dd>
+<dt>What's the complexity of the "longest substring without repeating characters" sliding-window solution?</dt>
+<dd>O(n) time (each character is added and removed from the window at most once), O(min(n, alphabet)) space for the last-seen map.</dd>
+<dt>When can't you use a sliding window for a "subarray with property P" problem?</dt>
+<dd>When P isn't monotonic under window growth &mdash; e.g. subarrays with a target sum when negatives are allowed (extending the window can decrease the sum), so shrinking doesn't reliably restore validity. Use prefix sums + hash map instead.</dd>
+<dt>How do fast/slow pointers find a linked-list cycle?</dt>
+<dd>Advance slow by 1 and fast by 2; if they ever meet, there's a cycle; if fast hits null, there isn't. O(n) time, O(1) space (Floyd's).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Check if a string is a palindrome with two pointers.</summary><div class="answer-box">
+<code>l=0, r=len-1</code>; while <code>l &lt; r</code>: if <code>s[l] != s[r]</code> return false; <code>l++, r--</code>. Return true. O(n)/O(1).
+</div></details>
+<details class="answer-reveal"><summary>Remove duplicates from a sorted array in place, returning the new length.</summary><div class="answer-box">
+Slow pointer <code>w=1</code>; for <code>r</code> from 1: if <code>a[r] != a[r-1]</code>, <code>a[w++] = a[r]</code>. Return <code>w</code>.
+</div></details>
+<details class="answer-reveal"><summary>What structure gives O(1) window max for a fixed sliding window?</summary><div class="answer-box">
+A monotonic deque of indices with decreasing values.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Smallest subarray with sum &ge; S (positive integers).</summary><div class="answer-box">
+Expand <code>right</code>, adding to a running sum; while <code>sum &ge; S</code>, record <code>right - left + 1</code> and subtract <code>a[left++]</code>. O(n). Works because all elements are positive, so shrinking always reduces the sum monotonically.
+</div></details>
+<details class="answer-reveal"><summary>3-sum: all unique triplets summing to 0.</summary><div class="answer-box">
+Sort. For each <code>i</code> (skip duplicates), two-pointer <code>l = i+1</code>, <code>r = n-1</code> for pairs summing to <code>-a[i]</code>, skipping duplicate <code>l</code>/<code>r</code> values. O(n&sup2;) time, O(1) extra (excluding the sort).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Minimum window substring (smallest window of <code>s</code> containing all chars of <code>t</code>, with multiplicity). Outline and complexity.</summary><div class="answer-box">
+Count needed chars of <code>t</code> in a map; track <code>required</code> = distinct chars needed and <code>formed</code> = distinct chars currently satisfied in the window. Expand <code>right</code>, decrement the char's need; when a char's window count reaches its needed count, <code>formed++</code>. While <code>formed == required</code>, update the best window and shrink from <code>left</code>, incrementing needs and decrementing <code>formed</code> when a char drops below its requirement. Each pointer advances &le; n times &rarr; O(n) (or O(n &middot; alphabet) with array counts). The subtlety is only counting a char as "formed" when it hits <em>exactly</em> the required multiplicity, not on every occurrence.
+</div></details>
+<details class="answer-reveal"><summary>"Subarrays with exactly K distinct integers" &mdash; why compute <code>atMost(K) - atMost(K-1)</code>?</summary><div class="answer-box">
+A sliding window naturally counts subarrays with <em>at most</em> K distinct (expand right, shrink left while distinct &gt; K, add <code>right - left + 1</code> each step). "Exactly K" isn't directly windowable because shrinking to fix "too many distinct" also skips valid "exactly K" windows. But exactly-K = (at-most-K) &minus; (at-most-(K&minus;1)), and each at-most query is an O(n) window pass, so the whole thing is O(n). This "exactly = atMost(k) - atMost(k-1)" trick generalises to many counting-with-a-bound problems.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:two-pointers -->
+
+<!-- TOPIC:algo:greedy -->
+<section class="view topic" id="v-algo-greedy" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Greedy Algorithms</h1>
+<p class="subtitle">Take the best-looking option now &mdash; and be able to prove that never regrets.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The idea &amp; the risk</h3>
+<p>Build a solution by repeatedly making the locally optimal choice, never reconsidering. Fast and
+simple &mdash; but only <em>correct</em> if the problem has the <strong>greedy-choice property</strong> (a
+globally optimal solution can be reached by greedy local choices) and <strong>optimal
+substructure</strong>. Otherwise greedy gives a wrong (but plausible) answer.</p>
+
+<h3>Proving greedy correct</h3>
+<ul>
+<li><strong>Exchange argument</strong> &mdash; take any optimal solution; show you can swap one of its choices for the greedy choice without making it worse; repeat until it <em>is</em> the greedy solution.</li>
+<li><strong>Stays-ahead</strong> &mdash; show that after each step the greedy partial solution is at least as good as any other on the relevant metric.</li>
+</ul>
+
+<h3>Where greedy works</h3>
+<table>
+<tr><th>Problem</th><th>Greedy rule</th></tr>
+<tr><td>Activity selection</td><td>always pick the next activity with the earliest finish time</td></tr>
+<tr><td>Fractional knapsack</td><td>take items by value/weight ratio, fractional last one</td></tr>
+<tr><td>Huffman coding</td><td>repeatedly merge the two lowest-frequency nodes</td></tr>
+<tr><td>Kruskal / Prim MST</td><td>add the cheapest safe edge (cut property)</td></tr>
+<tr><td>Dijkstra</td><td>finalise the closest unvisited node</td></tr>
+<tr><td>Interval scheduling / merging</td><td>sort by start or end, sweep</td></tr>
+<tr><td>Jump game / gas station</td><td>track the furthest reachable / running tank</td></tr>
+</table>
+
+<h3>Where greedy fails</h3>
+<p>0/1 knapsack (can't take fractions &rarr; need DP), coin change with arbitrary denominations
+(<code>{1,3,4}</code>, target 6: greedy 4+1+1, optimal 3+3), longest path, most TSP variants.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Greedy = locally optimal choice each step, no backtracking. Needs greedy-choice property + optimal substructure.</li>
+<li>Prove with an <strong>exchange argument</strong> or <strong>stays-ahead</strong>; if you can't, greedy is probably wrong.</li>
+<li>Most greedy solutions start by <strong>sorting</strong> by the right key (finish time, ratio, weight&hellip;).</li>
+<li>Works: activity selection (earliest finish), fractional knapsack (best ratio), Huffman, Kruskal/Prim, Dijkstra, interval merge.</li>
+<li>Fails: 0/1 knapsack, general coin change, longest path &mdash; use DP.</li>
+<li>If a counterexample exists, one is usually tiny (3&ndash;4 elements) &mdash; try to find it before coding.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What two properties justify a greedy algorithm?</dt>
+<dd>The greedy-choice property (a locally optimal choice is part of <em>some</em> globally optimal solution) and optimal substructure (an optimal solution contains optimal solutions to subproblems).</dd>
+<dt>How do you prove a greedy algorithm correct?</dt>
+<dd>Usually an exchange argument: assume an optimal solution differs from greedy at the first choice; swap in the greedy choice and show the solution is no worse; conclude greedy is optimal. Or "greedy stays ahead" of any alternative at every step.</dd>
+<dt>Why does greedy work for fractional knapsack but not 0/1?</dt>
+<dd>Fractional: you can always fill the remaining capacity exactly with the best-ratio item, so taking highest ratio first is safe. 0/1: a high-ratio item might crowd out two items that together are better; you can't split, so local choice isn't safe &mdash; DP is required.</dd>
+<dt>Give a coin system where greedy fails.</dt>
+<dd>Denominations {1, 3, 4}, amount 6: greedy takes 4 then 1 then 1 (3 coins); optimal is 3 + 3 (2 coins). Greedy is optimal only for "canonical" systems (like standard currency).</dd>
+<dt>What's the greedy rule for activity selection?</dt>
+<dd>Sort activities by finish time; repeatedly pick the earliest-finishing activity compatible with those already chosen. This maximises the count of non-overlapping activities.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does a greedy algorithm never do?</summary><div class="answer-box">
+Reconsider or undo a choice it has made. It commits to the local optimum at each step.
+</div></details>
+<details class="answer-reveal"><summary>First step of most greedy interval problems?</summary><div class="answer-box">
+Sort the intervals &mdash; usually by end time (scheduling) or start time (merging).
+</div></details>
+<details class="answer-reveal"><summary>Is greedy guaranteed optimal for the 0/1 knapsack?</summary><div class="answer-box">
+No. Use dynamic programming.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Merge overlapping intervals.</summary><div class="answer-box">
+Sort by start. Walk through; if the current interval's start &le; the last merged interval's end, extend that end to <code>max(end, cur.end)</code>; otherwise append the current interval. O(n log n).
+</div></details>
+<details class="answer-reveal"><summary>Gas station: can you complete the circuit? Return the start index or -1.</summary><div class="answer-box">
+If total gas &lt; total cost, return -1. Otherwise sweep once tracking a running tank; whenever it goes negative, reset the tank to 0 and set <code>start = i + 1</code>. The final <code>start</code> works. O(n). Correctness: if you run out going from <code>start</code> to <code>i</code>, no station in <code>[start, i]</code> can be a valid start.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Prove the earliest-finish-time greedy is optimal for activity selection.</summary><div class="answer-box">
+Exchange argument. Let greedy pick activities <code>g&#8321;, g&#8322;, &hellip;</code> (each the earliest-finishing compatible one). Let <code>OPT</code> be any optimal schedule <code>o&#8321;, o&#8322;, &hellip;</code> sorted by finish. Claim: <code>finish(g&#8321;) &le; finish(o&#8321;)</code> since <code>g&#8321;</code> is the globally earliest finish. So replacing <code>o&#8321;</code> with <code>g&#8321;</code> in OPT keeps it valid (g&#8321; ends no later, so it can't conflict with <code>o&#8322;</code>) and the same size. Induct on the remaining problem (activities starting after <code>finish(g&#8321;)</code>). Hence some optimal solution starts with every greedy choice, so greedy achieves the optimal count.
+</div></details>
+<details class="answer-reveal"><summary>What is a matroid and why does it matter for greedy?</summary><div class="answer-box">
+A matroid is a set system <code>(E, I)</code> where <code>I</code> (the "independent sets") is non-empty, downward-closed, and satisfies the exchange property: if <code>A, B &isin; I</code> with <code>|A| &lt; |B|</code>, some element of <code>B\A</code> can be added to <code>A</code> keeping it independent. Theorem (Rado&ndash;Edmonds): the greedy algorithm &mdash; sort elements by weight descending, add each if it keeps the set independent &mdash; finds a maximum-weight independent set <em>exactly when</em> the structure is a matroid. This explains why Kruskal's MST works (forests form a graphic matroid) and gives a principled test for "will greedy work here?" beyond ad hoc exchange arguments.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:greedy -->
+
+<!-- TOPIC:algo:divide-conquer -->
+<section class="view topic" id="v-algo-divide-conquer" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Divide &amp; Conquer</h1>
+<p class="subtitle">Split into independent subproblems, solve each, combine &mdash; and analyse with a recurrence.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The pattern</h3>
+<ol>
+<li><strong>Divide</strong> the problem into <code>a</code> subproblems of size <code>n/b</code>.</li>
+<li><strong>Conquer</strong> each recursively (base case for small <code>n</code>).</li>
+<li><strong>Combine</strong> the sub-answers in <code>f(n)</code> work.</li>
+</ol>
+<p>Cost: <code>T(n) = a&middot;T(n/b) + f(n)</code> &mdash; solve with the Master Theorem (see Recurrences topic).
+Key requirement: the subproblems are <strong>independent</strong> (no shared sub-answers &mdash; that's DP).</p>
+
+<h3>Canonical algorithms</h3>
+<table>
+<tr><th>Algorithm</th><th>Divide / Combine</th><th>Time</th></tr>
+<tr><td>Merge sort</td><td>split in half / merge two sorted halves</td><td>&Theta;(n log n)</td></tr>
+<tr><td>Quicksort</td><td>partition around a pivot / nothing</td><td>&Theta;(n log n) avg</td></tr>
+<tr><td>Quickselect</td><td>partition / recurse one side only</td><td>&Theta;(n) avg</td></tr>
+<tr><td>Binary search</td><td>compare middle / recurse one half</td><td>&Theta;(log n)</td></tr>
+<tr><td>Karatsuba multiply</td><td>3 half-size multiplies / adds &amp; shifts</td><td>&Theta;(n^1.585)</td></tr>
+<tr><td>Strassen matmul</td><td>7 half-size products</td><td>&Theta;(n^2.807)</td></tr>
+<tr><td>Closest pair of points</td><td>split by x / check a thin strip</td><td>&Theta;(n log n)</td></tr>
+<tr><td>Count inversions</td><td>merge sort, count cross pairs</td><td>&Theta;(n log n)</td></tr>
+</table>
+
+<h3>D&amp;C vs DP</h3>
+<p>Both break a problem down. D&amp;C: subproblems don't overlap, so plain recursion is fine. DP:
+subproblems overlap, so you must cache (memoise) or build a table to avoid exponential
+recomputation.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Divide into a subproblems of size n/b, conquer recursively, combine in f(n).</li>
+<li>Analyse: <code>T(n) = a T(n/b) + f(n)</code> &rarr; Master Theorem.</li>
+<li>Subproblems must be <strong>independent</strong> (overlapping &rarr; that's DP).</li>
+<li>Recurse on <em>one</em> side (binary search, quickselect) &rarr; often O(n) or O(log n) instead of O(n log n).</li>
+<li>Combine step is usually where the cleverness is (merge, strip check, cross-inversion count).</li>
+<li>Karatsuba/Strassen: fewer recursive multiplications at the cost of more additions.</li>
+<li>Parallelises well &mdash; independent subproblems on different cores.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What distinguishes divide &amp; conquer from dynamic programming?</dt>
+<dd>D&amp;C's subproblems are independent &mdash; each is solved once, no overlap. DP's subproblems overlap, so it stores results to avoid recomputing them.</dd>
+<dt>Why is quickselect O(n) average while quicksort is O(n log n)?</dt>
+<dd>After partitioning, quickselect recurses into only <em>one</em> side (the one containing the target rank); quicksort recurses into both. The one-sided recurrence T(n) = T(n/2) + O(n) sums to O(n).</dd>
+<dt>How does Karatsuba multiply two n-digit numbers faster than schoolbook?</dt>
+<dd>Schoolbook needs 4 half-size multiplications (T = 4T(n/2) + n &rarr; n&sup2;). Karatsuba computes the middle term as <code>(a+b)(c+d) - ac - bd</code>, needing only 3 (T = 3T(n/2) + n &rarr; n^log&#8322;3 &asymp; n^1.585).</dd>
+<dt>What's the combine step in counting inversions?</dt>
+<dd>During the merge of two sorted halves, whenever you take an element from the right half before the left half is exhausted, every remaining left-half element forms an inversion with it &mdash; add <code>len(leftRemaining)</code> to the count.</dd>
+<dt>Does divide &amp; conquer parallelise well?</dt>
+<dd>Yes &mdash; the subproblems are independent, so they can run on separate threads/cores; only the combine step needs synchronisation. Merge sort and many D&amp;C algorithms have good parallel speedup.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the three phases of divide &amp; conquer.</summary><div class="answer-box">
+Divide, conquer (recurse), combine.
+</div></details>
+<details class="answer-reveal"><summary>Which is D&amp;C: binary search or Dijkstra?</summary><div class="answer-box">
+Binary search (split, recurse one half). Dijkstra is greedy.
+</div></details>
+<details class="answer-reveal"><summary>Recurrence for merge sort?</summary><div class="answer-box">
+<code>T(n) = 2T(n/2) + &Theta;(n)</code> &rarr; &Theta;(n log n).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Find the maximum subarray sum with divide &amp; conquer.</summary><div class="answer-box">
+Split in half. The answer is the best of: max subarray entirely in the left half (recurse), entirely in the right half (recurse), or crossing the midpoint (best suffix of left + best prefix of right, computed in O(n)). T(n) = 2T(n/2) + O(n) &rarr; O(n log n). (Kadane's does it in O(n), but the D&amp;C version is the classic teaching example.)
+</div></details>
+<details class="answer-reveal"><summary>Quickselect: find the k-th smallest element.</summary><div class="answer-box">
+Partition the array around a (randomly chosen) pivot. If the pivot lands at index k, return it. If k &lt; pivot index, recurse on the left part; else recurse on the right with adjusted k. Average O(n); worst O(n&sup2;) unless you use median-of-medians for a guaranteed O(n).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Closest pair of points in the plane in O(n log n). What makes the combine step O(n)?</summary><div class="answer-box">
+Sort by x, split at the median x into L and R; recursively get the min distances <code>d_L</code>, <code>d_R</code>; let <code>d = min(d_L, d_R)</code>. A closer pair straddling the split must lie within a vertical strip of width <code>2d</code> around the median. Sort the strip's points by y (or keep a y-sorted list merged bottom-up). For each point in the strip, you only need to check the next ~7 points in y-order &mdash; a geometric packing argument shows no more than a constant number of points can be within <code>d</code> in a <code>d &times; 2d</code> box. So the strip check is O(n), giving T(n) = 2T(n/2) + O(n) = O(n log n).
+</div></details>
+<details class="answer-reveal"><summary>Why did Strassen's algorithm matter historically, and why is it rarely used for small matrices?</summary><div class="answer-box">
+It broke the "obvious" &Theta;(n&sup3;) barrier for matrix multiplication in 1969, opening the field of fast matrix multiplication (current record ~n^2.37 via Coppersmith&ndash;Winograd descendants). Practically: the recursion has a large constant (7 multiplies but 18 add/subtracts of n/2 matrices), worse cache/vectorisation behaviour, and numerical stability concerns. Optimised BLAS uses the cubic algorithm with heavy blocking/SIMD for typical sizes and only switches to Strassen (with a cutoff to cubic at the base) for very large matrices. So it's a genuine asymptotic improvement whose crossover point is in the hundreds&ndash;thousands.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:divide-conquer -->
+
+<!-- TOPIC:algo:dp-patterns -->
+<section class="view topic" id="v-algo-dp-patterns" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Dynamic Programming Patterns</h1>
+<p class="subtitle">The recurring shapes: knapsack, subsequences, intervals, grids, trees, bitmask.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The workflow</h3>
+<p>Define the <strong>state</strong> (what parameters identify a subproblem), write the
+<strong>transition</strong> (recurrence relating a state to smaller ones), fix <strong>base cases</strong>,
+choose an <strong>evaluation order</strong> (memoise top-down, or tabulate in dependency order), then
+optionally <strong>reduce space</strong> (rolling arrays).</p>
+
+<h3>The pattern catalogue</h3>
+<table>
+<tr><th>Pattern</th><th>State</th><th>Examples</th></tr>
+<tr><td>0/1 knapsack</td><td><code>dp[i][w]</code> = best using first i items, capacity w</td><td>subset sum, partition equal sum, target sum</td></tr>
+<tr><td>Unbounded knapsack</td><td><code>dp[w]</code>, items reusable</td><td>coin change (min coins / #ways), rod cutting</td></tr>
+<tr><td>Subsequence (2 strings)</td><td><code>dp[i][j]</code> over prefixes</td><td>LCS, edit distance, shortest common supersequence</td></tr>
+<tr><td>LIS</td><td><code>dp[i]</code> = longest ending at i; or patience sorting</td><td>O(n&sup2;) DP or O(n log n) with binary search</td></tr>
+<tr><td>Interval DP</td><td><code>dp[i][j]</code> over a range, split at k</td><td>matrix-chain, burst balloons, palindrome partitioning</td></tr>
+<tr><td>Grid DP</td><td><code>dp[r][c]</code> from top/left</td><td>unique paths, min path sum, maximal square</td></tr>
+<tr><td>DP on trees</td><td><code>dp[node][state]</code>, combine children</td><td>max independent set, tree diameter, house robber III</td></tr>
+<tr><td>Bitmask DP</td><td><code>dp[mask][...]</code>, mask = subset of &le;20 items</td><td>TSP, assignment, "min groups"</td></tr>
+<tr><td>Digit DP</td><td><code>dp[pos][tight][...]</code></td><td>count numbers &le; N with a property</td></tr>
+</table>
+
+<h3>Space &amp; time</h3>
+<p>Time &asymp; (#states) &times; (transitions per state). Space = state table, often collapsible: a 2-D
+prefix DP needing only the previous row &rarr; two 1-D arrays or one with careful ordering. If you
+need the actual solution (not just its value), keep a parent/choice table or re-derive by
+walking the DP backward.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Recipe: state &rarr; transition &rarr; base cases &rarr; order &rarr; space reduction.</li>
+<li>0/1 knapsack: iterate capacity <strong>descending</strong> for the 1-D version; unbounded: ascending.</li>
+<li>Two-string DP (LCS/edit distance): <code>dp[i][j]</code> from <code>dp[i-1][j-1]</code>, <code>dp[i-1][j]</code>, <code>dp[i][j-1]</code>; O(nm) &rarr; O(min(n,m)) space.</li>
+<li>LIS: O(n&sup2;) DP, or O(n log n) maintaining the smallest tail per length (binary search).</li>
+<li>Interval DP: loop by increasing length, split point k inside; O(n&sup3;) typical.</li>
+<li>Tree DP: post-order; each node returns state(s) computed from children.</li>
+<li>Bitmask DP: O(2&#8319; &middot; poly(n)); n &le; ~20.</li>
+<li>Time = states &times; transitions. Reconstruct via a choice table or backward walk.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why iterate capacity descending in the 1-D 0/1 knapsack?</dt>
+<dd>So each item is only used once: <code>dp[w]</code> is updated from <code>dp[w - weight]</code>, and going high-to-low ensures <code>dp[w - weight]</code> still reflects the <em>previous</em> item's row, not this item's. Ascending order would allow reusing the item (which is the unbounded knapsack).</dd>
+<dt>What's the state for edit distance?</dt>
+<dd><code>dp[i][j]</code> = minimum operations to turn the first <code>i</code> chars of A into the first <code>j</code> chars of B. Transition: if chars match, <code>dp[i-1][j-1]</code>; else <code>1 + min(insert, delete, replace)</code>.</dd>
+<dt>How does the O(n log n) LIS work?</dt>
+<dd>Maintain an array <code>tails</code> where <code>tails[k]</code> is the smallest possible tail of an increasing subsequence of length <code>k+1</code>. For each element, binary-search its position in <code>tails</code> and overwrite (or append). The length of <code>tails</code> at the end is the LIS length.</dd>
+<dt>When do you need bitmask DP?</dt>
+<dd>When a subproblem is identified by "which subset of a small set (&le; ~20 elements) has been used/visited" &mdash; TSP, assignment problems, "partition into groups". The state count is 2&#8319;.</dd>
+<dt>Memoisation vs tabulation trade-off?</dt>
+<dd>Memoisation computes only reachable states and is easy to write from the recurrence, but has recursion overhead and stack-depth limits. Tabulation visits all states in a fixed order, enabling tight loops and O(1)-row space, at the cost of sometimes computing states you don't need.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>dp[i][j]</code> usually represent in a two-string DP?</summary><div class="answer-box">
+The answer for the first <code>i</code> characters of one string and the first <code>j</code> of the other.
+</div></details>
+<details class="answer-reveal"><summary>Time complexity of the classic 0/1 knapsack DP?</summary><div class="answer-box">
+O(n &times; W) where n = items, W = capacity. (Pseudo-polynomial &mdash; exponential in the number of bits of W.)
+</div></details>
+<details class="answer-reveal"><summary>Coin change "number of ways": iterate coins outer or inner?</summary><div class="answer-box">
+Coins outer, amount inner &mdash; this counts combinations (order doesn't matter). Swapping the loops counts permutations.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Longest common subsequence recurrence.</summary><div class="answer-box">
+<code>dp[i][j] = dp[i-1][j-1] + 1</code> if <code>A[i-1] == B[j-1]</code>, else <code>max(dp[i-1][j], dp[i][j-1])</code>. Base: <code>dp[0][*] = dp[*][0] = 0</code>. O(nm) time; O(min(n,m)) space with rolling rows (but you lose easy reconstruction).
+</div></details>
+<details class="answer-reveal"><summary>House robber on a binary tree (can't rob adjacent nodes). State &amp; transition?</summary><div class="answer-box">
+Post-order; each node returns a pair <code>(rob, skip)</code>. <code>skip = max(childL) + max(childR)</code> (children free to do anything). <code>rob = node.val + skip_of(L) + skip_of(R)</code>. Answer = <code>max</code> of the root's pair. O(n).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain "burst balloons" (interval DP) &mdash; why the natural "which balloon to burst first" framing fails and the fix.</summary><div class="answer-box">
+If you define <code>dp</code> by the first balloon burst in a range, the subranges become non-contiguous and coupled (bursting one changes the neighbours of others). The fix: define <code>dp[i][j]</code> for the <em>open</em> interval <code>(i, j)</code> and iterate over which balloon <code>k</code> is burst <strong>last</strong> in that interval. When <code>k</code> is last, its neighbours are exactly the fixed boundaries <code>i</code> and <code>j</code>, and the left and right sub-intervals <code>(i, k)</code> and <code>(k, j)</code> are independent. Transition: <code>dp[i][j] = max over k of dp[i][k] + dp[k][j] + nums[i]*nums[k]*nums[j]</code>. O(n&sup3;). The "think about the last operation, not the first" reframing is a recurring interval-DP trick (also matrix-chain, optimal BST).
+</div></details>
+<details class="answer-reveal"><summary>How does digit DP count integers in [0, N] with some digit property?</summary><div class="answer-box">
+Process the number left to right, digit position by position. State: <code>(pos, tight, ...propertyState)</code>, where <code>tight</code> means the prefix built so far equals N's prefix (so the current digit is capped at N's digit; otherwise it can be 0&ndash;9). Memoise on <code>(pos, tight=false, propertyState)</code> &mdash; the <code>tight=true</code> path is a single chain and not cached. Add a <code>started</code>/<code>leadingZero</code> flag if leading zeros need special handling. At <code>pos == len</code>, return 1 if the property holds. Complexity O(len &times; 10 &times; #propertyStates). Handles "count numbers with digit sum S", "no two equal adjacent digits", "&le; K distinct digits", etc.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:dp-patterns -->
+
+<!-- TOPIC:algo:graph-algos -->
+<section class="view topic" id="v-algo-graph-algos" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Graph Traversal Applications</h1>
+<p class="subtitle">What you can actually do once you can BFS and DFS a graph.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Flood fill / grid as graph</h3>
+<p>Treat a grid cell as a node with up-to-4 (or 8) neighbours. BFS/DFS from a cell to fill a
+region, count islands, find the shortest path in a maze (BFS), or expand from multiple sources
+at once (multi-source BFS: seed the queue with all sources &mdash; "rotting oranges", "walls and
+gates", "01 matrix").</p>
+
+<h3>Connectivity</h3>
+<ul>
+<li><strong>Connected components</strong> (undirected): loop vertices, BFS/DFS each unvisited one, count.</li>
+<li><strong>Strongly connected components</strong> (directed): Tarjan (one DFS, low-link) or Kosaraju (DFS, transpose, DFS by finish order).</li>
+<li><strong>Bipartite check</strong>: 2-colour via BFS/DFS; a same-colour edge &rarr; not bipartite.</li>
+</ul>
+
+<h3>Cycle detection</h3>
+<ul>
+<li>Undirected: DFS &mdash; a visited neighbour that isn't the parent means a cycle. Or union-find.</li>
+<li>Directed: 3-colour DFS (edge to a grey node = back edge = cycle), or Kahn's topological sort leaving nodes unplaced.</li>
+</ul>
+
+<h3>DFS tree structure</h3>
+<p>DFS classifies edges (tree / back / forward / cross) and computes <code>disc[]</code> (discovery time)
+and <code>low[]</code> (earliest reachable ancestor). From these:</p>
+<ul>
+<li><strong>Bridges</strong> &mdash; edge (u, v) is a bridge iff <code>low[v] &gt; disc[u]</code>.</li>
+<li><strong>Articulation points</strong> &mdash; removing them disconnects the graph; found via the same <code>low</code>-link condition (with a root special case).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Grid problems: cell = node, 4/8 neighbours. BFS for shortest steps, DFS/BFS for region fill.</li>
+<li>Multi-source BFS: push all sources first, then standard BFS &rarr; nearest-source distance for every cell.</li>
+<li>Connected components: iterate + BFS/DFS unvisited; SCC via Tarjan (1 pass) or Kosaraju (2 passes + transpose).</li>
+<li>Bipartite: 2-colouring; conflict edge &rarr; no.</li>
+<li>Undirected cycle: DFS visited-non-parent, or union-find. Directed cycle: grey back-edge, or Kahn leftovers.</li>
+<li>Bridges / articulation points: DFS with <code>disc[]</code> and <code>low[]</code>; <code>low[v] &gt; disc[u]</code> &rarr; bridge.</li>
+<li>Topological order (DAG): Kahn (in-degree queue) or DFS finish-time reverse.</li>
+<li>All these are O(V + E) on an adjacency list.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How do you count islands in a grid of land/water?</dt>
+<dd>Scan cells; on each unvisited land cell, run BFS/DFS to mark its whole connected region, and increment a counter. O(rows &times; cols).</dd>
+<dt>What is multi-source BFS and when do you use it?</dt>
+<dd>BFS started from many sources simultaneously (all pushed into the queue before the loop). Every node's first visit gives its distance to the <em>nearest</em> source. Used for "how far is each cell from the closest exit/fire/gate".</dd>
+<dt>How do you detect a cycle in a directed graph?</dt>
+<dd>DFS with three states: unvisited, in-progress (on the current recursion path), done. An edge to an in-progress node is a back edge, so there's a cycle. Alternatively, if Kahn's topological sort can't place all V nodes, a cycle exists.</dd>
+<dt>What is <code>low[v]</code> in bridge-finding?</dt>
+<dd>The smallest discovery time reachable from <code>v</code>'s DFS subtree using tree edges plus at most one back edge. If a child <code>v</code> of <code>u</code> has <code>low[v] &gt; disc[u]</code>, no back edge from <code>v</code>'s subtree bypasses the edge (u, v), so it's a bridge.</dd>
+<dt>Kosaraju vs Tarjan for SCCs?</dt>
+<dd>Both are O(V + E). Kosaraju: DFS to get finish order, build the transpose graph, DFS in reverse finish order &mdash; two passes, conceptually simple. Tarjan: a single DFS maintaining a stack and low-links &mdash; one pass, less memory (no transpose), slightly trickier to implement.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which traversal gives shortest path in an unweighted maze?</summary><div class="answer-box">
+BFS.
+</div></details>
+<details class="answer-reveal"><summary>How do you check if a graph is bipartite?</summary><div class="answer-box">
+Try to 2-colour it with BFS/DFS; if any edge connects two same-coloured nodes, it isn't bipartite.
+</div></details>
+<details class="answer-reveal"><summary>Complexity of BFS/DFS on an adjacency list?</summary><div class="answer-box">
+O(V + E).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Course schedule: given prerequisites, can all courses be finished?</summary><div class="answer-box">
+Build a directed graph course &rarr; dependent. Run Kahn's topological sort (or 3-colour DFS). If you can order all courses (no cycle), yes; a cycle means an impossible circular dependency. O(V + E).
+</div></details>
+<details class="answer-reveal"><summary>Rotting oranges: minutes until no fresh orange remains (or -1).</summary><div class="answer-box">
+Multi-source BFS from all initially-rotten oranges. Each BFS "level" is one minute; rot fresh neighbours and enqueue them. The answer is the number of levels processed; if any fresh orange is still unreached, return -1. O(rows &times; cols).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Find all bridges in an undirected graph in one DFS. Give the core condition and an edge case.</summary><div class="answer-box">
+DFS assigning <code>disc[u]</code> (entry time) and <code>low[u] = min(disc[u], disc of nodes reachable via one back edge from u's subtree)</code>. For a tree edge (u, v): after returning from <code>v</code>, set <code>low[u] = min(low[u], low[v])</code>; if <code>low[v] &gt; disc[u]</code>, edge (u, v) is a bridge. Edge case: when relaxing, skip the immediate parent edge <em>once</em> (not all edges to the parent) &mdash; with parallel edges between u and its parent, the second such edge <em>is</em> a valid back edge and prevents both from being bridges. Track parent by edge id, not just node id. O(V + E).
+</div></details>
+<details class="answer-reveal"><summary>Explain the 2-SAT &rarr; SCC reduction.</summary><div class="answer-box">
+A 2-SAT formula (clauses of &le; 2 literals) is satisfiable iff no variable <code>x</code> has both <code>x</code> and <code>&not;x</code> in the same strongly connected component of the "implication graph". Build the graph: each clause <code>(a &or; b)</code> becomes two edges <code>&not;a &rarr; b</code> and <code>&not;b &rarr; a</code> (if <code>a</code> is false then <code>b</code> must be true, and vice versa). Run an SCC algorithm (Tarjan). If <code>x</code> and <code>&not;x</code> share a component &rarr; UNSAT. Otherwise assign each variable by comparing the SCC (in reverse topological / component order) of <code>x</code> vs <code>&not;x</code> &mdash; the literal whose component comes later is true. O(n + m). This turns a satisfiability problem into linear-time graph work.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:graph-algos -->
+
+<!-- TOPIC:algo:shortest-paths -->
+<section class="view topic" id="v-algo-shortest-paths" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Shortest Paths</h1>
+<p class="subtitle">Pick the algorithm by edge weights: unweighted, non-negative, negative, or all-pairs.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The decision table</h3>
+<table>
+<tr><th>Situation</th><th>Algorithm</th><th>Time</th></tr>
+<tr><td>Unweighted (or all equal weights)</td><td>BFS</td><td>O(V + E)</td></tr>
+<tr><td>Weights 0/1</td><td>0-1 BFS (deque)</td><td>O(V + E)</td></tr>
+<tr><td>Non-negative weights, single source</td><td>Dijkstra (binary heap)</td><td>O((V + E) log V)</td></tr>
+<tr><td>Negative weights allowed, single source</td><td>Bellman-Ford</td><td>O(V &middot; E)</td></tr>
+<tr><td>All pairs, dense, small V</td><td>Floyd-Warshall</td><td>O(V&sup3;)</td></tr>
+<tr><td>Goal-directed with a heuristic</td><td>A*</td><td>&le; Dijkstra in practice</td></tr>
+</table>
+
+<h3>Dijkstra</h3>
+<p>Grow a set of finalised nodes; repeatedly take the unfinalised node with the smallest tentative
+distance (min-heap), finalise it, and relax its outgoing edges. Correct <strong>only for
+non-negative weights</strong> &mdash; a negative edge could improve an already-finalised node. Use lazy
+deletion (push duplicates, skip stale pops) rather than <code>decrease-key</code>.</p>
+
+<h3>Bellman-Ford</h3>
+<p>Relax <em>all</em> edges <code>V - 1</code> times (the longest simple path has &le; V-1 edges). A further
+relaxation that still improves something &rarr; a <strong>negative cycle</strong> reachable from the
+source. Slower but handles negatives and detects negative cycles.</p>
+
+<h3>Floyd-Warshall</h3>
+<pre><code><span class="k">for</span> k <span class="k">in</span> V:
+  <span class="k">for</span> i <span class="k">in</span> V:
+    <span class="k">for</span> j <span class="k">in</span> V:
+      dist[i][j] = min(dist[i][j], dist[i][k] + dist[k][j])</code></pre>
+<p><code>k</code> is "intermediate vertices allowed so far". Handles negative edges (no negative cycles);
+<code>dist[i][i] &lt; 0</code> afterward flags a negative cycle through <code>i</code>.</p>
+
+<h3>A*</h3>
+<p>Dijkstra with priority <code>g(n) + h(n)</code>, where <code>h</code> estimates the remaining distance to the
+goal. If <code>h</code> is <strong>admissible</strong> (never overestimates) the result is optimal; if also
+<strong>consistent</strong>, no node is expanded twice. A good heuristic (e.g. straight-line distance on
+a map) massively prunes the search.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Unweighted &rarr; BFS. 0/1 weights &rarr; 0-1 BFS (deque, push_front for 0).</li>
+<li>Non-negative weights &rarr; Dijkstra + min-heap, O((V+E) log V). Lazy deletion over decrease-key.</li>
+<li>Negative edges &rarr; Bellman-Ford, O(VE); extra relaxation succeeds &rarr; negative cycle.</li>
+<li>All pairs &rarr; Floyd-Warshall O(V&sup3;) (or Dijkstra from each source for sparse graphs; Johnson's for sparse + negatives).</li>
+<li>Dijkstra is <strong>wrong</strong> with any negative edge.</li>
+<li>A* = Dijkstra with <code>f = g + h</code>; admissible <code>h</code> &rarr; optimal; consistent <code>h</code> &rarr; no re-expansion.</li>
+<li>Reconstruct paths via a <code>prev[]</code> / parent array updated on each successful relaxation.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does Dijkstra fail with negative edge weights?</dt>
+<dd>It finalises the closest node and never revisits it. A negative edge encountered later could create a shorter path to that already-finalised node, which Dijkstra can't account for.</dd>
+<dt>How does Bellman-Ford detect a negative cycle?</dt>
+<dd>After <code>V-1</code> rounds of relaxing all edges, shortest paths are final <em>if</em> no negative cycle exists. If a <code>V</code>-th round still relaxes some edge, a reachable negative cycle must exist.</dd>
+<dt>What does the outer loop variable <code>k</code> mean in Floyd-Warshall?</dt>
+<dd>"Consider paths whose intermediate vertices are all in {0, &hellip;, k}." After the loop finishes for all <code>k</code>, every vertex is allowed as an intermediate, so <code>dist</code> holds true shortest paths.</dd>
+<dt>When is A* just Dijkstra?</dt>
+<dd>When the heuristic <code>h</code> is 0 everywhere &mdash; then priority is just <code>g(n)</code>, the known distance, which is Dijkstra.</dd>
+<dt>Single-source shortest path on a DAG &mdash; anything faster than Dijkstra?</dt>
+<dd>Yes: topologically sort, then relax edges in that order &mdash; O(V + E), and it handles negative weights (no cycles possible).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Best algorithm for shortest path with all edge weights = 1?</summary><div class="answer-box">
+BFS &mdash; O(V + E), simpler and faster than Dijkstra.
+</div></details>
+<details class="answer-reveal"><summary>Dijkstra's time complexity with a binary heap?</summary><div class="answer-box">
+O((V + E) log V).
+</div></details>
+<details class="answer-reveal"><summary>Which algorithm gives all-pairs shortest paths in O(V&sup3;)?</summary><div class="answer-box">
+Floyd-Warshall.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Implement Dijkstra with a min-heap and lazy deletion.</summary><div class="answer-box">
+Push <code>(0, source)</code>. While the heap is non-empty, pop <code>(d, u)</code>; if <code>d &gt; dist[u]</code> skip (stale). Otherwise for each edge <code>(u, v, w)</code>, if <code>dist[u] + w &lt; dist[v]</code>, update <code>dist[v]</code> and push <code>(dist[v], v)</code>. No need to remove old entries &mdash; the staleness check handles them. Heap can hold up to O(E) entries.
+</div></details>
+<details class="answer-reveal"><summary>Cheapest flights within K stops (weighted graph, stop limit). Approach?</summary><div class="answer-box">
+Bellman-Ford limited to <code>K + 1</code> relaxation rounds &mdash; each round allows one more edge (stop). Crucially, relax from a <em>snapshot</em> of distances at the start of each round so a single round can't chain multiple edges. Or a BFS/Dijkstra-style search with state <code>(node, stopsUsed)</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is Johnson's algorithm and when does it beat Floyd-Warshall?</summary><div class="answer-box">
+All-pairs shortest paths for graphs with negative edges but no negative cycles, on <em>sparse</em> graphs. Step 1: add a virtual node with 0-weight edges to all vertices; run Bellman-Ford from it to get <code>h(v)</code> for every vertex. Step 2: reweight each edge <code>w'(u,v) = w(u,v) + h(u) - h(v)</code>, which is provably non-negative and preserves shortest paths. Step 3: run Dijkstra from every source on the reweighted graph, then subtract the offset. Total O(VE + V&middot;E log V) = O(VE log V), which beats Floyd-Warshall's O(V&sup3;) when E &laquo; V&sup2;.
+</div></details>
+<details class="answer-reveal"><summary>Prove Dijkstra's correctness for non-negative weights (sketch).</summary><div class="answer-box">
+Invariant: when a node <code>u</code> is popped/finalised, <code>dist[u]</code> is its true shortest distance. Suppose not &mdash; let <code>u</code> be the first finalised node with <code>dist[u] &gt; &delta;(s, u)</code>. Consider a true shortest path <code>s &rarr; &hellip; &rarr; u</code>; let <code>y</code> be the first node on it not yet finalised, with finalised predecessor <code>x</code>. Since <code>x</code> was finalised correctly, <code>dist[y] &le; dist[x] + w(x,y) = &delta;(s, y)</code> (relaxed when <code>x</code> was processed). Because edge weights are non-negative, <code>&delta;(s, y) &le; &delta;(s, u) &lt; dist[u]</code>. So <code>dist[y] &lt; dist[u]</code>, meaning the heap would have popped <code>y</code> before <code>u</code> &mdash; contradiction. Non-negativity is essential in the <code>&delta;(s,y) &le; &delta;(s,u)</code> step.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:shortest-paths -->
+
+<!-- TOPIC:algo:mst-topo -->
+<section class="view topic" id="v-algo-mst-topo" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>MST &amp; Topological Sort</h1>
+<p class="subtitle">Cheapest connecting tree, and ordering a dependency graph.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Minimum Spanning Tree</h3>
+<p>A subset of edges connecting all <code>V</code> vertices with no cycle and minimum total weight
+(exactly <code>V - 1</code> edges). Both standard algorithms are greedy, justified by the
+<strong>cut property</strong>: for any partition of the vertices, the lightest edge crossing it is in
+some MST.</p>
+<table>
+<tr><th></th><th>Kruskal</th><th>Prim</th></tr>
+<tr><td>Idea</td><td>sort all edges; add the next lightest that doesn't form a cycle</td><td>grow a tree from a start vertex, always adding the lightest edge leaving it</td></tr>
+<tr><td>Cycle check</td><td>union-find</td><td>a "visited" set</td></tr>
+<tr><td>Time</td><td>O(E log E)</td><td>O((V + E) log V) with a heap; O(V&sup2;) with an array (good for dense)</td></tr>
+<tr><td>Best for</td><td>sparse graphs, edge list given</td><td>dense graphs</td></tr>
+</table>
+
+<h3>Topological sort</h3>
+<p>A linear order of a <strong>DAG</strong>'s vertices such that every edge <code>u &rarr; v</code> has <code>u</code>
+before <code>v</code>. Not unique. Two methods:</p>
+<ul>
+<li><strong>Kahn's (BFS):</strong> repeatedly remove a vertex with in-degree 0, decrementing its successors. If fewer than <code>V</code> vertices come out &rarr; there's a cycle.</li>
+<li><strong>DFS:</strong> push each vertex onto a stack when its DFS <em>finishes</em>; the reversed stack is a topological order.</li>
+</ul>
+<p>Uses: build systems (<code>make</code>), task/course scheduling, spreadsheet recalculation, package
+managers, resolving symbol dependencies at link time.</p>
+
+<h3>Related</h3>
+<p>Longest path in a DAG = topological order + DP relax (the general longest-path problem is
+NP-hard, but a DAG makes it linear). Lexicographically smallest topological order = Kahn's with
+a min-heap instead of a queue.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>MST: V-1 edges, connected, acyclic, minimum total weight. Greedy works via the cut property.</li>
+<li>Kruskal: sort edges, add if endpoints in different DSU sets, union. O(E log E). Sparse / edge list.</li>
+<li>Prim: heap of frontier edges, grow one tree. O((V+E) log V) heap or O(V&sup2;) array. Dense.</li>
+<li>Both give the same total weight; the tree itself may differ if weights tie.</li>
+<li>Topological sort needs a DAG; result not unique.</li>
+<li>Kahn's: in-degree-0 queue; leftover vertices &rarr; cycle. DFS: reverse of finish order.</li>
+<li>Lexicographically smallest topo order &rarr; Kahn's with a min-heap.</li>
+<li>DAG longest/shortest path: process in topological order, relax &mdash; O(V + E).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>State the cut property.</dt>
+<dd>For any cut (partition of vertices into two non-empty sets), the minimum-weight edge crossing the cut belongs to some MST. This is what makes greedily adding safe edges correct.</dd>
+<dt>Kruskal vs Prim &mdash; when to use each?</dt>
+<dd>Kruskal when the graph is sparse or given as an edge list (sort edges, union-find). Prim when the graph is dense (its O(V&sup2;) array version beats sorting O(V&sup2;) edges) or given as an adjacency structure.</dd>
+<dt>What data structure makes Kruskal efficient?</dt>
+<dd>Union-Find (disjoint set) &mdash; O(&alpha;(V)) per "are these connected / union them" check while scanning sorted edges.</dd>
+<dt>Can topological sort be applied to any directed graph?</dt>
+<dd>No &mdash; only a DAG. If the graph has a directed cycle, no valid linear order exists (and both Kahn's and DFS can detect that).</dd>
+<dt>Is a topological ordering unique?</dt>
+<dd>Generally no. It's unique iff at every step there's exactly one vertex with in-degree 0 (equivalently, the DAG has a Hamiltonian path).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How many edges in an MST of a connected graph with V vertices?</summary><div class="answer-box">
+Exactly V &minus; 1.
+</div></details>
+<details class="answer-reveal"><summary>Which algorithm pairs with union-find?</summary><div class="answer-box">
+Kruskal's MST.
+</div></details>
+<details class="answer-reveal"><summary>What does Kahn's algorithm start with?</summary><div class="answer-box">
+All vertices that have in-degree 0.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Implement Kruskal's algorithm.</summary><div class="answer-box">
+Sort edges by weight ascending. Initialise a DSU over V vertices. For each edge (u, v, w) in order: if <code>find(u) != find(v)</code>, add the edge to the MST and <code>union(u, v)</code>. Stop when you've added V &minus; 1 edges. O(E log E) dominated by the sort.
+</div></details>
+<details class="answer-reveal"><summary>Return the lexicographically smallest valid course order.</summary><div class="answer-box">
+Kahn's algorithm but with a <em>min-heap</em> of the currently-available (in-degree 0) vertices instead of a plain queue. Always take the smallest-numbered available vertex next. O((V + E) log V).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How do you find a minimum spanning tree that must include a given edge, or exclude one?</summary><div class="answer-box">
+<strong>Must include</strong> edge e: contract e (union its endpoints first / add it to the tree with weight treated as &minus;&infin;), then run Kruskal/Prim on the rest. <strong>Must exclude</strong> e: run the MST algorithm skipping e. For "is edge e in <em>every</em> MST / <em>some</em> MST": e is in some MST iff it's a minimum-weight edge across some cut (equivalently, in the graph of edges with weight &lt; w(e), its endpoints are in different components); e is in <em>every</em> MST iff it's the unique lightest edge across some cut (no alternative equal-weight edge closes the same cycle). These are the basis of MST sensitivity analysis.
+</div></details>
+<details class="answer-reveal"><summary>Prove Prim's algorithm produces a minimum spanning tree.</summary><div class="answer-box">
+Loop invariant: the set of edges chosen so far, <code>A</code>, is a subset of some MST. Initially <code>A = &empty;</code> &mdash; true. Inductive step: Prim adds the lightest edge <code>(u, v)</code> crossing the cut <code>(S, V\S)</code> where <code>S</code> is the current tree's vertices. By the cut property, this lightest crossing edge is in <em>some</em> MST <code>T</code>. If <code>(u, v) &isin; T</code>, <code>A &cup; {(u,v)}</code> is still a subset of <code>T</code>. If not, <code>T &cup; {(u,v)}</code> has a cycle containing another edge <code>(x, y)</code> crossing the cut; <code>w(x,y) &ge; w(u,v)</code>, so swapping gives an MST <code>T'</code> containing <code>A &cup; {(u,v)}</code> with weight &le; <code>w(T)</code>. Either way the invariant holds. After <code>V-1</code> edges, <code>A</code> is a spanning tree that is a subset of an MST &mdash; hence <em>is</em> an MST.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:mst-topo -->
+
+<!-- TOPIC:algo:string-matching -->
+<section class="view topic" id="v-algo-string-matching" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>String Matching</h1>
+<p class="subtitle">Finding a pattern in text faster than the O(nm) nested loop.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Naive</h3>
+<p>For each of the <code>n - m + 1</code> alignments, compare up to <code>m</code> characters. O(nm) worst case
+(e.g. text <code>aaaa&hellip;a</code>, pattern <code>aaa&hellip;ab</code>). Fine for short patterns / small text.</p>
+
+<h3>Rabin-Karp (rolling hash)</h3>
+<ul>
+<li>Hash the pattern and each length-<code>m</code> window of the text; compare hashes, verify on match.</li>
+<li>The <strong>rolling hash</strong> updates in O(1) as the window slides: <code>h = (h - text[i]&middot;b^(m-1))&middot;b + text[i+m]</code>, all mod a large prime.</li>
+<li>O(n + m) average; O(nm) worst case if many hash collisions (mitigate with a good modulus / double hashing).</li>
+<li>Shines for <strong>multiple pattern</strong> search (hash all patterns, one text pass) and 2-D pattern matching.</li>
+</ul>
+
+<h3>KMP (Knuth-Morris-Pratt)</h3>
+<ul>
+<li>Precompute the <strong>prefix function</strong> <code>&pi;[i]</code> = length of the longest proper prefix of <code>pattern[0..i]</code> that is also a suffix.</li>
+<li>On a mismatch after matching <code>k</code> chars, don't restart &mdash; jump the pattern to <code>&pi;[k-1]</code>, reusing the known match.</li>
+<li>The text pointer never moves backward &rarr; <strong>O(n + m)</strong> guaranteed, O(m) extra space.</li>
+</ul>
+<pre><code><span class="c"># prefix function</span>
+&pi; = [0]*m; k = 0
+<span class="k">for</span> i <span class="k">in</span> 1..m-1:
+    <span class="k">while</span> k &gt; 0 <span class="k">and</span> p[i] != p[k]: k = &pi;[k-1]
+    <span class="k">if</span> p[i] == p[k]: k += 1
+    &pi;[i] = k</code></pre>
+
+<h3>Z-algorithm</h3>
+<p>Computes <code>Z[i]</code> = length of the longest substring starting at <code>i</code> that matches a prefix of
+the string. Run on <code>pattern + separator + text</code>; any <code>Z[i] &ge; m</code> in the text part is a
+match. O(n + m), often simpler to reason about than KMP.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Naive: O(nm) worst, O(1) space, fine for small inputs.</li>
+<li>Rabin-Karp: rolling hash, O(n + m) average, great for many patterns / 2-D; verify on hash hit.</li>
+<li>KMP: prefix function <code>&pi;</code>, O(n + m) worst case, text pointer never backtracks.</li>
+<li>Z-algorithm: <code>Z[i]</code> = prefix-match length at <code>i</code>; run on <code>P + '#' + T</code>; O(n + m).</li>
+<li>Aho-Corasick: KMP generalised to a trie of many patterns &mdash; all matches in O(n + total pattern length + #matches).</li>
+<li>Boyer-Moore (bad-char + good-suffix): sublinear <em>average</em>, used by <code>grep</code>; skips ahead from the end of the pattern.</li>
+<li>Suffix automaton / suffix array: preprocess the text once, then answer many pattern queries fast.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does the KMP prefix function store?</dt>
+<dd><code>&pi;[i]</code> = the length of the longest proper prefix of <code>pattern[0..i]</code> that is also a suffix of it. On a mismatch it tells you how far you can shift the pattern without missing a match.</dd>
+<dt>Why is KMP O(n + m) and not O(nm)?</dt>
+<dd>The text index only ever moves forward. Each character is compared a bounded number of times because failed matches fall back via <code>&pi;</code> rather than re-scanning the text.</dd>
+<dt>What is a rolling hash?</dt>
+<dd>A hash of a sliding window that can be updated in O(1) when the window shifts by one &mdash; subtract the outgoing character's contribution, multiply by the base, add the incoming character (all modulo a large prime).</dd>
+<dt>Rabin-Karp's worst case and when it hits.</dt>
+<dd>O(nm) &mdash; when the hash collides at (almost) every window so you keep doing full O(m) verifications. Rare with a good random modulus; adversarial input can force it, mitigated by double hashing or a secret modulus.</dd>
+<dt>When would you choose Rabin-Karp over KMP?</dt>
+<dd>Searching for many patterns at once (hash them all, one text pass), 2-D pattern matching, or when you need "any of these substrings" checks &mdash; the hash comparison generalises where KMP's single-pattern automaton doesn't.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Worst-case time of naive substring search?</summary><div class="answer-box">
+O(nm) &mdash; text length n, pattern length m.
+</div></details>
+<details class="answer-reveal"><summary>KMP's overall complexity?</summary><div class="answer-box">
+O(n + m), guaranteed.
+</div></details>
+<details class="answer-reveal"><summary>Which algorithm uses a rolling hash?</summary><div class="answer-box">
+Rabin-Karp.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Compute the prefix function for <code>"ababaca"</code>.</summary><div class="answer-box">
+Index: a b a b a c a &rarr; &pi; = [0, 0, 1, 2, 3, 0, 1]. At index 4 ("ababa"), the longest prefix=suffix is "aba" (length 3); the "c" breaks it back to 0; the final "a" matches the prefix "a" (length 1).
+</div></details>
+<details class="answer-reveal"><summary>Find the shortest palindrome by adding characters only to the front.</summary><div class="answer-box">
+Build <code>s + '#' + reverse(s)</code> and compute its prefix function; the last value <code>k</code> is the length of the longest palindromic prefix of <code>s</code>. Prepend the reverse of <code>s[k:]</code>. O(n). (Same result via the Z-algorithm or Manacher.)
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Describe Aho-Corasick and its complexity for matching many patterns.</summary><div class="answer-box">
+Build a trie of all patterns. Add <strong>failure links</strong>: from each node, a pointer to the longest proper suffix of the string-so-far that is also a trie node (computed by a BFS over the trie, exactly the multi-pattern generalisation of KMP's <code>&pi;</code>). Also add <strong>output links</strong> so that when you land on a node you can enumerate every pattern that ends there or at a suffix. Then scan the text once, following child edges or failure links on mismatch, emitting matches. Total: O(&Sigma; pattern lengths) to build + O(text length + number of matches) to search. It's what tools like <code>fgrep -f patterns.txt</code>, intrusion-detection signature scanners, and spam filters use.
+</div></details>
+<details class="answer-reveal"><summary>How does a suffix array answer "does P occur in T" and how is it built efficiently?</summary><div class="answer-box">
+A suffix array is the sorted order of all <code>n</code> suffixes of <code>T</code> (stored as their start indices). Since the suffixes are sorted, every occurrence of a pattern <code>P</code> corresponds to suffixes with <code>P</code> as a prefix &mdash; a contiguous block &mdash; found by two binary searches for the lower/upper bound of <code>P</code>, each doing O(m) character comparisons: O(m log n) per query (O(m + log n) with an LCP array). Construction: the naive "sort the suffixes" is O(n&sup2; log n); the prefix-doubling method sorts by first 2^k characters in rounds using radix sort, O(n log n) (or O(n log&sup2; n) simpler); SA-IS achieves O(n). Suffix arrays use far less memory than suffix trees and are the practical choice for large-text indexing (bioinformatics, full-text search, BWT/bzip2).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:string-matching -->
+
 </main>
 
 <footer class="site-footer">
@@ -7440,27 +8476,23 @@ State = a subset of up to ~20 items encoded as an integer bitmask, plus maybe a 
       ["union-find",     "Union-Find & Tries",                       "Disjoint set, union by rank + path compression; trie insert/search/prefix."],
       ["sorting",        "Sorting Algorithms",                       "Quick/merge/heap/insertion, stability, in-place, when each, non-comparison sorts."],
       ["recursion-dp",   "Recursion, Backtracking & DP",             "Call stack, base cases, backtracking template, memoisation vs tabulation."]
+    ],
+    algo: [
+      ["recurrences",     "Recurrences & the Master Theorem",        "Recursion trees, Master Theorem 3 cases, substitution, common patterns."],
+      ["binary-search",   "Binary Search & Search on the Answer",    "Exact/lower_bound/upper_bound, off-by-one, monotonic predicate, parametric search."],
+      ["two-pointers",    "Two Pointers & Sliding Window",           "Opposite ends, fast/slow, fixed & variable windows, when it applies."],
+      ["greedy",          "Greedy Algorithms",                       "Exchange argument, when greedy is provably optimal, activity selection, Huffman."],
+      ["divide-conquer",  "Divide & Conquer",                        "Split/solve/combine, merge sort, quickselect, closest pair, Karatsuba."],
+      ["dp-patterns",     "Dynamic Programming Patterns",            "Knapsack, LCS/edit distance, LIS, interval DP, DP on trees & bitmask."],
+      ["graph-algos",     "Graph Traversal Applications",            "Flood fill, connected components, bipartite, cycle detect, bridges."],
+      ["shortest-paths",  "Shortest Paths",                          "BFS, Dijkstra, Bellman-Ford (neg edges), Floyd-Warshall (all pairs), A*."],
+      ["mst-topo",        "MST & Topological Sort",                  "Kruskal + union-find, Prim + heap, cut property, Kahn's, DFS ordering."],
+      ["string-matching", "String Matching",                        "Naive, Rabin-Karp rolling hash, KMP prefix function, Z-algorithm."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    algo: [
-      "Asymptotic analysis & recurrences",
-      "Sorting algorithms in depth",
-      "Binary search & the answer-space trick",
-      "Two pointers & sliding window",
-      "Recursion & backtracking",
-      "Greedy algorithms",
-      "Divide & conquer",
-      "Dynamic programming patterns",
-      "Graph traversal (BFS/DFS) & applications",
-      "Shortest paths (Dijkstra, Bellman-Ford, Floyd-Warshall)",
-      "Minimum spanning tree & topological sort",
-      "String matching (KMP, Rabin-Karp, Z)",
-      "Bit manipulation & math tricks",
-      "NP-completeness & intractability"
-    ],
     db: [
       "The relational model & keys",
       "Normalization (1NF to BCNF)",
