@@ -257,6 +257,37 @@ code {
 }
 pre code { background: none; padding: 0; font-size: inherit; }
 
+/* inline SVG concept / flow diagrams */
+figure.diagram {
+  margin: 1.2rem 0;
+  padding: 1rem 0.8rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow-x: auto;
+}
+figure.diagram svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+figure.diagram figcaption {
+  font-family: Arial, sans-serif;
+  font-size: 0.78rem;
+  color: var(--text-soft);
+  text-align: center;
+  margin-top: 0.55rem;
+  line-height: 1.4;
+}
+.diagram .d-box       { fill: var(--bg-panel); stroke: var(--accent); stroke-width: 1.5; }
+.diagram .d-box-soft  { fill: var(--accent-soft); stroke: var(--accent); stroke-width: 1.5; }
+.diagram .d-box-alt   { fill: var(--highlight); stroke: var(--text-soft); stroke-width: 1.2; }
+.diagram .d-fill      { fill: var(--accent); }
+.diagram .d-line      { stroke: var(--accent); stroke-width: 1.5; fill: none; }
+.diagram .d-line-soft { stroke: var(--text-soft); stroke-width: 1; fill: none; }
+.diagram .d-dash      { stroke: var(--text-soft); stroke-width: 1; stroke-dasharray: 4 3; fill: none; }
+.diagram .d-t         { fill: var(--text); font: 12px Arial, sans-serif; }
+.diagram .d-t-b       { fill: var(--text); font: bold 12px Arial, sans-serif; }
+.diagram .d-t-sm      { fill: var(--text-soft); font: 10.5px Arial, sans-serif; }
+.diagram .d-t-mono    { fill: var(--text); font: 12px 'Consolas','SF Mono',monospace; }
+.diagram .d-t-accent  { fill: var(--accent); font: bold 12px Arial, sans-serif; }
+
 table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.9rem; display: block; overflow-x: auto; }
 th, td { border: 1px solid var(--border); padding: 0.45rem 0.65rem; text-align: left; vertical-align: top; }
 th { background: var(--highlight); font-family: Arial, sans-serif; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.03em; }
@@ -317,6 +348,15 @@ footer.site-footer { text-align: center; font-family: Arial, sans-serif; font-si
 <p class="subtitle">The vocabulary question set: what a type guarantees, where a variable lives, and how long it lives.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The object model: what a "variable" actually is</h3>
+<p>In C an <strong>object</strong> is a named region of storage. Every object has three independent properties that this topic is really about:</p>
+<ul>
+<li><strong>Type</strong> &mdash; how many bytes it occupies and how those bytes are <em>interpreted</em> (as a signed integer, a float, a pointer&hellip;). The type also fixes alignment and which operations are legal.</li>
+<li><strong>Storage duration (lifetime)</strong> &mdash; the window of time during which the storage is guaranteed to exist and hold a value.</li>
+<li><strong>Linkage</strong> &mdash; whether the <em>name</em> refers to the same object/function across different <code>.c</code> files, only within one file, or nowhere else at all.</li>
+</ul>
+<p>A <em>declaration</em> introduces a name and its type; a <em>definition</em> also reserves the storage (or the function body). You may declare a thing many times but must define it exactly once (the "one definition rule").</p>
+
 <h3>Fundamental types and their sizes</h3>
 <p>C guarantees only <em>minimum</em> ranges, not exact sizes. The standard promises
 <code>1 == sizeof(char) &le; sizeof(short) &le; sizeof(int) &le; sizeof(long) &le; sizeof(long long)</code>,
@@ -324,11 +364,47 @@ with <code>char</code> at least 8 bits, <code>short</code> and <code>int</code> 
 <code>long long</code> at least 64. On the common LP64 model (Linux/macOS 64-bit): <code>int</code> 4 bytes,
 <code>long</code> 8, pointer 8. On Windows LLP64: <code>long</code> is 4. Use <code>&lt;stdint.h&gt;</code>
 (<code>int32_t</code>, <code>uint64_t</code>, <code>intptr_t</code>) when the width matters.</p>
-<p><code>char</code> may be signed or unsigned &mdash; it is <em>implementation-defined</em>. That is a classic bug source
-when using <code>char</code> to index a table with bytes &ge; 0x80.</p>
+<p><code>char</code> may be signed or unsigned &mdash; it is <em>implementation-defined</em>, and it is a <em>third</em> type distinct from both <code>signed char</code> and <code>unsigned char</code>. That is a classic bug source when using <code>char</code> to index a table with bytes &ge; 0x80: on a platform where <code>char</code> is signed, <code>(int)c</code> is negative and the index goes out of bounds. Rule: use <code>unsigned char</code> (or <code>uint8_t</code>) for raw bytes, and <code>char</code> only for actual text.</p>
+<p>Integer types come in signed/unsigned pairs sharing the same size. Unsigned arithmetic is defined to wrap modulo 2<sup>N</sup>; <strong>signed</strong> overflow is undefined behaviour (see the UB topic). Floating types (<code>float</code>, <code>double</code>, <code>long double</code>) are usually IEEE-754 but the standard does not require it.</p>
+
+<h3>Storage duration &mdash; four lifetimes</h3>
+<figure class="diagram">
+<svg viewBox="0 0 560 232" role="img" aria-labelledby="d-cts-life-t">
+<title id="d-cts-life-t">Four storage durations shown as lifetime bars along program execution</title>
+<!-- timeline -->
+<line class="d-line-soft" x1="150" y1="20" x2="150" y2="212"/>
+<line class="d-line-soft" x1="360" y1="20" x2="360" y2="212"/>
+<text class="d-t-sm" x="150" y="14" text-anchor="middle">enter foo()</text>
+<text class="d-t-sm" x="360" y="14" text-anchor="middle">leave foo()</text>
+<line class="d-line" x1="20" y1="222" x2="540" y2="222" marker-end="url(#cts-ah)"/>
+<defs><marker id="cts-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="20" y="219">program start</text>
+<text class="d-t-sm" x="470" y="219">program end</text>
+<!-- static -->
+<rect class="d-box-soft" x="20" y="30" width="500" height="26" rx="4"/>
+<text class="d-t-mono" x="28" y="47">static int g; / static local</text>
+<text class="d-t-sm" x="512" y="47" text-anchor="end">static</text>
+<!-- thread -->
+<rect class="d-box-alt" x="20" y="64" width="500" height="26" rx="4"/>
+<text class="d-t-mono" x="28" y="81">_Thread_local ...</text>
+<text class="d-t-sm" x="512" y="81" text-anchor="end">per thread</text>
+<!-- automatic -->
+<rect class="d-box" x="150" y="98" width="210" height="26" rx="4"/>
+<text class="d-t-mono" x="158" y="115">int x; (local in foo)</text>
+<text class="d-t-sm" x="366" y="115">automatic</text>
+<!-- allocated -->
+<rect class="d-box" x="230" y="132" width="290" height="26" rx="4"/>
+<text class="d-t-mono" x="238" y="149">malloc(...) &rarr; ... &rarr; free()</text>
+<text class="d-t-sm" x="512" y="149" text-anchor="end">allocated</text>
+<text class="d-t-sm" x="20" y="180">Static &amp; thread storage: zero-initialised. Automatic: indeterminate</text>
+<text class="d-t-sm" x="20" y="196">until you assign. Allocated: <tspan class="d-t-mono">malloc</tspan> gives garbage,</text>
+<text class="d-t-sm" x="20" y="212"><tspan class="d-t-mono">calloc</tspan> gives zeros; you choose when it dies.</text>
+</svg>
+<figcaption>Storage duration = when the bytes are guaranteed to exist. Reading an automatic object before assigning it, or any object after its lifetime ends, is undefined behaviour.</figcaption>
+</figure>
 
 <h3>Storage classes</h3>
-<p>A storage-class specifier sets two things: <strong>storage duration</strong> (lifetime) and <strong>linkage</strong> (name visibility across translation units).</p>
+<p>A storage-class specifier sets two things: <strong>storage duration</strong> (lifetime) and <strong>linkage</strong> (name visibility across translation units). The same keyword, <code>static</code>, does a <em>different</em> job depending on where it appears.</p>
 <table>
 <tr><th>Specifier</th><th>Duration</th><th>Linkage</th><th>Notes</th></tr>
 <tr><td><code>auto</code></td><td>automatic</td><td>none</td><td>Default for locals; keyword almost never written.</td></tr>
@@ -337,24 +413,45 @@ when using <code>char</code> to index a table with bytes &ge; 0x80.</p>
 <tr><td><code>static</code> (inside a function)</td><td>static</td><td>none</td><td>Keeps its value between calls; initialised once.</td></tr>
 <tr><td><code>extern</code></td><td>static</td><td>external</td><td>Declares a name defined elsewhere.</td></tr>
 <tr><td>(none, at file scope)</td><td>static</td><td>external</td><td>A normal global.</td></tr>
+<tr><td><code>_Thread_local</code></td><td>thread</td><td>as written</td><td>One instance per thread; combine with <code>static</code>/<code>extern</code>.</td></tr>
 </table>
 <pre><code><span class="k">int</span> counter(<span class="k">void</span>) {
-    <span class="k">static</span> <span class="k">int</span> n = <span class="n">0</span>;   <span class="c">// initialised once, lives for the whole program</span>
-    <span class="k">return</span> ++n;          <span class="c">// 1, 2, 3, ... across calls</span>
+    <span class="k">static</span> <span class="k">int</span> n = <span class="n">0</span>;   <span class="c">// storage: whole program. name: visible only here.</span>
+    <span class="k">return</span> ++n;          <span class="c">// 1, 2, 3, ... across calls &mdash; the value survives return</span>
 }</code></pre>
+<p>The initialiser on a static-duration object must be a <em>constant expression</em> and runs once, before <code>main</code>. An automatic object's initialiser runs every time control reaches its declaration.</p>
 
 <h3>Type qualifiers</h3>
 <ul>
-<li><code>const</code> &mdash; the program will not modify this object through this name. Enables optimisation and lets the compiler catch mistakes. <code>const</code> objects with static duration can go in read-only memory.</li>
-<li><code>volatile</code> &mdash; the value may change outside the program's control (memory-mapped hardware register, variable touched by a signal handler or another thread). The compiler must not cache it in a register or elide reads/writes.</li>
-<li><code>restrict</code> (C99, pointers only) &mdash; a promise that this pointer is the only way the pointed-to object is accessed in its scope, so the compiler may keep values in registers across writes through other pointers.</li>
+<li><code>const</code> &mdash; a promise that <em>the program will not modify this object through this name</em>. It enables optimisation and lets the compiler reject mistakes at compile time. A <code>const</code> object with static duration can be placed in read-only memory, so casting away <code>const</code> and writing is undefined behaviour, not just bad style.</li>
+<li><code>volatile</code> &mdash; the value may change outside the program's control (a memory-mapped hardware register, a variable touched by a signal handler, hardware DMA). The compiler must emit an actual load/store for every access in the source and must not reorder those accesses relative to each other.</li>
+<li><code>restrict</code> (C99, pointers only) &mdash; a promise that, within its scope, the pointed-to object is reached <em>only</em> through this pointer (or values derived from it), so the compiler may keep data in registers across stores made through other pointers. Breaking the promise is undefined behaviour.</li>
 </ul>
-<p>Read declarations right-to-left: <code>const char *p</code> is &ldquo;p is a pointer to char that is const&rdquo; (data read-only, pointer rebindable); <code>char * const p</code> is &ldquo;p is a const pointer to char&rdquo; (pointer fixed, data writable).</p>
+<p><strong>Reading declarations</strong> &mdash; find the identifier, then read outward, right before left: <code>const char *p</code> &rarr; "<code>p</code> is a pointer to <code>char</code> that is <code>const</code>" (the data is read-only, <code>p</code> itself can be re-pointed); <code>char * const p</code> &rarr; "<code>p</code> is a <code>const</code> pointer to <code>char</code>" (<code>p</code> is fixed, the data is writable); <code>const char * const p</code> &rarr; both fixed.</p>
 
-<h3>Integer promotion and usual arithmetic conversions</h3>
-<p>Anything narrower than <code>int</code> is promoted to <code>int</code> before arithmetic. In a mixed
-signed/unsigned expression of the same rank, the signed operand converts to unsigned &mdash; so
-<code>-1 &gt; 0u</code> is <em>true</em>. This bites in loops like <code>for (size_t i = n-1; i &gt;= 0; i--)</code>, which never ends.</p>
+<h3>Integer promotion and the usual arithmetic conversions</h3>
+<p>Before almost any binary arithmetic, C brings both operands to a common type in two steps.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 250" role="img" aria-labelledby="d-cts-conv-t">
+<title id="d-cts-conv-t">Two-step conversion: integer promotion, then the usual arithmetic conversions</title>
+<rect class="d-box-alt" x="12" y="14" width="516" height="60" rx="6"/>
+<text class="d-t-b" x="20" y="32">Step 1 &mdash; Integer promotion</text>
+<text class="d-t-sm" x="20" y="50"><tspan class="d-t-mono">char</tspan>, <tspan class="d-t-mono">short</tspan>, <tspan class="d-t-mono">_Bool</tspan>, bit-fields, <tspan class="d-t-mono">enum</tspan> &nbsp;&rarr;&nbsp; <tspan class="d-t-mono">int</tspan></text>
+<text class="d-t-sm" x="20" y="66">(or <tspan class="d-t-mono">unsigned int</tspan> if <tspan class="d-t-mono">int</tspan> can't hold every value). Wider types unchanged.</text>
+<line class="d-line" x1="270" y1="74" x2="270" y2="96" marker-end="url(#cts-ah2)"/>
+<defs><marker id="cts-ah2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-soft" x="12" y="98" width="516" height="140" rx="6"/>
+<text class="d-t-b" x="20" y="116">Step 2 &mdash; Usual arithmetic conversions (same, promoted, operands)</text>
+<text class="d-t-sm" x="28" y="136">1. Same type? &rarr; done.</text>
+<text class="d-t-sm" x="28" y="154">2. Same signedness? &rarr; convert to the higher rank (<tspan class="d-t-mono">long long</tspan> &gt; <tspan class="d-t-mono">long</tspan> &gt; <tspan class="d-t-mono">int</tspan>).</text>
+<text class="d-t-sm" x="28" y="172">3. Unsigned type has &ge; rank of the signed one? &rarr; signed becomes unsigned.</text>
+<text class="d-t-sm" x="28" y="190">4. Signed type can represent all unsigned values? &rarr; unsigned becomes signed.</text>
+<text class="d-t-sm" x="28" y="208">5. Otherwise &rarr; both become the unsigned partner of the signed type.</text>
+<text class="d-t-accent" x="28" y="230">Consequence: <tspan class="d-t-mono">-1 &gt; 0u</tspan> is TRUE &mdash; the <tspan class="d-t-mono">-1</tspan> converts to <tspan class="d-t-mono">UINT_MAX</tspan>.</text>
+</svg>
+<figcaption>The signed-to-unsigned rule (step 3) is the source of the classic non-terminating loop <code>for (size_t i = n-1; i &gt;= 0; i--)</code> &mdash; a <code>size_t</code> is never negative, so <code>i &gt;= 0</code> is always true.</figcaption>
+</figure>
+<p>Promotion also happens for the operand of unary <code>+ - ~</code>, for both operands of the shift operators (each promoted independently &mdash; the result type is that of the <em>left</em> operand), and for arguments passed to variadic or unprototyped functions (which is why <code>printf("%d", (char)x)</code> is fine but <code>printf("%d", 1L)</code> is wrong).</p>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -452,26 +549,111 @@ Both files now have a file-scope definition of <code>g</code>. Under the older &
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
 <h3>What a pointer is</h3>
-<p>A pointer is a variable whose value is an address. Its <em>type</em> tells the compiler
-the type of the object at that address, which drives dereferencing and arithmetic.
-<code>int *p;</code> declares <code>p</code> as &ldquo;pointer to int&rdquo;. <code>&amp;x</code> takes the address of <code>x</code>;
-<code>*p</code> is the object <code>p</code> points to (an lvalue &mdash; you can read or assign it).</p>
+<p>Memory is a big array of bytes, and every byte has a number &mdash; its <strong>address</strong>. A
+<strong>pointer</strong> is just a variable that stores one of those numbers. What makes a pointer
+more than an integer is its <em>type</em>: <code>int *p</code> tells the compiler "the address in
+<code>p</code> is the start of an <code>int</code>", which decides (a) how many bytes <code>*p</code> reads,
+(b) how those bytes are interpreted, and (c) how far <code>p + 1</code> moves.</p>
+<p><code>&amp;x</code> yields the address of <code>x</code> (type "pointer to whatever <code>x</code> is").
+<code>*p</code> is the object <code>p</code> points at &mdash; an <em>lvalue</em>, so <code>*p = 5;</code> writes
+through the pointer and <code>int y = *p;</code> reads through it. <code>&amp;</code> and <code>*</code> are
+inverses: <code>*&amp;x</code> is <code>x</code>, and <code>&amp;*p</code> is <code>p</code>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 210" role="img" aria-labelledby="d-cptr-basic-t">
+<title id="d-cptr-basic-t">A pointer variable holds the address of another variable</title>
+<text class="d-t-sm" x="40" y="20">memory (each cell = 4 bytes)</text>
+<!-- x cell -->
+<rect class="d-box-soft" x="40" y="30" width="120" height="44" rx="4"/>
+<text class="d-t-b" x="100" y="50" text-anchor="middle">42</text>
+<text class="d-t-sm" x="100" y="66" text-anchor="middle">int x</text>
+<text class="d-t-mono" x="40" y="90">0x7ffe...20</text>
+<!-- p cell -->
+<rect class="d-box" x="330" y="30" width="150" height="44" rx="4"/>
+<text class="d-t-mono" x="405" y="50" text-anchor="middle">0x7ffe...20</text>
+<text class="d-t-sm" x="405" y="66" text-anchor="middle">int *p</text>
+<text class="d-t-mono" x="330" y="90">0x7ffe...48</text>
+<!-- arrow p -> x -->
+<path class="d-line" d="M330 52 C 250 52, 240 130, 100 130 L100 78" marker-end="url(#cptr-ah)"/>
+<defs><marker id="cptr-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="180" y="120">p  ==  &amp;x</text>
+<text class="d-t-accent" x="180" y="152">*p  ==  x  ==  42</text>
+<text class="d-t-sm" x="40" y="176">Reading <tspan class="d-t-mono">*p</tspan> follows the arrow and fetches 4 bytes as an int.</text>
+<text class="d-t-sm" x="40" y="194">Writing <tspan class="d-t-mono">*p = 7</tspan> stores into x. <tspan class="d-t-mono">p = &amp;y</tspan> re-points p; x is untouched.</text>
+</svg>
+<figcaption>The pointer <code>p</code> is itself a variable with its own address; its <em>value</em> is the address of <code>x</code>.</figcaption>
+</figure>
 
 <h3>Pointer arithmetic is in units of the pointed-to type</h3>
+<p>Adding <code>n</code> to a pointer advances it by <code>n &times; sizeof(*p)</code> <em>bytes</em>, not
+<code>n</code> bytes. This is exactly what makes <code>p[i]</code> work: it is <em>defined</em> as
+<code>*(p + i)</code>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 176" role="img" aria-labelledby="d-cptr-arith-t">
+<title id="d-cptr-arith-t">Pointer arithmetic advances by element size</title>
+<g>
+<rect class="d-box-soft" x="20" y="46" width="90" height="40"/>
+<rect class="d-box" x="110" y="46" width="90" height="40"/>
+<rect class="d-box" x="200" y="46" width="90" height="40"/>
+<rect class="d-box-soft" x="290" y="46" width="90" height="40"/>
+<rect class="d-box" x="380" y="46" width="90" height="40"/>
+<rect class="d-box-alt" x="470" y="46" width="50" height="40"/>
+</g>
+<text class="d-t-b" x="65"  y="71" text-anchor="middle">10</text>
+<text class="d-t-b" x="155" y="71" text-anchor="middle">20</text>
+<text class="d-t-b" x="245" y="71" text-anchor="middle">30</text>
+<text class="d-t-b" x="335" y="71" text-anchor="middle">40</text>
+<text class="d-t-b" x="425" y="71" text-anchor="middle">50</text>
+<text class="d-t-sm" x="65"  y="100" text-anchor="middle">a[0]</text>
+<text class="d-t-sm" x="155" y="100" text-anchor="middle">a[1]</text>
+<text class="d-t-sm" x="245" y="100" text-anchor="middle">a[2]</text>
+<text class="d-t-sm" x="335" y="100" text-anchor="middle">a[3]</text>
+<text class="d-t-sm" x="425" y="100" text-anchor="middle">a[4]</text>
+<text class="d-t-sm" x="495" y="100" text-anchor="middle">end</text>
+<text class="d-t-sm" x="20" y="118">bytes:  +0        +4        +8        +12       +16       +20</text>
+<text class="d-t-accent" x="65"  y="36" text-anchor="middle">p = a</text>
+<path class="d-line" d="M65 40 L65 44" marker-end="url(#cptr-ah2)"/>
+<defs><marker id="cptr-ah2" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="335" y="36" text-anchor="middle">p + 3</text>
+<path class="d-line" d="M335 40 L335 44" marker-end="url(#cptr-ah2)"/>
+<path class="d-dash" d="M65 22 C 200 4, 200 4, 335 22"/>
+<text class="d-t-sm" x="200" y="14" text-anchor="middle">+3 elements = +12 bytes</text>
+<text class="d-t-mono" x="20" y="150">*(p + 3) == p[3] == a[3] == 40</text>
+<text class="d-t-sm" x="20" y="168">&amp;a[5] (one past the end): legal to form &amp; compare, UB to dereference.</text>
+</svg>
+<figcaption><code>q - p</code> gives the element <em>count</em> (a <code>ptrdiff_t</code>), valid only when both point into the same array. Comparing or subtracting pointers into different objects is undefined behaviour.</figcaption>
+</figure>
 <pre><code><span class="k">int</span> a[<span class="n">5</span>] = {<span class="n">10</span>,<span class="n">20</span>,<span class="n">30</span>,<span class="n">40</span>,<span class="n">50</span>};
 <span class="k">int</span> *p = a;        <span class="c">// &a[0]</span>
 p + <span class="n">3</span>              <span class="c">// address of a[3]  == (char*)p + 3*sizeof(int)</span>
 *(p + <span class="n">3</span>)           <span class="c">// 40   -- identical to p[3] and to a[3]</span>
 p[<span class="n">3</span>] <span class="c">is defined as *(p + 3), so 3[a] is legal C and equals a[3]</span>
 &amp;a[<span class="n">5</span>]             <span class="c">// one-past-the-end: legal to form, UB to dereference</span></code></pre>
-<p>Subtracting two pointers into the same array yields a <code>ptrdiff_t</code> count of elements.
-Adding/subtracting or comparing pointers into <em>different</em> objects is undefined behaviour
-(except forming &mdash; not dereferencing &mdash; the one-past-the-end pointer).</p>
 
 <h3>Levels of indirection</h3>
 <p><code>int **pp</code> is a pointer to a pointer to int. You need it to let a function modify the
 caller's pointer (e.g. allocate and hand back a buffer), or for a dynamically allocated
 &ldquo;2-D&rdquo; array built as an array of row pointers.</p>
+<figure class="diagram">
+<svg viewBox="0 0 480 96" role="img" aria-labelledby="d-cptr-ind-t">
+<title id="d-cptr-ind-t">Two levels of indirection: pp points to p points to x</title>
+<rect class="d-box" x="20" y="30" width="110" height="38" rx="4"/>
+<text class="d-t-sm" x="75" y="46" text-anchor="middle">int **pp</text>
+<text class="d-t-mono" x="75" y="61" text-anchor="middle">&amp;p</text>
+<rect class="d-box" x="185" y="30" width="110" height="38" rx="4"/>
+<text class="d-t-sm" x="240" y="46" text-anchor="middle">int *p</text>
+<text class="d-t-mono" x="240" y="61" text-anchor="middle">&amp;x</text>
+<rect class="d-box-soft" x="350" y="30" width="110" height="38" rx="4"/>
+<text class="d-t-sm" x="405" y="46" text-anchor="middle">int x</text>
+<text class="d-t-b" x="405" y="61" text-anchor="middle">42</text>
+<path class="d-line" d="M130 49 L183 49" marker-end="url(#cptr-ah3)"/>
+<path class="d-line" d="M295 49 L348 49" marker-end="url(#cptr-ah3)"/>
+<defs><marker id="cptr-ah3" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="150" y="24" text-anchor="middle">*pp</text>
+<text class="d-t-sm" x="315" y="24" text-anchor="middle">*p</text>
+<text class="d-t-accent" x="20" y="90">*pp == p&nbsp;&nbsp;&nbsp;&nbsp;**pp == *p == x == 42</text>
+</svg>
+<figcaption>Each <code>*</code> peels one arrow. A function taking <code>int **out</code> can do <code>*out = malloc(...)</code> to change the caller's own pointer.</figcaption>
+</figure>
 <pre><code><span class="k">void</span> make(<span class="k">int</span> **out) {          <span class="c">// caller passes &amp;ptr</span>
     *out = malloc(<span class="n">10</span> * <span class="k">sizeof</span> **out);
 }
@@ -579,31 +761,111 @@ Any pointer can be converted to <code>intptr_t</code>/<code>uintptr_t</code> (if
 <p class="subtitle">C strings are a convention, not a type &mdash; know exactly what that convention costs.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
-<h3>Arrays</h3>
-<p>An array is a contiguous block of <code>N</code> objects of one type. Its name is not a pointer,
-but decays to <code>&amp;arr[0]</code> in most expressions. You cannot assign or pass an array by value;
-passing one to a function passes a pointer, losing the size. C99 adds variable-length arrays
-(VLAs) &mdash; array objects whose size is a run-time expression; they live on the stack and can
-blow it, so many code bases ban them.</p>
+<h3>Arrays and "decay"</h3>
+<p>An array is a contiguous block of <code>N</code> objects of one type &mdash; a single object, not a
+pointer. But in <em>almost every expression</em> the array name is automatically converted
+("decays") to a pointer to its first element. The exceptions, where the array stays an array:
+as the operand of <code>sizeof</code>, as the operand of unary <code>&amp;</code>, and as a string literal
+initialising a <code>char</code> array.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-carr-decay-t">
+<title id="d-carr-decay-t">An array is one object; its name usually decays to a pointer</title>
+<rect class="d-box-soft" x="20" y="44" width="60" height="34"/>
+<rect class="d-box-soft" x="80" y="44" width="60" height="34"/>
+<rect class="d-box-soft" x="140" y="44" width="60" height="34"/>
+<rect class="d-box-soft" x="200" y="44" width="60" height="34"/>
+<text class="d-t-b" x="50" y="66" text-anchor="middle">1</text>
+<text class="d-t-b" x="110" y="66" text-anchor="middle">2</text>
+<text class="d-t-b" x="170" y="66" text-anchor="middle">3</text>
+<text class="d-t-b" x="230" y="66" text-anchor="middle">4</text>
+<text class="d-t-mono" x="20" y="98">a[0]     a[1]     a[2]     a[3]</text>
+<text class="d-t-b" x="20" y="24">int a[4];  &mdash;  one object, 16 bytes</text>
+<line class="d-line-soft" x1="20" y1="30" x2="260" y2="30"/>
+<text class="d-t-accent" x="300" y="50"><tspan class="d-t-mono">a</tspan> in <tspan class="d-t-mono">a + 1</tspan>, <tspan class="d-t-mono">f(a)</tspan>, <tspan class="d-t-mono">*a</tspan> &rarr; <tspan class="d-t-mono">&amp;a[0]</tspan> (int*)</text>
+<text class="d-t-sm" x="300" y="74"><tspan class="d-t-mono">sizeof a</tspan> &rarr; 16 (stays an array)</text>
+<text class="d-t-sm" x="300" y="92"><tspan class="d-t-mono">&amp;a</tspan> &rarr; type <tspan class="d-t-mono">int (*)[4]</tspan>, same address</text>
+<text class="d-t-sm" x="20" y="128">Passing <tspan class="d-t-mono">a</tspan> to a function passes only <tspan class="d-t-mono">int*</tspan> &mdash; the length is lost, so</text>
+<text class="d-t-sm" x="20" y="144"><tspan class="d-t-mono">sizeof arr / sizeof arr[0]</tspan> inside the function is wrong. Pass the count.</text>
+</svg>
+<figcaption>You cannot assign or pass an array by value. C99 VLAs (size is a run-time value) live on the stack and can overflow it &mdash; many codebases ban them.</figcaption>
+</figure>
 
 <h3>C strings</h3>
-<p>A &ldquo;string&rdquo; is a <code>char</code> array containing a <code>'\0'</code> terminator. The length is found by
-scanning for that byte (<code>strlen</code> is O(n)). Every buffer must have room for the terminator:
-storing <code>"cat"</code> needs 4 bytes. The classic overflow is forgetting the <code>+1</code>.</p>
-<pre><code><span class="k">char</span> a[] = <span class="s">"cat"</span>;     <span class="c">// 4 bytes: 'c' 'a' 't' '\0'  -- modifiable</span>
-<span class="k">char</span> *b   = <span class="s">"cat"</span>;     <span class="c">// pointer to a string literal -- read-only, writing is UB</span>
-<span class="k">sizeof</span> a               <span class="c">// 4</span>
-strlen(a)              <span class="c">// 3</span></code></pre>
+<p>A &ldquo;string&rdquo; is a <code>char</code> array containing a <code>'\0'</code> terminator. There is no stored
+length &mdash; every operation that needs the length scans for the <code>'\0'</code> (so <code>strlen</code>
+is O(n)). Every buffer must have room for the terminator: storing <code>"cat"</code> needs
+<strong>4</strong> bytes. Forgetting the <code>+1</code> is the classic one-byte overflow.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-carr-str-t">
+<title id="d-carr-str-t">char a[] = "cat" vs char *b = "cat"</title>
+<text class="d-t-b" x="20" y="18">char a[] = "cat";  (copy on the stack, writable)</text>
+<g>
+<rect class="d-box-soft" x="20" y="26" width="40" height="30"/>
+<rect class="d-box-soft" x="60" y="26" width="40" height="30"/>
+<rect class="d-box-soft" x="100" y="26" width="40" height="30"/>
+<rect class="d-box-alt"  x="140" y="26" width="40" height="30"/>
+</g>
+<text class="d-t-mono" x="40"  y="45" text-anchor="middle">'c'</text>
+<text class="d-t-mono" x="80"  y="45" text-anchor="middle">'a'</text>
+<text class="d-t-mono" x="120" y="45" text-anchor="middle">'t'</text>
+<text class="d-t-mono" x="160" y="45" text-anchor="middle">\0</text>
+<text class="d-t-sm" x="200" y="45"><tspan class="d-t-mono">sizeof a</tspan> = 4, <tspan class="d-t-mono">strlen(a)</tspan> = 3</text>
+<text class="d-t-b" x="20" y="82">char *b = "cat";  (b on stack, points to read-only literal)</text>
+<rect class="d-box" x="20" y="90" width="70" height="28"/>
+<text class="d-t-sm" x="55" y="108" text-anchor="middle">b</text>
+<rect class="d-box-alt" x="200" y="90" width="150" height="28"/>
+<text class="d-t-mono" x="275" y="108" text-anchor="middle">"cat\0"  (.rodata)</text>
+<path class="d-line" d="M90 104 L198 104" marker-end="url(#carr-ah)"/>
+<defs><marker id="carr-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="360" y="108">b[0]='C' &rarr; UB</text>
+</svg>
+<figcaption>The array form makes a private, modifiable copy. The pointer form aims at a shared string literal &mdash; writing through it is undefined behaviour and usually faults.</figcaption>
+</figure>
 <p>Prefer bounded functions: <code>snprintf</code> over <code>sprintf</code>; be careful that <code>strncpy</code> does
 <em>not</em> guarantee termination if the source is longer than <code>n</code>. <code>strlcpy</code>/<code>strlcat</code>
 (BSD, and now C23's <code>strcpy_s</code> family) are safer where available.</p>
 
-<h3>Multidimensional arrays</h3>
-<p><code>int m[3][4]</code> is &ldquo;array of 3 arrays of 4 ints&rdquo;, stored row-major and fully contiguous
-(48 bytes). Indexing <code>m[i][j]</code> is <code>*(*(m + i) + j)</code>. When passed to a function, all
-dimensions except the first must be known: <code>void f(int m[][4], int rows)</code>. Contrast an
-&ldquo;array of pointers&rdquo; <code>char *argv[]</code>, where each element is a separately located string and
-rows can have different lengths &mdash; this is what <code>main</code>'s <code>argv</code> is.</p>
+<h3>Multidimensional arrays vs arrays of pointers</h3>
+<p><code>int m[2][3]</code> is &ldquo;array of 2 arrays of 3 ints&rdquo;, stored <strong>row-major</strong> and fully
+contiguous (24 bytes, no pointers anywhere). <code>m[i][j]</code> is <code>*(*(m + i) + j)</code> and the
+compiler computes the offset as <code>(i&nbsp;*&nbsp;3&nbsp;+&nbsp;j)&nbsp;*&nbsp;sizeof(int)</code>. When passed to a function every
+dimension <em>except the first</em> must be known: <code>void f(int m[][3], int rows)</code>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 176" role="img" aria-labelledby="d-carr-2d-t">
+<title id="d-carr-2d-t">Row-major 2-D array vs an array of row pointers</title>
+<text class="d-t-b" x="20" y="16">int m[2][3]  &mdash;  one contiguous block</text>
+<g>
+<rect class="d-box-soft" x="20" y="24" width="55" height="30"/>
+<rect class="d-box-soft" x="75" y="24" width="55" height="30"/>
+<rect class="d-box-soft" x="130" y="24" width="55" height="30"/>
+<rect class="d-box" x="185" y="24" width="55" height="30"/>
+<rect class="d-box" x="240" y="24" width="55" height="30"/>
+<rect class="d-box" x="295" y="24" width="55" height="30"/>
+</g>
+<text class="d-t-sm" x="47"  y="43" text-anchor="middle">m[0][0]</text>
+<text class="d-t-sm" x="102" y="43" text-anchor="middle">m[0][1]</text>
+<text class="d-t-sm" x="157" y="43" text-anchor="middle">m[0][2]</text>
+<text class="d-t-sm" x="212" y="43" text-anchor="middle">m[1][0]</text>
+<text class="d-t-sm" x="267" y="43" text-anchor="middle">m[1][1]</text>
+<text class="d-t-sm" x="322" y="43" text-anchor="middle">m[1][2]</text>
+<text class="d-t-sm" x="20" y="72">&larr;&mdash;&mdash; row 0 &mdash;&mdash;&rarr;&larr;&mdash;&mdash; row 1 &mdash;&mdash;&rarr;</text>
+<text class="d-t-b" x="20" y="104">char *argv[3]  &mdash;  pointers to separate strings</text>
+<rect class="d-box" x="20" y="112" width="40" height="26"/>
+<rect class="d-box" x="60" y="112" width="40" height="26"/>
+<rect class="d-box" x="100" y="112" width="40" height="26"/>
+<rect class="d-box-alt" x="220" y="108" width="70" height="20"/>
+<rect class="d-box-alt" x="220" y="132" width="110" height="20"/>
+<rect class="d-box-alt" x="360" y="120" width="60" height="20"/>
+<text class="d-t-mono" x="255" y="122" text-anchor="middle">"-v\0"</text>
+<text class="d-t-mono" x="275" y="146" text-anchor="middle">"input.txt\0"</text>
+<text class="d-t-mono" x="390" y="134" text-anchor="middle">"x\0"</text>
+<path class="d-line" d="M40 112 L235 128" marker-end="url(#carr-ah2)"/>
+<path class="d-line" d="M80 112 L245 132" marker-end="url(#carr-ah2)"/>
+<path class="d-line" d="M120 112 L378 120" marker-end="url(#carr-ah2)"/>
+<defs><marker id="carr-ah2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>A 2-D array is rectangular and contiguous; an array of pointers can have rows of different lengths in unrelated places &mdash; which is exactly what <code>main</code>'s <code>argv</code> is.</figcaption>
+</figure>
 
 <h3>Common bugs</h3>
 <ul>
@@ -721,6 +983,39 @@ Both parameters are declared <code>restrict</code>, so the compiler assumes <cod
 <span class="k">if</span> (!tmp) { <span class="c">/* handle; p still valid, still must be freed */</span> }
 <span class="k">else</span> { p = tmp; }</code></pre>
 
+<h3>The lifecycle of one allocation</h3>
+<figure class="diagram">
+<svg viewBox="0 0 540 210" role="img" aria-labelledby="d-cdm-life-t">
+<title id="d-cdm-life-t">malloc / use / free lifecycle and the two ways to misuse a freed pointer</title>
+<rect class="d-box-soft" x="14" y="20" width="110" height="40" rx="6"/>
+<text class="d-t-b" x="69" y="38" text-anchor="middle">malloc(n)</text>
+<text class="d-t-sm" x="69" y="53" text-anchor="middle">block, garbage</text>
+<rect class="d-box" x="164" y="20" width="110" height="40" rx="6"/>
+<text class="d-t-b" x="219" y="38" text-anchor="middle">use p</text>
+<text class="d-t-sm" x="219" y="53" text-anchor="middle">read / write</text>
+<rect class="d-box" x="314" y="20" width="110" height="40" rx="6"/>
+<text class="d-t-b" x="369" y="38" text-anchor="middle">free(p)</text>
+<text class="d-t-sm" x="369" y="53" text-anchor="middle">back to allocator</text>
+<rect class="d-box-alt" x="452" y="20" width="74" height="40" rx="6"/>
+<text class="d-t-b" x="489" y="43" text-anchor="middle">p = NULL</text>
+<path class="d-line" d="M124 40 L162 40" marker-end="url(#cdm-ah)"/>
+<path class="d-line" d="M274 40 L312 40" marker-end="url(#cdm-ah)"/>
+<path class="d-line" d="M424 40 L450 40" marker-end="url(#cdm-ah)"/>
+<defs><marker id="cdm-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<!-- danger branch -->
+<path class="d-dash" d="M369 60 L369 110"/>
+<rect class="d-box" x="250" y="112" width="240" height="34" rx="6" style="stroke:var(--text-soft)"/>
+<text class="d-t-sm" x="370" y="133" text-anchor="middle">still holds the old address (dangling)</text>
+<path class="d-dash" d="M250 129 L120 129"/>
+<rect class="d-box" x="14" y="112" width="106" height="34" rx="6" style="stroke:var(--text-soft)"/>
+<text class="d-t-sm" x="67" y="133" text-anchor="middle">*p &rarr; use-after-free</text>
+<path class="d-dash" d="M370 146 L370 172"/>
+<text class="d-t-accent" x="370" y="186" text-anchor="middle">free(p) again &rarr; double free (corrupts heap metadata)</text>
+<text class="d-t-sm" x="14" y="206">Setting <tspan class="d-t-mono">p = NULL</tspan> after free turns both mistakes into a safe <tspan class="d-t-mono">NULL</tspan> deref / no-op.</text>
+</svg>
+<figcaption>Every allocation has exactly one owner responsible for exactly one <code>free</code>. Between <code>free</code> and reassigning <code>NULL</code>, the pointer is a landmine.</figcaption>
+</figure>
+
 <h3>The bug catalogue</h3>
 <ul>
 <li><strong>Leak</strong> &mdash; losing the last pointer to a block without freeing it. Long-running processes die slowly.</li>
@@ -730,6 +1025,24 @@ Both parameters are declared <code>restrict</code>, so the compiler assumes <cod
 <li><strong>Mismatched size</strong> &mdash; allocating <code>n</code> bytes but treating it as <code>n</code> elements.</li>
 <li><strong>Unchecked <code>NULL</code></strong> &mdash; dereferencing a failed <code>malloc</code>.</li>
 </ul>
+<figure class="diagram">
+<svg viewBox="0 0 520 116" role="img" aria-labelledby="d-cdm-block-t">
+<title id="d-cdm-block-t">A heap block has hidden allocator bookkeeping next to your bytes</title>
+<rect class="d-box-alt" x="20" y="28" width="80" height="40"/>
+<rect class="d-box-soft" x="100" y="28" width="200" height="40"/>
+<rect class="d-box-alt" x="300" y="28" width="80" height="40"/>
+<text class="d-t-sm" x="60" y="46" text-anchor="middle">header</text>
+<text class="d-t-sm" x="60" y="60" text-anchor="middle">size/flags</text>
+<text class="d-t-b" x="200" y="52" text-anchor="middle">your n bytes</text>
+<text class="d-t-sm" x="340" y="52" text-anchor="middle">next block</text>
+<path class="d-line" d="M100 20 L100 26" marker-end="url(#cdm-ah2)"/>
+<defs><marker id="cdm-ah2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="100" y="16">malloc returns this address</text>
+<text class="d-t-sm" x="20" y="88">Writing before index 0 or past index n&minus;1 overwrites the header of this or the</text>
+<text class="d-t-sm" x="20" y="104">next block &rarr; the corruption shows up later, inside <tspan class="d-t-mono">malloc</tspan>/<tspan class="d-t-mono">free</tspan>, far from the bug.</text>
+</svg>
+<figcaption>This is why heap overruns and double-frees "crash somewhere else": they damage the allocator's own linked-list bookkeeping, not your data.</figcaption>
+</figure>
 
 <h3>Ownership discipline</h3>
 <p>C has no destructors, so decide for every allocation <em>who frees it</em> and <em>when</em>. Common
@@ -837,6 +1150,52 @@ Undefined behaviour isn't required to fail visibly. Whether the second free corr
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
 <h3>Segments of a running C program</h3>
+<p>When the loader starts your program it lays the address space out into regions with different
+permissions and lifetimes. Low addresses at the bottom, high at the top; the <strong>heap grows
+up</strong> toward higher addresses and the <strong>stack grows down</strong> toward lower ones, with the
+large unused gap between them.</p>
+<figure class="diagram">
+<svg viewBox="0 0 460 356" role="img" aria-labelledby="d-cml-t">
+<title id="d-cml-t">Virtual address space of a running C program</title>
+<text class="d-t-sm" x="12" y="14">high addresses</text>
+<text class="d-t-sm" x="12" y="350">low addresses</text>
+<!-- stack -->
+<rect class="d-box" x="120" y="22" width="220" height="46"/>
+<text class="d-t-b" x="230" y="42" text-anchor="middle">stack</text>
+<text class="d-t-sm" x="230" y="58" text-anchor="middle">call frames: locals, return addr, saved regs</text>
+<path class="d-line" d="M355 26 L355 62" marker-end="url(#cml-ah)"/>
+<defs><marker id="cml-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="362" y="47">grows down</text>
+<!-- gap -->
+<rect class="d-box-alt" x="120" y="74" width="220" height="60"/>
+<text class="d-t-sm" x="230" y="100" text-anchor="middle">unmapped gap</text>
+<text class="d-t-sm" x="230" y="116" text-anchor="middle">(a guard page catches stack overflow)</text>
+<!-- heap -->
+<rect class="d-box" x="120" y="140" width="220" height="46"/>
+<text class="d-t-b" x="230" y="160" text-anchor="middle">heap</text>
+<text class="d-t-sm" x="230" y="176" text-anchor="middle">malloc / calloc / realloc blocks</text>
+<path class="d-line" d="M355 182 L355 146" marker-end="url(#cml-ah)"/>
+<text class="d-t-sm" x="362" y="167">grows up</text>
+<!-- bss -->
+<rect class="d-box-soft" x="120" y="192" width="220" height="34"/>
+<text class="d-t-b" x="200" y="213" text-anchor="middle">.bss</text>
+<text class="d-t-sm" x="345" y="213" text-anchor="end">zero / uninit globals &amp; statics</text>
+<!-- data -->
+<rect class="d-box-soft" x="120" y="228" width="220" height="34"/>
+<text class="d-t-b" x="200" y="249" text-anchor="middle">.data</text>
+<text class="d-t-sm" x="345" y="249" text-anchor="end">non-zero-init globals &amp; statics</text>
+<!-- rodata -->
+<rect class="d-box-alt" x="120" y="264" width="220" height="34"/>
+<text class="d-t-b" x="205" y="285" text-anchor="middle">.rodata</text>
+<text class="d-t-sm" x="345" y="285" text-anchor="end">string literals, const globals (RO)</text>
+<!-- text -->
+<rect class="d-box-alt" x="120" y="300" width="220" height="34"/>
+<text class="d-t-b" x="205" y="321" text-anchor="middle">.text</text>
+<text class="d-t-sm" x="345" y="321" text-anchor="end">machine code (RO + exec)</text>
+<text class="d-t-sm" x="12" y="336">(ASLR randomises these bases each run)</text>
+</svg>
+<figcaption><code>.bss</code> costs nothing in the executable file &mdash; the loader just zero-fills it. <code>.data</code> stores the actual initial bytes on disk.</figcaption>
+</figure>
 <table>
 <tr><th>Segment</th><th>Holds</th><th>Lifetime</th></tr>
 <tr><td><code>.text</code> (code)</td><td>Machine instructions; often read-only + executable.</td><td>Whole program.</td></tr>
@@ -851,8 +1210,28 @@ Undefined behaviour isn't required to fail visibly. Whether the second free corr
 <p>Each call pushes a <strong>stack frame</strong>: space for the function's automatic variables, the
 return address, and saved registers. Returning pops it &mdash; which is why returning a pointer to a
 local is a bug, and why deep or infinite recursion causes <strong>stack overflow</strong>. Allocation
-is a single register adjustment, so it's essentially free; there's no fragmentation. Typical size
-is 1&ndash;8&nbsp;MB (tunable with <code>ulimit -s</code> or thread attributes).</p>
+is a single register adjustment (move the stack pointer), so it's essentially free; there's no
+fragmentation. Typical size is 1&ndash;8&nbsp;MB (tunable with <code>ulimit -s</code> or thread attributes).</p>
+<figure class="diagram">
+<svg viewBox="0 0 500 176" role="img" aria-labelledby="d-cml-frame-t">
+<title id="d-cml-frame-t">Nested calls stack frames; return pops them</title>
+<text class="d-t-sm" x="14" y="14">main() calls f(), f() calls g()</text>
+<rect class="d-box-alt" x="150" y="22" width="200" height="26"/>
+<text class="d-t-sm" x="250" y="39" text-anchor="middle">main frame</text>
+<rect class="d-box-soft" x="150" y="48" width="200" height="26"/>
+<text class="d-t-sm" x="250" y="65" text-anchor="middle">f frame &mdash; ret addr into main</text>
+<rect class="d-box" x="150" y="74" width="200" height="26"/>
+<text class="d-t-sm" x="250" y="91" text-anchor="middle">g frame &mdash; ret addr into f, locals</text>
+<path class="d-line" d="M375 30 L375 96" marker-end="url(#cml-ah2)"/>
+<defs><marker id="cml-ah2" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="382" y="66">SP moves</text>
+<text class="d-t-sm" x="382" y="80">down</text>
+<text class="d-t-accent" x="14" y="124">g returns &rarr; its frame is popped (SP back up). Any pointer</text>
+<text class="d-t-accent" x="14" y="140">to a g local now dangles &mdash; that memory is the next call's.</text>
+<text class="d-t-sm" x="14" y="164">A guard page just past the deepest allowed frame faults on overflow.</text>
+</svg>
+<figcaption>Frames are LIFO. "Allocating" a local is just part of moving the stack pointer when the frame is set up; nothing is individually freed.</figcaption>
+</figure>
 
 <h3>The heap</h3>
 <p>A pool the C library manages via <code>brk</code>/<code>sbrk</code> or <code>mmap</code> under the hood. Allocation
@@ -968,16 +1347,76 @@ The compiler may keep a local entirely in a register (no address at all until fo
 <h3>Alignment &amp; padding</h3>
 <p>Each scalar type has an <strong>alignment requirement</strong> (usually its own size): an <code>int</code>
 must sit at an address divisible by 4, a <code>double</code> by 8. The compiler inserts <strong>padding</strong>
-bytes between members so each is aligned, and <strong>tail padding</strong> at the end so that in an
-array every element stays aligned. The whole struct's alignment is that of its strictest member.</p>
-<pre><code><span class="k">struct</span> bad { <span class="k">char</span> a; <span class="k">int</span> b; <span class="k">char</span> c; };  <span class="c">// 1 +3pad +4 +1 +3pad = 12</span>
-<span class="k">struct</span> good { <span class="k">int</span> b; <span class="k">char</span> a; <span class="k">char</span> c; };  <span class="c">// 4 +1 +1 +2pad = 8</span></code></pre>
-<p>Order members large&rarr;small to minimise padding. <code>offsetof(type, member)</code> from
-<code>&lt;stddef.h&gt;</code> gives the real offset. C11 <code>_Alignas</code> / <code>alignof</code> let you query or force alignment.</p>
+bytes between members so each lands on a legal boundary, and <strong>tail padding</strong> at the end so
+that in an array <code>arr[i+1]</code> is still aligned. The whole struct's alignment is that of its
+strictest member.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 208" role="img" aria-labelledby="d-csu-pad-t">
+<title id="d-csu-pad-t">Member order changes how much padding the compiler inserts</title>
+<text class="d-t-b" x="14" y="16">struct bad { char a; int b; char c; };  &rarr; sizeof 12</text>
+<g>
+<rect class="d-box-soft" x="14" y="24" width="30" height="30"/>
+<rect class="d-box-alt"  x="44" y="24" width="90" height="30"/>
+<rect class="d-box"      x="134" y="24" width="120" height="30"/>
+<rect class="d-box-soft" x="254" y="24" width="30" height="30"/>
+<rect class="d-box-alt"  x="284" y="24" width="90" height="30"/>
+</g>
+<text class="d-t-sm" x="29"  y="44" text-anchor="middle">a</text>
+<text class="d-t-sm" x="89"  y="44" text-anchor="middle">pad</text>
+<text class="d-t-sm" x="194" y="44" text-anchor="middle">b (int)</text>
+<text class="d-t-sm" x="269" y="44" text-anchor="middle">c</text>
+<text class="d-t-sm" x="329" y="44" text-anchor="middle">pad</text>
+<text class="d-t-sm" x="14" y="70">byte:  0    1  2  3   4   5   6   7    8    9 10 11</text>
+<text class="d-t-b" x="14" y="104">struct good { int b; char a; char c; };  &rarr; sizeof 8</text>
+<g>
+<rect class="d-box"      x="14" y="112" width="120" height="30"/>
+<rect class="d-box-soft" x="134" y="112" width="30" height="30"/>
+<rect class="d-box-soft" x="164" y="112" width="30" height="30"/>
+<rect class="d-box-alt"  x="194" y="112" width="60" height="30"/>
+</g>
+<text class="d-t-sm" x="74"  y="132" text-anchor="middle">b (int)</text>
+<text class="d-t-sm" x="149" y="132" text-anchor="middle">a</text>
+<text class="d-t-sm" x="179" y="132" text-anchor="middle">c</text>
+<text class="d-t-sm" x="224" y="132" text-anchor="middle">pad</text>
+<text class="d-t-sm" x="14" y="158">byte:  0   1   2   3    4    5     6  7</text>
+<text class="d-t-accent" x="14" y="186">Same fields, same alignment rules &mdash; ordering large&rarr;small</text>
+<text class="d-t-accent" x="14" y="202">removed 4 bytes of holes.</text>
+</svg>
+<figcaption>Order members from largest alignment to smallest to minimise padding. <code>offsetof(T, m)</code> from <code>&lt;stddef.h&gt;</code> gives the real offset; C11 <code>alignof</code> / <code>_Alignas</code> query or force alignment.</figcaption>
+</figure>
 
 <h3>Unions</h3>
-<p>All members share the same storage; <code>sizeof</code> is the largest member (plus alignment). Writing
-one member and reading another is <strong>type punning</strong> &mdash; in C this is defined for
+<p>All members share the <em>same</em> storage &mdash; they overlap, starting at the same address.
+<code>sizeof</code> is the largest member (rounded up for alignment). Only one member is "active"
+at a time.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-csu-union-t">
+<title id="d-csu-union-t">union members occupy the same bytes</title>
+<text class="d-t-b" x="14" y="16">union U { int i; float f; char b[4]; unsigned char c; };</text>
+<rect class="d-box-alt" x="14" y="26" width="320" height="22"/>
+<text class="d-t-sm" x="174" y="41" text-anchor="middle">4 bytes of storage (byte 0 &rarr; 3)</text>
+<rect class="d-box-soft" x="14" y="52" width="320" height="20"/>
+<text class="d-t-sm" x="174" y="66" text-anchor="middle">i  (all 4 bytes as an int)</text>
+<rect class="d-box-soft" x="14" y="74" width="320" height="20"/>
+<text class="d-t-sm" x="174" y="88" text-anchor="middle">f  (all 4 bytes as a float)</text>
+<g>
+<rect class="d-box" x="14" y="96" width="80" height="20"/>
+<rect class="d-box" x="94" y="96" width="80" height="20"/>
+<rect class="d-box" x="174" y="96" width="80" height="20"/>
+<rect class="d-box" x="254" y="96" width="80" height="20"/>
+</g>
+<text class="d-t-sm" x="54" y="110" text-anchor="middle">b[0]</text>
+<text class="d-t-sm" x="134" y="110" text-anchor="middle">b[1]</text>
+<text class="d-t-sm" x="214" y="110" text-anchor="middle">b[2]</text>
+<text class="d-t-sm" x="294" y="110" text-anchor="middle">b[3]</text>
+<text class="d-t-sm" x="350" y="66">write <tspan class="d-t-mono">u.i</tspan>, then</text>
+<text class="d-t-sm" x="350" y="82">read <tspan class="d-t-mono">u.b[0]</tspan> to</text>
+<text class="d-t-sm" x="350" y="98">see its bytes.</text>
+<text class="d-t-sm" x="14" y="138">Writing one member and reading another = type punning (see below).</text>
+</svg>
+<figcaption>Because members overlap, a union of a header field plus payload variants is the building block of a <strong>tagged union</strong>.</figcaption>
+</figure>
+<p>Writing one member and reading another is <strong>type punning</strong> &mdash; in C this is defined for
 inspecting bytes and for a <em>common initial sequence</em> of struct members, but reading a
 different type generally has implementation-defined/UB corners (the popular <code>float</code>&harr;<code>int</code>
 trick works on GCC/Clang; <code>memcpy</code> is the fully portable route). A <strong>tagged union</strong>
@@ -1103,7 +1542,33 @@ fp(<span class="n">2</span>,<span class="n">3</span>);      <span class="c">// o
 <code>typedef</code> to stay sane: <code>typedef int (*BinOp)(int,int);</code>.</p>
 
 <h3>Callbacks</h3>
-<p>Pass behaviour into a generic routine. <code>qsort</code> is the canonical example:</p>
+<p>Pass <em>behaviour</em> into a generic routine as data. The generic code calls back into your
+code at the points it defines.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 140" role="img" aria-labelledby="d-cfp-cb-t">
+<title id="d-cfp-cb-t">A callback: generic code calls back into caller-supplied code</title>
+<rect class="d-box-soft" x="20" y="40" width="130" height="46" rx="6"/>
+<text class="d-t-b" x="85" y="60" text-anchor="middle">your code</text>
+<text class="d-t-sm" x="85" y="76" text-anchor="middle">passes cmp, arr</text>
+<rect class="d-box" x="200" y="40" width="130" height="46" rx="6"/>
+<text class="d-t-b" x="265" y="60" text-anchor="middle">qsort()</text>
+<text class="d-t-sm" x="265" y="76" text-anchor="middle">sort algorithm</text>
+<rect class="d-box-soft" x="380" y="40" width="120" height="46" rx="6"/>
+<text class="d-t-b" x="440" y="60" text-anchor="middle">cmp()</text>
+<text class="d-t-sm" x="440" y="76" text-anchor="middle">your compare</text>
+<path class="d-line" d="M150 55 L198 55" marker-end="url(#cfp-ah)"/>
+<defs><marker id="cfp-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="174" y="35" text-anchor="middle">1. call</text>
+<path class="d-line" d="M330 62 C 355 78, 360 78, 378 68" marker-end="url(#cfp-ah)"/>
+<text class="d-t-sm" x="355" y="98" text-anchor="middle">2. calls back many times</text>
+<path class="d-dash" d="M378 50 C 360 34, 355 34, 332 46" marker-end="url(#cfp-ah)"/>
+<text class="d-t-sm" x="355" y="28" text-anchor="middle">3. returns &minus;/0/+</text>
+<text class="d-t-sm" x="20" y="122">A good callback API also passes a <tspan class="d-t-mono">void *user</tspan> context so the callback</text>
+<text class="d-t-sm" x="20" y="138">reaches caller state without globals (<tspan class="d-t-mono">qsort_r</tspan> has it; plain <tspan class="d-t-mono">qsort</tspan> does not).</text>
+</svg>
+<figcaption>The generic routine owns the control flow; the function pointer is the seam where your logic plugs in.</figcaption>
+</figure>
+<p><code>qsort</code> is the canonical example:</p>
 <pre><code><span class="k">int</span> cmp(<span class="k">const void</span> *a, <span class="k">const void</span> *b) {
     <span class="k">int</span> x = *(<span class="k">const int</span> *)a, y = *(<span class="k">const int</span> *)b;
     <span class="k">return</span> (x &gt; y) - (x &lt; y);   <span class="c">// avoids overflow of x - y</span>
@@ -1115,7 +1580,33 @@ reach caller state without globals (<code>qsort_r</code>/<code>qsort_s</code> ad
 <h3>Dispatch tables</h3>
 <p>An array (or struct) of function pointers replaces a big <code>switch</code> and enables run-time
 extensibility: opcode interpreters, state machines, driver <code>struct file_operations</code>-style
-vtables, plugin registration.</p>
+vtables, plugin registration. The index <em>is</em> the selector &mdash; O(1), no branch chain.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 168" role="img" aria-labelledby="d-cfp-tbl-t">
+<title id="d-cfp-tbl-t">A dispatch table: an index selects which function runs</title>
+<text class="d-t-b" x="20" y="16">table[EVENT_MAX]  (array of Handler)</text>
+<g>
+<rect class="d-box" x="20" y="24" width="70" height="26"/>
+<rect class="d-box-soft" x="90" y="24" width="70" height="26"/>
+<rect class="d-box" x="160" y="24" width="70" height="26"/>
+<rect class="d-box" x="230" y="24" width="70" height="26"/>
+</g>
+<text class="d-t-sm" x="55" y="41" text-anchor="middle">[0] on_open</text>
+<text class="d-t-sm" x="125" y="41" text-anchor="middle">[1] on_tick</text>
+<text class="d-t-sm" x="195" y="41" text-anchor="middle">[2] on_key</text>
+<text class="d-t-sm" x="265" y="41" text-anchor="middle">[3] NULL</text>
+<text class="d-t-accent" x="20" y="80">e-&gt;type == 1</text>
+<path class="d-line" d="M60 84 C 90 100, 100 60, 125 52" marker-end="url(#cfp-ah2)"/>
+<defs><marker id="cfp-ah2" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-soft" x="200" y="66" width="150" height="30" rx="6"/>
+<text class="d-t-sm" x="275" y="85" text-anchor="middle">on_tick(e)  runs</text>
+<path class="d-line" d="M160 42 C 180 42, 190 78, 198 80" marker-end="url(#cfp-ah2)"/>
+<text class="d-t-sm" x="20" y="126">if (e-&gt;type &lt; EVENT_MAX &amp;&amp; table[e-&gt;type])  table[e-&gt;type](e);</text>
+<text class="d-t-sm" x="20" y="150">Bounds-check the index and null-check the slot &mdash; a bad index or a</text>
+<text class="d-t-sm" x="20" y="166">missing handler is a call through a wild pointer.</text>
+</svg>
+<figcaption>Register a new handler by writing one array slot &mdash; no recompilation of the dispatcher. This is how C builds vtables and plugin systems.</figcaption>
+</figure>
 <pre><code><span class="k">typedef void</span> (*Handler)(Event *);
 <span class="k">static</span> Handler table[EVENT_MAX] = { [EV_OPEN]=on_open, [EV_TICK]=on_tick };
 <span class="k">if</span> (e-&gt;type &lt; EVENT_MAX &amp;&amp; table[e-&gt;type]) table[e-&gt;type](e);</code></pre>
@@ -1221,13 +1712,61 @@ Language linkage is part of a function type in C++. A pointer to an <code>extern
 <p class="subtitle">A text-substitution pass that runs before the compiler &mdash; powerful, and full of foot-guns.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
-<h3>What it does</h3>
-<p>The preprocessor handles <code>#include</code> (paste a file), <code>#define</code> (object- and
-function-like macros), conditional compilation (<code>#if / #ifdef / #ifndef / #elif / #else / #endif</code>),
-<code>#pragma</code>, <code>#error</code>, and line control. It works purely on tokens &mdash; it knows nothing
-about types, scopes, or C syntax.</p>
+<h3>Where it sits in the build</h3>
+<p>The preprocessor is the <em>first</em> stage. It transforms your <code>.c</code> file (plus everything
+it <code>#include</code>s) into one big self-contained <strong>translation unit</strong> of pure C, which the
+compiler proper then parses. It works purely on <em>tokens</em> &mdash; it knows nothing about types,
+scopes, or C grammar.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 132" role="img" aria-labelledby="d-cpp-pipe-t">
+<title id="d-cpp-pipe-t">The C build pipeline; the preprocessor is stage 1</title>
+<rect class="d-box-soft" x="10" y="40" width="86" height="44" rx="6"/>
+<text class="d-t-sm" x="53" y="58" text-anchor="middle">foo.c</text>
+<text class="d-t-sm" x="53" y="73" text-anchor="middle">+ #includes</text>
+<rect class="d-box" x="126" y="40" width="96" height="44" rx="6"/>
+<text class="d-t-b" x="174" y="58" text-anchor="middle">preprocess</text>
+<text class="d-t-sm" x="174" y="73" text-anchor="middle">cc -E</text>
+<rect class="d-box" x="252" y="40" width="96" height="44" rx="6"/>
+<text class="d-t-b" x="300" y="58" text-anchor="middle">compile</text>
+<text class="d-t-sm" x="300" y="73" text-anchor="middle">&rarr; foo.s</text>
+<rect class="d-box" x="378" y="40" width="80" height="44" rx="6"/>
+<text class="d-t-b" x="418" y="58" text-anchor="middle">assemble</text>
+<text class="d-t-sm" x="418" y="73" text-anchor="middle">&rarr; foo.o</text>
+<rect class="d-box-soft" x="478" y="40" width="54" height="44" rx="6"/>
+<text class="d-t-b" x="505" y="63" text-anchor="middle">link</text>
+<path class="d-line" d="M96 62 L124 62" marker-end="url(#cpp-ah)"/>
+<path class="d-line" d="M222 62 L250 62" marker-end="url(#cpp-ah)"/>
+<path class="d-line" d="M348 62 L376 62" marker-end="url(#cpp-ah)"/>
+<path class="d-line" d="M458 62 L476 62" marker-end="url(#cpp-ah)"/>
+<defs><marker id="cpp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="126" y="30">expands #include / #define / #if &rarr; one translation unit</text>
+<text class="d-t-sm" x="10" y="112">Inspect the output with <tspan class="d-t-mono">gcc -E foo.c</tspan> &mdash; a macro bug is usually obvious there.</text>
+<text class="d-t-sm" x="10" y="128">The preprocessor also does <tspan class="d-t-mono">#pragma</tspan>, <tspan class="d-t-mono">#error</tspan>, and line control.</text>
+</svg>
+<figcaption>Because it is text substitution before the compiler, macros have no type, no scope, and no respect for C syntax &mdash; hence the pitfalls below.</figcaption>
+</figure>
 
 <h3>Macro pitfalls</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-cpp-exp-t">
+<title id="d-cpp-exp-t">Macros are blind text substitution, so precedence breaks</title>
+<text class="d-t-b" x="16" y="18">#define SQ(x) x*x</text>
+<rect class="d-box" x="16" y="28" width="120" height="26"/>
+<text class="d-t-mono" x="76" y="45" text-anchor="middle">SQ(a + b)</text>
+<path class="d-line" d="M140 41 L184 41" marker-end="url(#cpp-ah2)"/>
+<defs><marker id="cpp-ah2" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="162" y="34">paste</text>
+<rect class="d-box-alt" x="188" y="28" width="150" height="26"/>
+<text class="d-t-mono" x="263" y="45" text-anchor="middle">a + b * a + b</text>
+<path class="d-line" d="M342 41 L386 41" marker-end="url(#cpp-ah2)"/>
+<rect class="d-box-alt" x="390" y="28" width="120" height="26"/>
+<text class="d-t-mono" x="450" y="45" text-anchor="middle">a + (b*a) + b</text>
+<text class="d-t-accent" x="16" y="80">Wanted (a+b)&sup2;. Fix: parenthesise every parameter AND the whole body:</text>
+<text class="d-t-mono" x="16" y="100">#define SQ(x) ((x) * (x))</text>
+<text class="d-t-sm" x="16" y="122">The macro also evaluates its argument twice &mdash; <tspan class="d-t-mono">SQ(i++)</tspan> increments <tspan class="d-t-mono">i</tspan> twice.</text>
+</svg>
+<figcaption>An <code>inline</code> function or, in modern C, a <code>static inline</code> helper avoids both the precedence and the double-evaluation traps.</figcaption>
+</figure>
 <pre><code><span class="c">// 1. missing parentheses</span>
 <span class="k">#define</span> SQ(x) x*x
 SQ(a+b)        <span class="c">// -&gt; a+b*b   ... wrong</span>
@@ -1357,9 +1896,46 @@ A macro is &ldquo;painted blue&rdquo; (marked non-replaceable) while its own exp
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
 <h3>Translation units and the one-definition idea</h3>
-<p>Each <code>.c</code> file plus everything it <code>#include</code>s is a <strong>translation unit</strong>,
-compiled to an object file; the linker joins them. A symbol with external linkage may be
-<em>declared</em> many times but must be <em>defined</em> exactly once across the whole program.</p>
+<p>Each <code>.c</code> file plus everything it <code>#include</code>s is a <strong>translation unit</strong> (TU),
+compiled independently to an object file. The <strong>linker</strong> then joins the object files,
+matching each <em>use</em> of an external name to its one <em>definition</em>. A name with external
+linkage may be <em>declared</em> in many TUs but must be <em>defined</em> exactly once across the whole
+program (the "one definition rule").</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 210" role="img" aria-labelledby="d-cql-t">
+<title id="d-cql-t">Linkage decides which names are visible to the linker</title>
+<!-- TU a -->
+<rect class="d-box" x="14" y="24" width="180" height="120" rx="6"/>
+<text class="d-t-b" x="24" y="42">a.c &rarr; a.o</text>
+<text class="d-t-mono" x="24" y="62">int g = 0;</text>
+<text class="d-t-sm" x="150" y="62" text-anchor="end">external</text>
+<text class="d-t-mono" x="24" y="82">static int h;</text>
+<text class="d-t-sm" x="150" y="82" text-anchor="end">internal</text>
+<text class="d-t-mono" x="24" y="102">void pub(void){}</text>
+<text class="d-t-sm" x="150" y="102" text-anchor="end">external</text>
+<text class="d-t-mono" x="24" y="122">static void hlp(){}</text>
+<text class="d-t-sm" x="150" y="122" text-anchor="end">internal</text>
+<!-- TU b -->
+<rect class="d-box" x="14" y="156" width="180" height="44" rx="6"/>
+<text class="d-t-b" x="24" y="174">b.c &rarr; b.o</text>
+<text class="d-t-mono" x="24" y="192">extern int g;  pub();</text>
+<!-- linker -->
+<rect class="d-box-soft" x="300" y="70" width="120" height="70" rx="6"/>
+<text class="d-t-b" x="360" y="100" text-anchor="middle">linker</text>
+<text class="d-t-sm" x="360" y="118" text-anchor="middle">resolves symbols</text>
+<path class="d-line" d="M194 84 C 250 84, 250 95, 298 100" marker-end="url(#cql-ah)"/>
+<path class="d-line" d="M194 178 C 250 178, 260 130, 298 118" marker-end="url(#cql-ah)"/>
+<defs><marker id="cql-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-alt" x="446" y="70" width="86" height="70" rx="6"/>
+<text class="d-t-sm" x="489" y="98" text-anchor="middle">program</text>
+<text class="d-t-sm" x="489" y="114" text-anchor="middle">g, pub</text>
+<text class="d-t-sm" x="489" y="130" text-anchor="middle">merged</text>
+<path class="d-line" d="M420 105 L444 105" marker-end="url(#cql-ah)"/>
+<text class="d-t-sm" x="230" y="30"><tspan class="d-t-mono">h</tspan> and <tspan class="d-t-mono">hlp</tspan> are invisible to the linker</text>
+<text class="d-t-sm" x="230" y="46">&mdash; another file can define its own <tspan class="d-t-mono">h</tspan> with no clash.</text>
+</svg>
+<figcaption><strong>External</strong> = one shared entity across the program. <strong>Internal</strong> (<code>static</code> at file scope) = private to this TU. <strong>None</strong> = a fresh entity each time (locals, params, typedefs).</figcaption>
+</figure>
 
 <h3>Linkage</h3>
 <table>
@@ -1485,6 +2061,51 @@ No. <code>static</code> gives internal linkage, so each <code>helper</code> is p
 <p class="subtitle">Masks, shifts, and the handful of idioms that come up in almost every low-level interview.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Think of a value as a row of bits</h3>
+<p>Bit <code>n</code> has place value 2<sup>n</sup>, numbered from the right (the <em>least significant</em>
+bit is bit 0). A <strong>mask</strong> is a value with 1s exactly where you want to act; the bitwise
+operator then decides what "act" means.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 232" role="img" aria-labelledby="d-cbit-t">
+<title id="d-cbit-t">Set, clear, toggle, and test bit 3 with a mask</title>
+<text class="d-t-sm" x="14" y="16">bit #:   7   6   5   4   3   2   1   0</text>
+<!-- x -->
+<g>
+<rect class="d-box" x="60" y="24" width="30" height="24"/><rect class="d-box" x="90" y="24" width="30" height="24"/>
+<rect class="d-box" x="120" y="24" width="30" height="24"/><rect class="d-box" x="150" y="24" width="30" height="24"/>
+<rect class="d-box" x="180" y="24" width="30" height="24"/><rect class="d-box" x="210" y="24" width="30" height="24"/>
+<rect class="d-box" x="240" y="24" width="30" height="24"/><rect class="d-box" x="270" y="24" width="30" height="24"/>
+</g>
+<text class="d-t-mono" x="75" y="41" text-anchor="middle">0</text><text class="d-t-mono" x="105" y="41" text-anchor="middle">1</text>
+<text class="d-t-mono" x="135" y="41" text-anchor="middle">0</text><text class="d-t-mono" x="165" y="41" text-anchor="middle">0</text>
+<text class="d-t-mono" x="195" y="41" text-anchor="middle">0</text><text class="d-t-mono" x="225" y="41" text-anchor="middle">1</text>
+<text class="d-t-mono" x="255" y="41" text-anchor="middle">0</text><text class="d-t-mono" x="285" y="41" text-anchor="middle">1</text>
+<text class="d-t-sm" x="14" y="41">x  =</text>
+<text class="d-t-sm" x="320" y="41">= 0x45</text>
+<!-- mask -->
+<g>
+<rect class="d-box-alt" x="60" y="56" width="30" height="24"/><rect class="d-box-alt" x="90" y="56" width="30" height="24"/>
+<rect class="d-box-alt" x="120" y="56" width="30" height="24"/><rect class="d-box-alt" x="150" y="56" width="30" height="24"/>
+<rect class="d-box-soft" x="180" y="56" width="30" height="24"/><rect class="d-box-alt" x="210" y="56" width="30" height="24"/>
+<rect class="d-box-alt" x="240" y="56" width="30" height="24"/><rect class="d-box-alt" x="270" y="56" width="30" height="24"/>
+</g>
+<text class="d-t-mono" x="195" y="73" text-anchor="middle">1</text>
+<text class="d-t-mono" x="75" y="73" text-anchor="middle">0</text><text class="d-t-mono" x="105" y="73" text-anchor="middle">0</text>
+<text class="d-t-mono" x="135" y="73" text-anchor="middle">0</text><text class="d-t-mono" x="165" y="73" text-anchor="middle">0</text>
+<text class="d-t-mono" x="225" y="73" text-anchor="middle">0</text><text class="d-t-mono" x="255" y="73" text-anchor="middle">0</text><text class="d-t-mono" x="285" y="73" text-anchor="middle">0</text>
+<text class="d-t-sm" x="14" y="73">1u&lt;&lt;3</text>
+<text class="d-t-sm" x="320" y="73">= 0x08</text>
+<line class="d-line-soft" x1="14" y1="88" x2="360" y2="88"/>
+<text class="d-t-mono" x="14" y="112">x |  (1u&lt;&lt;3)   &rarr;  set bit 3   &rarr;  0100 1<tspan class="d-t-accent">1</tspan>01  (0x4D)</text>
+<text class="d-t-mono" x="14" y="134">x &amp; ~(1u&lt;&lt;3)   &rarr;  clear bit 3  &rarr;  0100 0<tspan class="d-t-accent">0</tspan>01  (0x41)</text>
+<text class="d-t-mono" x="14" y="156">x ^  (1u&lt;&lt;3)   &rarr;  toggle bit 3 &rarr;  0100 1<tspan class="d-t-accent">1</tspan>01  (flip)</text>
+<text class="d-t-mono" x="14" y="178">(x &gt;&gt; 3) &amp; 1u   &rarr;  test bit 3   &rarr;  0</text>
+<text class="d-t-sm" x="14" y="206">OR sets, AND-with-complement clears, XOR flips, shift-then-AND reads.</text>
+<text class="d-t-sm" x="14" y="224">Use unsigned + <tspan class="d-t-mono">1u</tspan>/<tspan class="d-t-mono">1UL</tspan>: shifting into/past the sign bit is UB.</text>
+</svg>
+<figcaption>The same four moves compose into every field extract/insert: build a wider mask, shift it into place, then OR / AND-NOT.</figcaption>
+</figure>
+
 <h3>The four fundamental operations</h3>
 <pre><code>x |  (<span class="n">1u</span> &lt;&lt; n)     <span class="c">// set bit n</span>
 x &amp; ~(<span class="n">1u</span> &lt;&lt; n)     <span class="c">// clear bit n</span>
@@ -1644,10 +2265,36 @@ Or use a byte lookup table, or <code>__builtin</code>/ARM <code>RBIT</code>.
 </table>
 
 <h3>Why &ldquo;it works on my machine&rdquo; is not a defence</h3>
-<p>Modern optimisers actively assume the absence of UB. If <code>p</code> is dereferenced, later code
-may drop a <code>if (p == NULL)</code> check as &ldquo;dead&rdquo;. Signed-overflow assumptions turn
-<code>x + 1 &gt; x</code> into <code>true</code>. So UB can delete security checks or loops entirely, and the
-symptom can appear far from the cause and only at <code>-O2</code>.</p>
+<p>Modern optimisers <em>actively assume UB never happens</em> and rewrite your code on that basis.
+If you dereference <code>p</code>, the compiler is entitled to conclude <code>p</code> can't be null and
+<strong>delete</strong> any later <code>if (p == NULL)</code> as unreachable. Signed-overflow
+assumptions turn <code>x + 1 &gt; x</code> into a constant <code>true</code>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 190" role="img" aria-labelledby="d-cub-t">
+<title id="d-cub-t">How the optimiser reasons UB away and deletes a safety check</title>
+<rect class="d-box" x="14" y="20" width="250" height="86" rx="6"/>
+<text class="d-t-mono" x="24" y="40">int v = *p;</text>
+<text class="d-t-mono" x="24" y="60">// ... use v ...</text>
+<text class="d-t-mono" x="24" y="80">if (p == NULL)</text>
+<text class="d-t-mono" x="24" y="98">    return ERR;</text>
+<path class="d-line" d="M264 63 L320 63" marker-end="url(#cub-ah)"/>
+<defs><marker id="cub-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="292" y="55" text-anchor="middle">compiler</text>
+<text class="d-t-sm" x="292" y="78" text-anchor="middle">reasons:</text>
+<rect class="d-box-alt" x="326" y="14" width="204" height="70" rx="6"/>
+<text class="d-t-sm" x="336" y="34">"*p ran, so p is not NULL</text>
+<text class="d-t-sm" x="336" y="52">(NULL deref would be UB),</text>
+<text class="d-t-sm" x="336" y="70">so the check is always false."</text>
+<path class="d-line" d="M428 84 L428 108" marker-end="url(#cub-ah)"/>
+<rect class="d-box-soft" x="326" y="110" width="204" height="46" rx="6"/>
+<text class="d-t-mono" x="336" y="130">int v = *p;</text>
+<text class="d-t-accent" x="336" y="148">// the NULL check is gone</text>
+<text class="d-t-sm" x="14" y="150">Result: the crash-guard you wrote is silently removed at <tspan class="d-t-mono">-O2</tspan>.</text>
+<text class="d-t-sm" x="14" y="168">Fix: check <tspan class="d-t-mono">p</tspan> <tspan class="d-t-b">before</tspan> the first dereference, not after.</text>
+<text class="d-t-sm" x="14" y="186">The visible symptom often appears in unrelated code, only with optimisation on.</text>
+</svg>
+<figcaption>UB is not "a crash" &mdash; it is a licence for the whole program's behaviour to be anything. It can delete security checks and loops, and the effect can travel backwards past the offending line.</figcaption>
+</figure>
 
 <h3>Sequence points / sequencing (C11 model)</h3>
 <p>Between two <em>sequence points</em> (the <code>;</code>, <code>&amp;&amp;</code>, <code>||</code>, <code>?:</code>, comma
@@ -1762,6 +2409,35 @@ Don't cast the buffer pointer to <code>struct T *</code> and dereference. Instea
 </table>
 <p>stdio wraps a descriptor with a user-space buffer to cut syscall count. Get the underlying fd with
 <code>fileno(fp)</code>; wrap an fd with <code>fdopen</code>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 176" role="img" aria-labelledby="d-cfio-t">
+<title id="d-cfio-t">Data passes through a stdio buffer and a kernel buffer before disk</title>
+<rect class="d-box-soft" x="12" y="30" width="96" height="46" rx="6"/>
+<text class="d-t-b" x="60" y="50" text-anchor="middle">your code</text>
+<text class="d-t-sm" x="60" y="66" text-anchor="middle">fwrite / fprintf</text>
+<rect class="d-box" x="150" y="30" width="110" height="46" rx="6"/>
+<text class="d-t-b" x="205" y="50" text-anchor="middle">FILE buffer</text>
+<text class="d-t-sm" x="205" y="66" text-anchor="middle">user space</text>
+<rect class="d-box" x="302" y="30" width="110" height="46" rx="6"/>
+<text class="d-t-b" x="357" y="50" text-anchor="middle">kernel cache</text>
+<text class="d-t-sm" x="357" y="66" text-anchor="middle">page cache</text>
+<rect class="d-box-alt" x="454" y="30" width="74" height="46" rx="6"/>
+<text class="d-t-b" x="491" y="57" text-anchor="middle">disk</text>
+<path class="d-line" d="M108 53 L148 53" marker-end="url(#cfio-ah)"/>
+<path class="d-line" d="M260 53 L300 53" marker-end="url(#cfio-ah)"/>
+<path class="d-line" d="M412 53 L452 53" marker-end="url(#cfio-ah)"/>
+<defs><marker id="cfio-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="128" y="24">cheap copy</text>
+<text class="d-t-accent" x="272" y="24">write() syscall</text>
+<text class="d-t-accent" x="424" y="24">fsync()</text>
+<text class="d-t-sm" x="150" y="104">fflush / buffer full /</text>
+<text class="d-t-sm" x="150" y="120">exit &rarr; flush to kernel</text>
+<path class="d-dash" d="M205 88 L205 76"/>
+<text class="d-t-sm" x="12" y="150"><tspan class="d-t-mono">read</tspan>/<tspan class="d-t-mono">write</tspan> (POSIX) skip the FILE buffer &mdash; one syscall each. A crash</text>
+<text class="d-t-sm" x="12" y="168">loses whatever is still in the FILE buffer; <tspan class="d-t-mono">_exit</tspan>/<tspan class="d-t-mono">abort</tspan>/signals don't flush it.</text>
+</svg>
+<figcaption>The user-space buffer turns many small <code>printf</code>s into few <code>write()</code> syscalls. That is the speed win &mdash; and the reason output can appear out of order or be lost on a crash.</figcaption>
+</figure>
 
 <h3>Buffering modes</h3>
 <ul>
