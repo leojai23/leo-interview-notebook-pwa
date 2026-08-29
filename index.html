@@ -9427,6 +9427,1073 @@ NoSQL stores are <em>schema-flexible at write time</em> (the engine won't reject
 </section>
 <!-- /TOPIC:db:sql-vs-nosql -->
 
+<!-- ============================== NETWORKS TOPICS ============================== -->
+<!-- TOPIC:net:models -->
+<section class="view topic" id="v-net-models" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>OSI &amp; TCP/IP Models</h1>
+<p class="subtitle">A mental map for "which layer is this problem at?"</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The layers</h3>
+<table>
+<tr><th>OSI</th><th>TCP/IP</th><th>Job</th><th>Examples / PDU</th></tr>
+<tr><td>7 Application</td><td rowspan="3">Application</td><td>App-level protocols</td><td>HTTP, DNS, SMTP / <em>data</em></td></tr>
+<tr><td>6 Presentation</td><td>Encoding, encryption, compression</td><td>TLS, JSON, UTF-8</td></tr>
+<tr><td>5 Session</td><td>Sessions, dialogs</td><td>(mostly folded into apps)</td></tr>
+<tr><td>4 Transport</td><td>Transport</td><td>End-to-end delivery, ports</td><td>TCP, UDP / <em>segment, datagram</em></td></tr>
+<tr><td>3 Network</td><td>Internet</td><td>Routing between networks, addressing</td><td>IP, ICMP / <em>packet</em></td></tr>
+<tr><td>2 Data Link</td><td rowspan="2">Link</td><td>Framing on one hop, MAC addressing</td><td>Ethernet, Wi-Fi, ARP / <em>frame</em></td></tr>
+<tr><td>1 Physical</td><td>Bits on the wire/air</td><td>cables, radio, voltages / <em>bits</em></td></tr>
+</table>
+
+<h3>Encapsulation</h3>
+<p>Sending: each layer wraps the layer above's PDU with its own header (and the link layer a
+trailer). HTTP data &rarr; + TCP header &rarr; + IP header &rarr; + Ethernet header/trailer &rarr; bits.
+Receiving reverses it, each layer stripping its header and handing the payload up.</p>
+
+<h3>Why layering</h3>
+<ul>
+<li>Separation of concerns: change Wi-Fi &harr; Ethernet without touching TCP or HTTP.</li>
+<li>Interoperability: agreed interfaces between layers.</li>
+<li>Trade-off: some overhead and occasional cross-layer inefficiency (e.g. TCP over lossy wireless misinterprets loss as congestion).</li>
+</ul>
+
+<h3>OSI vs TCP/IP</h3>
+<p>OSI is the 7-layer reference model (good for teaching/terminology). TCP/IP (4 or 5 layers) is
+what the internet actually runs. In practice people say "layer 3" (IP) and "layer 4" (TCP/UDP)
+and "layer 7" (HTTP) from the OSI numbering even while using the TCP/IP stack.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>OSI 7: Physical, Data Link, Network, Transport, Session, Presentation, Application ("Please Do Not Throw Sausage Pizza Away").</li>
+<li>TCP/IP 4: Link, Internet, Transport, Application.</li>
+<li>L2 = MAC/frames/switch (Ethernet, ARP). L3 = IP/packets/router. L4 = ports/segments (TCP/UDP). L7 = HTTP/DNS/TLS.</li>
+<li>PDUs: bits &rarr; frame &rarr; packet &rarr; segment/datagram &rarr; data.</li>
+<li>Encapsulation: each layer adds its header on send, strips it on receive.</li>
+<li>"Layer 4 load balancer" = routes by IP/port; "Layer 7" = routes by URL/host/headers.</li>
+<li>Switch operates at L2, router at L3, firewall commonly L3&ndash;L4 (or L7 for app firewalls).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does the transport layer add that the network layer doesn't?</dt>
+<dd>End-to-end concerns: port numbers (so multiple apps share one IP), and &mdash; for TCP &mdash; reliability, ordering, flow control, and congestion control. IP just does best-effort host-to-host delivery.</dd>
+<dt>At which layer does a router operate vs a switch?</dt>
+<dd>A switch forwards frames by MAC address at layer 2. A router forwards packets by IP address at layer 3, between different networks.</dd>
+<dt>What is encapsulation?</dt>
+<dd>Each layer prepends its own header (link layer also appends a trailer) to the data unit from the layer above as it goes down the stack; the receiver strips them going up.</dd>
+<dt>Where does TLS sit?</dt>
+<dd>Between the transport layer (it runs over TCP) and the application (HTTP runs over it) &mdash; roughly OSI layers 5&ndash;6 (session/presentation), often just called "the TLS layer".</dd>
+<dt>Why do we still teach OSI if the internet uses TCP/IP?</dt>
+<dd>OSI gives precise, shared vocabulary ("that's a layer 2 problem", "layer 7 routing") and cleanly separates concerns the TCP/IP model lumps together. The layer numbers are used industry-wide regardless of stack.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which layer is IP at?</summary><div class="answer-box">
+The network layer (OSI layer 3 / TCP-IP "Internet" layer).
+</div></details>
+<details class="answer-reveal"><summary>Name the PDU at the transport layer for TCP.</summary><div class="answer-box">
+A segment. (UDP's is a datagram.)
+</div></details>
+<details class="answer-reveal"><summary>What's a layer-7 load balancer aware of that a layer-4 one isn't?</summary><div class="answer-box">
+Application content &mdash; URL path, Host header, cookies &mdash; so it can route <code>/api</code> and <code>/static</code> to different backends.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Trace the headers added when a browser sends an HTTPS request over Wi-Fi.</summary><div class="answer-box">
+HTTP request &rarr; encrypted into a TLS record &rarr; wrapped in a TCP segment (src/dst ports, seq/ack) &rarr; wrapped in an IP packet (src/dst IP, TTL) &rarr; wrapped in an 802.11 (Wi-Fi) frame (MAC addresses, sent to the access point) &rarr; modulated onto radio. Each hop's router re-does the layer-2 frame; the IP packet and above travel end-to-end.
+</div></details>
+<details class="answer-reveal"><summary>A cross-layer inefficiency: why does TCP perform poorly over lossy wireless?</summary><div class="answer-box">
+TCP's congestion control assumes packet loss means network congestion, so it halves its sending rate. On wireless, loss is often due to radio interference, not congestion &mdash; but TCP can't tell, so it needlessly throttles. Mitigations live at other layers: link-layer retransmission/FEC (hide loss from TCP), or newer congestion-control algorithms (BBR) that model bandwidth/RTT instead of reacting to loss.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>HTTP/3 runs over QUIC over UDP. How does that reshuffle the layer model, and what does it gain?</summary><div class="answer-box">
+QUIC collapses what were separate layers/handshakes: it runs as a userspace protocol on top of UDP (so the OS/network sees only UDP datagrams), and folds in transport reliability + congestion control (TCP's job), TLS 1.3 encryption (was a separate layer above TCP), and stream multiplexing (was HTTP/2's job) into one protocol with a single combined handshake (often 1-RTT, 0-RTT on resume). Gains: no TCP head-of-line blocking across independent streams (loss on stream A doesn't stall stream B, because QUIC tracks per-stream delivery); connection migration (a connection ID survives an IP change, e.g. Wi-Fi&rarr;cellular); faster setup; and it's deployable/updatable in userspace rather than waiting for OS TCP-stack changes. Cost: UDP is sometimes throttled/blocked by middleboxes (fallback to TCP needed), and moving congestion control to userspace can be more CPU-intensive.
+</div></details>
+<details class="answer-reveal"><summary>The end-to-end principle: what does it say and how does it justify keeping the network "dumb"?</summary><div class="answer-box">
+Saltzer, Reed &amp; Clark (1984): a function (reliability, security, ordering) should be implemented at the communication endpoints rather than in the network, because the network can only ever provide an <em>incomplete</em> version &mdash; the endpoints still have to check anyway (an in-network reliability layer doesn't protect against a bug that corrupts data <em>after</em> it's received). So put smarts at the edges and keep the core simple, fast, and general. This is why IP is best-effort and stateless, why TCP reliability lives on the hosts, and why innovation (QUIC, new congestion control, new app protocols) can happen at the edges without changing routers. The counter-pressure: NAT, firewalls, and CDNs deliberately violate it for pragmatic reasons (address scarcity, security, performance), which is why deploying genuinely new transport protocols is now hard ("ossification").
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:models -->
+
+<!-- TOPIC:net:ip-routing -->
+<section class="view topic" id="v-net-ip-routing" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>IP Addressing, Subnets &amp; Routing</h1>
+<p class="subtitle">How a packet finds its way from your laptop to a server across the world.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Addresses</h3>
+<ul>
+<li><strong>IPv4</strong>: 32 bits, dotted quad (<code>192.0.2.10</code>). ~4.3B addresses &mdash; exhausted, hence NAT + IPv6.</li>
+<li><strong>IPv6</strong>: 128 bits, hex groups (<code>2001:db8::1</code>). Effectively unlimited; no NAT needed; built-in autoconfiguration.</li>
+<li><strong>Private ranges</strong> (RFC 1918): <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code> &mdash; not routable on the internet, used behind NAT.</li>
+<li><code>127.0.0.1</code> loopback; <code>0.0.0.0</code> "any"; link-local <code>169.254.x.x</code>.</li>
+</ul>
+
+<h3>Subnets &amp; CIDR</h3>
+<p><code>192.168.1.0/24</code> = the first 24 bits are the network, last 8 the host &rarr; 256 addresses
+(254 usable; <code>.0</code> network, <code>.255</code> broadcast). The <strong>mask</strong> <code>255.255.255.0</code> is
+the same thing. Bigger prefix = smaller subnet. Subnetting splits an address block into
+routable pieces; supernetting (route aggregation) combines them.</p>
+
+<h3>Getting the packet out</h3>
+<ol>
+<li>Host checks: is the destination in <em>my</em> subnet (compare with mask)? If yes, resolve its MAC via <strong>ARP</strong> (IPv4) / NDP (IPv6) and send directly.</li>
+<li>If not, send to the <strong>default gateway</strong> (router).</li>
+<li>Each router does a <strong>longest-prefix-match</strong> lookup in its routing table, decrements TTL, and forwards to the next hop. Repeat until delivery (or TTL hits 0 &rarr; ICMP "time exceeded", which <code>traceroute</code> exploits).</li>
+</ol>
+
+<h3>Routing tables &amp; protocols</h3>
+<p>Entries: <code>destination/prefix &rarr; next-hop, interface, metric</code>. Populated statically or by
+protocols: <strong>OSPF</strong>/IS-IS (link-state, within an organisation), <strong>BGP</strong> (path-vector,
+between autonomous systems &mdash; it's what glues the internet together and what breaks during big
+outages).</p>
+
+<h3>NAT</h3>
+<p>A home/office router rewrites private source IP:port to its single public IP:port on the way
+out, keeps a translation table, and reverses it on replies. Enables address sharing; breaks
+inbound connections (need port forwarding) and the end-to-end principle.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>IPv4 = 32-bit; IPv6 = 128-bit. Private v4: <code>10/8</code>, <code>172.16/12</code>, <code>192.168/16</code>.</li>
+<li>CIDR <code>/n</code> = first n bits are network; host count = 2^(32&minus;n), minus 2 for network + broadcast (v4).</li>
+<li>Same subnet? <code>(ip &amp; mask) == (dest &amp; mask)</code> &rarr; deliver directly (ARP for MAC); else &rarr; default gateway.</li>
+<li>Routers: longest-prefix match, decrement TTL, forward to next hop. TTL 0 &rarr; ICMP time-exceeded (traceroute).</li>
+<li>Interior routing: OSPF / IS-IS (link-state). Exterior: BGP (between ASes).</li>
+<li>NAT: rewrites private src IP:port &harr; public; needs a mapping table; blocks unsolicited inbound.</li>
+<li>ARP = IP&rarr;MAC on the local link (IPv4); NDP does it for IPv6.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How does a host decide whether to send directly or via the gateway?</dt>
+<dd>It ANDs both its own IP and the destination IP with its subnet mask. If the network portions match, the destination is on the same link &mdash; send directly (ARP for its MAC). Otherwise send to the default gateway.</dd>
+<dt>How many usable hosts in a <code>/26</code>?</dt>
+<dd>2^(32&minus;26) = 64 addresses, minus the network and broadcast addresses = 62 usable (IPv4).</dd>
+<dt>What is longest-prefix match?</dt>
+<dd>When multiple routing-table entries could match a destination, the router picks the one with the most specific (longest) network prefix. <code>10.1.2.0/24</code> beats <code>10.0.0.0/8</code> for <code>10.1.2.5</code>.</dd>
+<dt>What does TTL do and how does traceroute use it?</dt>
+<dd>TTL (hop limit) is decremented by each router; at 0 the packet is dropped and an ICMP "time exceeded" is returned. Traceroute sends packets with TTL 1, 2, 3&hellip; and records which router replies at each hop.</dd>
+<dt>Why does NAT break inbound connections?</dt>
+<dd>There's no mapping in the NAT table for a connection the inside host didn't initiate, so the router doesn't know which internal host to forward an unsolicited packet to. You need explicit port forwarding or a technique like UPnP / hole punching.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Is <code>192.168.0.5</code> routable on the public internet?</summary><div class="answer-box">
+No &mdash; it's in the RFC 1918 private range, used behind NAT.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>/24</code> mean in <code>203.0.113.0/24</code>?</summary><div class="answer-box">
+The first 24 bits are the network prefix; the remaining 8 bits address 256 hosts (254 usable).
+</div></details>
+<details class="answer-reveal"><summary>What protocol maps an IP to a MAC address on a local network?</summary><div class="answer-box">
+ARP (Address Resolution Protocol) for IPv4; NDP for IPv6.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two hosts <code>10.0.1.10/24</code> and <code>10.0.2.20/24</code> can't ping each other though they're on the same switch. Why?</summary><div class="answer-box">
+Different subnets (<code>10.0.1.0/24</code> vs <code>10.0.2.0/24</code>), so each host tries to reach the other via its default gateway rather than directly &mdash; and if there's no router between those subnets (just an L2 switch), the traffic has nowhere to go. Fix: put them in the same subnet, or add a router / L3 switch with interfaces in both.
+</div></details>
+<details class="answer-reveal"><summary>How does a router's forwarding differ from its routing?</summary><div class="answer-box">
+<strong>Routing</strong> (control plane) builds the routing table by running protocols (OSPF, BGP) or static config &mdash; relatively slow, done in the CPU. <strong>Forwarding</strong> (data plane) is the per-packet action: look up the destination in the (pre-computed) forwarding table, rewrite the L2 header, decrement TTL, send &mdash; done in hardware (ASIC/TCAM) at line rate.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is BGP both essential and fragile? Give a real failure mode.</summary><div class="answer-box">
+BGP is how ~75,000 autonomous systems exchange reachability ("I can reach these prefixes via this AS path"). It's policy-driven and trust-based: an AS announces prefixes and neighbours generally believe it. Failure modes: <strong>route leaks / hijacks</strong> &mdash; an AS accidentally or maliciously announces prefixes it doesn't own (e.g. the 2008 Pakistan/YouTube incident, the 2021 Facebook outage where BGP withdrawals took their DNS offline, cryptocurrency thefts via prefix hijack). Because propagation is global and there's no built-in authentication of announcements, a bad announcement can black-hole or intercept traffic worldwide within minutes. Mitigations: RPKI (cryptographically signing which AS may originate a prefix) + ROV (route origin validation), prefix filtering by peers, and max-prefix limits &mdash; adoption is partial and ongoing.
+</div></details>
+<details class="answer-reveal"><summary>Explain how carrier-grade NAT (CGNAT) and its port exhaustion affect applications.</summary><div class="answer-box">
+CGNAT puts a second NAT layer at the ISP, so many customers share one public IPv4 address. Each customer/connection consumes ports from that shared address's ~64k range, so under load ports run out &mdash; new connections fail or get very short-lived mappings. App impact: peer-to-peer and inbound connections are essentially impossible (double NAT defeats most hole-punching, requiring relays like TURN); connection-heavy apps (many parallel HTTP connections, aggressive reconnect loops) can trip per-customer port limits; server logs show many users behind one IP (breaks IP-based rate limiting, geolocation, and abuse blocking &mdash; you ban a shared address and hit thousands of innocents); and long-idle connections get their NAT mapping reclaimed, so apps need keepalives. IPv6 sidesteps it entirely, which is a major deployment driver.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:ip-routing -->
+
+<!-- TOPIC:net:tcp -->
+<section class="view topic" id="v-net-tcp" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>TCP: Handshake, Flow &amp; Congestion Control</h1>
+<p class="subtitle">How TCP turns unreliable IP into an ordered, reliable, self-throttling byte stream.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Connection setup &amp; teardown</h3>
+<ul>
+<li><strong>3-way handshake:</strong> client &rarr; <code>SYN(seq=x)</code>; server &rarr; <code>SYN-ACK(seq=y, ack=x+1)</code>; client &rarr; <code>ACK(ack=y+1)</code>. Now both sides know each other's initial sequence numbers.</li>
+<li><strong>Teardown:</strong> each side sends <code>FIN</code> and gets an <code>ACK</code> (4 packets, or 3 if combined). The active closer enters <strong>TIME_WAIT</strong> (~2&times;MSL, e.g. 60&ndash;120s) so late/duplicate segments can't corrupt a new connection on the same ports.</li>
+</ul>
+
+<h3>Reliability &amp; ordering</h3>
+<p>Every byte has a sequence number. The receiver ACKs the next expected byte (cumulative);
+missing data is retransmitted after a timeout (<strong>RTO</strong>, based on measured RTT) or after
+<strong>3 duplicate ACKs</strong> (fast retransmit). <strong>Selective ACK (SACK)</strong> lets the receiver
+tell the sender exactly which ranges arrived so only the gaps are resent.</p>
+
+<h3>Flow control</h3>
+<p>The receiver advertises a <strong>window size</strong> (bytes it can currently buffer). The sender never
+has more than that unacknowledged. Window 0 pauses the sender; it probes periodically. This
+protects a <em>slow receiver</em>.</p>
+
+<h3>Congestion control</h3>
+<p>Protects the <em>network</em>. The sender keeps a <strong>congestion window (cwnd)</strong> and sends
+<code>min(cwnd, rwnd)</code>.</p>
+<ul>
+<li><strong>Slow start:</strong> cwnd starts small, doubles each RTT (exponential) until a threshold or loss.</li>
+<li><strong>Congestion avoidance:</strong> above the threshold, cwnd grows by ~1 MSS per RTT (linear).</li>
+<li><strong>On loss:</strong> classic (Reno) halves cwnd on 3 dup-ACKs (fast recovery); a timeout resets cwnd to 1 (worse). Newer: CUBIC (default on Linux, better for high bandwidth-delay), BBR (models bottleneck bandwidth + RTT instead of treating loss as the only signal).</li>
+</ul>
+
+<h3>Nagle &amp; delayed ACK</h3>
+<p>Nagle coalesces small writes to reduce tiny packets; delayed ACK waits ~200ms to piggyback
+ACKs. Together they can cause latency spikes for request/response traffic &mdash; disable Nagle
+with <code>TCP_NODELAY</code> for interactive protocols.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Handshake: SYN &rarr; SYN-ACK &rarr; ACK (exchanges initial sequence numbers).</li>
+<li>Teardown: FIN/ACK each way; active closer sits in <strong>TIME_WAIT</strong> (~2&times;MSL) to absorb stragglers.</li>
+<li>Reliability: per-byte seq numbers, cumulative ACKs, retransmit on RTO or 3 dup-ACKs (fast retransmit); SACK for precise gaps.</li>
+<li>Flow control = receiver's advertised window (protects a slow receiver).</li>
+<li>Congestion control = sender's cwnd (protects the network): slow start (exponential) &rarr; congestion avoidance (linear) &rarr; back off on loss.</li>
+<li>Algorithms: Reno (loss-based, halve on loss), CUBIC (Linux default), BBR (bandwidth/RTT model).</li>
+<li>Effective send rate &asymp; window / RTT &mdash; high-latency links need big windows (window scaling).</li>
+<li><code>TCP_NODELAY</code> disables Nagle for low-latency request/response.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is the handshake three packets, not two?</dt>
+<dd>Both sides must exchange and acknowledge an initial sequence number. Two packets would let the client learn the server's ISN but not vice versa (or leave the server unsure the client received its SYN-ACK). Three is the minimum for mutual synchronisation.</dd>
+<dt>What is TIME_WAIT and why does it exist?</dt>
+<dd>A state the side that closes first stays in for ~2&times;the maximum segment lifetime. It ensures the final ACK is delivered (it can be retransmitted if lost) and that any delayed duplicate segments from this connection die out before the same IP:port pair is reused.</dd>
+<dt>Flow control vs congestion control?</dt>
+<dd>Flow control (receiver window) stops a fast sender from overwhelming a slow <em>receiver</em>'s buffer. Congestion control (sender's cwnd) stops senders from overwhelming the <em>network</em> and causing loss. The sender is limited by the minimum of the two.</dd>
+<dt>What triggers a fast retransmit?</dt>
+<dd>Three duplicate ACKs for the same sequence number &mdash; a strong hint that one segment was lost while later ones arrived. The sender resends immediately without waiting for the retransmission timeout.</dd>
+<dt>Why can Nagle + delayed ACK hurt?</dt>
+<dd>Nagle holds a small write until prior data is ACKed; the peer's delayed ACK waits up to ~200ms to send that ACK. For a small request expecting a small response, each can wait on the other, adding up to ~200ms per round trip. <code>TCP_NODELAY</code> fixes it for interactive traffic.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Name the three handshake packets.</summary><div class="answer-box">
+SYN, SYN-ACK, ACK.
+</div></details>
+<details class="answer-reveal"><summary>What does the receiver's advertised window control?</summary><div class="answer-box">
+Flow control &mdash; the maximum amount of unacknowledged data the sender may have in flight, bounded by the receiver's free buffer space.
+</div></details>
+<details class="answer-reveal"><summary>In slow start, how does cwnd grow?</summary><div class="answer-box">
+Exponentially &mdash; roughly doubling every round-trip time until a loss or the slow-start threshold.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A transfer over a 100ms-RTT link tops out at ~5 Mbps despite a 1 Gbps path. Why, and the fix?</summary><div class="answer-box">
+Throughput is bounded by <code>window / RTT</code>. A 64 KB window over 100ms &rarr; ~5 Mbps regardless of link speed (the "bandwidth-delay product" problem). Fix: enable TCP <strong>window scaling</strong> (RFC 1323) so the window can exceed 64 KB, and ensure OS socket buffers (<code>net.core.rmem_max</code> etc.) are large enough to hold BDP = bandwidth &times; RTT.
+</div></details>
+<details class="answer-reveal"><summary>Your server has thousands of sockets stuck in TIME_WAIT. Is that a problem, and what do you do?</summary><div class="answer-box">
+On the side that initiates the close, TIME_WAIT sockets consume a port + small memory for ~1&ndash;2 min. It's usually benign unless you're exhausting the ephemeral port range or the connection-tracking table (very high connection churn to few peers). Mitigations: make the <em>client</em> close first where possible; enable <code>tcp_tw_reuse</code> (safe for outbound with timestamps); use HTTP keep-alive / connection pooling to open far fewer connections; increase the ephemeral port range. Avoid <code>SO_LINGER</code>-0 hacks &mdash; they skip TIME_WAIT's safety.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does BBR differ fundamentally from loss-based congestion control, and what problem does it solve?</summary><div class="answer-box">
+Loss-based CC (Reno/CUBIC) increases the send rate until the network drops packets, then backs off &mdash; it deliberately fills buffers until they overflow. On modern paths with large router buffers ("bufferbloat"), this means TCP keeps queues full, adding hundreds of ms of latency even without loss, and it collapses on links with random (non-congestive) loss. BBR instead continuously <em>estimates</em> the bottleneck bandwidth (max delivery rate seen) and the minimum RTT (propagation delay without queuing), and paces sending to <code>bandwidth &times; minRTT</code> &mdash; operating at the "knee" where the pipe is full but the queue is nearly empty. Result: high throughput with low latency, and resilience to random loss. Trade-offs: BBRv1 could be unfair to CUBIC flows sharing a link and mis-estimate under heavy multiplexing; BBRv2/v3 add loss and ECN signals back in to address that.
+</div></details>
+<details class="answer-reveal"><summary>Explain head-of-line blocking in TCP and why it matters for HTTP/2.</summary><div class="answer-box">
+TCP delivers bytes strictly in order. If segment N is lost, segments N+1, N+2&hellip; that already arrived sit in the kernel buffer and are <em>not</em> handed to the application until N is retransmitted and received &mdash; everything behind the gap is blocked. HTTP/1.1 sidestepped this by opening ~6 parallel TCP connections. HTTP/2 multiplexes many logical streams over <em>one</em> TCP connection to save handshakes and enable prioritisation &mdash; but now a single lost packet stalls <em>all</em> streams, because they share one ordered byte stream. On lossy networks HTTP/2 can therefore be <em>slower</em> than HTTP/1.1. HTTP/3 fixes it by moving to QUIC, which tracks delivery per-stream over UDP, so loss on one stream doesn't block the others.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:tcp -->
+
+<!-- TOPIC:net:udp -->
+<section class="view topic" id="v-net-udp" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>UDP &amp; When to Use It</h1>
+<p class="subtitle">A thin wrapper over IP: ports and a checksum, nothing else &mdash; and why that's sometimes exactly right.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What UDP is (and isn't)</h3>
+<ul>
+<li>Adds to IP: source/destination <strong>port</strong>, length, checksum. 8-byte header (vs TCP's 20+).</li>
+<li><strong>No</strong> connection setup, <strong>no</strong> reliability, <strong>no</strong> ordering, <strong>no</strong> flow/congestion control. A datagram is sent once; it may be lost, duplicated, or reordered.</li>
+<li>Message-oriented: each <code>sendto</code> is one datagram the receiver gets whole (or not at all) &mdash; unlike TCP's byte stream with no message boundaries.</li>
+</ul>
+
+<h3>When to choose UDP</h3>
+<table>
+<tr><th>Use case</th><th>Why UDP</th></tr>
+<tr><td>DNS queries</td><td>tiny request/response; a retry is cheaper than a handshake</td></tr>
+<tr><td>Real-time media (VoIP, video, games)</td><td>a late packet is useless; better to skip it than stall for retransmission</td></tr>
+<tr><td>QUIC / HTTP/3</td><td>build a better transport in userspace on top of UDP</td></tr>
+<tr><td>Multicast / broadcast</td><td>TCP is point-to-point only</td></tr>
+<tr><td>Metrics, logs, telemetry (statsd, syslog)</td><td>lossy is acceptable; don't want backpressure on the app</td></tr>
+<tr><td>Service discovery (mDNS, DHCP)</td><td>broadcast to unknown peers</td></tr>
+</table>
+
+<h3>Reliability on top of UDP</h3>
+<p>If you need <em>some</em> guarantees, you re-implement selectively: sequence numbers + ACKs for the
+messages that matter, forward error correction, your own pacing/congestion control (be a good
+network citizen!), and NAT keepalives. This is what QUIC, RTP/RTCP, DTLS, and game netcode do.</p>
+
+<h3>Gotchas</h3>
+<ul>
+<li>Large UDP datagrams get IP-fragmented; a single lost fragment loses the whole datagram. Keep payloads under the path MTU (~1200 bytes is a safe internet default).</li>
+<li>No congestion control means a misbehaving UDP app can cause congestion collapse &mdash; add your own.</li>
+<li>Amplification: small spoofed request &rarr; large response (DNS, NTP, memcached) is a DDoS vector.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>UDP = IP + ports + checksum. 8-byte header. Connectionless, unreliable, unordered, no flow/congestion control.</li>
+<li>Message-oriented: one <code>sendto</code> = one datagram delivered whole or not at all.</li>
+<li>Use when: latency &gt; reliability (media, games), tiny req/resp (DNS), multicast/broadcast, lossy-OK telemetry, or you're building your own transport (QUIC).</li>
+<li>Add app-level reliability selectively: seq+ACK, FEC, your own pacing.</li>
+<li>Keep datagrams &lt; path MTU (~1200 B safe) to avoid fragmentation.</li>
+<li>You must implement congestion control yourself &mdash; unbounded UDP is antisocial.</li>
+<li>Spoofable + amplifiable &rarr; classic reflection-DDoS vector.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does DNS use UDP?</dt>
+<dd>Queries and answers are usually small (fit in one datagram), and setting up a TCP connection (handshake, teardown, TIME_WAIT) for each lookup would add latency and server load. If the response is too big or truncated, the resolver retries over TCP.</dd>
+<dt>Why is UDP better for live video than TCP?</dt>
+<dd>If a packet is lost, TCP stalls the whole stream retransmitting it &mdash; but by the time it arrives, that frame's moment has passed. UDP lets the app skip the loss and keep playing (concealing the gap), keeping latency low.</dd>
+<dt>Does UDP guarantee a datagram arrives intact if it arrives at all?</dt>
+<dd>Mostly &mdash; the checksum (mandatory in IPv6, optional-but-usual in IPv4) detects corruption, and datagrams are delivered whole or dropped. It does not guarantee delivery, non-duplication, or order.</dd>
+<dt>What must you add if you build a protocol on UDP?</dt>
+<dd>Whatever guarantees you need: sequence numbers and ACKs for reliability/ordering, retransmission timers, and &mdash; importantly &mdash; congestion control so you don't overwhelm the network. Optionally FEC and NAT keepalives.</dd>
+<dt>What is a UDP amplification attack?</dt>
+<dd>An attacker sends a small request with a spoofed source IP (the victim's) to a service that replies with a much larger response (open DNS resolver, NTP <code>monlist</code>, memcached). The victim is flooded with amplified traffic it never asked for.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Does UDP have a handshake?</summary><div class="answer-box">
+No &mdash; it's connectionless. You just send datagrams.
+</div></details>
+<details class="answer-reveal"><summary>Give two protocols that run over UDP.</summary><div class="answer-box">
+DNS, DHCP, QUIC/HTTP-3, NTP, RTP, mDNS &mdash; any two.
+</div></details>
+<details class="answer-reveal"><summary>TCP is a byte stream; UDP is a ___ stream?</summary><div class="answer-box">
+Message (datagram) oriented &mdash; boundaries are preserved.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You're sending 4 KB JSON blobs over UDP and losing many under load. Likely cause?</summary><div class="answer-box">
+4 KB exceeds the ~1500-byte Ethernet MTU, so each datagram is IP-fragmented into ~3 packets; losing <em>any one</em> fragment discards the whole datagram, and fragment reassembly buffers can overflow under load. Keep datagrams under the path MTU (chunk the data yourself), or use TCP/QUIC for anything that big.
+</div></details>
+<details class="answer-reveal"><summary>Why does QUIC build on UDP rather than being a new protocol number directly on IP?</summary><div class="answer-box">
+Middleboxes (NATs, firewalls, load balancers) drop or mangle IP packets with unfamiliar protocol numbers &mdash; only TCP and UDP reliably traverse the internet ("protocol ossification"). UDP gives QUIC ports (for NAT traversal and demultiplexing) and universal reachability, while leaving QUIC free to implement its own reliability, encryption, and congestion control in userspace where it can be updated without OS changes.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What congestion-control obligations does an application-layer UDP protocol have, and how does QUIC meet them?</summary><div class="answer-box">
+An unresponsive UDP flow that ignores loss can drive a link into congestion collapse and starve TCP flows (which back off) &mdash; the IETF requires UDP apps sending significant volume to be "TCP-friendly" (roughly, use no more than a competing TCP flow would). QUIC implements a full congestion controller in userspace: by default a NewReno/CUBIC-equivalent (slow start, congestion avoidance, loss-based reduction), with pluggable BBR; it does per-packet ACK-based RTT sampling, packet pacing, and explicit loss detection with its own retransmission (re-sending the <em>data</em> in a new packet with a fresh packet number, avoiding TCP's retransmission ambiguity). It also handles the amplification risk: before validating the client's address, a QUIC server may send at most 3&times; the bytes it received, preventing the handshake from being used as a reflection amplifier.
+</div></details>
+<details class="answer-reveal"><summary>How do you do reliable, ordered delivery of only <em>some</em> messages over UDP without reinventing TCP badly?</summary><div class="answer-box">
+Use a proven layer rather than hand-rolling: <strong>QUIC</strong> streams (reliable, ordered, multiplexed, with unreliable DATAGRAM frames alongside for the "don't care" messages), <strong>SCTP</strong> (message-oriented, multi-streamed, partial reliability via "timed reliability"), or <strong>RTP + RTCP</strong> for media (RTP carries timestamped media unreliably; RTCP carries feedback). If you must build it: give each message a sequence number and a "reliability class"; ACK only the reliable classes with SACK-style bitmaps; retransmit on a small fixed number of RTOs then give up; run a real congestion controller (copy CUBIC or use a library); and cap in-flight bytes. The common failure is a naive stop-and-wait or fixed-timer scheme that either wastes bandwidth or congestion-collapses.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:udp -->
+
+<!-- TOPIC:net:dns -->
+<section class="view topic" id="v-net-dns" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>DNS Resolution</h1>
+<p class="subtitle">Turning <code>api.example.com</code> into an IP &mdash; the distributed, cached lookup that precedes almost every connection.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The hierarchy</h3>
+<p>The namespace is a tree: root (<code>.</code>) &rarr; TLD (<code>.com</code>, <code>.org</code>, <code>.io</code>) &rarr;
+authoritative servers for a domain (<code>example.com</code>). No single server has everything;
+resolution walks down the tree.</p>
+
+<h3>A lookup</h3>
+<ol>
+<li>App asks the OS <strong>stub resolver</strong>, which asks a configured <strong>recursive resolver</strong> (your ISP's, or <code>8.8.8.8</code>, <code>1.1.1.1</code>).</li>
+<li>If not cached, the recursive resolver does <strong>iterative</strong> queries: asks a <strong>root</strong> server (&rarr; "ask the <code>.com</code> servers"), then a <strong>TLD</strong> server (&rarr; "ask <code>example.com</code>'s nameservers"), then the <strong>authoritative</strong> server (&rarr; the answer).</li>
+<li>The recursive resolver caches the answer for its <strong>TTL</strong> and returns it to the client, which also caches it.</li>
+</ol>
+
+<h3>Record types</h3>
+<table>
+<tr><th>Type</th><th>Maps</th></tr>
+<tr><td><code>A</code> / <code>AAAA</code></td><td>name &rarr; IPv4 / IPv6 address</td></tr>
+<tr><td><code>CNAME</code></td><td>name &rarr; another name (alias)</td></tr>
+<tr><td><code>MX</code></td><td>domain &rarr; mail servers (with priority)</td></tr>
+<tr><td><code>NS</code></td><td>domain &rarr; its authoritative nameservers</td></tr>
+<tr><td><code>TXT</code></td><td>arbitrary text (SPF, DKIM, domain verification)</td></tr>
+<tr><td><code>SOA</code></td><td>zone metadata (serial, refresh, TTLs)</td></tr>
+<tr><td><code>PTR</code></td><td>IP &rarr; name (reverse DNS)</td></tr>
+</table>
+
+<h3>Caching &amp; TTL</h3>
+<p>Every record has a TTL (seconds) controlling how long resolvers may cache it. Low TTL = faster
+changes but more queries; high TTL = fewer queries but slow propagation. "DNS propagation delay"
+is really just old cached records expiring. Negative answers (<code>NXDOMAIN</code>) are cached too
+(per the SOA's minimum).</p>
+
+<h3>Modern DNS</h3>
+<p><strong>DoH</strong> (DNS over HTTPS) / <strong>DoT</strong> (over TLS) encrypt queries against snooping and
+tampering. <strong>DNSSEC</strong> signs records so resolvers can verify authenticity (prevents cache
+poisoning) &mdash; but doesn't encrypt. DNS is also a load-balancing tool: multiple <code>A</code> records,
+GeoDNS, weighted responses.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Hierarchy: root &rarr; TLD &rarr; authoritative. Recursive resolver does the walking; stub resolver just asks it.</li>
+<li>Recursive query (client &rarr; resolver: "get me the answer") vs iterative (resolver &rarr; each server: "who's next?").</li>
+<li>Records: <code>A</code>/<code>AAAA</code> (IP), <code>CNAME</code> (alias), <code>MX</code> (mail), <code>NS</code> (nameservers), <code>TXT</code>, <code>SOA</code>, <code>PTR</code> (reverse).</li>
+<li>TTL controls cache lifetime; "propagation" = waiting for old cached records to expire. Lower TTL before a planned change.</li>
+<li><code>NXDOMAIN</code> (name doesn't exist) is also cached.</li>
+<li>UDP/53 normally; falls back to TCP/53 for large responses or zone transfers.</li>
+<li>DoH/DoT encrypt; DNSSEC authenticates (doesn't encrypt).</li>
+<li>DNS-based load balancing: multiple A records, GeoDNS, weighting.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Recursive vs iterative query?</dt>
+<dd>In a recursive query the client asks a resolver to do all the work and return the final answer. In iterative queries (what the resolver then does), each server responds with either the answer or a referral to the next server down the tree.</dd>
+<dt>What does a CNAME do, and what's a restriction?</dt>
+<dd>It aliases one name to another (<code>www.example.com</code> &rarr; <code>example.com</code>). A CNAME can't coexist with other records at the same name, so you can't put a CNAME at a zone apex (<code>example.com</code> itself needs <code>SOA</code>/<code>NS</code>) &mdash; providers offer <code>ALIAS</code>/<code>ANAME</code> as a workaround.</dd>
+<dt>Why does a DNS change take hours to "propagate"?</dt>
+<dd>It doesn't push anywhere &mdash; resolvers worldwide keep serving the old record from cache until its TTL expires. Lowering the TTL a day <em>before</em> the change shrinks that window.</dd>
+<dt>Why does DNS use UDP but sometimes TCP?</dt>
+<dd>UDP for the common small query/response (cheap, no handshake). TCP when the response exceeds what fits/what the resolver accepts over UDP (the <code>TC</code> truncated flag triggers a retry over TCP), and always for zone transfers.</dd>
+<dt>What does DNSSEC protect against, and what does it not do?</dt>
+<dd>It cryptographically signs records so a resolver can verify they came from the real zone and weren't tampered with (defeats cache poisoning / spoofing). It does <em>not</em> encrypt the query or answer &mdash; that's DoH/DoT's job.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which record maps a hostname to an IPv6 address?</summary><div class="answer-box">
+<code>AAAA</code>.
+</div></details>
+<details class="answer-reveal"><summary>What controls how long a DNS answer is cached?</summary><div class="answer-box">
+Its TTL (time to live), in seconds.
+</div></details>
+<details class="answer-reveal"><summary>What's the first server type a recursive resolver contacts for an uncached name?</summary><div class="answer-box">
+A root server (which refers it to the appropriate TLD servers).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You're migrating a service to a new IP with minimal downtime. DNS plan?</summary><div class="answer-box">
+Days ahead, drop the record's TTL to 60&ndash;300s so caches turn over fast. At cutover, update the <code>A</code>/<code>AAAA</code> record. Keep the old server serving until traffic drains (watch logs) &mdash; some resolvers ignore TTL. Once traffic is fully on the new IP, raise the TTL back up. Better still, put a load balancer / stable anycast IP in front so the app IP never changes.
+</div></details>
+<details class="answer-reveal"><summary>How can DNS do geographic load balancing?</summary><div class="answer-box">
+The authoritative server (GeoDNS) inspects the resolver's source IP (or EDNS Client Subnet), looks it up in a geo database, and returns the <code>A</code> record for the nearest data center. Combined with health checks it can also fail traffic away from a down region. Caveat: it sees the <em>resolver's</em> location, which for public resolvers (8.8.8.8) may be far from the user unless ECS is supported.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain a DNS cache-poisoning attack (Kaminsky) and the mitigations.</summary><div class="answer-box">
+Classic attack: when a resolver queries an authoritative server, the attacker races to send a <em>forged</em> response before the real one. To be accepted, the forgery must match the query name, the 16-bit transaction ID, and the source port. Pre-2008, the source port was often fixed and the ID predictable/incrementing, so guessing was feasible &mdash; and Kaminsky's insight was to attack many <em>non-existent</em> subdomains (<code>1.bank.com</code>, <code>2.bank.com</code>&hellip;) so a failed guess doesn't matter and you get near-unlimited attempts, then include a poisoned <code>NS</code>/glue record for the whole zone. Mitigations: <strong>source-port randomisation</strong> (adds ~16 bits of entropy), <strong>0x20 encoding</strong> (randomise the case of the query name, which the response must echo), <strong>DNSSEC</strong> (signatures make forgery infeasible), and running queries over <strong>DoT/DoH</strong> to an authenticated resolver.
+</div></details>
+<details class="answer-reveal"><summary>What is the negative-caching and the "thundering herd on expiry" problem for a popular record, and how do resolvers handle it?</summary><div class="answer-box">
+When a very popular record's TTL expires, every cache miss at a busy resolver triggers a fresh upstream lookup &mdash; potentially thousands simultaneously ("cache stampede"), hammering the authoritative servers. Resolvers mitigate with: <strong>request coalescing</strong> (in-flight de-duplication &mdash; one upstream query, many waiters); <strong>serve-stale</strong> (RFC 8767 &mdash; return the expired record immediately while asynchronously refreshing, so users never wait on a slow/down authoritative server); <strong>prefetching</strong> (refresh popular records shortly <em>before</em> expiry); and jittering effective TTLs slightly so many records don't expire in lockstep. Authoritative-side, anycast and generous TTLs on stable records reduce the load. Negative answers (<code>NXDOMAIN</code>) are cached per the zone's SOA minimum to blunt floods of queries for names that don't exist (a common DDoS pattern).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:dns -->
+
+<!-- TOPIC:net:http -->
+<section class="view topic" id="v-net-http" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>HTTP/1.1, HTTP/2 &amp; HTTP/3</h1>
+<p class="subtitle">Same semantics, three very different wire protocols &mdash; and the head-of-line problem driving the evolution.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Semantics (stable across versions)</h3>
+<ul>
+<li><strong>Methods:</strong> <code>GET</code> (safe, cacheable), <code>HEAD</code>, <code>POST</code>, <code>PUT</code> (idempotent), <code>PATCH</code>, <code>DELETE</code> (idempotent), <code>OPTIONS</code>. Safe = no side effects; idempotent = repeating has the same effect as once.</li>
+<li><strong>Status classes:</strong> 1xx info, 2xx success (200, 201, 204), 3xx redirect (301 permanent, 302/307 temporary, 304 not-modified), 4xx client error (400, 401, 403, 404, 409, 422, 429), 5xx server error (500, 502, 503, 504).</li>
+<li><strong>Headers:</strong> <code>Content-Type</code>, <code>Cache-Control</code>/<code>ETag</code>, <code>Authorization</code>, <code>Accept</code>, <code>Host</code> (required in 1.1). Stateless &mdash; each request self-contained; state via cookies/tokens.</li>
+</ul>
+
+<h3>HTTP/1.1</h3>
+<p>Text protocol, one request/response at a time per connection. <strong>Keep-alive</strong> reuses the
+TCP connection; <strong>pipelining</strong> (send multiple without waiting) exists but is broken in
+practice. Browsers work around the serialisation by opening ~6 parallel connections per origin.
+<strong>Head-of-line blocking</strong> at the HTTP level: a slow response blocks the ones behind it on
+that connection.</p>
+
+<h3>HTTP/2</h3>
+<ul>
+<li>Binary framing; <strong>multiplexing</strong> many <em>streams</em> over one TCP connection (no more 6-connection hack).</li>
+<li><strong>Header compression</strong> (HPACK) &mdash; repeated headers cost almost nothing.</li>
+<li>Stream <strong>prioritisation</strong>, server <strong>push</strong> (now deprecated/removed &mdash; ineffective in practice).</li>
+<li>Still over TCP &rarr; <strong>TCP-level head-of-line blocking</strong>: one lost packet stalls <em>all</em> streams.</li>
+</ul>
+
+<h3>HTTP/3</h3>
+<p>Runs over <strong>QUIC</strong> (over UDP). Per-stream reliability &rarr; a loss on one stream doesn't
+block others. Combined transport+TLS 1.3 handshake (1-RTT, 0-RTT on resume). Connection
+migration across IP changes. TLS is mandatory.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Safe methods (no side effects): <code>GET</code>, <code>HEAD</code>, <code>OPTIONS</code>. Idempotent: those + <code>PUT</code>, <code>DELETE</code> (and ideally <code>PATCH</code>). <code>POST</code> is neither.</li>
+<li>Status: 2xx ok, 3xx redirect (304 = use your cache), 4xx you erred (401 auth needed, 403 forbidden, 404 missing, 409 conflict, 429 rate-limited), 5xx server erred (502/503/504 = upstream/overload/timeout).</li>
+<li>HTTP/1.1: 1 in-flight request per connection &rarr; browsers open ~6; app-level head-of-line blocking; needs <code>Host</code>.</li>
+<li>HTTP/2: binary, multiplexed streams over 1 TCP conn, HPACK header compression &mdash; but TCP head-of-line blocking remains.</li>
+<li>HTTP/3: over QUIC/UDP, per-stream loss recovery, faster handshake, connection migration, TLS required.</li>
+<li>Caching: <code>Cache-Control</code> (max-age, no-store, private), <code>ETag</code> + <code>If-None-Match</code> &rarr; 304.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Difference between safe and idempotent methods?</dt>
+<dd>Safe = the request has no side effects on the server (<code>GET</code>, <code>HEAD</code>). Idempotent = making the request N times has the same server state as making it once (<code>GET</code>, <code>PUT</code>, <code>DELETE</code>). All safe methods are idempotent; <code>PUT</code>/<code>DELETE</code> are idempotent but not safe; <code>POST</code> is neither.</dd>
+<dt>What problem did HTTP/2 multiplexing solve, and what did it leave unsolved?</dt>
+<dd>It removed HTTP-level head-of-line blocking and the need for ~6 parallel connections by carrying many concurrent streams on one connection. It didn't solve <em>TCP-level</em> head-of-line blocking &mdash; a single lost TCP segment still stalls every stream until it's retransmitted.</dd>
+<dt>301 vs 302 vs 307?</dt>
+<dd>301 = permanent redirect (clients/search engines update their links; method may change to GET historically). 302 = found/temporary (ambiguous method handling). 307 = temporary, method and body <em>preserved</em>. 308 = permanent, method preserved. Prefer 308/307 for clarity.</dd>
+<dt>How does a conditional GET save bandwidth?</dt>
+<dd>The server sends an <code>ETag</code> (or <code>Last-Modified</code>) with the response. Next time, the client sends <code>If-None-Match: &lt;etag&gt;</code>; if unchanged, the server replies <code>304 Not Modified</code> with no body and the client uses its cached copy.</dd>
+<dt>Why is HTTP called stateless, and how do apps keep state?</dt>
+<dd>Each request is independent &mdash; the server doesn't inherently remember previous requests from the same client. Applications layer state on top via cookies (a session id) or tokens (JWT) sent with every request.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What status code means "the resource hasn't changed, use your cache"?</summary><div class="answer-box">
+304 Not Modified.
+</div></details>
+<details class="answer-reveal"><summary>Which HTTP version introduced multiplexed streams over one connection?</summary><div class="answer-box">
+HTTP/2.
+</div></details>
+<details class="answer-reveal"><summary>Is <code>PUT</code> idempotent?</summary><div class="answer-box">
+Yes &mdash; sending the same <code>PUT</code> repeatedly leaves the resource in the same state.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your API returns 200 with an error message in the body. Why is that bad?</summary><div class="answer-box">
+Clients, proxies, caches, and monitoring all key off the status code. A 200 means "success" &mdash; caches may store it, retries won't trigger, dashboards show no errors, and generic client code won't branch to error handling. Use the right 4xx/5xx (400 for bad input, 409 for conflict, 422 for semantic validation, 503 for overload) with a structured error body.
+</div></details>
+<details class="answer-reveal"><summary>On a lossy mobile network, HTTP/2 is slower than HTTP/1.1 for your site. Explain.</summary><div class="answer-box">
+HTTP/1.1 spreads requests over ~6 TCP connections, so a lost packet only stalls one of them. HTTP/2 puts everything on one connection; a single lost segment triggers TCP head-of-line blocking that pauses <em>all</em> multiplexed streams until retransmission. With enough loss, the serialised stall outweighs the multiplexing benefit. HTTP/3 (QUIC) fixes this with per-stream delivery.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why was HTTP/2 Server Push added and then effectively abandoned?</summary><div class="answer-box">
+Push let a server proactively send resources (CSS, JS) it knew the client would request after the HTML, aiming to save a round trip. In practice it was net-negative: servers pushed resources already in the client's cache (wasting bandwidth &mdash; the client can only send <code>RST_STREAM</code> after the push starts), prioritisation interactions were tricky, it competed with the critical HTML for bandwidth, and CDNs/frameworks struggled to know exactly what to push. Chrome removed support in 2022. The problem it targeted is better solved by <code>103 Early Hints</code> (server sends <code>Link: rel=preload</code> hints before the full response, letting the client decide) and by good <code>&lt;link rel=preload&gt;</code> in the HTML itself.
+</div></details>
+<details class="answer-reveal"><summary>Explain HPACK and the security consideration that shaped it (vs HTTP/1's plain headers and vs SPDY's gzip).</summary><div class="answer-box">
+HTTP/2 headers repeat massively across requests (cookies, user-agent, accept). SPDY compressed them with gzip, but that enabled the <strong>CRIME</strong> attack: if attacker-controlled data and a secret (session cookie) are compressed together, the compressed size leaks whether the attacker's guess matches part of the secret &mdash; byte-by-byte extraction. HPACK is designed to resist this: it uses a <em>static table</em> of common header name/value pairs, a bounded <em>dynamic table</em> of recently-seen headers (indexed by reference), and Huffman coding of literals &mdash; but crucially it does <em>not</em> do context-mixing compression across the boundary between values, and it lets sensitive headers be marked "never indexed" so they're never placed in the shared dynamic table. This gives most of gzip's ratio on real header sets without the chosen-plaintext leak. (QPACK in HTTP/3 solves the same problem with the added complication of QUIC's out-of-order stream delivery.)
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:http -->
+
+<!-- TOPIC:net:tls -->
+<section class="view topic" id="v-net-tls" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>HTTPS &amp; the TLS Handshake</h1>
+<p class="subtitle">Authenticated, confidential, tamper-evident channels &mdash; and how the keys get agreed.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What TLS provides</h3>
+<ul>
+<li><strong>Confidentiality</strong> &mdash; traffic is encrypted (symmetric cipher, e.g. AES-GCM, ChaCha20-Poly1305).</li>
+<li><strong>Integrity</strong> &mdash; an AEAD tag detects tampering.</li>
+<li><strong>Authentication</strong> &mdash; the server proves its identity with a certificate (mutual TLS adds client auth).</li>
+</ul>
+
+<h3>Symmetric vs asymmetric</h3>
+<p>Asymmetric crypto (RSA, ECDSA, ECDH) is slow but lets strangers agree on a secret / verify
+identity. Symmetric crypto is fast. So TLS uses asymmetric during the handshake to
+<strong>authenticate</strong> and to <strong>derive a shared symmetric key</strong>, then encrypts the bulk data
+symmetrically.</p>
+
+<h3>Certificates &amp; the chain of trust</h3>
+<p>A certificate binds a domain to a public key and is signed by a <strong>Certificate Authority</strong>.
+Your OS/browser ships a set of trusted root CAs. The server presents its cert plus intermediates;
+the client verifies the signature chain up to a trusted root, checks the domain matches (SAN),
+the validity dates, and revocation (OCSP stapling / CRL). <strong>Let's Encrypt</strong> made certs free
+and automated (ACME).</p>
+
+<h3>TLS 1.3 handshake (1-RTT)</h3>
+<ol>
+<li><strong>ClientHello</strong>: supported ciphers + a Diffie-Hellman key share (guessing the group).</li>
+<li><strong>ServerHello</strong>: chosen cipher + its DH key share; then (encrypted) the certificate, a signature over the handshake, and "Finished".</li>
+<li>Both sides derive the same session keys from the DH exchange. Client sends "Finished"; application data can flow.</li>
+</ol>
+<p><strong>0-RTT resumption</strong>: on a repeat visit the client can send data in the first flight using a
+pre-shared key &mdash; fast, but replayable, so only for idempotent requests.</p>
+
+<h3>Forward secrecy</h3>
+<p>Ephemeral Diffie-Hellman (ECDHE) means each session's keys are derived from fresh random values
+and discarded after. Stealing the server's long-term private key later does <em>not</em> let an
+attacker decrypt past captured sessions. TLS 1.3 makes this mandatory (removed static-RSA key
+exchange).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>TLS = confidentiality + integrity + authentication over TCP (or QUIC).</li>
+<li>Asymmetric (RSA/ECDSA/ECDHE) authenticates + agrees a key; symmetric (AES-GCM/ChaCha20) encrypts the data.</li>
+<li>Certificate binds domain &rarr; public key, signed by a CA; client verifies chain to a trusted root + domain match + dates + revocation.</li>
+<li>TLS 1.3: 1-RTT handshake, all handshake after ServerHello encrypted, only AEAD ciphers, forward secrecy mandatory, static-RSA removed.</li>
+<li>0-RTT resumption: data in the first packet, but replayable &rarr; idempotent requests only.</li>
+<li>Forward secrecy (ECDHE): past traffic stays safe even if the server key later leaks.</li>
+<li>SNI tells the server which hostname's cert to present (one IP, many sites); Encrypted Client Hello hides it.</li>
+<li>mTLS = client also presents a cert (service-to-service auth).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does TLS use both asymmetric and symmetric cryptography?</dt>
+<dd>Asymmetric is needed to authenticate a stranger and agree a secret over an open channel, but it's ~100&times; slower. So it's used only briefly in the handshake; the actual data is protected with a fast symmetric cipher using the key that was agreed.</dd>
+<dt>What does a certificate authority actually attest?</dt>
+<dd>That the entity controlling a given public key also controls the named domain(s) (for a DV cert). The CA signs the certificate; clients trust it because they trust the CA's root, which ships with the OS/browser.</dd>
+<dt>What is forward secrecy and how is it achieved?</dt>
+<dd>Compromise of the server's long-term key doesn't expose past sessions. Achieved with ephemeral Diffie-Hellman (ECDHE): each session's keys come from fresh random values that are thrown away afterward, so there's nothing to recover later.</dd>
+<dt>What's the risk with TLS 1.3 0-RTT data?</dt>
+<dd>An attacker who captured the first flight can replay it. The server can't distinguish a replay from the original at that point, so 0-RTT must only carry safe/idempotent requests (a <code>GET</code>, not a "transfer $100").</dd>
+<dt>What is SNI and why does it matter?</dt>
+<dd>Server Name Indication &mdash; the client puts the target hostname in the ClientHello so a server hosting many domains on one IP knows which certificate to send. Historically it's sent in cleartext (a privacy leak); Encrypted Client Hello (ECH) addresses that.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Three properties TLS gives a connection?</summary><div class="answer-box">
+Confidentiality (encryption), integrity (tamper detection), and authentication (server identity).
+</div></details>
+<details class="answer-reveal"><summary>How many round trips does a TLS 1.3 full handshake take?</summary><div class="answer-box">
+One (1-RTT); zero for a resumed session with 0-RTT data.
+</div></details>
+<details class="answer-reveal"><summary>What signs a website's certificate?</summary><div class="answer-box">
+A Certificate Authority (CA), whose root certificate is trusted by the client's OS/browser.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A browser shows "certificate not trusted" but the cert is valid. Common causes?</summary><div class="answer-box">
+The server didn't send the <em>intermediate</em> certificate(s), so the client can't build a chain to a trusted root (works in some browsers that cache intermediates, fails in others). Or: the system clock is wrong (cert appears expired/not-yet-valid), the root isn't in this device's trust store (private CA not installed), the hostname doesn't match a SAN entry, or the cert was revoked.
+</div></details>
+<details class="answer-reveal"><summary>Why is HTTPS on a CDN edge still "end to end" secure &mdash; or is it?</summary><div class="answer-box">
+It's TLS-terminated at the edge, so the connection user&harr;edge is encrypted and authenticated, but the CDN <em>decrypts</em> your traffic there. Edge&harr;origin is a separate TLS connection (should also be TLS, ideally with origin cert validation / mTLS). So it's secure against network eavesdroppers on both hops, but you are trusting the CDN with plaintext. True end-to-end (origin-only key) would defeat the CDN's ability to cache/compress/inspect; some setups use edge compute or field-level encryption for the most sensitive data.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Walk through the TLS 1.3 key schedule and why the handshake is authenticated <em>after</em> keys are derived.</summary><div class="answer-box">
+After ClientHello/ServerHello exchange ECDHE shares, both sides compute the shared secret and run it through HKDF to derive a chain of keys: early secret &rarr; handshake secret (&rarr; client/server handshake traffic keys, used to encrypt the rest of the handshake) &rarr; master secret (&rarr; application traffic keys) &rarr; and a resumption secret. The server then sends its Certificate and a <strong>CertificateVerify</strong> = a signature (with the cert's private key) over a transcript hash of every handshake message so far, followed by a <strong>Finished</strong> = an HMAC over the transcript keyed by a derived "finished key". The client verifies the signature (proves the peer holds the cert's private key and that the handshake wasn't tampered with &mdash; the transcript hash covers the cipher/version negotiation, defeating downgrade attacks) and the Finished MAC (proves both sides derived the same keys). Authentication comes after key derivation because TLS 1.3 encrypts the certificate itself for privacy, and because binding the signature to the full transcript is what makes the negotiation tamper-proof.
+</div></details>
+<details class="answer-reveal"><summary>What is certificate transparency and what class of attack does it mitigate?</summary><div class="answer-box">
+CT requires CAs to publish every certificate they issue to public, append-only, cryptographically-verifiable logs; browsers (Chrome, Safari) reject certs that aren't accompanied by signed proofs of log inclusion (SCTs). It mitigates <strong>mis-issuance</strong>: a CA that is compromised, coerced, or buggy issuing a valid cert for a domain it shouldn't (e.g. a government-compelled cert for <code>google.com</code>, or the 2011 DigiNotar breach). Before CT, such a cert could be used for MITM and the real domain owner would never know. With CT, the domain owner (or automated monitors like crt.sh) can watch the logs and detect an unexpected cert for their domain within hours, then get it revoked and the CA distrusted. It's detection, not prevention &mdash; but it makes covert mis-issuance essentially impossible to keep hidden.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:tls -->
+
+<!-- TOPIC:net:sockets -->
+<section class="view topic" id="v-net-sockets" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>Sockets &amp; the Client/Server Lifecycle</h1>
+<p class="subtitle">The system-call sequence behind every network server.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The call sequence</h3>
+<pre><code>SERVER                         CLIENT
+socket()                       socket()
+bind(addr:port)
+listen(backlog)
+accept()  &lt;-------- 3-way ----- connect(addr:port)
+   returns a NEW fd
+read()/write() &lt;-- data --&gt; write()/read()
+close()                        close()</code></pre>
+<ul>
+<li><code>socket()</code> creates an endpoint (domain: <code>AF_INET</code>/<code>AF_INET6</code>; type: <code>SOCK_STREAM</code>=TCP, <code>SOCK_DGRAM</code>=UDP).</li>
+<li><code>bind()</code> assigns a local address/port (servers; clients usually let the OS pick an ephemeral port).</li>
+<li><code>listen()</code> marks it passive; <code>backlog</code> bounds the queue of completed-handshake connections waiting for <code>accept()</code>.</li>
+<li><code>accept()</code> pops one connection and returns a <em>new</em> fd dedicated to that client; the listening fd keeps accepting.</li>
+</ul>
+
+<h3>Ports</h3>
+<p>0&ndash;1023 well-known (need privilege), 1024&ndash;49151 registered, 49152&ndash;65535 ephemeral (client
+source ports). A TCP connection is identified by the 4-tuple <code>(src IP, src port, dst IP, dst
+port)</code> &mdash; that's why one server port serves thousands of clients.</p>
+
+<h3>Blocking vs non-blocking</h3>
+<ul>
+<li><strong>Blocking</strong>: <code>read()</code> waits until data arrives. Simple; one thread per connection &rarr; doesn't scale to 10k+ connections (memory, context-switch cost).</li>
+<li><strong>Non-blocking + event loop</strong>: <code>O_NONBLOCK</code> + <code>epoll</code>/<code>kqueue</code>/<code>IOCP</code> &mdash; one thread watches many fds, handles whichever is ready. Basis of nginx, Node.js, Redis.</li>
+</ul>
+
+<h3>Common issues</h3>
+<ul>
+<li><code>bind: address already in use</code> after restart &rarr; set <code>SO_REUSEADDR</code> (lets you rebind while old connections linger in TIME_WAIT).</li>
+<li>Partial reads/writes: <code>write(n)</code> may send fewer than <code>n</code> bytes &mdash; loop.</li>
+<li><code>EINTR</code>: a syscall interrupted by a signal &mdash; retry.</li>
+<li>A dead peer isn't noticed until you write (and get <code>RST</code>/<code>EPIPE</code>) or a keepalive fails &mdash; use <code>SO_KEEPALIVE</code> or app-level heartbeats.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Server: <code>socket</code> &rarr; <code>bind</code> &rarr; <code>listen</code> &rarr; <code>accept</code> (returns a new per-client fd) &rarr; <code>read</code>/<code>write</code> &rarr; <code>close</code>.</li>
+<li>Client: <code>socket</code> &rarr; <code>connect</code> &rarr; <code>read</code>/<code>write</code> &rarr; <code>close</code>.</li>
+<li>Connection identity = 4-tuple (src ip, src port, dst ip, dst port); one listening port, many clients.</li>
+<li><code>backlog</code> = queue of established connections awaiting <code>accept</code>.</li>
+<li>Blocking = thread-per-connection (simple, doesn't scale). Non-blocking + <code>epoll</code>/<code>kqueue</code> = one thread, many fds (scales).</li>
+<li><code>SO_REUSEADDR</code> to rebind past TIME_WAIT; <code>SO_REUSEPORT</code> to let multiple processes accept on one port.</li>
+<li>Always loop on <code>read</code>/<code>write</code> (partial I/O); retry on <code>EINTR</code>; handle <code>EPIPE</code>/<code>ECONNRESET</code>.</li>
+<li>Ephemeral port exhaustion limits outbound connections from one host to one dest &mdash; pool/reuse.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does <code>accept()</code> return, and why a new fd?</dt>
+<dd>A brand-new socket fd bound to that specific client connection. The original listening socket stays open to accept further connections. Read/write happen on the new fd.</dd>
+<dt>How does one server port handle thousands of simultaneous clients?</dt>
+<dd>Each connection is uniquely identified by the full 4-tuple (client IP + client port + server IP + server port). The server port is constant; the client side varies, so the kernel can demultiplex.</dd>
+<dt>Blocking vs non-blocking sockets &mdash; the scaling difference?</dt>
+<dd>Blocking needs a thread (or process) parked per connection; at 10k+ connections the memory and scheduler overhead dominates ("C10k problem"). Non-blocking sockets with an event notification mechanism (<code>epoll</code>) let one thread service thousands of connections, acting only on ready ones.</dd>
+<dt>Why <code>SO_REUSEADDR</code>?</dt>
+<dd>After a server restarts, its old connections may be in TIME_WAIT holding the port; without <code>SO_REUSEADDR</code>, <code>bind()</code> fails with "address already in use". It's standard for servers.</dd>
+<dt>Your <code>write()</code> returned 500 when you asked to send 1400 bytes. Bug?</dt>
+<dd>No &mdash; that's normal for stream sockets. The kernel accepted 500 bytes into the send buffer; you must loop, advancing the offset, until all 1400 are written (or handle <code>EAGAIN</code> on a non-blocking socket).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which call makes a socket passive (ready to accept connections)?</summary><div class="answer-box">
+<code>listen()</code>.
+</div></details>
+<details class="answer-reveal"><summary>What socket type is TCP?</summary><div class="answer-box">
+<code>SOCK_STREAM</code>. UDP is <code>SOCK_DGRAM</code>.
+</div></details>
+<details class="answer-reveal"><summary>Does a client usually call <code>bind()</code>?</summary><div class="answer-box">
+No &mdash; it lets the OS assign an ephemeral source port automatically during <code>connect()</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>What is the "C10k problem" and how is it solved?</summary><div class="answer-box">
+Handling 10,000 concurrent connections on one server. Thread-per-connection collapses under memory (each thread's stack) and context-switch overhead. Solution: an event-driven model &mdash; non-blocking sockets plus a scalable readiness API (<code>epoll</code> on Linux, <code>kqueue</code> on BSD/macOS, IOCP on Windows) so a small thread pool handles all connections, doing work only for sockets that are ready. nginx, HAProxy, Node, Redis are built this way; modern systems also use <code>io_uring</code> for async I/O.
+</div></details>
+<details class="answer-reveal"><summary>A load-balanced service can't open more outbound connections to the database. Error is about ports. Why?</summary><div class="answer-box">
+Ephemeral source-port exhaustion: outbound connections from one host IP to one destination IP:port are limited to the ~28k&ndash;64k ephemeral port range, minus those in TIME_WAIT. Fix: use a connection pool (few long-lived connections, not one per request), widen <code>ip_local_port_range</code>, enable <code>tcp_tw_reuse</code>, or spread across multiple source IPs / destination ports.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain level-triggered vs edge-triggered <code>epoll</code> and a bug edge-triggered invites.</summary><div class="answer-box">
+<strong>Level-triggered</strong> (default): <code>epoll_wait</code> reports a fd as ready as long as there's data to read / space to write &mdash; you can read "some" and be told again next call. <strong>Edge-triggered</strong> (<code>EPOLLET</code>): you're notified only on the <em>transition</em> from not-ready to ready; if you don't drain the socket completely, you won't be notified again until <em>more</em> data arrives. The classic bug: an edge-triggered handler does one <code>read()</code>, gets 4 KB, processes it, and returns &mdash; leaving 60 KB in the socket buffer that <code>epoll</code> never re-signals, so the connection hangs. Correct edge-triggered code loops <code>read()</code> until it returns <code>EAGAIN</code>/<code>EWOULDBLOCK</code> (and similarly loops <code>write()</code>). Edge-triggered means fewer syscalls under high load but demands this discipline; level-triggered is more forgiving and usually fast enough.
+</div></details>
+<details class="answer-reveal"><summary>How does <code>SO_REUSEPORT</code> change the accept model, and what problem does it solve over a shared listening socket?</summary><div class="answer-box">
+Traditionally all worker processes/threads share one listening fd and race in <code>accept()</code> (or an <code>epoll</code> on it), which historically caused the "thundering herd" (all workers wake, one wins) and, even with modern wakeup-one behaviour, uneven load distribution and a single accept-queue bottleneck. <code>SO_REUSEPORT</code> lets multiple sockets bind the <em>same</em> IP:port; the kernel keeps a separate accept queue per socket and hashes incoming connections (by 4-tuple) across them. Each worker has its own listener and queue &mdash; no lock contention on accept, better multicore scaling, and load spread by the kernel. Caveats: connection distribution is by hash not by worker readiness, so a slow/blocked worker still gets its share (its queue can overflow and drop SYNs); and on graceful restart, removing a socket can drop its queued connections unless handled carefully. nginx, Envoy, and HAProxy use it for multicore accept scaling.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:sockets -->
+
+<!-- TOPIC:net:web-infra -->
+<section class="view topic" id="v-net-web-infra" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>NAT, Proxies, Load Balancers &amp; CDNs</h1>
+<p class="subtitle">The boxes between the client and your server, and what each one does to a request.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Proxies</h3>
+<table>
+<tr><th></th><th>Forward proxy</th><th>Reverse proxy</th></tr>
+<tr><td>Sits in front of</td><td>the client</td><td>the server</td></tr>
+<tr><td>Client knows?</td><td>yes (configured)</td><td>no (looks like the server)</td></tr>
+<tr><td>Uses</td><td>corporate egress filtering, caching, anonymity, bypassing geo-blocks</td><td>TLS termination, load balancing, caching, compression, WAF, hiding backend topology</td></tr>
+</table>
+
+<h3>Load balancers</h3>
+<ul>
+<li><strong>L4 (transport)</strong>: forwards by IP:port, doesn't read the payload. Fast, protocol-agnostic, preserves the connection. Can't route by URL. (e.g. AWS NLB, IPVS.)</li>
+<li><strong>L7 (application)</strong>: terminates the connection, reads HTTP &mdash; routes by host/path/header, does TLS termination, retries, sticky sessions, request rewriting. (nginx, HAProxy, Envoy, ALB.)</li>
+<li><strong>Algorithms</strong>: round-robin, least-connections, weighted, consistent hashing (for cache affinity), IP hash.</li>
+<li><strong>Health checks</strong> remove unhealthy backends; <strong>sticky sessions</strong> pin a client to one backend (needed only if the backend holds session state &mdash; better to externalise it).</li>
+</ul>
+
+<h3>CDN</h3>
+<p>A globally distributed set of edge caches near users. Serves static assets (and increasingly
+dynamic/API responses) from the nearest POP, reducing latency and origin load. Also provides:
+DDoS absorption, TLS termination, compression, edge compute (Workers/Lambda@Edge), and origin
+shielding. Cache control via <code>Cache-Control</code>, <code>ETag</code>, surrogate keys, and explicit
+purge/invalidation.</p>
+
+<h3>Anycast</h3>
+<p>The same IP announced from many locations; BGP routes each client to the topologically nearest
+one. Used by DNS roots, CDNs, and DDoS scrubbing to spread load and shorten paths.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Forward proxy = in front of clients (egress control, caching, anonymity). Reverse proxy = in front of servers (TLS, LB, caching, WAF).</li>
+<li>L4 LB: routes by IP:port, payload-blind, fast, connection-preserving. L7 LB: reads HTTP, routes by host/path/header, TLS termination, retries.</li>
+<li>LB algorithms: round-robin, least-connections, weighted, consistent-hash, IP-hash.</li>
+<li>Health checks eject bad backends; sticky sessions pin clients &mdash; avoid by keeping backends stateless.</li>
+<li>CDN: edge caches near users &rarr; lower latency, less origin load, DDoS absorption, edge compute.</li>
+<li>Cache keys/TTL via <code>Cache-Control</code>/<code>ETag</code>; invalidate via purge or versioned URLs.</li>
+<li>Anycast: one IP, many sites, BGP picks the nearest &mdash; DNS, CDNs, scrubbing.</li>
+<li><code>X-Forwarded-For</code> / <code>Forwarded</code> carry the real client IP through proxies (trust only from known proxies).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Forward vs reverse proxy?</dt>
+<dd>A forward proxy acts on behalf of clients (they're configured to use it) &mdash; egress filtering, caching, anonymity. A reverse proxy acts on behalf of servers (clients think it <em>is</em> the server) &mdash; TLS termination, load balancing, caching, security.</dd>
+<dt>L4 vs L7 load balancing &mdash; key trade-off?</dt>
+<dd>L4 is faster and protocol-agnostic but can only route on IP/port. L7 understands HTTP so it can route by URL/host/header, terminate TLS, retry failed requests, and rewrite &mdash; at higher CPU cost and by terminating the connection.</dd>
+<dt>When do you actually need sticky sessions?</dt>
+<dd>Only when a backend holds per-user state in local memory (session, upload progress, a websocket). The better fix is to externalise that state (Redis, JWT, DB) so any backend can serve any request &mdash; then you don't need stickiness and can scale/deploy freely.</dd>
+<dt>What does a CDN give you besides caching static files?</dt>
+<dd>Lower latency (edge near the user), reduced origin bandwidth/load, DDoS absorption at the edge, TLS termination, automatic compression, HTTP/2-3, and edge compute for personalisation/routing.</dd>
+<dt>How does anycast route a user to the nearest node?</dt>
+<dd>The same IP is advertised via BGP from many locations; each router forwards toward whichever announcement has the shortest AS path / lowest metric, so packets naturally flow to the topologically closest node.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which type of proxy hides the backend servers from clients?</summary><div class="answer-box">
+A reverse proxy.
+</div></details>
+<details class="answer-reveal"><summary>Which load balancer can route <code>/api</code> and <code>/images</code> to different servers?</summary><div class="answer-box">
+A layer-7 (application) load balancer &mdash; it reads the HTTP path.
+</div></details>
+<details class="answer-reveal"><summary>What header commonly carries the original client IP through a proxy?</summary><div class="answer-box">
+<code>X-Forwarded-For</code> (or the standard <code>Forwarded</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Users are being logged out randomly after you added a second app server. Cause and fix?</summary><div class="answer-box">
+Sessions are stored in each server's local memory; the load balancer sends the user's next request to the other server, which doesn't have their session. Fixes: move sessions to a shared store (Redis/DB) or switch to stateless tokens (signed JWT/cookie); as a stopgap, enable sticky sessions on the LB. Stateless backends are the right long-term answer.
+</div></details>
+<details class="answer-reveal"><summary>Why use consistent hashing for load balancing in front of a cache tier?</summary><div class="answer-box">
+So a given key routes to the same cache node most of the time, maximising hit rate. With plain modulo hashing, adding/removing one node reshuffles almost every key (mass cache misses / stampede on the origin). Consistent hashing (with virtual nodes) only moves ~1/N of keys when a node changes, keeping the cache mostly warm.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Compare direct server return (DSR) with a standard reverse-proxy load balancer.</summary><div class="answer-box">
+In a normal L7 proxy, both request and response flow through the LB &mdash; simple, enables TLS termination and response inspection/manipulation, but the LB must handle the full bidirectional bandwidth (often the bottleneck for high-throughput / large-download workloads). <strong>DSR</strong> (a.k.a. direct routing, used by IPVS, some hardware LBs): the LB forwards only the <em>inbound</em> packets to a backend (rewriting L2 MAC, or via tunnelling, keeping the original destination IP), and the backend replies <em>directly</em> to the client, bypassing the LB entirely. Since responses are usually far larger than requests, the LB's bandwidth need drops enormously and it scales further on cheap hardware. Costs: it's L3/L4 only (no TLS termination, no HTTP routing, no response rewriting), every backend must be configured with the VIP on a loopback and suppress ARP for it, health checking is trickier, and it doesn't work across L3 boundaries without tunnelling. Used where raw throughput matters more than L7 features (video, large file serving, game traffic).
+</div></details>
+<details class="answer-reveal"><summary>What is "origin shielding" / a tiered CDN cache, and what failure does it prevent?</summary><div class="answer-box">
+Without shielding, every CDN edge POP that has a cache miss goes straight to your origin. For a global CDN with 100+ POPs, a newly-published (or just-expired) popular object can trigger ~100 near-simultaneous origin fetches &mdash; and a purge across all POPs causes a synchronised stampede. <strong>Origin shield</strong> designates one mid-tier cache (usually a POP near the origin) that all other edges fetch <em>through</em>: edges miss &rarr; ask the shield &rarr; shield makes at most one origin request and fans the result back out. This collapses N origin requests into 1, smooths purge storms, and lets you firewall the origin to accept traffic only from the shield. Cost: an extra hop of latency on shield misses, and the shield is a concentration point that needs its own redundancy.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:web-infra -->
+
+<!-- TOPIC:net:web-app -->
+<section class="view topic" id="v-net-web-app" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>Cookies, Sessions, CORS &amp; WebSockets</h1>
+<p class="subtitle">The browser-side mechanics of stateful, cross-origin, real-time web apps.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Cookies</h3>
+<p>Small key/value pairs the server sets via <code>Set-Cookie</code>; the browser attaches them to
+matching future requests automatically. Attributes:</p>
+<ul>
+<li><code>HttpOnly</code> &mdash; not readable by JS (mitigates XSS token theft).</li>
+<li><code>Secure</code> &mdash; only sent over HTTPS.</li>
+<li><code>SameSite=Strict/Lax/None</code> &mdash; controls sending on cross-site requests (CSRF defence; <code>Lax</code> is the modern default).</li>
+<li><code>Domain</code>, <code>Path</code>, <code>Max-Age</code>/<code>Expires</code>.</li>
+</ul>
+
+<h3>Session vs token auth</h3>
+<table>
+<tr><th></th><th>Server session</th><th>Token (JWT)</th></tr>
+<tr><td>State</td><td>session store on server; cookie holds only an id</td><td>self-contained signed token; server keeps nothing</td></tr>
+<tr><td>Revocation</td><td>delete the session &mdash; instant</td><td>hard &mdash; valid until expiry (needs a blocklist / short TTL + refresh)</td></tr>
+<tr><td>Scaling</td><td>needs shared session store</td><td>stateless, easy to scale</td></tr>
+</table>
+
+<h3>Same-origin policy &amp; CORS</h3>
+<p>Origin = scheme + host + port. By default JS can <em>send</em> a cross-origin request but can't
+<em>read</em> the response. <strong>CORS</strong> lets a server opt in: it returns
+<code>Access-Control-Allow-Origin</code> (and friends). "Non-simple" requests (custom headers,
+<code>PUT</code>/<code>DELETE</code>, JSON content-type) trigger a <strong>preflight</strong> <code>OPTIONS</code> request
+that the server must answer with the allowed methods/headers before the real request is sent.
+CORS is enforced by the <em>browser</em>, not the server &mdash; it's not a server-side security
+control.</p>
+
+<h3>Real-time: polling &rarr; WebSockets</h3>
+<table>
+<tr><th>Technique</th><th>How</th></tr>
+<tr><td>Short polling</td><td>client requests every N seconds &mdash; simple, wasteful, latency &asymp; N</td></tr>
+<tr><td>Long polling</td><td>server holds the request open until data or timeout, then client re-requests</td></tr>
+<tr><td>Server-Sent Events</td><td>one-way server&rarr;client stream over HTTP (<code>text/event-stream</code>), auto-reconnect</td></tr>
+<tr><td>WebSocket</td><td>full-duplex; starts as an HTTP <code>Upgrade</code>, then a persistent framed TCP channel</td></tr>
+</table>
+<p>WebSockets suit chat, live dashboards, multiplayer, collaborative editing. Considerations:
+they bypass normal HTTP caching/LB semantics, need sticky routing or a pub/sub backplane
+(Redis) for multi-server fan-out, and their own auth (usually a token in the connect URL or
+first message).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Cookie flags: <code>HttpOnly</code> (no JS), <code>Secure</code> (HTTPS only), <code>SameSite</code> (CSRF: <code>Lax</code> default, <code>Strict</code>, <code>None</code>+Secure for cross-site).</li>
+<li>Server session: revocable, needs shared store. JWT: stateless, scales, but hard to revoke &mdash; use short expiry + refresh tokens.</li>
+<li>Origin = scheme + host + port. Same-origin policy blocks JS from <em>reading</em> cross-origin responses.</li>
+<li>CORS = server opt-in via <code>Access-Control-Allow-*</code>; preflight <code>OPTIONS</code> for non-simple requests. Enforced by the browser only.</li>
+<li>Real-time: short poll (simple/wasteful) &lt; long poll &lt; SSE (one-way, HTTP) &lt; WebSocket (full-duplex, <code>Upgrade</code>).</li>
+<li>WebSockets need sticky sessions or a Redis/pub-sub backplane for multi-server broadcast; auth via token on connect.</li>
+<li>CSRF: state-changing requests need a token or <code>SameSite</code> cookies; CORS does not prevent CSRF.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does <code>SameSite=Lax</code> do?</dt>
+<dd>The cookie is sent on same-site requests and on top-level cross-site navigations (clicking a link) but not on cross-site subrequests (an image, an XHR/fetch, a form POST from another site) &mdash; blunting CSRF while keeping normal navigation working. It's the browser default now.</dd>
+<dt>Is CORS a security feature that protects my server?</dt>
+<dd>No. The browser enforces it to protect <em>users</em> from a malicious site reading responses from another origin they're logged into. Your server still receives and processes the request; non-browser clients ignore CORS entirely. Server-side auth/authorization is still mandatory.</dd>
+<dt>When does a CORS preflight happen?</dt>
+<dd>For "non-simple" cross-origin requests: methods other than GET/POST/HEAD, custom headers, or a <code>Content-Type</code> other than form/urlencoded/plain/multipart (so JSON POSTs preflight). The browser sends <code>OPTIONS</code> first; the real request proceeds only if the server allows it.</dd>
+<dt>JWT vs server-side session &mdash; main trade-off?</dt>
+<dd>JWTs are stateless (no session store, easy horizontal scaling) but can't be easily revoked before expiry. Sessions are instantly revocable and can hold arbitrary server state, but need a shared, fast session store. Common compromise: short-lived JWT access tokens + a revocable refresh token.</dd>
+<dt>SSE vs WebSocket?</dt>
+<dd>SSE is one-directional (server&rarr;client), rides on plain HTTP, auto-reconnects, and is simple &mdash; good for feeds/notifications. WebSocket is full-duplex and lower-overhead per message &mdash; needed when the client also streams to the server (chat, games, collaborative editing).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which cookie flag stops JavaScript from reading a cookie?</summary><div class="answer-box">
+<code>HttpOnly</code>.
+</div></details>
+<details class="answer-reveal"><summary>What three parts make up an "origin"?</summary><div class="answer-box">
+Scheme (http/https), host, and port.
+</div></details>
+<details class="answer-reveal"><summary>How does a WebSocket connection start?</summary><div class="answer-box">
+As an HTTP request with <code>Upgrade: websocket</code>; the server replies <code>101 Switching Protocols</code> and the connection becomes a persistent duplex channel.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your SPA at <code>app.example.com</code> calls an API at <code>api.example.com</code> and the browser blocks it. Fix?</summary><div class="answer-box">
+Different subdomains = different origins, so CORS applies. The API must return <code>Access-Control-Allow-Origin: https://app.example.com</code> (not <code>*</code> if you send cookies), <code>Access-Control-Allow-Credentials: true</code> if using cookies, and handle the preflight <code>OPTIONS</code> with <code>Allow-Methods</code>/<code>Allow-Headers</code>. Alternatively, serve the API under the same origin via a reverse-proxy path (<code>app.example.com/api</code>).
+</div></details>
+<details class="answer-reveal"><summary>A chat app works with one server but messages are missed after scaling to three. Why?</summary><div class="answer-box">
+Each server only holds the WebSocket connections to <em>its</em> clients. A message received on server A can't reach a recipient connected to server B. Fix: a pub/sub backplane &mdash; every server subscribes to a Redis (or Kafka/NATS) channel; publishing a message fans it out to all servers, which forward to their local sockets. (Sticky sessions alone don't help &mdash; the clients are legitimately on different servers.)
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain the CSRF attack and why <code>SameSite</code> cookies plus a CSRF token are both used.</summary><div class="answer-box">
+CSRF: a malicious page causes the victim's browser to send a state-changing request to a site the victim is logged into; because the browser auto-attaches that site's cookies, the request is authenticated. The victim never sees it. <strong>SameSite=Lax/Strict</strong> stops the cookie being sent on cross-site subrequests/form-posts, defeating the classic attack &mdash; but it's a relatively new default, some flows need <code>SameSite=None</code> (embedded widgets, some SSO), and older browsers ignore it. A <strong>CSRF token</strong> (a per-session random value the server issues, embedded in forms / sent as a header, and validated server-side) defends independently of cookie behaviour: the attacker's page can't read the token (same-origin policy) so it can't forge a valid request. Defence in depth: use both, plus check <code>Origin</code>/<code>Referer</code> on state-changing endpoints. Token-in-header auth (Authorization: Bearer) is inherently CSRF-resistant because the browser doesn't auto-attach it.
+</div></details>
+<details class="answer-reveal"><summary>What are the trade-offs of storing an auth token in a cookie vs <code>localStorage</code> for a SPA?</summary><div class="answer-box">
+<strong>Cookie (<code>HttpOnly; Secure; SameSite</code>)</strong>: not reachable by JS, so an XSS payload can't exfiltrate it directly; sent automatically (no client code to attach it); but it's now subject to CSRF (mitigated by <code>SameSite</code> + CSRF tokens), and it's attached to <em>every</em> request to the domain including ones that don't need it. <strong><code>localStorage</code></strong>: immune to CSRF (you explicitly attach it as a header), fine-grained control over which requests carry it, works cleanly cross-domain for APIs &mdash; but any XSS on your page can read the whole token and send it anywhere (game over, and <code>HttpOnly</code> can't help you). Consensus: prefer <code>HttpOnly</code> cookies for the session/refresh token (XSS is the more catastrophic and common failure), keep a short-lived access token in memory (not persisted), and invest heavily in XSS prevention (CSP, output encoding, framework escaping) since XSS defeats both approaches for anything the page can access.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:web-app -->
+
 </main>
 
 <footer class="site-footer">
@@ -9558,25 +10625,23 @@ NoSQL stores are <em>schema-flexible at write time</em> (the engine won't reject
       ["isolation",         "Isolation Levels & Anomalies",          "Dirty/non-repeatable/phantom reads, read committed, repeatable read, serializable."],
       ["locking-mvcc",      "Locking, MVCC & Deadlocks",             "Shared/exclusive locks, 2PL, MVCC snapshots, deadlock detection, lock escalation."],
       ["sql-vs-nosql",      "SQL vs NoSQL & the CAP Trade-off",      "Document/KV/column/graph stores, CAP, BASE, when to pick each, polyglot persistence."]
+    ],
+    net: [
+      ["models",        "OSI & TCP/IP Models",                 "7 layers vs 4, encapsulation, what lives where, PDUs, why layering."],
+      ["ip-routing",    "IP Addressing, Subnets & Routing",    "IPv4/IPv6, CIDR, subnet masks, public vs private, ARP, routing tables, NAT."],
+      ["tcp",           "TCP: Handshake, Flow & Congestion",   "3-way handshake, seq/ack, sliding window, slow start, congestion avoidance, teardown."],
+      ["udp",           "UDP & When to Use It",                "Connectionless, no reliability/ordering, low overhead, DNS/QUIC/media, app-level reliability."],
+      ["dns",           "DNS Resolution",                     "Recursive vs iterative, root/TLD/authoritative, record types, caching/TTL, propagation."],
+      ["http",          "HTTP/1.1, HTTP/2 & HTTP/3",          "Methods, status codes, headers, keep-alive, multiplexing, head-of-line blocking, QUIC."],
+      ["tls",           "HTTPS & the TLS Handshake",          "Symmetric vs asymmetric, certificates & CAs, TLS 1.3 handshake, forward secrecy."],
+      ["sockets",       "Sockets & the Client/Server Lifecycle","socket/bind/listen/accept/connect, blocking vs non-blocking, TIME_WAIT, ports."],
+      ["web-infra",     "NAT, Proxies, Load Balancers & CDNs", "Forward vs reverse proxy, L4 vs L7 LB, health checks, sticky sessions, CDN edge caching."],
+      ["web-app",       "Cookies, Sessions, CORS & WebSockets","Cookie attributes, session vs token auth, same-origin policy, CORS preflight, WS upgrade, polling."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    net: [
-      "The OSI & TCP/IP models",
-      "IP addressing, subnets & routing",
-      "TCP: the handshake, flow & congestion control",
-      "UDP & when to use it",
-      "DNS resolution",
-      "HTTP/1.1, HTTP/2 & HTTP/3",
-      "HTTPS & the TLS handshake",
-      "Sockets & the client/server lifecycle",
-      "NAT, firewalls & proxies",
-      "Cookies, sessions & CORS",
-      "WebSockets & long polling",
-      "Debugging latency & throughput"
-    ],
     os: [
       "Processes, the PCB & the lifecycle",
       "Threads vs processes",
