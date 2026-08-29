@@ -3076,6 +3076,27 @@ portable target POSIX <code>sh</code>; scripts that use <code>[[ ]]</code>, arra
 <code>bash</code>.</p>
 
 <h3>Three ways to run a script</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 168" role="img" aria-labelledby="d-shbasic-t">
+<title id="d-shbasic-t">Executing a script forks a child shell; sourcing runs in the current one</title>
+<text class="d-t-b" x="14" y="16">./script.sh   (or  bash script.sh)</text>
+<rect class="d-box-soft" x="20" y="24" width="120" height="30" rx="6"/>
+<text class="d-t-sm" x="80" y="43" text-anchor="middle">your shell</text>
+<rect class="d-box" x="230" y="24" width="140" height="30" rx="6"/>
+<text class="d-t-sm" x="300" y="43" text-anchor="middle">child shell (new PID)</text>
+<path class="d-line" d="M140 39 L228 39" marker-end="url(#shbasic-ah)"/>
+<defs><marker id="shbasic-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="150" y="20">fork + exec</text>
+<path class="d-dash" d="M228 50 C 180 68, 130 68, 142 54" marker-end="url(#shbasic-ah)"/>
+<text class="d-t-accent" x="150" y="70">cd, VAR=..., exit code &mdash; die with the child</text>
+<text class="d-t-b" x="14" y="104">. script.sh   (source)</text>
+<rect class="d-box-soft" x="20" y="112" width="200" height="30" rx="6"/>
+<text class="d-t-sm" x="120" y="131" text-anchor="middle">your shell runs each line itself</text>
+<text class="d-t-accent" x="250" y="131">cd, VAR=..., functions all persist</text>
+<text class="d-t-sm" x="14" y="162">Env vars flow parent&rarr;child (a copy); nothing flows child&rarr;parent. That is why a script can't <tspan class="d-t-mono">cd</tspan> your terminal.</text>
+</svg>
+<figcaption>Use <code>source</code> for env setup (<code>. ~/.bashrc</code>); use <code>./script</code> for anything that should be isolated and have its own exit status.</figcaption>
+</figure>
 <table>
 <tr><th>Invocation</th><th>What happens</th></tr>
 <tr><td><code>./script.sh</code></td><td>Needs the execute bit (<code>chmod +x</code>) and a shebang. The kernel reads <code>#!</code> and runs the named interpreter with the script as an argument. Runs in a <strong>new process</strong>.</td></tr>
@@ -3216,6 +3237,24 @@ processes; without <code>export</code> it's a shell-local variable.</p>
 <tr><td><code>"double"</code></td><td>Expands <code>$var</code>, <code>$(cmd)</code>, <code>`cmd`</code>, and <code>\</code> before <code>$ ` " \ </code>. Suppresses word-splitting and globbing. <strong>The default choice.</strong></td></tr>
 <tr><td>unquoted</td><td>Expands <em>and then</em> word-splits on <code>$IFS</code> (space/tab/newline) and applies globbing (<code>*</code>, <code>?</code>, <code>[]</code>). Dangerous with data.</td></tr>
 </table>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-shquote-t">
+<title id="d-shquote-t">Unquoted expansion is split into words and glob-expanded; quoted stays one word</title>
+<rect class="d-box-alt" x="14" y="20" width="180" height="24"/><text class="d-t-mono" x="104" y="36" text-anchor="middle">f = "a b.txt"</text>
+<text class="d-t-b" x="14" y="70">rm $f</text>
+<path class="d-line" d="M70 62 L110 62" marker-end="url(#shquote-ah)"/>
+<defs><marker id="shquote-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="120" y="52" width="60" height="20"/><text class="d-t-mono" x="150" y="66" text-anchor="middle">a</text>
+<rect class="d-box" x="184" y="52" width="90" height="20"/><text class="d-t-mono" x="229" y="66" text-anchor="middle">b.txt</text>
+<text class="d-t-accent" x="290" y="66">2 args &mdash; deletes the wrong files</text>
+<text class="d-t-b" x="14" y="110">rm "$f"</text>
+<path class="d-line" d="M76 102 L116 102" marker-end="url(#shquote-ah)"/>
+<rect class="d-box-soft" x="120" y="92" width="130" height="20"/><text class="d-t-mono" x="185" y="106" text-anchor="middle">a b.txt</text>
+<text class="d-t-accent" x="290" y="106">1 arg &mdash; correct</text>
+<text class="d-t-sm" x="14" y="140">Order after expansion: <tspan class="d-t-mono">$var</tspan> value &rarr; split on <tspan class="d-t-mono">$IFS</tspan> &rarr; glob (<tspan class="d-t-mono">*?[]</tspan>). Double quotes stop the last two.</text>
+</svg>
+<figcaption>Rule: <strong>always</strong> quote expansions &mdash; <code>"$var"</code>, <code>"$@"</code>, <code>"$(cmd)"</code>. The rare deliberate exception is when you actually want splitting (e.g. <code>set -- $flags</code>).</figcaption>
+</figure>
 <pre><code>f=<span class="s">"my file.txt"</span>
 rm $f          <span class="c"># runs: rm my file.txt   -> two args, wrong</span>
 rm <span class="s">"$f"</span>        <span class="c"># runs: rm "my file.txt" -> one arg, correct</span>
@@ -3502,6 +3541,24 @@ Quote every operand, and defend against operands that look like operators by pre
 lines with spaces or <code>*</code> break.</p>
 
 <h3>The subshell-in-a-pipeline trap</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-shloop-t">
+<title id="d-shloop-t">A piped while loop runs in a subshell, so its variable changes are lost</title>
+<rect class="d-box-soft" x="14" y="34" width="110" height="30" rx="6"/>
+<text class="d-t-sm" x="69" y="53" text-anchor="middle">your shell</text>
+<text class="d-t-mono" x="14" y="80">count = 0</text>
+<path class="d-line" d="M124 49 L172 49" marker-end="url(#shloop-ah)"/>
+<text class="d-t-sm" x="128" y="42">| pipe</text>
+<defs><marker id="shloop-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="176" y="26" width="200" height="48" rx="6"/>
+<text class="d-t-sm" x="276" y="44" text-anchor="middle">subshell: while read...</text>
+<text class="d-t-mono" x="276" y="62" text-anchor="middle">((count++))  &rarr; 1,2,3...</text>
+<path class="d-dash" d="M376 68 C 420 68, 420 100, 376 100"/>
+<text class="d-t-accent" x="176" y="104">subshell exits &rarr; its <tspan class="d-t-mono">count</tspan> vanishes; parent still 0</text>
+<text class="d-t-sm" x="14" y="124">Fix: feed the loop with <tspan class="d-t-mono">while ... done &lt; file</tspan>, or process substitution <tspan class="d-t-mono">done &lt; &lt;(cmd)</tspan>, or bash <tspan class="d-t-mono">shopt -s lastpipe</tspan>.</text>
+</svg>
+<figcaption>The same reason a piped loop can't <code>exit</code> the script and why <code>read</code> after a pipe sees nothing &mdash; the loop body isn't your shell.</figcaption>
+</figure>
 <pre><code>count=0
 cat file | <span class="k">while</span> read -r _; <span class="k">do</span> ((count++)); <span class="k">done</span>
 echo <span class="s">"$count"</span>    <span class="c"># prints 0 !</span></code></pre>
@@ -3637,6 +3694,22 @@ greet World               <span class="c"># call: no parentheses, args space-sep
 <tr><td><code>"$*"</code></td><td>All args as one string joined by first char of <code>IFS</code>.</td></tr>
 <tr><td><code>shift [n]</code></td><td>Drop the first <code>n</code> (default 1) args; <code>$2</code> becomes <code>$1</code>, etc.</td></tr>
 </table>
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-shargs-t">
+<title id="d-shargs-t">"$@" keeps each argument intact; "$*" flattens them into one string</title>
+<text class="d-t-b" x="14" y="16">args:  one   "two words"   three</text>
+<text class="d-t-mono" x="14" y="52">"$@"</text>
+<rect class="d-box-soft" x="70" y="38" width="60" height="20"/><text class="d-t-mono" x="100" y="52" text-anchor="middle">one</text>
+<rect class="d-box-soft" x="134" y="38" width="110" height="20"/><text class="d-t-mono" x="189" y="52" text-anchor="middle">two words</text>
+<rect class="d-box-soft" x="248" y="38" width="70" height="20"/><text class="d-t-mono" x="283" y="52" text-anchor="middle">three</text>
+<text class="d-t-accent" x="330" y="52">3 words &mdash; forwards correctly</text>
+<text class="d-t-mono" x="14" y="92">"$*"</text>
+<rect class="d-box" x="70" y="78" width="248" height="20"/><text class="d-t-mono" x="194" y="92" text-anchor="middle">one two words three</text>
+<text class="d-t-accent" x="330" y="92">1 word &mdash; the split is lost</text>
+<text class="d-t-sm" x="14" y="120">Unquoted <tspan class="d-t-mono">$@</tspan> and <tspan class="d-t-mono">$*</tspan> both word-split and glob. Always write <tspan class="d-t-mono">"$@"</tspan> to pass args through.</text>
+</svg>
+<figcaption>The single most common bug in wrapper scripts: <code>cmd $@</code> or <code>cmd "$*"</code> instead of <code>cmd "$@"</code>.</figcaption>
+</figure>
 <p>Inside a function, <code>$1</code>&hellip; are the <em>function's</em> arguments; <code>$0</code> is still the script.</p>
 
 <h3>Returning results</h3>
@@ -3903,8 +3976,33 @@ Bash associative arrays don't preserve order, so keep two structures: an indexed
 <tr><td><code>2&gt;/dev/null</code></td><td>discard stderr.</td></tr>
 <tr><td><code>n&gt;&amp;-</code></td><td>close fd <code>n</code>.</td></tr>
 </table>
-<p><strong>Redirections are applied left to right.</strong> <code>2&gt;&amp;1</code> means "make fd 2 a copy of
-whatever fd 1 is <em>right now</em>", so it must come <em>after</em> <code>&gt; file</code>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 220" role="img" aria-labelledby="d-shredir-t">
+<title id="d-shredir-t">Why the order of &gt;file and 2&gt;&amp;1 changes where stderr goes</title>
+<!-- correct -->
+<text class="d-t-b" x="14" y="16">cmd &gt; file 2&gt;&amp;1     (correct)</text>
+<rect class="d-box" x="14" y="24" width="60" height="24"/><text class="d-t-sm" x="44" y="40" text-anchor="middle">fd 1</text>
+<rect class="d-box" x="14" y="52" width="60" height="24"/><text class="d-t-sm" x="44" y="68" text-anchor="middle">fd 2</text>
+<rect class="d-box-soft" x="220" y="24" width="80" height="24"/><text class="d-t-sm" x="260" y="40" text-anchor="middle">file</text>
+<rect class="d-box-alt" x="220" y="52" width="80" height="24"/><text class="d-t-sm" x="260" y="68" text-anchor="middle">terminal</text>
+<path class="d-line" d="M74 36 L218 36" marker-end="url(#shredir-ah)"/>
+<text class="d-t-sm" x="90" y="30">1. &gt;file</text>
+<path class="d-line" d="M74 64 C 140 64, 150 40, 218 37" marker-end="url(#shredir-ah)"/>
+<text class="d-t-sm" x="90" y="80">2. 2&gt;&amp;1 (= copy fd 1 &rarr; file)</text>
+<defs><marker id="shredir-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<!-- wrong -->
+<text class="d-t-b" x="14" y="124">cmd 2&gt;&amp;1 &gt; file     (wrong order)</text>
+<rect class="d-box" x="14" y="132" width="60" height="24"/><text class="d-t-sm" x="44" y="148" text-anchor="middle">fd 1</text>
+<rect class="d-box" x="14" y="160" width="60" height="24"/><text class="d-t-sm" x="44" y="176" text-anchor="middle">fd 2</text>
+<rect class="d-box-soft" x="220" y="132" width="80" height="24"/><text class="d-t-sm" x="260" y="148" text-anchor="middle">file</text>
+<rect class="d-box-alt" x="220" y="160" width="80" height="24"/><text class="d-t-sm" x="260" y="176" text-anchor="middle">terminal</text>
+<path class="d-line" d="M74 172 C 140 172, 150 176, 218 172" marker-end="url(#shredir-ah)"/>
+<text class="d-t-sm" x="90" y="200">1. 2&gt;&amp;1 (fd 1 still = terminal here)</text>
+<path class="d-line" d="M74 144 L218 144" marker-end="url(#shredir-ah)"/>
+<text class="d-t-sm" x="90" y="128">2. &gt;file (only fd 1 moves now)</text>
+</svg>
+<figcaption><strong>Redirections apply left to right.</strong> <code>2&gt;&amp;1</code> = "point fd 2 at a <em>copy</em> of fd 1's current target" &mdash; so it must come <em>after</em> <code>&gt; file</code>. <code>&amp;&gt; file</code> is the unambiguous bash shorthand for both.</figcaption>
+</figure>
 
 <h3>Pipes</h3>
 <p><code>a | b</code> connects <code>a</code>'s stdout to <code>b</code>'s stdin; stderr is <em>not</em> piped unless you
@@ -4035,6 +4133,24 @@ Identical unless <code>set -o noclobber</code> is active. With <code>noclobber</
 <pre><code>now=$(date +%s)                 <span class="c"># preferred</span>
 now=`date +%s`                  <span class="c"># legacy backticks -- avoid</span>
 files=$(ls)                     <span class="c"># fine to print; bad to parse (see caveats)</span></code></pre>
+<figure class="diagram">
+<svg viewBox="0 0 520 130" role="img" aria-labelledby="d-shcs-t">
+<title id="d-shcs-t">Command substitution runs a subshell and captures its stdout as text</title>
+<rect class="d-box-soft" x="14" y="40" width="70" height="26"/><text class="d-t-mono" x="49" y="57" text-anchor="middle">x=$( )</text>
+<rect class="d-box" x="150" y="30" width="150" height="46" rx="6"/>
+<text class="d-t-sm" x="225" y="48" text-anchor="middle">subshell runs</text>
+<text class="d-t-mono" x="225" y="64" text-anchor="middle">date +%s</text>
+<path class="d-line" d="M84 53 L148 53" marker-end="url(#shcs-ah)"/>
+<defs><marker id="shcs-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-alt" x="360" y="24" width="120" height="20"/><text class="d-t-sm" x="420" y="39" text-anchor="middle">stdout &rarr; captured</text>
+<rect class="d-box-alt" x="360" y="52" width="120" height="20"/><text class="d-t-sm" x="420" y="67" text-anchor="middle">stderr &rarr; terminal</text>
+<path class="d-line" d="M300 44 L358 36" marker-end="url(#shcs-ah)"/>
+<path class="d-line" d="M300 60 L358 62" marker-end="url(#shcs-ah)"/>
+<text class="d-t-sm" x="14" y="98">Trailing newlines are stripped. The result is <tspan class="d-t-mono">$IFS</tspan>-split + globbed unless you write <tspan class="d-t-mono">x="$(...)"</tspan>.</text>
+<text class="d-t-sm" x="14" y="118">Because it's a subshell, a <tspan class="d-t-mono">VAR=</tspan> set inside <tspan class="d-t-mono">$( )</tspan> does not survive.</text>
+</svg>
+<figcaption>Prefer <code>$()</code> over backticks &mdash; it nests (<code>$(a $(b))</code>) and treats backslashes predictably.</figcaption>
+</figure>
 <p><code>$(...)</code> runs the command in a <strong>subshell</strong>, captures its stdout, and <strong>strips
 all trailing newlines</strong>. Prefer it over backticks: <code>$()</code> nests cleanly
 (<code>$(a $(b))</code>), and backslashes inside behave predictably.</p>
@@ -4180,6 +4296,26 @@ IFS=$'\n\t'          <span class="c"># optional: safer word-splitting</span></co
 explicitly: <code>cmd || die "cmd failed"</code>.</p>
 
 <h3><code>trap</code> &mdash; run code on signals and on exit</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 148" role="img" aria-labelledby="d-shtrap-t">
+<title id="d-shtrap-t">trap ... EXIT runs the cleanup on every way the script can end</title>
+<rect class="d-box" x="180" y="18" width="160" height="26" rx="6"/>
+<text class="d-t-sm" x="260" y="35" text-anchor="middle">script body</text>
+<path class="d-line" d="M200 44 C 130 44, 110 68, 100 78" marker-end="url(#shtrap-ah)"/>
+<path class="d-line" d="M260 44 L260 78" marker-end="url(#shtrap-ah)"/>
+<path class="d-line" d="M320 44 C 390 44, 410 68, 420 78" marker-end="url(#shtrap-ah)"/>
+<defs><marker id="shtrap-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-alt" x="40" y="80" width="110" height="24"/><text class="d-t-sm" x="95" y="96" text-anchor="middle">normal end</text>
+<rect class="d-box-alt" x="205" y="80" width="110" height="24"/><text class="d-t-sm" x="260" y="96" text-anchor="middle">set -e / exit 1</text>
+<rect class="d-box-alt" x="370" y="80" width="110" height="24"/><text class="d-t-sm" x="425" y="96" text-anchor="middle">Ctrl-C (SIGINT)</text>
+<path class="d-line" d="M95 104 C 95 118, 235 118, 258 118" marker-end="url(#shtrap-ah)"/>
+<path class="d-line" d="M260 104 L260 116" marker-end="url(#shtrap-ah)"/>
+<path class="d-line" d="M425 104 C 425 118, 285 118, 262 118" marker-end="url(#shtrap-ah)"/>
+<rect class="d-box-soft" x="180" y="116" width="160" height="16" rx="4"/>
+<text class="d-t-accent" x="260" y="128" text-anchor="middle">trap cleanup EXIT &mdash; always</text>
+</svg>
+<figcaption>Register the cleanup once at the top and every exit path is covered &mdash; the shell equivalent of RAII. Put <code>mktemp -d</code> + <code>trap</code> together so a temp dir is never leaked.</figcaption>
+</figure>
 <pre><code>tmpdir=$(mktemp -d)
 cleanup() { rm -rf <span class="s">"$tmpdir"</span>; }
 trap cleanup EXIT              <span class="c"># runs on ANY exit: normal, error, or signal</span>
@@ -4302,6 +4438,31 @@ For a whole tree, <code>kill -- -$$</code> (negative PID = process group) or sta
 <p class="subtitle">The classic pipeline toolkit &mdash; and when to reach for <code>awk</code> instead of chaining five tools.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The pipeline model</h3>
+<p>Each tool reads lines on stdin, transforms them, writes lines on stdout. A pipe chains them
+into a stream; stages run <em>concurrently</em>, not one-after-another.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 118" role="img" aria-labelledby="d-shtp-t">
+<title id="d-shtp-t">A text pipeline: each stage filters or reshapes the line stream</title>
+<rect class="d-box-alt" x="10" y="40" width="60" height="26"/><text class="d-t-sm" x="40" y="57" text-anchor="middle">app.log</text>
+<rect class="d-box" x="94" y="40" width="70" height="26"/><text class="d-t-mono" x="129" y="57" text-anchor="middle">grep ERR</text>
+<rect class="d-box" x="188" y="40" width="90" height="26"/><text class="d-t-mono" x="233" y="57" text-anchor="middle">awk '{print $5}'</text>
+<rect class="d-box" x="302" y="40" width="60" height="26"/><text class="d-t-mono" x="332" y="57" text-anchor="middle">sort</text>
+<rect class="d-box" x="386" y="40" width="80" height="26"/><text class="d-t-mono" x="426" y="57" text-anchor="middle">uniq -c</text>
+<rect class="d-box" x="490" y="40" width="42" height="26"/><text class="d-t-mono" x="511" y="57" text-anchor="middle">sort -rn</text>
+<path class="d-line" d="M70 53 L92 53" marker-end="url(#shtp-ah)"/>
+<path class="d-line" d="M164 53 L186 53" marker-end="url(#shtp-ah)"/>
+<path class="d-line" d="M278 53 L300 53" marker-end="url(#shtp-ah)"/>
+<path class="d-line" d="M362 53 L384 53" marker-end="url(#shtp-ah)"/>
+<path class="d-line" d="M466 53 L488 53" marker-end="url(#shtp-ah)"/>
+<defs><marker id="shtp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="10" y="30">filter lines &rarr; pick a field &rarr; group &rarr; count &rarr; rank</text>
+<text class="d-t-sm" x="10" y="96">grep = which lines &middot; sed = edit lines &middot; awk = fields &amp; logic &middot; cut/sort/uniq = columns &amp; sets</text>
+<text class="d-t-sm" x="10" y="112"><tspan class="d-t-mono">uniq</tspan> only collapses adjacent duplicates &mdash; that is why <tspan class="d-t-mono">sort</tspan> comes first.</text>
+</svg>
+<figcaption>Compose small tools over a line stream instead of writing one big script. Keep the most selective filter (<code>grep</code>) first so later stages process less.</figcaption>
+</figure>
+
 <h3><code>grep</code> &mdash; find lines</h3>
 <pre><code>grep -E <span class="s">'warn|error'</span> app.log      <span class="c"># -E extended regex</span>
 grep -i -n -c foo file            <span class="c"># ignore case / line numbers / count</span>
@@ -4462,6 +4623,30 @@ find . -type f -exec sh -c <span class="s">'mv "$1" "${1%.txt}.md"'</span> _ {} 
 survive. Plain <code>xargs</code> splits on whitespace and treats quotes specially.</p>
 
 <h3><code>xargs</code></h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 138" role="img" aria-labelledby="d-shxargs-t">
+<title id="d-shxargs-t">xargs packs stdin items into as few command lines as fit</title>
+<rect class="d-box-alt" x="14" y="20" width="150" height="66"/>
+<text class="d-t-sm" x="89" y="14" text-anchor="middle">stdin (NUL-separated)</text>
+<text class="d-t-mono" x="24" y="38">a.log</text>
+<text class="d-t-mono" x="24" y="54">b c.log</text>
+<text class="d-t-mono" x="24" y="70">d.log ...</text>
+<rect class="d-box-soft" x="210" y="34" width="70" height="30" rx="6"/>
+<text class="d-t-b" x="245" y="53" text-anchor="middle">xargs</text>
+<path class="d-line" d="M164 50 L208 50" marker-end="url(#shxargs-ah)"/>
+<defs><marker id="shxargs-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="330" y="20" width="180" height="24"/><text class="d-t-mono" x="420" y="36" text-anchor="middle">gzip a.log "b c.log" d.log</text>
+<text class="d-t-sm" x="330" y="60">one invocation, many args (default)</text>
+<rect class="d-box" x="330" y="70" width="90" height="20"/><text class="d-t-mono" x="375" y="84" text-anchor="middle">gzip a.log</text>
+<rect class="d-box" x="425" y="70" width="90" height="20"/><text class="d-t-mono" x="470" y="84" text-anchor="middle">gzip "b c.log"</text>
+<text class="d-t-sm" x="330" y="104"><tspan class="d-t-mono">-n1</tspan>: one arg per run &middot; <tspan class="d-t-mono">-P4</tspan>: 4 in parallel &middot; <tspan class="d-t-mono">-I{}</tspan>: placeholder</text>
+<path class="d-line" d="M280 45 L328 32" marker-end="url(#shxargs-ah)"/>
+<path class="d-line" d="M280 55 L328 78" marker-end="url(#shxargs-ah)"/>
+<text class="d-t-sm" x="14" y="120">Pair with <tspan class="d-t-mono">find ... -print0 | xargs -0</tspan> so filenames with spaces / newlines survive intact.</text>
+<text class="d-t-sm" x="14" y="136">Add <tspan class="d-t-mono">-r</tspan> (GNU) so an empty input doesn't run the command with no args.</text>
+</svg>
+<figcaption><code>xargs</code> exists because a naive <code>$(find ...)</code> can exceed <code>ARG_MAX</code> and word-splits on spaces. It also lets you parallelise with <code>-P</code>.</figcaption>
+</figure>
 <pre><code>... | xargs -0 -n1 basename        <span class="c"># -n1: one arg per invocation</span>
 ... | xargs -0 -P4 -n1 convert     <span class="c"># -P4: 4 parallel workers</span>
 ... | xargs -0 -I{} cp {} /backup/ <span class="c"># -I{}: placeholder, implies -n1</span>
