@@ -9411,6 +9411,21 @@ Enum + switch: all transitions visible in one place, trivial to serialize the st
 <li>We drop constants and lower-order terms: <code>3n&sup2; + 5n + 9</code> is <code>O(n&sup2;)</code>.</li>
 <li>Big-O describes <em>asymptotic</em> behaviour &mdash; for small <code>n</code>, constants can dominate (which is why <code>std::sort</code> switches to insertion sort for tiny ranges).</li>
 </ul>
+<pre><code><span class="c"># O(1): work independent of n</span>
+<span class="k">def</span> first(a): <span class="k">return</span> a[<span class="n">0</span>]
+
+<span class="c"># O(n): one pass</span>
+<span class="k">def</span> total(a):
+    s = <span class="n">0</span>
+    <span class="k">for</span> x <span class="k">in</span> a: s += x        <span class="c"># n iterations</span>
+    <span class="k">return</span> s
+
+<span class="c"># O(n^2): a loop inside a loop over the same n</span>
+<span class="k">def</span> has_dup(a):
+    <span class="k">for</span> i <span class="k">in</span> range(len(a)):
+        <span class="k">for</span> j <span class="k">in</span> range(i+<span class="n">1</span>, len(a)):   <span class="c"># ~n*n/2 comparisons -> drop the 1/2 -> O(n^2)</span>
+            <span class="k">if</span> a[i] == a[j]: <span class="k">return</span> <span class="k">True</span>
+    <span class="k">return</span> <span class="k">False</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 200" role="img" aria-labelledby="d-dsbo-t">
@@ -9442,20 +9457,64 @@ Enum + switch: all transitions visible in one place, trivial to serialize the st
 <tr><td>O(n&sup2;)</td><td>quadratic</td><td>nested loop, bubble/insertion sort</td></tr>
 <tr><td>O(2&#8319;), O(n!)</td><td>exponential / factorial</td><td>subsets, permutations, naive TSP</td></tr>
 </table>
+<pre><code><span class="c"># O(log n): the search space HALVES each step</span>
+<span class="k">def</span> bsearch(a, target):
+    lo, hi = <span class="n">0</span>, len(a) - <span class="n">1</span>
+    <span class="k">while</span> lo &lt;= hi:
+        mid = (lo + hi) // <span class="n">2</span>
+        <span class="k">if</span> a[mid] == target: <span class="k">return</span> mid
+        <span class="k">if</span> a[mid] &lt; target: lo = mid + <span class="n">1</span>   <span class="c"># discard the lower half</span>
+        <span class="k">else</span>:              hi = mid - <span class="n">1</span>   <span class="c"># discard the upper half</span>
+    <span class="k">return</span> -<span class="n">1</span>                            <span class="c"># ~log2(n) iterations for n = 1e9 -> ~30</span>
+
+<span class="c"># O(2^n): every element is in or out of each subset</span>
+<span class="k">def</span> subsets(a):
+    <span class="k">return</span> [[a[i] <span class="k">for</span> i <span class="k">in</span> range(len(a)) <span class="k">if</span> m &gt;&gt; i &amp; <span class="n">1</span>] <span class="k">for</span> m <span class="k">in</span> range(<span class="n">1</span> &lt;&lt; len(a))]</code></pre>
 
 <h3>Best / average / worst</h3>
 <p>Quicksort: O(n log n) average, O(n&sup2;) worst (bad pivots). Hash lookup: O(1) average, O(n) worst
 (all collisions). Always know which case an interviewer means &mdash; and whether the worst case is
 adversarially triggerable.</p>
+<pre><code><span class="c"># quicksort worst case: already-sorted input + "pick last as pivot"</span>
+<span class="k">def</span> qsort(a):
+    <span class="k">if</span> len(a) &lt;= <span class="n">1</span>: <span class="k">return</span> a
+    p = a[-<span class="n">1</span>]                         <span class="c"># BAD pivot choice on sorted data</span>
+    lo = [x <span class="k">for</span> x <span class="k">in</span> a[:-<span class="n">1</span>] <span class="k">if</span> x &lt; p]
+    hi = [x <span class="k">for</span> x <span class="k">in</span> a[:-<span class="n">1</span>] <span class="k">if</span> x &gt;= p]  <span class="c"># on [1..n] sorted: lo has n-1, hi has 0</span>
+    <span class="k">return</span> qsort(lo) + [p] + qsort(hi)  <span class="c"># recursion depth n -> O(n^2); random pivot fixes it</span></code></pre>
 
 <h3>Amortised analysis</h3>
 <p><code>vector::push_back</code> is O(n) on the occasional reallocation, but O(1) <em>amortised</em>: over
 <code>n</code> pushes the total work is O(n) because capacity doubles, so the expensive copies happen
 rarely and geometrically. Amortised O(1) &ne; worst-case O(1) &mdash; matters for real-time systems.</p>
+<pre><code><span class="c"># dynamic array: doubling capacity makes n appends cost O(n) total</span>
+<span class="k">class</span> Vec:
+    <span class="k">def</span> __init__(self):
+        self.cap, self.n, self.buf = <span class="n">1</span>, <span class="n">0</span>, [<span class="k">None</span>]
+    <span class="k">def</span> push(self, x):
+        <span class="k">if</span> self.n == self.cap:               <span class="c"># happens at n = 1,2,4,8,... only</span>
+            self.cap *= <span class="n">2</span>
+            self.buf = self.buf + [<span class="k">None</span>]*self.n  <span class="c"># copy n items -- rare</span>
+        self.buf[self.n] = x; self.n += <span class="n">1</span>   <span class="c"># the usual case: O(1)</span>
+<span class="c"># total copies over n pushes: 1+2+4+...+n/2+n &lt; 2n  -> O(1) amortised per push</span></code></pre>
 
 <h3>Space complexity</h3>
 <p>Count extra memory beyond the input: recursion stack depth (O(log n) for balanced recursion,
 O(n) for a bad quicksort), auxiliary arrays (merge sort O(n)), or O(1) "in-place".</p>
+<pre><code><span class="c"># O(n) extra: merge sort allocates a scratch array per merge</span>
+<span class="k">def</span> merge(l, r):
+    out = []                              <span class="c"># aux storage proportional to input</span>
+    i = j = <span class="n">0</span>
+    <span class="k">while</span> i &lt; len(l) <span class="k">and</span> j &lt; len(r):
+        <span class="k">if</span> l[i] &lt;= r[j]: out.append(l[i]); i += <span class="n">1</span>
+        <span class="k">else</span>:           out.append(r[j]); j += <span class="n">1</span>
+    <span class="k">return</span> out + l[i:] + r[j:]
+
+<span class="c"># O(1) extra: reverse in place -- only two index variables</span>
+<span class="k">def</span> reverse(a):
+    i, j = <span class="n">0</span>, len(a) - <span class="n">1</span>
+    <span class="k">while</span> i &lt; j:
+        a[i], a[j] = a[j], a[i]; i += <span class="n">1</span>; j -= <span class="n">1</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -9556,6 +9615,11 @@ Average case assumes a benign input distribution. An attacker who controls input
 <li>Insert/delete in the middle is <code>O(n)</code> (shift elements). Append is <code>O(1)</code> amortised for a dynamic array (geometric growth); prepend is <code>O(n)</code>.</li>
 <li>Dynamic array (<code>vector</code>, <code>ArrayList</code>, Python <code>list</code>): keeps <code>size</code> and <code>capacity</code>; grows by ~1.5&ndash;2&times; when full.</li>
 </ul>
+<pre><code>a = [<span class="n">10</span>, <span class="n">20</span>, <span class="n">30</span>, <span class="n">40</span>]
+a[<span class="n">2</span>]                 <span class="c"># O(1): address = base + 2 * elemsize</span>
+a.append(<span class="n">50</span>)          <span class="c"># O(1) amortised (occasional 2x grow + copy)</span>
+a.insert(<span class="n">1</span>, <span class="n">15</span>)       <span class="c"># O(n): elements 1.. shift right one slot</span>
+a.pop(<span class="n">0</span>)             <span class="c"># O(n): everything shifts left</span></code></pre>
 
 <h3>Linked lists</h3>
 <table>
@@ -9567,6 +9631,19 @@ Average case assumes a benign input distribution. An attacker who controls input
 <p>Insert/delete is <code>O(1)</code> <em>if you already hold the node</em>; but <em>finding</em> a position is
 <code>O(n)</code>, and each node is a separate heap allocation with poor locality &mdash; so linked lists
 lose to arrays in practice for most workloads.</p>
+<pre><code><span class="k">class</span> Node:
+    <span class="k">def</span> __init__(self, val, nxt=<span class="k">None</span>):
+        self.val, self.next = val, nxt
+
+<span class="c"># insert `x` AFTER a node we already hold -> O(1), no shifting</span>
+<span class="k">def</span> insert_after(node, x):
+    node.next = Node(x, node.next)
+
+<span class="c"># but reaching the k-th node is O(k): follow `next` k times</span>
+<span class="k">def</span> at(head, k):
+    <span class="k">while</span> k <span class="k">and</span> head:
+        head, k = head.next, k - <span class="n">1</span>
+    <span class="k">return</span> head</code></pre>
 
 <h3>Array vs linked list</h3>
 <table>
@@ -9577,10 +9654,32 @@ lose to arrays in practice for most workloads.</p>
 <tr><td>Memory per element</td><td>just the value</td><td>value + 1&ndash;2 pointers + alloc overhead</td></tr>
 <tr><td>Cache behaviour</td><td>excellent</td><td>poor (pointer chasing)</td></tr>
 </table>
+<pre><code><span class="c"># when the workload is "index a lot, rarely resize" -> array wins outright</span>
+scores = [<span class="n">0</span>] * n
+<span class="k">for</span> i, s <span class="k">in</span> events: scores[i] += s   <span class="c"># O(1) per update, contiguous, prefetch-friendly</span>
+
+<span class="c"># when you splice nodes you already hold and never index -> list wins</span>
+lru.move_to_front(node)                <span class="c"># O(1) relink; an array would shift O(n)</span></code></pre>
 
 <h3>Classic techniques</h3>
 <p>Two pointers (fast/slow for cycle detection &mdash; Floyd's; middle-of-list), reversing a list
 iteratively (prev/curr/next), dummy head node to simplify edge cases, in-place partition.</p>
+<pre><code><span class="c"># reverse a singly linked list iteratively</span>
+<span class="k">def</span> reverse(head):
+    prev = <span class="k">None</span>
+    <span class="k">while</span> head:
+        nxt = head.next      <span class="c"># save the rest</span>
+        head.next = prev     <span class="c"># flip this link</span>
+        prev, head = head, nxt
+    <span class="k">return</span> prev              <span class="c"># new head</span>
+
+<span class="c"># fast/slow: detect a cycle (Floyd's tortoise and hare)</span>
+<span class="k">def</span> has_cycle(head):
+    slow = fast = head
+    <span class="k">while</span> fast <span class="k">and</span> fast.next:
+        slow, fast = slow.next, fast.next.next   <span class="c"># +1 vs +2 per step</span>
+        <span class="k">if</span> slow <span class="k">is</span> fast: <span class="k">return</span> <span class="k">True</span>              <span class="c"># they meet inside the loop</span>
+    <span class="k">return</span> <span class="k">False</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -9693,6 +9792,16 @@ Each node holds a small array of elements (say 16&ndash;64) plus the next pointe
 <li>Implement on a dynamic array (push/pop at the back) or a singly linked list (push/pop at the head).</li>
 <li>Uses: function call stack, expression evaluation &amp; balanced-parens, DFS, undo, backtracking, "next greater element" (monotonic stack).</li>
 </ul>
+<pre><code><span class="c"># balanced-brackets check -- the canonical stack use</span>
+<span class="k">def</span> balanced(s):
+    pairs = {<span class="s">')'</span>:<span class="s">'('</span>, <span class="s">']'</span>:<span class="s">'['</span>, <span class="s">'}'</span>:<span class="s">'{'</span>}
+    st = []
+    <span class="k">for</span> c <span class="k">in</span> s:
+        <span class="k">if</span> c <span class="k">in</span> <span class="s">'([{'</span>: st.append(c)              <span class="c"># push an opener</span>
+        <span class="k">elif</span> c <span class="k">in</span> pairs:
+            <span class="k">if</span> <span class="k">not</span> st <span class="k">or</span> st.pop() != pairs[c]:   <span class="c"># top must match this closer</span>
+                <span class="k">return</span> <span class="k">False</span>
+    <span class="k">return</span> <span class="k">not</span> st                              <span class="c"># nothing left open</span></code></pre>
 
 <h3>Queue (FIFO)</h3>
 <ul>
@@ -9700,6 +9809,19 @@ Each node holds a small array of elements (say 16&ndash;64) plus the next pointe
 <li>Array implementation: use a <strong>circular buffer</strong> (head/tail indices mod capacity) so <code>dequeue</code> isn't O(n). Linked list: keep head + tail pointers.</li>
 <li>Uses: BFS, task/job scheduling, producer&ndash;consumer buffers, rate limiting, streaming.</li>
 </ul>
+<pre><code><span class="k">from</span> collections <span class="k">import</span> deque
+q = deque()
+q.append(<span class="s">'a'</span>); q.append(<span class="s">'b'</span>)   <span class="c"># enqueue at the rear -- O(1)</span>
+q.popleft()                     <span class="c"># dequeue 'a' from the front -- O(1) (a plain list would be O(n))</span>
+
+<span class="c"># BFS uses a queue to visit level by level</span>
+<span class="k">def</span> bfs(adj, start):
+    seen, q = {start}, deque([start])
+    <span class="k">while</span> q:
+        u = q.popleft()
+        <span class="k">for</span> v <span class="k">in</span> adj[u]:
+            <span class="k">if</span> v <span class="k">not</span> <span class="k">in</span> seen:
+                seen.add(v); q.append(v)</code></pre>
 
 <h3>Variants</h3>
 <table>
@@ -9709,10 +9831,29 @@ Each node holds a small array of elements (say 16&ndash;64) plus the next pointe
 <tr><td>Priority queue</td><td>Dequeue the min/max, not the oldest. Backed by a heap (see Heaps topic) &mdash; O(log n).</td></tr>
 <tr><td>Monotonic stack/queue</td><td>Keeps elements in sorted order by discarding dominated ones &mdash; sliding-window max/min, histogram, stock span in O(n).</td></tr>
 </table>
+<pre><code><span class="c"># monotonic stack: "next greater element" for every position in O(n)</span>
+<span class="k">def</span> next_greater(a):
+    res = [-<span class="n">1</span>] * len(a)
+    st = []                              <span class="c"># holds indices, values decreasing</span>
+    <span class="k">for</span> i, x <span class="k">in</span> enumerate(a):
+        <span class="k">while</span> st <span class="k">and</span> a[st[-<span class="n">1</span>]] &lt; x:      <span class="c"># x resolves everything smaller below it</span>
+            res[st.pop()] = x
+        st.append(i)
+    <span class="k">return</span> res</code></pre>
 
 <h3>Two stacks &harr; queue</h3>
 <p>A queue can be built from two stacks: push onto <code>in</code>; to dequeue, if <code>out</code> is empty pour
 <code>in</code> into <code>out</code> (reversing order) then pop <code>out</code>. Amortised O(1) per operation.</p>
+<pre><code><span class="k">class</span> Queue:
+    <span class="k">def</span> __init__(self):
+        self.inb, self.outb = [], []
+    <span class="k">def</span> push(self, x):
+        self.inb.append(x)               <span class="c"># O(1)</span>
+    <span class="k">def</span> pop(self):
+        <span class="k">if</span> <span class="k">not</span> self.outb:                  <span class="c"># amortised O(1): each item moves once</span>
+            <span class="k">while</span> self.inb:
+                self.outb.append(self.inb.pop())  <span class="c"># reverse into outb</span>
+        <span class="k">return</span> self.outb.pop()            <span class="c"># front of the queue</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -9812,6 +9953,17 @@ Let &Phi; = size of <code>inStack</code>. <code>push</code>: real cost 1, &Delta
 <h3>The idea</h3>
 <p>Map a key to a bucket index with <code>hash(key) % capacity</code>. Good average-case O(1) for
 insert/find/delete, at the cost of no ordering and a worst case of O(n).</p>
+<pre><code>buckets = [[] <span class="k">for</span> _ <span class="k">in</span> range(<span class="n">8</span>)]        <span class="c"># 8 buckets, separate chaining</span>
+
+<span class="k">def</span> put(k, v):
+    b = buckets[hash(k) % len(buckets)]  <span class="c"># key -> index in O(1)</span>
+    <span class="k">for</span> i, (ek, _) <span class="k">in</span> enumerate(b):
+        <span class="k">if</span> ek == k: b[i] = (k, v); <span class="k">return</span>   <span class="c"># overwrite existing</span>
+    b.append((k, v))
+
+<span class="k">def</span> get(k):
+    <span class="k">for</span> ek, ev <span class="k">in</span> buckets[hash(k) % len(buckets)]:
+        <span class="k">if</span> ek == k: <span class="k">return</span> ev             <span class="c"># scans only one bucket (short if well-distributed)</span></code></pre>
 
 <h3>A good hash function</h3>
 <ul>
@@ -9819,6 +9971,16 @@ insert/find/delete, at the cost of no ordering and a worst case of O(n).</p>
 <li>For hash <em>tables</em> you want speed + distribution (FNV, MurmurHash, xxHash, SipHash for DoS-resistance) &mdash; not a cryptographic hash.</li>
 <li><code>% capacity</code> with a power-of-two capacity is a fast bitmask, but only mixes the low bits &mdash; hash functions must pre-mix.</li>
 </ul>
+<pre><code><span class="c"># FNV-1a: fast, non-crypto, decent distribution for strings</span>
+<span class="k">def</span> fnv1a(s):
+    h = <span class="n">0x811c9dc5</span>
+    <span class="k">for</span> ch <span class="k">in</span> s.encode():
+        h ^= ch                          <span class="c"># mix the byte in FIRST (1a variant)</span>
+        h = (h * <span class="n">0x01000193</span>) &amp; <span class="n">0xffffffff</span>  <span class="c"># then multiply by the prime, keep 32 bits</span>
+    <span class="k">return</span> h
+
+<span class="c"># BAD hash: sum of chars -> "abc" and "cba" collide, poor spread</span>
+<span class="k">def</span> weak(s): <span class="k">return</span> sum(map(ord, s))</code></pre>
 
 <h3>Collision resolution</h3>
 <table>
@@ -9829,18 +9991,46 @@ insert/find/delete, at the cost of no ordering and a worst case of O(n).</p>
 <tr><td>Cache</td><td>pointer-chasing per bucket</td><td>contiguous &mdash; faster in practice</td></tr>
 <tr><td>Delete</td><td>simple</td><td>needs tombstones or backward-shift</td></tr>
 </table>
+<pre><code><span class="c"># open addressing with linear probing</span>
+EMPTY = object()
+slots = [EMPTY] * <span class="n">8</span>
+
+<span class="k">def</span> put(k, v):
+    i = hash(k) % len(slots)
+    <span class="k">while</span> slots[i] <span class="k">is</span> <span class="k">not</span> EMPTY <span class="k">and</span> slots[i][<span class="n">0</span>] != k:
+        i = (i + <span class="n">1</span>) % len(slots)       <span class="c"># collision -> walk to the next slot</span>
+    slots[i] = (k, v)
+
+<span class="c"># delete can't just blank the slot -- a later key may have probed past it.</span>
+<span class="c"># mark a TOMBSTONE that probes skip but inserts may reuse.</span></code></pre>
 
 <h3>Load factor &amp; resizing</h3>
 <p><code>load factor &alpha; = n / capacity</code>. As <code>&alpha;</code> rises, collisions and probe lengths grow.
 When it crosses a threshold (~0.75), <strong>rehash</strong>: allocate a larger table (usually 2&times;) and
 reinsert every element &mdash; O(n), but amortised O(1) per insert. This is why iterators are
 invalidated on insert.</p>
+<pre><code><span class="k">def</span> put(self, k, v):
+    <span class="k">if</span> (self.n + <span class="n">1</span>) / len(self.buckets) &gt; <span class="n">0.75</span>:   <span class="c"># threshold crossed</span>
+        old = self.buckets
+        self.buckets = [[] <span class="k">for</span> _ <span class="k">in</span> range(<span class="n">2</span> * len(old))]  <span class="c"># grow x2</span>
+        self.n = <span class="n">0</span>
+        <span class="k">for</span> b <span class="k">in</span> old:
+            <span class="k">for</span> ek, ev <span class="k">in</span> b: self._insert(ek, ev)  <span class="c"># rehash EVERY key -> O(n)</span>
+    self._insert(k, v)</code></pre>
 
 <h3>Worst case &amp; defence</h3>
 <p>All keys colliding &rarr; O(n) per operation (a linked list). Causes: bad hash, or an attacker
 choosing colliding keys (hash-flooding DoS). Defences: randomised per-process seed, SipHash,
 switching a bucket to a balanced tree above a threshold (Java 8 <code>HashMap</code>), or a tree map for
 untrusted keys.</p>
+<pre><code><span class="c"># hash-flooding: attacker sends keys that all land in one bucket</span>
+<span class="c"># -> every insert/lookup is O(n), the server stalls on O(n^2) total</span>
+
+<span class="c"># defences:</span>
+<span class="c">#  - per-process random seed:  hash(k, seed)  -> attacker can't precompute collisions</span>
+<span class="c">#  - SipHash (Python/Rust default for str/bytes since ~2012)</span>
+<span class="c">#  - Java 8 HashMap: a bucket with &gt; 8 entries converts to a red-black tree -> O(log n)</span>
+<span class="c">#  - untrusted keys -&gt; use a balanced-tree map (guaranteed O(log n))</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -9921,6 +10111,16 @@ Techniques: <strong>lock striping</strong> (Java 7 <code>ConcurrentHashMap</code
 <p>Root, parent/child, leaf, internal node, edge, <strong>depth</strong> (root to node), <strong>height</strong>
 (node to deepest leaf), subtree. A binary tree: each node has &le; 2 children. Complete, full,
 perfect, balanced are distinct shapes.</p>
+<pre><code><span class="k">class</span> TreeNode:
+    <span class="k">def</span> __init__(self, val, left=<span class="k">None</span>, right=<span class="k">None</span>):
+        self.val, self.left, self.right = val, left, right
+
+<span class="k">def</span> height(node):                   <span class="c"># edges on the longest downward path</span>
+    <span class="k">if</span> <span class="k">not</span> node: <span class="k">return</span> -<span class="n">1</span>            <span class="c"># empty tree: -1;  single node: 0</span>
+    <span class="k">return</span> <span class="n">1</span> + max(height(node.left), height(node.right))
+
+<span class="k">def</span> is_leaf(node):
+    <span class="k">return</span> node <span class="k">and</span> <span class="k">not</span> node.left <span class="k">and</span> <span class="k">not</span> node.right</code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 158" role="img" aria-labelledby="d-dsbst-t">
@@ -9949,6 +10149,19 @@ perfect, balanced are distinct shapes.</p>
 </table>
 <p>DFS traversals are naturally recursive (call stack) or iterative with an explicit stack;
 level-order needs a queue.</p>
+<pre><code><span class="k">def</span> inorder(node, out):
+    <span class="k">if</span> <span class="k">not</span> node: <span class="k">return</span>
+    inorder(node.left, out)      <span class="c"># L</span>
+    out.append(node.val)         <span class="c"># N  -> for a BST this yields sorted order</span>
+    inorder(node.right, out)     <span class="c"># R</span>
+
+<span class="k">from</span> collections <span class="k">import</span> deque
+<span class="k">def</span> level_order(root):          <span class="c"># BFS, row by row</span>
+    q, rows = deque([root] <span class="k">if</span> root <span class="k">else</span> []), []
+    <span class="k">while</span> q:
+        rows.append([n.val <span class="k">for</span> n <span class="k">in</span> q])
+        q = deque(c <span class="k">for</span> n <span class="k">in</span> q <span class="k">for</span> c <span class="k">in</span> (n.left, n.right) <span class="k">if</span> c)
+    <span class="k">return</span> rows</code></pre>
 
 <h3>Binary Search Tree</h3>
 <ul>
@@ -9957,11 +10170,28 @@ level-order needs a queue.</p>
 <li><strong>Delete</strong> cases: leaf (remove), one child (splice), two children (replace with in-order successor/predecessor, then delete that).</li>
 <li>In-order traversal yields keys in ascending order &mdash; a free sorted iteration.</li>
 </ul>
+<pre><code><span class="k">def</span> search(node, key):
+    <span class="k">while</span> node <span class="k">and</span> node.val != key:
+        node = node.left <span class="k">if</span> key &lt; node.val <span class="k">else</span> node.right  <span class="c"># one comparison drops half the tree</span>
+    <span class="k">return</span> node
+
+<span class="k">def</span> insert(node, key):
+    <span class="k">if</span> <span class="k">not</span> node: <span class="k">return</span> TreeNode(key)
+    <span class="k">if</span> key &lt; node.val: node.left  = insert(node.left, key)
+    <span class="k">elif</span> key &gt; node.val: node.right = insert(node.right, key)
+    <span class="k">return</span> node                  <span class="c"># depth of descent = O(h)</span></code></pre>
 
 <h3>When BSTs degenerate</h3>
 <p>Inserting already-sorted (or reverse-sorted) data builds a path, not a bush &rarr; O(n) operations.
 Fixes: self-balancing trees (AVL, red-black &mdash; next topic), randomised insertion order, treaps,
 or just use a hash table if you don't need ordered iteration / range queries.</p>
+<pre><code>root = <span class="k">None</span>
+<span class="k">for</span> k <span class="k">in</span> [<span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>, <span class="n">4</span>, <span class="n">5</span>]:      <span class="c"># ALREADY SORTED input</span>
+    root = insert(root, k)      <span class="c"># every key goes right -> a linked list</span>
+<span class="c"># height(root) == 4 for 5 nodes  ->  search() is now O(n), not O(log n)</span>
+
+<span class="k">import</span> random
+keys = list(range(<span class="n">1</span>, <span class="n">6</span>)); random.shuffle(keys)  <span class="c"># randomised order -> expected O(log n) height</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -10048,6 +10278,17 @@ Choose a traversal and <em>explicitly mark null children</em> (e.g. pre-order wi
 <p>All give O(log n) search/insert/delete and, unlike a hash table, keep keys ordered (range
 queries, floor/ceil, sorted iteration). Balance is restored by <strong>rotations</strong> (local
 O(1) pointer rewires) after an insert/delete.</p>
+<pre><code><span class="c"># a left rotation: the O(1) pointer rewire that fixes a right-heavy node</span>
+<span class="k">def</span> rotate_left(x):
+    y = x.right                  <span class="c">#     x               y</span>
+    x.right = y.left             <span class="c">#      \             / \</span>
+    y.left = x                   <span class="c">#       y    -&gt;     x   T3</span>
+    <span class="k">return</span> y                     <span class="c">#      / \           \</span>
+                                 <span class="c">#     T2  T3          T2   (order preserved, height drops)</span>
+
+<span class="c"># ordered ops a hash map can't do:</span>
+<span class="c">#   floor(k)  -> largest key &lt;= k        ceil(k) -> smallest key &gt;= k</span>
+<span class="c">#   range(lo, hi) -> all keys in [lo, hi] via an in-order walk</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 148" role="img" aria-labelledby="d-dsheap-t">
@@ -10076,15 +10317,39 @@ O(1) pointer rewires) after an insert/delete.</p>
 <li><code>push</code>: append, then <strong>sift up</strong> &mdash; O(log n). <code>pop</code> (min): swap root with last, shrink, <strong>sift down</strong> &mdash; O(log n). <code>peek</code>: O(1).</li>
 <li><strong>Build-heap</strong> from an unsorted array: sift down from the last internal node upward &mdash; O(n), not O(n log n).</li>
 </ul>
+<pre><code>h = []                          <span class="c"># array IS the tree</span>
+<span class="k">def</span> push(x):
+    h.append(x); i = len(h) - <span class="n">1</span>
+    <span class="k">while</span> i &gt; <span class="n">0</span> <span class="k">and</span> h[(i-<span class="n">1</span>)//<span class="n">2</span>] &gt; h[i]:      <span class="c"># sift up: swap with parent while smaller</span>
+        p = (i-<span class="n">1</span>)//<span class="n">2</span>
+        h[i], h[p] = h[p], h[i]; i = p
+<span class="c"># pop-min: move last to root, then sift down comparing to the smaller child</span>
+
+<span class="k">import</span> heapq                    <span class="c"># in practice, use the stdlib min-heap</span>
+heapq.heappush(h, <span class="n">5</span>); heapq.heappop(h)  <span class="c"># O(log n) each; h[0] is the min in O(1)</span></code></pre>
 
 <h3>Uses</h3>
 <p>Priority queue (Dijkstra, A*, task scheduling), heapsort (build max-heap, repeatedly pop),
 "top-k" (a size-k heap in O(n log k)), median maintenance (two heaps), merging k sorted lists.</p>
+<pre><code><span class="k">import</span> heapq
+<span class="c"># top-k largest in O(n log k): keep a size-k MIN-heap, evict the smallest</span>
+<span class="k">def</span> top_k(nums, k):
+    h = nums[:k]; heapq.heapify(h)          <span class="c"># O(k)</span>
+    <span class="k">for</span> x <span class="k">in</span> nums[k:]:
+        <span class="k">if</span> x &gt; h[<span class="n">0</span>]: heapq.heapreplace(h, x)   <span class="c"># push+pop in one O(log k) op</span>
+    <span class="k">return</span> h
+
+<span class="c"># running median: max-heap of the low half, min-heap of the high half</span></code></pre>
 
 <h3>Heap vs BST</h3>
 <p>A heap only gives you the min (or max) fast &mdash; no ordered iteration, no arbitrary search
 (that's O(n)). A balanced BST gives ordered operations but a larger constant and pointer
 overhead. Use a heap when you only ever want the extreme element.</p>
+<pre><code>h = [<span class="n">3</span>, <span class="n">1</span>, <span class="n">4</span>, <span class="n">1</span>, <span class="n">5</span>]; heapq.heapify(h)
+h[<span class="n">0</span>]                <span class="c"># 1  -> the min, O(1)</span>
+<span class="n">4</span> <span class="k">in</span> h              <span class="c"># works but O(n) -- a heap is NOT a search structure</span>
+sorted(h)          <span class="c"># no cheap ordered iteration; you must fully sort or pop repeatedly</span>
+<span class="c"># need floor/ceil/range/ordered-iterate as well? use a balanced BST / TreeMap.</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -10192,6 +10457,14 @@ Heapsort's sift-down repeatedly jumps between array positions <code>i</code> and
 <tr><td>Best for</td><td>sparse graphs (most real graphs)</td><td>dense graphs, or when you query specific edges a lot</td></tr>
 </table>
 <p>Also: edge list (just pairs) &mdash; handy for Kruskal / Bellman-Ford. Store weights alongside.</p>
+<pre><code><span class="k">from</span> collections <span class="k">import</span> defaultdict
+adj = defaultdict(list)               <span class="c"># adjacency list: O(V+E) space</span>
+<span class="k">for</span> u, v <span class="k">in</span> edges:
+    adj[u].append(v); adj[v].append(u) <span class="c"># undirected -> add both directions</span>
+
+mat = [[<span class="n">0</span>]*V <span class="k">for</span> _ <span class="k">in</span> range(V)]         <span class="c"># adjacency matrix: O(V^2) space</span>
+<span class="k">for</span> u, v <span class="k">in</span> edges: mat[u][v] = mat[v][u] = <span class="n">1</span>
+mat[u][v]                             <span class="c"># O(1) "is there an edge?" -- the matrix's one win</span></code></pre>
 
 <h3>BFS</h3>
 <ul>
@@ -10200,6 +10473,18 @@ Heapsort's sift-down repeatedly jumps between array positions <code>i</code> and
 <li>O(V + E). Track <code>visited</code> to avoid revisiting; store <code>parent</code> to reconstruct paths.</li>
 <li>Also: bipartite check (2-colour), level/"minimum steps" problems, multi-source BFS.</li>
 </ul>
+<pre><code><span class="k">from</span> collections <span class="k">import</span> deque
+<span class="k">def</span> shortest_unweighted(adj, src, dst):
+    q, dist, parent = deque([src]), {src: <span class="n">0</span>}, {src: <span class="k">None</span>}
+    <span class="k">while</span> q:
+        u = q.popleft()
+        <span class="k">if</span> u == dst: <span class="k">break</span>
+        <span class="k">for</span> v <span class="k">in</span> adj[u]:
+            <span class="k">if</span> v <span class="k">not</span> <span class="k">in</span> dist:            <span class="c"># first time we reach v => via a shortest path</span>
+                dist[v] = dist[u] + <span class="n">1</span>
+                parent[v] = u
+                q.append(v)
+    <span class="k">return</span> dist.get(dst)                <span class="c"># hop count; walk `parent` back for the route</span></code></pre>
 
 <h3>DFS</h3>
 <ul>
@@ -10207,17 +10492,53 @@ Heapsort's sift-down repeatedly jumps between array positions <code>i</code> and
 <li>O(V + E). Uses: cycle detection, <strong>topological sort</strong> (DAG), connected components, bridges/articulation points, strongly connected components (Tarjan/Kosaraju), maze/backtracking.</li>
 <li>Edge classification (tree / back / forward / cross edges) &mdash; a back edge means a cycle.</li>
 </ul>
+<pre><code><span class="k">def</span> dfs(adj, u, seen):
+    seen.add(u)
+    <span class="k">for</span> v <span class="k">in</span> adj[u]:
+        <span class="k">if</span> v <span class="k">not</span> <span class="k">in</span> seen:
+            dfs(adj, v, seen)          <span class="c"># recurse -> uses the call stack</span>
+
+<span class="k">def</span> components(adj, nodes):
+    seen, count = set(), <span class="n">0</span>
+    <span class="k">for</span> u <span class="k">in</span> nodes:
+        <span class="k">if</span> u <span class="k">not</span> <span class="k">in</span> seen:
+            dfs(adj, u, seen); count += <span class="n">1</span>  <span class="c"># each unseen start = one new component</span>
+    <span class="k">return</span> count</code></pre>
 
 <h3>Cycle detection</h3>
 <ul>
 <li><strong>Undirected:</strong> DFS &mdash; a visited neighbour that isn't the parent means a cycle. Or union-find while adding edges.</li>
 <li><strong>Directed:</strong> DFS with three colours (white/grey/black) &mdash; an edge to a grey (in-progress) node is a back edge = cycle. Or Kahn's algorithm: if topological sort can't place all nodes, there's a cycle.</li>
 </ul>
+<pre><code>WHITE, GREY, BLACK = <span class="n">0</span>, <span class="n">1</span>, <span class="n">2</span>
+<span class="k">def</span> has_cycle(adj, nodes):
+    color = {u: WHITE <span class="k">for</span> u <span class="k">in</span> nodes}
+    <span class="k">def</span> visit(u):
+        color[u] = GREY                <span class="c"># on the current DFS path</span>
+        <span class="k">for</span> v <span class="k">in</span> adj[u]:
+            <span class="k">if</span> color[v] == GREY: <span class="k">return</span> <span class="k">True</span>   <span class="c"># back edge -> cycle</span>
+            <span class="k">if</span> color[v] == WHITE <span class="k">and</span> visit(v): <span class="k">return</span> <span class="k">True</span>
+        color[u] = BLACK               <span class="c"># fully explored</span>
+        <span class="k">return</span> <span class="k">False</span>
+    <span class="k">return</span> any(visit(u) <span class="k">for</span> u <span class="k">in</span> nodes <span class="k">if</span> color[u] == WHITE)</code></pre>
 
 <h3>Topological sort</h3>
 <p>Linear ordering of a DAG so every edge points forward. <strong>Kahn's:</strong> repeatedly remove
 a node with in-degree 0. <strong>DFS:</strong> push nodes onto a stack on exit; reverse it. O(V + E).
 Used for build systems, task scheduling, dependency resolution.</p>
+<pre><code><span class="k">from</span> collections <span class="k">import</span> deque
+<span class="k">def</span> kahn(adj, nodes):
+    indeg = {u: <span class="n">0</span> <span class="k">for</span> u <span class="k">in</span> nodes}
+    <span class="k">for</span> u <span class="k">in</span> nodes:
+        <span class="k">for</span> v <span class="k">in</span> adj[u]: indeg[v] += <span class="n">1</span>
+    q = deque(u <span class="k">for</span> u <span class="k">in</span> nodes <span class="k">if</span> indeg[u] == <span class="n">0</span>)   <span class="c"># no unmet dependencies</span>
+    order = []
+    <span class="k">while</span> q:
+        u = q.popleft(); order.append(u)
+        <span class="k">for</span> v <span class="k">in</span> adj[u]:
+            indeg[v] -= <span class="n">1</span>
+            <span class="k">if</span> indeg[v] == <span class="n">0</span>: q.append(v)
+    <span class="k">return</span> order <span class="k">if</span> len(order) == len(nodes) <span class="k">else</span> <span class="k">None</span>  <span class="c"># None => a cycle exists</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -10350,6 +10671,28 @@ edges, "number of islands II", equivalence classes, percolation.</p>
 <li>Space can be large (a child pointer per possible character); compress with a <strong>radix/Patricia trie</strong> (merge single-child chains) or use a hash map per node.</li>
 <li>Uses: autocomplete, spell-check, IP routing (longest-prefix match), dictionary word games, replacing a hash set when you need prefix queries or lexicographic order.</li>
 </ul>
+<pre><code><span class="k">class</span> Trie:
+    <span class="k">def</span> __init__(self):
+        self.kids = {}          <span class="c"># char -> Trie node (hash map: sparse-alphabet friendly)</span>
+        self.end = <span class="k">False</span>       <span class="c"># True if a word ends exactly here</span>
+
+    <span class="k">def</span> insert(self, word):
+        node = self
+        <span class="k">for</span> ch <span class="k">in</span> word:
+            node = node.kids.setdefault(ch, Trie())  <span class="c"># descend, creating as needed -- O(L)</span>
+        node.end = <span class="k">True</span>
+
+    <span class="k">def</span> _walk(self, prefix):
+        node = self
+        <span class="k">for</span> ch <span class="k">in</span> prefix:
+            <span class="k">if</span> ch <span class="k">not</span> <span class="k">in</span> node.kids: <span class="k">return</span> <span class="k">None</span>
+            node = node.kids[ch]
+        <span class="k">return</span> node
+
+    <span class="k">def</span> search(self, word):      <span class="c"># whole word present?</span>
+        n = self._walk(word);  <span class="k">return</span> bool(n) <span class="k">and</span> n.end
+    <span class="k">def</span> starts_with(self, pre):  <span class="c"># any word with this prefix? (autocomplete)</span>
+        <span class="k">return</span> self._walk(pre) <span class="k">is</span> <span class="k">not</span> <span class="k">None</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -10440,15 +10783,36 @@ A trie of all n suffixes of a length-n string has O(n&sup2;) nodes &mdash; too b
 <p><strong>Introsort</strong> (C++ <code>std::sort</code>): quicksort, switch to heapsort when recursion goes too
 deep, insertion sort for tiny ranges &mdash; quicksort speed with an O(n log n) guarantee.
 <strong>Timsort</strong> (Python, Java objects): merge sort that exploits existing sorted "runs".</p>
+<pre><code><span class="c"># quicksort: partition around a (randomised) pivot, recurse each side</span>
+<span class="k">import</span> random
+<span class="k">def</span> quicksort(a, lo=<span class="n">0</span>, hi=<span class="k">None</span>):
+    <span class="k">if</span> hi <span class="k">is</span> <span class="k">None</span>: hi = len(a) - <span class="n">1</span>
+    <span class="k">if</span> lo &gt;= hi: <span class="k">return</span>
+    a[lo], a[random.randint(lo, hi)] = a[random.randint(lo, hi)], a[lo]  <span class="c"># random pivot</span>
+    p, i = a[lo], lo
+    <span class="k">for</span> j <span class="k">in</span> range(lo + <span class="n">1</span>, hi + <span class="n">1</span>):
+        <span class="k">if</span> a[j] &lt; p:
+            i += <span class="n">1</span>; a[i], a[j] = a[j], a[i]        <span class="c"># push smaller-than-pivot left</span>
+    a[lo], a[i] = a[i], a[lo]
+    quicksort(a, lo, i - <span class="n">1</span>); quicksort(a, i + <span class="n">1</span>, hi)</code></pre>
 
 <h3>Stability</h3>
 <p>A stable sort preserves the relative order of equal keys. Matters when you sort by one field
 after another (sort by name, then stably by department). Merge/insertion/Tim are stable;
 quick/heap are not (without extra work).</p>
+<pre><code>people = [(<span class="s">"Ann"</span>, <span class="s">"Sales"</span>), (<span class="s">"Bob"</span>, <span class="s">"Eng"</span>), (<span class="s">"Cy"</span>, <span class="s">"Sales"</span>)]
+people.sort(key=<span class="k">lambda</span> p: p[<span class="n">0</span>])       <span class="c"># 1) by name</span>
+people.sort(key=<span class="k">lambda</span> p: p[<span class="n">1</span>])       <span class="c"># 2) STABLE by dept -> Ann before Cy preserved within Sales</span>
+<span class="c"># [('Bob','Eng'), ('Ann','Sales'), ('Cy','Sales')]  -- an unstable sort could swap Ann/Cy</span></code></pre>
 
 <h3>The &Omega;(n log n) lower bound</h3>
 <p>Any sort that only <em>compares</em> elements needs &Omega;(n log n) comparisons in the worst case
 (there are n! orderings; each comparison gives 1 bit; log&#8322;(n!) &asymp; n log n).</p>
+<pre><code><span class="c"># a comparison sort is a decision tree: each internal node is "a[i] &lt; a[j]?"</span>
+<span class="c">#   leaves           >= n!   (one per possible permutation)</span>
+<span class="c">#   tree height      >= log2(n!)  ~=  n*log2(n) - 1.44n   (Stirling)</span>
+<span class="c">#   worst-case comparisons = height  ->  Omega(n log n)</span>
+<span class="c"># counting/radix/bucket dodge this by NOT comparing -- they read key structure instead.</span></code></pre>
 
 <h3>Non-comparison sorts (beat the bound with structure)</h3>
 <ul>
@@ -10456,6 +10820,15 @@ quick/heap are not (without extra work).</p>
 <li><strong>Radix sort</strong> &mdash; O(d &middot; (n + b)) for d digits in base b; sorts fixed-width integers/strings by repeated stable counting sort per digit.</li>
 <li><strong>Bucket sort</strong> &mdash; O(n) expected for uniformly distributed reals in [0, 1).</li>
 </ul>
+<pre><code><span class="c"># counting sort: keys are ints in [0, k)</span>
+<span class="k">def</span> counting_sort(a, k):
+    count = [<span class="n">0</span>] * k
+    <span class="k">for</span> x <span class="k">in</span> a: count[x] += <span class="n">1</span>          <span class="c"># tally each value -- O(n)</span>
+    out, i = [], <span class="n">0</span>
+    <span class="k">for</span> v <span class="k">in</span> range(k):
+        out += [v] * count[v]           <span class="c"># emit in value order -- O(n + k) total</span>
+    <span class="k">return</span> out
+<span class="c"># radix sort = counting-sort by the 1s digit, then 10s, then 100s ... (each pass stable)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -10541,6 +10914,15 @@ Real-world data has pre-sorted runs (appended logs, partially updated lists); Ti
 <li>Each call uses a stack frame &rarr; recursion depth is bounded by the stack (~10k&ndash;100k frames). Deep or unbounded recursion &rarr; stack overflow &mdash; convert to iteration + explicit stack, or use tail recursion where the language optimises it.</li>
 <li>Cost = (number of calls) &times; (work per call). Draw the recursion tree.</li>
 </ul>
+<pre><code><span class="k">def</span> factorial(n):
+    <span class="k">if</span> n &lt;= <span class="n">1</span>: <span class="k">return</span> <span class="n">1</span>          <span class="c"># BASE CASE -- without it: infinite recursion / stack overflow</span>
+    <span class="k">return</span> n * factorial(n - <span class="n">1</span>)  <span class="c"># progress: argument strictly shrinks toward the base</span>
+
+<span class="c"># same thing iteratively, when depth could exceed the stack limit:</span>
+<span class="k">def</span> factorial_it(n):
+    r = <span class="n">1</span>
+    <span class="k">for</span> k <span class="k">in</span> range(<span class="n">2</span>, n + <span class="n">1</span>): r *= k
+    <span class="k">return</span> r</code></pre>
 
 <h3>Backtracking</h3>
 <p>Systematically build candidates and abandon ("prune") a partial candidate as soon as it can't
@@ -10587,11 +10969,31 @@ sub-answers) and <strong>overlapping subproblems</strong> (the same sub-answers 
 <p>Steps: define the state, write the recurrence (transition), identify base cases, decide
 iteration order, optionally reduce space. Classics: Fibonacci, coin change, knapsack, longest
 common subsequence, edit distance, longest increasing subsequence, matrix-chain, grid paths.</p>
+<pre><code><span class="c"># coin change (fewest coins for `amount`) -- bottom-up tabulation</span>
+<span class="k">def</span> min_coins(coins, amount):
+    dp = [<span class="n">0</span>] + [<span class="k">float</span>(<span class="s">'inf'</span>)] * amount     <span class="c"># dp[x] = fewest coins to make x</span>
+    <span class="k">for</span> x <span class="k">in</span> range(<span class="n">1</span>, amount + <span class="n">1</span>):
+        <span class="k">for</span> c <span class="k">in</span> coins:
+            <span class="k">if</span> c &lt;= x:
+                dp[x] = min(dp[x], dp[x - c] + <span class="n">1</span>)  <span class="c"># take one coin c, then solve x-c</span>
+    <span class="k">return</span> dp[amount] <span class="k">if</span> dp[amount] != <span class="k">float</span>(<span class="s">'inf'</span>) <span class="k">else</span> -<span class="n">1</span>
+<span class="c"># states = amount+1, transitions = len(coins)  ->  O(amount * len(coins))</span>
+
+<span class="c"># top-down equivalent: recursion + @lru_cache(None) on the same recurrence</span></code></pre>
 
 <h3>DP vs greedy vs divide-and-conquer</h3>
 <p>Divide-and-conquer: subproblems are <em>independent</em> (merge sort). DP: subproblems
 <em>overlap</em>. Greedy: a locally optimal choice is provably globally optimal (needs a proof;
 fails for 0/1 knapsack, works for fractional knapsack / Huffman / MST).</p>
+<pre><code><span class="c"># GREEDY works for fractional knapsack: take highest value/weight first</span>
+<span class="k">def</span> frac_knapsack(items, cap):        <span class="c"># items = [(value, weight)]</span>
+    items.sort(key=<span class="k">lambda</span> it: it[<span class="n">0</span>]/it[<span class="n">1</span>], reverse=<span class="k">True</span>)
+    take = <span class="n">0.0</span>
+    <span class="k">for</span> v, w <span class="k">in</span> items:
+        <span class="k">if</span> cap &gt;= w: take += v; cap -= w        <span class="c"># whole item</span>
+        <span class="k">else</span>: take += v * (cap / w); <span class="k">break</span>       <span class="c"># fraction -> optimal here</span>
+    <span class="k">return</span> take
+<span class="c"># the SAME greedy is WRONG for 0/1 knapsack (can't split) -> needs DP over (item, capacity)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
