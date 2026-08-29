@@ -19609,6 +19609,14 @@ When a performance counter overflows (e.g. every 100,000 cache misses) it raises
 <li>Addition/subtraction hardware is identical for signed and unsigned &mdash; the bits are the same, only interpretation differs.</li>
 <li>The top bit is the sign bit; sign-extension replicates it when widening.</li>
 </ul>
+<pre><code><span class="k">int8_t</span> x = <span class="n">5</span>;                 <span class="c">// bits 0000 0101</span>
+<span class="k">int8_t</span> negx = ~x + <span class="n">1</span>;          <span class="c">// invert -> 1111 1010 ; +1 -> 1111 1011 == -5</span>
+
+<span class="c">// same ADD hardware, different interpretation:</span>
+uint8_t u = <span class="n">200</span> + <span class="n">100</span>;          <span class="c">// bits 1 0010 1100 -> keep 8 -> 44 (wraps, DEFINED)</span>
+<span class="k">int8_t</span>  s = (<span class="k">int8_t</span>)(<span class="n">100</span> + <span class="n">100</span>);  <span class="c">// bits 1100 1000 -> read as signed -> -56</span>
+
+<span class="k">int32_t</span> w = (<span class="k">int32_t</span>)(<span class="k">int8_t</span>)<span class="n">0xFB</span>;  <span class="c">// sign-extend: 0xFFFFFFFB == -5, not 251</span></code></pre>
 
 <h3>Overflow</h3>
 <ul>
@@ -19616,6 +19624,14 @@ When a performance counter overflows (e.g. every 100,000 cache misses) it raises
 <li><strong>Signed</strong>: overflow is undefined behaviour in C/C++ (the compiler assumes it can't happen); at the hardware level it wraps and sets the overflow flag.</li>
 <li><code>INT_MIN / -1</code> and <code>-INT_MIN</code> overflow (the asymmetry).</li>
 </ul>
+<pre><code>uint32_t a = <span class="n">0xFFFFFFFF</span>; a + <span class="n">1</span>;   <span class="c">// 0  -- defined wraparound</span>
+
+<span class="k">int</span> b = INT_MAX; b + <span class="n">1</span>;           <span class="c">// UB: compiler may assume b+1 &gt; b is always true</span>
+<span class="c">// safe: detect it before doing it</span>
+<span class="k">if</span> (__builtin_add_overflow(b, <span class="n">1</span>, &amp;b)) handle_overflow();
+
+<span class="k">int</span> m = INT_MIN;
+m / <span class="n">-1</span>;                          <span class="c">// UB + SIGFPE on x86: |INT_MIN| doesn't fit in int</span></code></pre>
 
 <h3>IEEE-754 floating point</h3>
 <p><code>[sign | exponent | mantissa]</code> &mdash; 32-bit: 1+8+23; 64-bit: 1+11+52. Value =
@@ -19625,6 +19641,14 @@ When a performance counter overflows (e.g. every 100,000 cache misses) it raises
 <li>Special values: &plusmn;0, &plusmn;&infin;, NaN (NaN &ne; everything, including itself), subnormals (gradual underflow, often slow).</li>
 <li>Precision decreases as magnitude grows; adding a small number to a large one can be a no-op. Sum small-to-large, or use Kahan summation.</li>
 </ul>
+<pre><code>printf(<span class="s">"%.17f\n"</span>, <span class="n">0.1</span> + <span class="n">0.2</span>);   <span class="c">// 0.30000000000000004  -- NOT 0.3</span>
+<span class="k">if</span> (fabs((<span class="n">0.1</span> + <span class="n">0.2</span>) - <span class="n">0.3</span>) &lt; <span class="n">1e-9</span>) { }  <span class="c">// compare with a tolerance</span>
+
+<span class="k">double</span> nan = <span class="n">0.0</span> / <span class="n">0.0</span>;
+nan == nan;                     <span class="c">// false! use isnan(nan)</span>
+
+<span class="k">float</span> big = <span class="n">1e20f</span>;
+big + <span class="n">1.0f</span> == big;              <span class="c">// true -- 1.0 is below the ULP at 1e20 (lost)</span></code></pre>
 
 <h3>Endianness</h3>
 <table>
@@ -19635,6 +19659,14 @@ When a performance counter overflows (e.g. every 100,000 cache misses) it raises
 <p>Matters when reading binary formats, casting between <code>int</code> and <code>char[]</code>, or sending
 data over the network. Use <code>htonl</code>/<code>ntohl</code> (or explicit shift-and-mask) &mdash; never
 <code>memcpy</code> a multi-byte integer to the wire without converting.</p>
+<pre><code>uint32_t v = <span class="n">0x12345678</span>;
+uint8_t *b = (uint8_t*)&amp;v;
+b[<span class="n">0</span>];                            <span class="c">// 0x78 on x86 (little-endian), 0x12 on a big-endian box</span>
+
+<span class="c">// wire protocols are big-endian ("network byte order") -- always convert:</span>
+uint32_t on_wire = htonl(v);    <span class="c">// send this</span>
+uint32_t host    = ntohl(on_wire);   <span class="c">// receive this</span>
+<span class="c">// send(sock, &amp;v, 4, 0)  WITHOUT htonl -> corrupt on any peer with different endianness</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -19735,11 +19767,26 @@ Subnormals fill the gap between the smallest normal number and zero by giving up
 </table>
 <p>Each level down is ~3&ndash;10&times; slower and ~10&times; bigger. A last-level-cache miss to RAM costs
 <em>hundreds</em> of instructions' worth of time &mdash; the CPU may stall entirely.</p>
+<pre><code>$ lscpu | grep -i cache
+L1d cache:  384 KiB (12 instances)     <span class="c"># 32 KiB per core</span>
+L2 cache:   12 MiB  (12 instances)
+L3 cache:   30 MiB  (1 instance)       <span class="c"># shared</span>
+
+<span class="c">// working set that fits vs spills a level:</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; N; i++) sum += a[i % SIZE];   <span class="c">// SIZE=8K -> L1 (~1ns/access)</span>
+                                            <span class="c">// SIZE=8M -> RAM (~80ns) -> 80x slower, same code</span></code></pre>
 
 <h3>Why caches work</h3>
 <p><strong>Locality</strong>: programs reuse recently-touched data (temporal) and touch nearby data soon
 (spatial). Caches exploit both &mdash; keep recent data, and fetch a whole <strong>64-byte cache line</strong>
 on a miss so neighbours are already present.</p>
+<pre><code><span class="c">// SPATIAL: one miss on a[i] pulls in a[i..i+15] (16 ints = 64 B line) for free</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) total += a[i];      <span class="c">// ~1 miss per 16 elements</span>
+
+<span class="c">// same data, stride 16 -> touch one element per line -> 16x the misses</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i += <span class="n">16</span>) total += a[i];
+
+<span class="c">// TEMPORAL: the loop counter + `total` stay hot in registers/L1 the whole time</span></code></pre>
 
 <h3>The mental model that matters</h3>
 <ul>
@@ -19747,12 +19794,22 @@ on a miss so neighbours are already present.</p>
 <li>"Big-O" ignores constants, but a cache-friendly O(n&sup2;) can beat a pointer-chasing O(n log n) for realistic sizes.</li>
 <li>Reducing memory traffic and improving locality is often a bigger win than reducing instruction count.</li>
 </ul>
+<pre><code><span class="c">// sum a million ints: contiguous vector vs pointer-chased linked list</span>
+std::vector&lt;<span class="k">int</span>&gt; v(<span class="n">1'000'000</span>);   <span class="c">// ~0.3 ms  -- prefetcher streams it, ~all L1/L2 hits</span>
+std::list&lt;<span class="k">int</span>&gt;   l(v.begin(), v.end());  <span class="c">// ~6 ms   -- a cache miss per node, 20x slower</span>
+<span class="c">// identical O(n), identical instruction count -- the difference is 100% memory layout</span></code></pre>
 
 <h3>Inclusive vs exclusive, write policies</h3>
 <ul>
 <li><strong>Inclusive</strong> (Intel historically): L3 contains everything in L1/L2 &mdash; simplifies coherence, wastes some capacity. <strong>Exclusive</strong> (AMD): a line lives in only one level.</li>
 <li><strong>Write-back</strong> (normal): writes update the cache, main memory later. <strong>Write-through</strong>: every write also hits the next level (simpler, more traffic).</li>
 </ul>
+<pre><code><span class="c">// write-back: this loop touches RAM roughly once per 64 B line, not once per store</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) a[i] = <span class="n">0</span>;   <span class="c">// stores coalesce in the L1 line, flush later</span>
+
+<span class="c">// non-temporal store: bypass the cache for data you won't re-read (big memset/memcpy)</span>
+_mm_stream_si128((__m128i*)&amp;a[i], zero);   <span class="c">// write straight to RAM, don't pollute L1/L2</span>
+<span class="c">// MMIO regions are effectively write-through: every store goes to the device now</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -19845,6 +19902,12 @@ Prefetchers are dedicated units that watch the stream of cache misses/accesses a
 <p>A cache is an array of 64-byte <strong>lines</strong>. An address is split into
 <code>[ tag | set index | line offset ]</code>. The set index picks a <strong>set</strong>; the line can go
 in any <strong>way</strong> of that set (an N-way set-associative cache has N ways per set).</p>
+<pre><code><span class="c">// 32 KiB, 8-way, 64 B lines -> 32768 / (8 * 64) = 64 sets</span>
+<span class="c">//   address bits: [ tag : rest ][ set index : 6 ][ line offset : 6 ]</span>
+uint64_t addr;
+size_t offset = addr &amp; <span class="n">63</span>;              <span class="c">// which byte in the 64 B line</span>
+size_t set    = (addr &gt;&gt; <span class="n">6</span>) &amp; <span class="n">63</span>;       <span class="c">// which of the 64 sets</span>
+<span class="c">// the line may sit in any of that set's 8 ways; a hit compares 8 tags in parallel</span></code></pre>
 <table>
 <tr><th>Type</th><th>Placement</th></tr>
 <tr><td>Direct-mapped (1-way)</td><td>each line has exactly one possible slot &mdash; fast, but two hot addresses mapping to the same set thrash</td></tr>
@@ -19859,12 +19922,27 @@ in any <strong>way</strong> of that set (an N-way set-associative cache has N wa
 <li><strong>Conflict</strong> &mdash; too many active addresses map to the same set, so they evict each other even though the cache isn't full. Fix: change data layout/strides, add padding, or (hardware) more associativity.</li>
 </ul>
 <p>(Multicore adds a 4th: <strong>coherence</strong> misses &mdash; a line invalidated because another core wrote it. See False Sharing.)</p>
+<pre><code><span class="c"># COMPULSORY: hint the prefetcher / warm the line early</span>
+__builtin_prefetch(&amp;a[i + <span class="n">64</span>]);
+
+<span class="c"># CAPACITY: matrix multiply -- tile so a block of each operand fits in L1</span>
+<span class="k">for</span> (ii = <span class="n">0</span>; ii &lt; n; ii += <span class="n">BS</span>)          <span class="c">// BS chosen so 3*BS*BS*sizeof(float) &lt; L1</span>
+  <span class="k">for</span> (jj = <span class="n">0</span>; jj &lt; n; jj += <span class="n">BS</span>)
+    <span class="k">for</span> (kk = <span class="n">0</span>; kk &lt; n; kk += <span class="n">BS</span>)
+      <span class="c">/* multiply the BS x BS sub-blocks -- data reused before eviction */</span> ;</code></pre>
 
 <h3>Pathological strides</h3>
 <p>Accessing an array with a stride that's a large power of two (e.g. walking column-major through
 a <code>1024&times;1024</code> float matrix) makes every access map to the same handful of sets &rarr;
 conflict misses on every access despite tiny data volume. Padding the row to a non-power-of-two
 length breaks the pattern.</p>
+<pre><code><span class="c">// column walk of a 1024x1024 float matrix: stride 4096 B</span>
+<span class="k">float</span> m[<span class="n">1024</span>][<span class="n">1024</span>];
+<span class="k">for</span> (<span class="k">int</span> r = <span class="n">0</span>; r &lt; <span class="n">1024</span>; r++) sum += m[r][col];   <span class="c">// every access -> same few sets -> conflict miss</span>
+
+<span class="c">// FIX: pad the row so the stride isn't a power of two</span>
+<span class="k">float</span> m2[<span class="n">1024</span>][<span class="n">1024</span> + <span class="n">8</span>];                        <span class="c">// stride 4128 B -> spreads across sets</span>
+<span class="c">// or just iterate row-major (m[r][c]) so consecutive accesses share a line</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -19951,10 +20029,28 @@ A traditional set-associative lookup reads the tags from <em>all</em> N ways of 
 <li><strong>Array of Structs</strong>: <code>struct P{float x,y,z; int id;} p[N];</code> &mdash; good when you use most fields of one element together.</li>
 <li><strong>Struct of Arrays</strong>: <code>float x[N], y[N], z[N]; int id[N];</code> &mdash; good when a pass touches one field across all elements (SIMD-friendly, no wasted bytes per line).</li>
 </ul>
+<pre><code><span class="c">// "sum all x" -- AoS drags y,z,id through cache too</span>
+<span class="k">struct</span> P { <span class="k">float</span> x, y, z; <span class="k">int</span> id; } aos[N];   <span class="c">// 16 B/elem -> 1 useful float per 16 B</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; N; i++) sx += aos[i].x;    <span class="c">// 4 elements per 64 B line</span>
+
+<span class="c">// SoA -- x[] is dense: 16 floats per line, and the loop vectorises</span>
+<span class="k">struct</span> { <span class="k">float</span> x[N], y[N], z[N]; <span class="k">int</span> id[N]; } soa;
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; N; i++) sx += soa.x[i];      <span class="c">// 4x fewer misses, SIMD-friendly</span></code></pre>
 
 <h3>Loop blocking / tiling</h3>
 <p>Process the data in cache-sized blocks so each block is fully reused before eviction. Matrix
 multiply goes from cache-thrashing to compute-bound this way &mdash; the classic example.</p>
+<pre><code><span class="c">// naive: for a big n, the row of A and column of B are evicted before reuse</span>
+<span class="k">for</span> (i) <span class="k">for</span> (j) <span class="k">for</span> (k) C[i][j] += A[i][k] * B[k][j];
+
+<span class="c">// tiled: each BxB block of A and B stays hot across the inner triple loop</span>
+<span class="k">for</span> (i0 = <span class="n">0</span>; i0 &lt; n; i0 += <span class="n">B</span>)
+ <span class="k">for</span> (j0 = <span class="n">0</span>; j0 &lt; n; j0 += <span class="n">B</span>)
+  <span class="k">for</span> (k0 = <span class="n">0</span>; k0 &lt; n; k0 += <span class="n">B</span>)
+   <span class="k">for</span> (i = i0; i &lt; i0+<span class="n">B</span>; i++)
+    <span class="k">for</span> (j = j0; j &lt; j0+<span class="n">B</span>; j++)
+     <span class="k">for</span> (k = k0; k &lt; k0+<span class="n">B</span>; k++)
+      C[i][j] += A[i][k] * B[k][j];      <span class="c">// same work, ~3-10x faster for large n</span></code></pre>
 
 <h3>Other wins</h3>
 <ul>
@@ -19964,6 +20060,15 @@ multiply goes from cache-thrashing to compute-bound this way &mdash; the classic
 <li><strong>Avoid pointer chasing</strong>: flat arrays over linked structures; if you must chase, prefetch the next node.</li>
 <li><strong>Software prefetch</strong> (<code>__builtin_prefetch</code>) for irregular-but-predictable access (e.g. <code>a[idx[i+8]]</code>) &mdash; rarely needed for regular patterns.</li>
 </ul>
+<pre><code><span class="c">// hot/cold split: the hot loop only needs price -> pack prices densely</span>
+<span class="k">struct</span> Order   { <span class="k">double</span> price; OrderCold *cold; };   <span class="c">// 16 B -> 4 per line</span>
+<span class="k">struct</span> OrderCold{ String notes, address; Timestamp ts; };  <span class="c">// touched rarely</span>
+
+<span class="c">// gather with a known-ahead index -> prefetch 8 iterations early</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) {
+    __builtin_prefetch(&amp;table[idx[i + <span class="n">8</span>]]);      <span class="c">// hide the miss latency</span>
+    acc += table[idx[i]];
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -20063,6 +20168,12 @@ A <strong>cache-aware</strong> (or "cache-conscious") algorithm has the cache/bl
 starting the next, the CPU overlaps them: while instr 1 executes, instr 2 decodes, instr 3
 fetches. Ideal throughput: one instruction retired per cycle even though each takes 5 cycles
 end-to-end. Real CPUs have 14&ndash;20 stages.</p>
+<pre><code><span class="c"># 5-stage pipeline, no hazards -> 1 instr retired per cycle after fill</span>
+#          c1  c2  c3  c4  c5  c6  c7
+#   i1:    F   D   E   M   W
+#   i2:        F   D   E   M   W
+#   i3:            F   D   E   M   W
+# each instr: 5 cycles latency ; throughput: 1/cycle (5x over run-to-completion)</code></pre>
 
 <h3>Hazards (things that break the overlap)</h3>
 <table>
@@ -20071,6 +20182,13 @@ end-to-end. Real CPUs have 14&ndash;20 stages.</p>
 <tr><td>Data</td><td>instr N needs a result instr N&minus;1 hasn't written yet</td><td><strong>forwarding/bypassing</strong> (route the result straight from execute), else stall ("bubble")</td></tr>
 <tr><td>Control</td><td>a branch &mdash; the CPU doesn't know which instructions to fetch next until the branch resolves</td><td><strong>branch prediction</strong> + speculative execution; a misprediction flushes the pipeline</td></tr>
 </table>
+<pre><code><span class="c"># DATA hazard: i2 needs i1's rax result</span>
+add  rax, rbx        <span class="c"># i1 produces rax in E (c3)</span>
+mov  rcx, rax        <span class="c"># i2 wants rax in D (c3) -> forwarded from i1's E, no stall</span>
+
+<span class="c"># CONTROL hazard: which way does this branch go?</span>
+cmp  rax, <span class="n">0</span>
+jne  label          <span class="c"># CPU speculates one path; wrong guess -> flush ~15-20 in-flight instrs</span></code></pre>
 
 <h3>Costs</h3>
 <ul>
@@ -20078,11 +20196,20 @@ end-to-end. Real CPUs have 14&ndash;20 stages.</p>
 <li>A load that misses cache: hundreds of cycles &mdash; the pipeline drains or the CPU finds other work (out-of-order).</li>
 <li>A branch misprediction: flush everything fetched speculatively and refill &mdash; ~15&ndash;20 cycles on a deep pipeline.</li>
 </ul>
+<pre><code>$ perf stat -e cycles,instructions,stalled-cycles-frontend,branch-misses ./app
+   9,900,000,000  cycles
+   4,100,000,000  instructions              #  0.41  IPC          <span class="c"># badly stalled</span>
+   3,200,000,000  stalled-cycles-frontend   #  32.3% frontend cycles idle
+      82,000,000  branch-misses             #  ~18 cycles each -> ~1.5B cycles wasted</code></pre>
 
 <h3>Why deeper pipelines are a trade-off</h3>
 <p>More stages &rarr; shorter stage &rarr; higher clock frequency &mdash; but each hazard/misprediction wastes
 more cycles, and it takes longer to refill. The Pentium 4's 31-stage pipeline chased GHz and lost
 to shorter, wider designs. Modern CPUs are moderately deep and very wide (see ILP topic).</p>
+<pre><code><span class="c"># deeper pipeline: higher GHz, but a mispredict costs MORE cycles to refill</span>
+<span class="c">#   Pentium 4 (31 stages, ~3.8 GHz): mispredict penalty ~20-30 cycles</span>
+<span class="c">#   Core 2      (14 stages, ~3.0 GHz): ~15 cycles, and won on real workloads</span>
+<span class="c"># modern: ~16-19 stages + issue 4-6 instrs/cycle (width beats depth)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -20163,6 +20290,9 @@ x86 instructions are variable-length and expensive to decode (find boundaries, c
 every branch (~1 in 5 instructions). So the CPU <strong>predicts</strong> the outcome and direction,
 speculatively executes down that path, and commits the results only if the guess was right. A
 mispredict flushes and refills.</p>
+<pre><code><span class="c">// ~1 in 5 instructions is a branch; without prediction, 20-cycle bubble EACH</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++)     <span class="c">// the loop-back branch: taken n times, not-taken once</span>
+    work(a[i]);                <span class="c">// predictor learns "taken" -> ~100% accurate -> free</span></code></pre>
 
 <h3>Predictor mechanics (roughly)</h3>
 <ul>
@@ -20171,6 +20301,12 @@ mispredict flushes and refills.</p>
 <li><strong>Return Address Stack</strong> for <code>ret</code>; <strong>indirect branch predictors</strong> for <code>switch</code>/vtables/function pointers.</li>
 <li>Accuracy on typical code: 95&ndash;99%. Data-dependent branches on random data: ~50% (worst case).</li>
 </ul>
+<pre><code><span class="c">// 2-bit saturating counter: needs TWO wrong guesses to flip prediction</span>
+<span class="c">//   states: STRONG_NT - WEAK_NT - WEAK_T - STRONG_T</span>
+<span class="c">//   -> one anomalous iteration in a loop doesn't derail the predictor</span>
+
+<span class="c">// INDIRECT branch (vtable call): target varies -> harder to predict</span>
+shape-&gt;area();     <span class="c">// call [rax] -- BTB caches the last target; polymorphic call sites mispredict</span></code></pre>
 
 <h3>Writing predictable code</h3>
 <ul>
@@ -20179,6 +20315,15 @@ mispredict flushes and refills.</p>
 <li><strong>Branchless</strong> techniques for genuinely unpredictable branches: <code>cmov</code>, arithmetic/bit-mask select, table lookup, <code>min</code>/<code>max</code> intrinsics. Trade a predictable data dependency for an unpredictable control dependency.</li>
 <li><code>[[likely]]</code>/<code>[[unlikely]]</code>, PGO (profile-guided optimisation) let the compiler lay out the hot path fall-through.</li>
 </ul>
+<pre><code><span class="c">// unpredictable on RANDOM data (~50% mispredict) -> slow</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++)
+    <span class="k">if</span> (a[i] &gt;= <span class="n">128</span>) sum += a[i];      <span class="c">// sort a[] first -> one long run each way -> ~6x faster</span>
+
+<span class="c">// BRANCHLESS: no misprediction possible (cmov / mask select)</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) {
+    <span class="k">int</span> mask = -(a[i] &gt;= <span class="n">128</span>);          <span class="c">// 0xFFFFFFFF or 0</span>
+    sum += a[i] &amp; mask;                <span class="c">// data dependency, but NO branch</span>
+}</code></pre>
 
 <h3>Speculation &amp; security</h3>
 <p><strong>Spectre</strong> / <strong>Meltdown</strong> (2018): speculatively executed instructions &mdash; even ones
@@ -20186,6 +20331,14 @@ later discarded &mdash; leave microarchitectural traces (cache-line residency), 
 reads via timing to exfiltrate data across security boundaries. Mitigations (retpolines, IBRS,
 KPTI, <code>lfence</code> barriers) cost real performance. Speculation is fundamental to modern
 performance, so this is an ongoing tension.</p>
+<pre><code><span class="c">// Spectre v1 gadget: the bounds check is speculated PAST</span>
+<span class="k">if</span> (idx &lt; array1_len)              <span class="c">// predicted true even when idx is out of bounds</span>
+    y = array2[array1[idx] * <span class="n">4096</span>];  <span class="c">// speculative load leaves a cache footprint...</span>
+<span class="c">// ...attacker times array2[] accesses to recover the secret byte array1[idx]</span>
+
+<span class="c">// mitigation: a speculation barrier between the check and the use</span>
+<span class="k">if</span> (idx &lt; array1_len) { _mm_lfence(); y = array2[array1[idx] * <span class="n">4096</span>]; }
+$ cat /sys/devices/system/cpu/vulnerabilities/spectre_v1   <span class="c"># Mitigation: usercopy/swapgs barriers</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -20266,6 +20419,14 @@ Variant 1 is: <code>if (i &lt; array_len) x = array2[array1[i] * 64];</code> &md
 issues several instructions per cycle (<strong>superscalar</strong>). It doesn't run them in program
 order &mdash; it runs whatever is <em>ready</em> (operands available, unit free), then commits results
 in order for correctness.</p>
+<pre><code><span class="c">// these 3 are independent -> a 3+ wide core issues them in ONE cycle</span>
+add  rax, rbx        <span class="c"># ALU port 0</span>
+mul  rcx, rdx        <span class="c"># ALU port 1</span>
+mov  r8, [rsi]       <span class="c"># load port -- all three retire together</span>
+
+<span class="c"># out-of-order: a slow load doesn't block later independent work</span>
+mov  rax, [slow]     <span class="c"># cache miss, ~200 cycles</span>
+add  rbx, rcx        <span class="c"># runs NOW, doesn't wait for rax</span></code></pre>
 
 <h3>The machinery</h3>
 <ul>
@@ -20274,6 +20435,14 @@ in order for correctness.</p>
 <li><strong>Reorder Buffer (ROB)</strong> &mdash; tracks all in-flight instructions so results retire in program order and exceptions/mispredicts can roll back. Its size (hundreds of entries) sets the "window" the CPU can look ahead.</li>
 <li><strong>Load/store queue</strong> &mdash; lets loads execute early and store-to-load forwarding happen.</li>
 </ul>
+<pre><code><span class="c">// WITHOUT renaming these two "reuse rax" -> a false dependency</span>
+mov  rax, [a]        <span class="c"># write rax</span>
+add  rbx, rax        <span class="c"># read rax</span>
+mov  rax, [b]        <span class="c"># write rax again -- renamed to a DIFFERENT physical reg -> runs in parallel</span>
+add  rcx, rax
+
+<span class="c"># ROB ~500 entries -> the core can have ~500 instrs in flight,</span>
+<span class="c"># hiding a couple of L2 misses' worth of latency behind independent work</span></code></pre>
 
 <h3>Latency vs throughput</h3>
 <ul>
@@ -20281,11 +20450,25 @@ in order for correctness.</p>
 <li><strong>Throughput</strong> &mdash; how often you can start a new one (e.g. 2 FP multiplies/cycle).</li>
 <li>A <em>dependent</em> chain runs at 1/latency. <em>Independent</em> operations run at the unit's throughput. Hence: unroll reductions with multiple accumulators, avoid long dependency chains, interleave independent work.</li>
 </ul>
+<pre><code><span class="c">// dependent chain: each add waits for the last -> runs at 1 add / LATENCY</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) sum += a[i];             <span class="c">// ~n * add-latency</span>
+
+<span class="c">// 4 independent accumulators -> runs at the ALU's THROUGHPUT (~4x faster)</span>
+<span class="k">double</span> s0=<span class="n">0</span>, s1=<span class="n">0</span>, s2=<span class="n">0</span>, s3=<span class="n">0</span>;
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i += <span class="n">4</span>) {
+    s0 += a[i]; s1 += a[i+<span class="n">1</span>]; s2 += a[i+<span class="n">2</span>]; s3 += a[i+<span class="n">3</span>];   <span class="c">// 4 in flight, no chain</span>
+}
+<span class="k">double</span> sum = (s0 + s1) + (s2 + s3);</code></pre>
 
 <h3>What limits ILP</h3>
 <p>True data dependencies, branch mispredictions (window flushed), cache misses that don't fill the
 ROB fast enough to hide, and running out of a resource (physical registers, ROB entries, load
 queue). Real code averages ~1&ndash;3 IPC despite 4&ndash;8-wide hardware.</p>
+<pre><code>$ perf stat ./app
+   instructions       #  1.8  insn per cycle    <span class="c"># 4-6 wide HW, but real code averages 1-3</span>
+
+<span class="c"># pointer chasing pins IPC near the floor: each load address DEPENDS on the last load</span>
+<span class="k">while</span> (node) node = node-&gt;next;     <span class="c"># 1 dependent load per ~cache-miss-latency -> IPC ~0.05</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -20366,6 +20549,13 @@ The core wants to execute loads as early as possible (they're often on the criti
 / pointer at 8, a 32-byte SIMD vector at 32. Hardware reads are fast when aligned; misaligned
 access is slower on x86 (may span two cache lines &rarr; two accesses) and <strong>faults</strong> on some
 ARM/SPARC configs and for some SIMD instructions.</p>
+<pre><code>_Static_assert(_Alignof(<span class="k">double</span>) == <span class="n">8</span>, <span class="s">""</span>);   <span class="c">// double wants an 8-aligned address</span>
+
+<span class="c">// misaligned load from a packed buffer: works on x86 (slow), FAULTS on strict ARM / with _mm256</span>
+<span class="k">char</span> buf[<span class="n">64</span>];
+<span class="k">double</span> d = *(<span class="k">double</span>*)(buf + <span class="n">3</span>);         <span class="c">// UB in C; memcpy(&amp;d, buf+3, 8) is the portable way</span>
+
+__m256d v = _mm256_load_pd(p);         <span class="c">// #GP if p is not 32-byte aligned; use _mm256_loadu_pd for unaligned</span></code></pre>
 
 <h3>Struct padding</h3>
 <pre><code><span class="k">struct</span> Bad { <span class="k">char</span> a; <span class="k">double</span> b; <span class="k">char</span> c; };
@@ -20384,10 +20574,26 @@ ARM/SPARC configs and for some SIMD instructions.</p>
 <li><code>#pragma pack(1)</code> / <code>__attribute__((packed))</code> removes all padding &mdash; needed for exact wire/hardware layouts, but then members may be misaligned (slow / faulting; don't take pointers to them).</li>
 <li>Cache-line awareness: pad a per-thread struct to 64 bytes so two threads' structs don't share a line (false sharing &mdash; see next topic).</li>
 </ul>
+<pre><code><span class="c">// exact wire layout: no padding, must not take pointers to members</span>
+<span class="k">struct</span> __attribute__((packed)) EthHdr {
+    uint8_t  dst[<span class="n">6</span>], src[<span class="n">6</span>];
+    uint16_t ethertype;            <span class="c">// at offset 12 -- would be padded to 14 without `packed`</span>
+};
+_Static_assert(<span class="k">sizeof</span>(<span class="k">struct</span> EthHdr) == <span class="n">14</span>, <span class="s">""</span>);
+
+<span class="c">// over-align a hot per-thread counter to its own cache line</span>
+<span class="k">struct</span> alignas(<span class="n">64</span>) Counter { std::atomic&lt;<span class="k">long</span>&gt; n; <span class="k">char</span> pad[<span class="n">56</span>]; };
+Counter counters[NUM_THREADS];      <span class="c">// no two threads' counters share a 64 B line</span></code></pre>
 
 <h3>Cache-line straddling</h3>
 <p>A 16-byte value at offset 56 of a 64-byte line spans two lines &rarr; two cache accesses per read.
 Align hot, frequently-accessed fields to line boundaries or keep them within one line.</p>
+<pre><code><span class="c">// a 16 B struct whose base is at offset 56 -> bytes 56..63 in line A, 64..71 in line B</span>
+<span class="k">struct</span> Vec4 { <span class="k">float</span> x, y, z, w; };      <span class="c">// 16 B</span>
+<span class="k">struct</span> Row { <span class="k">char</span> tag[<span class="n">56</span>]; Vec4 v; };       <span class="c">// v straddles two cache lines -> 2 accesses per read</span>
+
+<span class="c">// fix: put the hot field first, or pad `tag` to 64</span>
+<span class="k">struct</span> RowFixed { Vec4 v; <span class="k">char</span> tag[<span class="n">56</span>]; };   <span class="c">// v fully inside line A</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -20469,6 +20675,13 @@ An empty class (no data members, e.g. a stateless allocator, comparator, or dele
 <li>The core may also let a <em>later load</em> execute before an <em>earlier store</em> drains (store&rarr;load reordering) &mdash; the most common relaxation.</li>
 <li>Compilers separately reorder independent memory ops.</li>
 </ul>
+<pre><code><span class="c">// x=y=0. Even on x86, r1==r2==0 is a legal outcome (store buffers):</span>
+<span class="c">// core A            core B</span>
+x = <span class="n">1</span>;      <span class="c">//      y = 1;      -- each store sits in the local buffer</span>
+r1 = y;     <span class="c">//      r2 = x;     -- each load runs before the OTHER core's store drains</span>
+
+<span class="c">// the compiler ALSO reorders on its own -- prove it:</span>
+$ gcc -O2 -S f.c    <span class="c"># the two independent stores may be emitted in either order</span></code></pre>
 
 <h3>x86-TSO vs ARM/POWER</h3>
 <table>
@@ -20479,6 +20692,14 @@ An empty class (no data members, e.g. a stateless allocator, comparator, or dele
 </table>
 <p>Consequence: lock-free / racy code that "works" on x86 frequently breaks on ARM &mdash; x86 is
 accidentally forgiving.</p>
+<pre><code><span class="c"># std::atomic&lt;int&gt; x; x.store(1, std::memory_order_release);</span>
+
+<span class="c"># x86-64:</span>
+mov  DWORD PTR x[rip], 1     <span class="c"># a plain store -- x86 already gives release ordering</span>
+
+<span class="c"># AArch64:</span>
+stlr w1, [x0]               <span class="c"># "store-release" instruction -- explicit ordering needed</span>
+<span class="c"># drop the release on x86 and the bug hides; drop it on ARM and it breaks in the field</span></code></pre>
 
 <h3>Barriers / fences</h3>
 <ul>
@@ -20487,6 +20708,14 @@ accidentally forgiving.</p>
 <li><strong>Release</strong> &mdash; no earlier load/store moves after it (used before releasing a lock / before a flag store).</li>
 <li>Compilers emit these from <code>std::atomic</code> operations with the given <code>memory_order</code>; <code>atomic_thread_fence</code> is a standalone barrier.</li>
 </ul>
+<pre><code><span class="c">// fix the r1==r2==0 bug: a full fence between each store and load, drains the store buffer</span>
+x.store(<span class="n">1</span>, std::memory_order_relaxed);
+std::atomic_thread_fence(std::memory_order_seq_cst);   <span class="c">// -> mfence on x86</span>
+r1 = y.load(std::memory_order_relaxed);
+
+<span class="c">// the workhorse: release publishes, acquire observes -- no full fence needed</span>
+flag.store(<span class="k">true</span>, std::memory_order_release);   <span class="c">// nothing above moves below</span>
+<span class="k">if</span> (flag.load(std::memory_order_acquire)) use(data);  <span class="c">// nothing below moves above</span></code></pre>
 
 <h3><code>volatile</code> is not a barrier</h3>
 <p>C/C++ <code>volatile</code> stops the <em>compiler</em> from eliding/reordering accesses to that one
@@ -20494,6 +20723,15 @@ variable. It emits <strong>no</strong> CPU fence, gives no atomicity, and doesn'
 memory. For cross-thread communication use <code>std::atomic</code> (which is <code>volatile</code>-like
 <em>plus</em> the right barriers). Java's <code>volatile</code> is different &mdash; it does imply
 acquire/release.</p>
+<pre><code><span class="c">// WRONG: volatile keeps the flag re-read, but `data` writes can still float PAST the flag store</span>
+<span class="k">volatile</span> <span class="k">bool</span> ready = <span class="k">false</span>;
+data = compute(); ready = <span class="k">true</span>;      <span class="c">// no CPU fence -> other core may see ready before data</span>
+
+<span class="c">// RIGHT: std::atomic emits the release fence</span>
+std::atomic&lt;<span class="k">bool</span>&gt; ready{<span class="k">false</span>};
+data = compute();
+ready.store(<span class="k">true</span>, std::memory_order_release);
+<span class="c">// volatile's real job stays MMIO: volatile uint32_t *reg = ...;</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -20576,6 +20814,20 @@ A memory system is <strong>multi-copy atomic</strong> if, whenever any core othe
 <li><strong>Intrinsics</strong> (<code>&lt;immintrin.h&gt;</code>) for control the compiler won't find: shuffles, horizontal ops, gather/scatter, masked ops. Portable wrappers: <code>std::simd</code> (C++26/experimental), Highway, xsimd, ISPC.</li>
 <li>Needs SoA layout, alignment, and independent iterations to pay off.</li>
 </ul>
+<pre><code><span class="c">// auto-vectorises at -O3 IF `a` and `b` can't alias -> tell the compiler</span>
+<span class="k">void</span> axpy(<span class="k">int</span> n, <span class="k">float</span> k, <span class="k">float</span> *<span class="k">restrict</span> a, <span class="k">const</span> <span class="k">float</span> *<span class="k">restrict</span> b) {
+    <span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i++) a[i] += k * b[i];   <span class="c">// 8 floats/iter with AVX2</span>
+}
+$ gcc -O3 -march=native -fopt-info-vec axpy.c
+axpy.c:3: optimized: loop vectorized using 32 byte vectors
+
+<span class="c">// explicit AVX2 when the compiler won't: process 8 floats per instruction</span>
+__m256 vk = _mm256_set1_ps(k);
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; n; i += <span class="n">8</span>) {
+    __m256 va = _mm256_loadu_ps(&amp;a[i]);
+    va = _mm256_fmadd_ps(vk, _mm256_loadu_ps(&amp;b[i]), va);
+    _mm256_storeu_ps(&amp;a[i], va);
+}</code></pre>
 
 <h3>False sharing</h3>
 <p>Two threads write two <em>different</em> variables that happen to sit in the <em>same 64-byte cache
@@ -20595,6 +20847,16 @@ data apart.</p>
 <li><strong>Measuring the wrong thing</strong> &mdash; wall time vs CPU time; include the setup you didn't mean to; too-small input fits in L1 and hides the real behaviour.</li>
 <li>Use a real harness (Google Benchmark, nanobench, Criterion) and <code>perf stat</code> for counters.</li>
 </ul>
+<pre><code><span class="c">// BROKEN benchmark: result unused -> the whole loop is deleted -> "0 ns"</span>
+<span class="k">for</span> (<span class="k">auto</span> _ : state) { <span class="k">long</span> s = <span class="n">0</span>; <span class="k">for</span> (<span class="k">int</span> i=<span class="n">0</span>;i&lt;n;i++) s += a[i]; }
+
+<span class="c">// FIXED: consume it + stop optimisation, warm up, pin the core &amp; frequency</span>
+<span class="k">for</span> (<span class="k">auto</span> _ : state) {
+    <span class="k">long</span> s = <span class="n">0</span>; <span class="k">for</span> (<span class="k">int</span> i=<span class="n">0</span>;i&lt;n;i++) s += a[i];
+    benchmark::DoNotOptimize(s);
+}
+$ sudo cpupower frequency-set -g performance
+$ taskset -c 3 ./bench --benchmark_min_time=2s</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
