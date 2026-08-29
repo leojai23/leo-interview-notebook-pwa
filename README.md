@@ -53,15 +53,23 @@ python -m http.server 8080
 
 ## Deploy to GitHub Pages
 
-1. Create a new repository (e.g. `leo-interview`) on GitHub.
+Deployed at **https://leojai23.github.io/leo-interview-notebook-pwa/** (repo
+[`leojai23/leo-interview-notebook-pwa`](https://github.com/leojai23/leo-interview-notebook-pwa),
+GitHub Pages from `main` / `/ (root)`).
+
+To reproduce from scratch:
+
+1. Create a new public repository on GitHub.
 2. From this folder:
    ```sh
-   git remote add origin https://github.com/<you>/leo-interview.git
+   git remote add origin https://github.com/<you>/<repo>.git
    git push -u origin main
    ```
 3. Repo → **Settings → Pages** → Source: *Deploy from a branch* → Branch: `main` / `/ (root)`.
-4. The app will be live at `https://<you>.github.io/leo-interview/` within a minute.
+4. The app is live at `https://<you>.github.io/<repo>/` within a minute.
    PWA install and offline caching work once it is served over HTTPS.
+
+To update after editing `index.html`: bump `CACHE_NAME` in `sw.js`, commit, and push.
 
 ## How the app is wired
 
