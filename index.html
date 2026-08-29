@@ -11077,6 +11077,13 @@ State = a subset of up to ~20 items encoded as an integer bitmask, plus maybe a 
 <h3>Where recurrences come from</h3>
 <p>A divide-and-conquer algorithm that makes <code>a</code> recursive calls on inputs of size <code>n/b</code>,
 plus <code>f(n)</code> non-recursive work, has running time <code>T(n) = a&middot;T(n/b) + f(n)</code>.</p>
+<pre><code><span class="k">def</span> merge_sort(a):
+    <span class="k">if</span> len(a) &lt;= <span class="n">1</span>: <span class="k">return</span> a                 <span class="c"># base case</span>
+    mid = len(a) // <span class="n">2</span>
+    l = merge_sort(a[:mid])                  <span class="c"># a = 2 recursive calls...</span>
+    r = merge_sort(a[mid:])                  <span class="c"># ...on inputs of size n/b, b = 2</span>
+    <span class="k">return</span> merge(l, r)                       <span class="c"># f(n) = O(n) merge work</span>
+<span class="c"># => T(n) = 2*T(n/2) + n</span></code></pre>
 
 <h3>The Master Theorem</h3>
 <p>Compare <code>f(n)</code> with the "watershed" <code>n^(log_b a)</code>:</p>
@@ -11097,6 +11104,15 @@ recurrences (<code>T(n) = T(n-1) + n</code> &rarr; &Theta;(n&sup2;)), or gaps be
 <strong>recursion-tree</strong> method (sum the work per level &times; number of levels) or
 <strong>substitution</strong> (guess a bound, prove by induction). Akra&ndash;Bazzi generalises the Master
 Theorem to unequal splits.</p>
+<pre><code><span class="c"># subtractive (NOT a T(n/b) form) -- unroll it instead of the Master Theorem:</span>
+<span class="c">#   T(n) = T(n-1) + n</span>
+<span class="c">#        = T(n-2) + (n-1) + n</span>
+<span class="c">#        = ...</span>
+<span class="c">#        = 1 + 2 + ... + n  =  n(n+1)/2  =  Theta(n^2)</span>
+
+<span class="c"># recursion-tree for T(n) = T(n/3) + T(2n/3) + n  (unequal split):</span>
+<span class="c">#   every level still sums to ~n of work; longest path has log_{3/2} n levels</span>
+<span class="c">#   => Theta(n log n)</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -11347,6 +11363,15 @@ l, r = 0, len(a) - 1
 <p>The array/string is traversed once, the window's validity is <strong>monotonic</strong> (growing the
 window can only make it "more invalid", shrinking only "more valid"), and each element enters
 and leaves the window O(1) times &rarr; overall O(n).</p>
+<pre><code><span class="c"># APPLIES: smallest subarray with sum &gt;= S  (all positives -> monotonic)</span>
+left = tot = <span class="n">0</span>; best = <span class="k">float</span>(<span class="s">'inf'</span>)
+<span class="k">for</span> right, x <span class="k">in</span> enumerate(a):
+    tot += x
+    <span class="k">while</span> tot &gt;= S:                  <span class="c"># window valid -> try to shrink it</span>
+        best = min(best, right - left + <span class="n">1</span>)
+        tot -= a[left]; left += <span class="n">1</span>
+<span class="c"># DOESN'T APPLY: array has negatives -> adding an element can DECREASE the sum,</span>
+<span class="c"># so shrinking isn't safe. Use prefix sums + a hash map / monotonic deque instead.</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -11427,12 +11452,26 @@ A sliding window naturally counts subarrays with <em>at most</em> K distinct (ex
 simple &mdash; but only <em>correct</em> if the problem has the <strong>greedy-choice property</strong> (a
 globally optimal solution can be reached by greedy local choices) and <strong>optimal
 substructure</strong>. Otherwise greedy gives a wrong (but plausible) answer.</p>
+<pre><code><span class="c"># activity selection: max non-overlapping intervals</span>
+<span class="k">def</span> max_activities(intervals):        <span class="c"># intervals = [(start, finish)]</span>
+    intervals.sort(key=<span class="k">lambda</span> x: x[<span class="n">1</span>])  <span class="c"># greedy KEY: earliest finish first</span>
+    count, last_end = <span class="n">0</span>, <span class="k">float</span>(<span class="s">'-inf'</span>)
+    <span class="k">for</span> s, f <span class="k">in</span> intervals:
+        <span class="k">if</span> s &gt;= last_end:             <span class="c"># fits after the last chosen one</span>
+            count += <span class="n">1</span>; last_end = f    <span class="c"># commit, never reconsider</span>
+    <span class="k">return</span> count</code></pre>
 
 <h3>Proving greedy correct</h3>
 <ul>
 <li><strong>Exchange argument</strong> &mdash; take any optimal solution; show you can swap one of its choices for the greedy choice without making it worse; repeat until it <em>is</em> the greedy solution.</li>
 <li><strong>Stays-ahead</strong> &mdash; show that after each step the greedy partial solution is at least as good as any other on the relevant metric.</li>
 </ul>
+<pre><code><span class="c"># Exchange argument for activity selection (sketch):</span>
+<span class="c">#   Let OPT be any optimal set. Let g = greedy's first pick (earliest finish).</span>
+<span class="c">#   Let o = OPT's first activity by finish time.  finish(g) &lt;= finish(o).</span>
+<span class="c">#   Swap o -> g in OPT: g still doesn't overlap OPT's remaining activities</span>
+<span class="c">#   (they start after finish(o) &gt;= finish(g)).  |OPT| unchanged, still optimal.</span>
+<span class="c">#   Recurse on the rest  =>  greedy matches an optimal solution.</span></code></pre>
 
 <h3>Where greedy works</h3>
 <table>
@@ -11445,10 +11484,32 @@ substructure</strong>. Otherwise greedy gives a wrong (but plausible) answer.</p
 <tr><td>Interval scheduling / merging</td><td>sort by start or end, sweep</td></tr>
 <tr><td>Jump game / gas station</td><td>track the furthest reachable / running tank</td></tr>
 </table>
+<pre><code><span class="c"># Kruskal MST: sort edges by weight, add each if it joins two components</span>
+<span class="k">def</span> kruskal(n, edges):                <span class="c"># edges = [(w, u, v)]</span>
+    edges.sort()                      <span class="c"># greedy: cheapest edge first</span>
+    parent = list(range(n))
+    <span class="k">def</span> find(x):
+        <span class="k">while</span> parent[x] != x: parent[x] = parent[parent[x]]; x = parent[x]
+        <span class="k">return</span> x
+    total = <span class="n">0</span>
+    <span class="k">for</span> w, u, v <span class="k">in</span> edges:
+        ru, rv = find(u), find(v)
+        <span class="k">if</span> ru != rv:                  <span class="c"># safe edge (no cycle) -> take it</span>
+            parent[ru] = rv; total += w
+    <span class="k">return</span> total</code></pre>
 
 <h3>Where greedy fails</h3>
 <p>0/1 knapsack (can't take fractions &rarr; need DP), coin change with arbitrary denominations
 (<code>{1,3,4}</code>, target 6: greedy 4+1+1, optimal 3+3), longest path, most TSP variants.</p>
+<pre><code><span class="c"># coin change, denominations {1, 3, 4}, target 6</span>
+<span class="k">def</span> greedy_coins(coins, amount):
+    coins.sort(reverse=<span class="k">True</span>)
+    n = <span class="n">0</span>
+    <span class="k">for</span> c <span class="k">in</span> coins:
+        n += amount // c; amount %= c
+    <span class="k">return</span> n
+greedy_coins([<span class="n">1</span>, <span class="n">3</span>, <span class="n">4</span>], <span class="n">6</span>)   <span class="c"># 3  ->  4 + 1 + 1   (WRONG)</span>
+<span class="c"># optimal is 2  ->  3 + 3.  Need DP (see min_coins) for arbitrary denominations.</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -11529,6 +11590,14 @@ A matroid is a set system <code>(E, I)</code> where <code>I</code> (the "indepen
 <li><strong>Conquer</strong> each recursively (base case for small <code>n</code>).</li>
 <li><strong>Combine</strong> the sub-answers in <code>f(n)</code> work.</li>
 </ol>
+<pre><code><span class="k">def</span> max_subarray(a, lo, hi):          <span class="c"># classic D&amp;C skeleton</span>
+    <span class="k">if</span> lo == hi: <span class="k">return</span> a[lo]            <span class="c"># CONQUER: base case</span>
+    mid = (lo + hi) // <span class="n">2</span>
+    left  = max_subarray(a, lo, mid)      <span class="c"># DIVIDE: two independent halves</span>
+    right = max_subarray(a, mid + <span class="n">1</span>, hi)
+    cross = cross_sum(a, lo, mid, hi)     <span class="c"># COMBINE: best span crossing the midpoint, O(n)</span>
+    <span class="k">return</span> max(left, right, cross)
+<span class="c"># T(n) = 2T(n/2) + O(n)  ->  O(n log n)</span></code></pre>
 <figure class="diagram">
 <svg viewBox="0 0 520 148" role="img" aria-labelledby="d-aldc-t">
 <title id="d-aldc-t">Merge sort: split to singletons, then merge back in sorted order</title>
@@ -11560,11 +11629,32 @@ Key requirement: the subproblems are <strong>independent</strong> (no shared sub
 <tr><td>Closest pair of points</td><td>split by x / check a thin strip</td><td>&Theta;(n log n)</td></tr>
 <tr><td>Count inversions</td><td>merge sort, count cross pairs</td><td>&Theta;(n log n)</td></tr>
 </table>
+<pre><code><span class="c"># quickselect: k-th smallest in O(n) average -- recurse into ONE side only</span>
+<span class="k">import</span> random
+<span class="k">def</span> quickselect(a, k):
+    p = random.choice(a)
+    lo  = [x <span class="k">for</span> x <span class="k">in</span> a <span class="k">if</span> x &lt; p]
+    eq  = [x <span class="k">for</span> x <span class="k">in</span> a <span class="k">if</span> x == p]
+    hi  = [x <span class="k">for</span> x <span class="k">in</span> a <span class="k">if</span> x &gt; p]
+    <span class="k">if</span> k &lt; len(lo):            <span class="k">return</span> quickselect(lo, k)
+    <span class="k">if</span> k &lt; len(lo) + len(eq):  <span class="k">return</span> p        <span class="c"># found it, no further recursion</span>
+    <span class="k">return</span> quickselect(hi, k - len(lo) - len(eq))
+<span class="c"># T(n) = T(n/2) + O(n)  ->  O(n)  (vs O(n log n) if you recursed both sides)</span></code></pre>
 
 <h3>D&amp;C vs DP</h3>
 <p>Both break a problem down. D&amp;C: subproblems don't overlap, so plain recursion is fine. DP:
 subproblems overlap, so you must cache (memoise) or build a table to avoid exponential
 recomputation.</p>
+<pre><code><span class="c"># D&amp;C is fine: merge_sort(left) and merge_sort(right) share NO subproblems.</span>
+
+<span class="c"># DP needed: naive fib recomputes the same calls exponentially</span>
+<span class="k">def</span> fib(n):
+    <span class="k">return</span> n <span class="k">if</span> n &lt; <span class="n">2</span> <span class="k">else</span> fib(n-<span class="n">1</span>) + fib(n-<span class="n">2</span>)  <span class="c"># fib(n-2) computed by BOTH branches -> O(phi^n)</span>
+
+<span class="k">from</span> functools <span class="k">import</span> lru_cache
+@lru_cache(<span class="k">None</span>)                           <span class="c"># cache overlapping subproblems -> O(n)</span>
+<span class="k">def</span> fib_dp(n):
+    <span class="k">return</span> n <span class="k">if</span> n &lt; <span class="n">2</span> <span class="k">else</span> fib_dp(n-<span class="n">1</span>) + fib_dp(n-<span class="n">2</span>)</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -11645,6 +11735,17 @@ It broke the "obvious" &Theta;(n&sup3;) barrier for matrix multiplication in 196
 <strong>transition</strong> (recurrence relating a state to smaller ones), fix <strong>base cases</strong>,
 choose an <strong>evaluation order</strong> (memoise top-down, or tabulate in dependency order), then
 optionally <strong>reduce space</strong> (rolling arrays).</p>
+<pre><code><span class="c"># LCS length -- the five steps, made concrete:</span>
+<span class="k">def</span> lcs(a, b):
+    m, n = len(a), len(b)
+    dp = [[<span class="n">0</span>]*(n+<span class="n">1</span>) <span class="k">for</span> _ <span class="k">in</span> range(m+<span class="n">1</span>)]        <span class="c"># STATE: dp[i][j] = LCS of a[:i], b[:j]</span>
+    <span class="k">for</span> i <span class="k">in</span> range(<span class="n">1</span>, m+<span class="n">1</span>):                     <span class="c"># ORDER: prefixes small -> large</span>
+        <span class="k">for</span> j <span class="k">in</span> range(<span class="n">1</span>, n+<span class="n">1</span>):
+            <span class="k">if</span> a[i-<span class="n">1</span>] == b[j-<span class="n">1</span>]:
+                dp[i][j] = dp[i-<span class="n">1</span>][j-<span class="n">1</span>] + <span class="n">1</span>       <span class="c"># TRANSITION: extend the match</span>
+            <span class="k">else</span>:
+                dp[i][j] = max(dp[i-<span class="n">1</span>][j], dp[i][j-<span class="n">1</span>])
+    <span class="k">return</span> dp[m][n]                            <span class="c"># BASE CASE: row/col 0 already 0</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 152" role="img" aria-labelledby="d-aldp-t">
@@ -11680,12 +11781,30 @@ optionally <strong>reduce space</strong> (rolling arrays).</p>
 <tr><td>Bitmask DP</td><td><code>dp[mask][...]</code>, mask = subset of &le;20 items</td><td>TSP, assignment, "min groups"</td></tr>
 <tr><td>Digit DP</td><td><code>dp[pos][tight][...]</code></td><td>count numbers &le; N with a property</td></tr>
 </table>
+<pre><code><span class="c"># 0/1 knapsack, 1-D rolling array -- capacity loop goes DESCENDING</span>
+<span class="k">def</span> knapsack(weights, values, cap):
+    dp = [<span class="n">0</span>] * (cap + <span class="n">1</span>)              <span class="c"># dp[w] = best value at capacity w</span>
+    <span class="k">for</span> wt, val <span class="k">in</span> zip(weights, values):
+        <span class="k">for</span> w <span class="k">in</span> range(cap, wt - <span class="n">1</span>, -<span class="n">1</span>):  <span class="c"># descending -> each item used at most ONCE</span>
+            dp[w] = max(dp[w], dp[w - wt] + val)
+    <span class="k">return</span> dp[cap]
+<span class="c"># ascending instead -> unbounded knapsack (item reusable). Same code, one flip.</span></code></pre>
 
 <h3>Space &amp; time</h3>
 <p>Time &asymp; (#states) &times; (transitions per state). Space = state table, often collapsible: a 2-D
 prefix DP needing only the previous row &rarr; two 1-D arrays or one with careful ordering. If you
 need the actual solution (not just its value), keep a parent/choice table or re-derive by
 walking the DP backward.</p>
+<pre><code><span class="c"># LCS length in O(min(m,n)) space -- keep only two rows</span>
+<span class="k">def</span> lcs_len(a, b):
+    <span class="k">if</span> len(b) &gt; len(a): a, b = b, a       <span class="c"># iterate over the shorter -> smaller rows</span>
+    prev = [<span class="n">0</span>] * (len(b) + <span class="n">1</span>)
+    <span class="k">for</span> ca <span class="k">in</span> a:
+        cur = [<span class="n">0</span>] * (len(b) + <span class="n">1</span>)
+        <span class="k">for</span> j, cb <span class="k">in</span> enumerate(b, <span class="n">1</span>):
+            cur[j] = prev[j-<span class="n">1</span>] + <span class="n">1</span> <span class="k">if</span> ca == cb <span class="k">else</span> max(prev[j], cur[j-<span class="n">1</span>])
+        prev = cur                        <span class="c"># O(n*m) time, O(n) space</span>
+    <span class="k">return</span> prev[-<span class="n">1</span>]</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -11767,6 +11886,18 @@ Process the number left to right, digit position by position. State: <code>(pos,
 region, count islands, find the shortest path in a maze (BFS), or expand from multiple sources
 at once (multi-source BFS: seed the queue with all sources &mdash; "rotting oranges", "walls and
 gates", "01 matrix").</p>
+<pre><code><span class="k">def</span> count_islands(grid):
+    R, C = len(grid), len(grid[<span class="n">0</span>])
+    <span class="k">def</span> flood(r, c):
+        <span class="k">if</span> <span class="k">not</span> (<span class="n">0</span> &lt;= r &lt; R <span class="k">and</span> <span class="n">0</span> &lt;= c &lt; C) <span class="k">or</span> grid[r][c] != <span class="s">'1'</span>: <span class="k">return</span>
+        grid[r][c] = <span class="s">'0'</span>                          <span class="c"># mark visited in place</span>
+        <span class="k">for</span> dr, dc <span class="k">in</span> ((<span class="n">1</span>,<span class="n">0</span>),(-<span class="n">1</span>,<span class="n">0</span>),(<span class="n">0</span>,<span class="n">1</span>),(<span class="n">0</span>,-<span class="n">1</span>)): <span class="c"># 4 neighbours = graph edges</span>
+            flood(r+dr, c+dc)
+    n = <span class="n">0</span>
+    <span class="k">for</span> r <span class="k">in</span> range(R):
+        <span class="k">for</span> c <span class="k">in</span> range(C):
+            <span class="k">if</span> grid[r][c] == <span class="s">'1'</span>: flood(r, c); n += <span class="n">1</span>  <span class="c"># each new flood = one island</span>
+    <span class="k">return</span> n</code></pre>
 
 <h3>Connectivity</h3>
 <ul>
@@ -11774,12 +11905,35 @@ gates", "01 matrix").</p>
 <li><strong>Strongly connected components</strong> (directed): Tarjan (one DFS, low-link) or Kosaraju (DFS, transpose, DFS by finish order).</li>
 <li><strong>Bipartite check</strong>: 2-colour via BFS/DFS; a same-colour edge &rarr; not bipartite.</li>
 </ul>
+<pre><code><span class="k">def</span> is_bipartite(adj, nodes):
+    color = {}
+    <span class="k">for</span> s <span class="k">in</span> nodes:
+        <span class="k">if</span> s <span class="k">in</span> color: <span class="k">continue</span>
+        color[s], stack = <span class="n">0</span>, [s]
+        <span class="k">while</span> stack:
+            u = stack.pop()
+            <span class="k">for</span> v <span class="k">in</span> adj[u]:
+                <span class="k">if</span> v <span class="k">not</span> <span class="k">in</span> color:
+                    color[v] = color[u] ^ <span class="n">1</span>       <span class="c"># opposite colour</span>
+                    stack.append(v)
+                <span class="k">elif</span> color[v] == color[u]:
+                    <span class="k">return</span> <span class="k">False</span>                  <span class="c"># same-colour edge -> odd cycle</span>
+    <span class="k">return</span> <span class="k">True</span></code></pre>
 
 <h3>Cycle detection</h3>
 <ul>
 <li>Undirected: DFS &mdash; a visited neighbour that isn't the parent means a cycle. Or union-find.</li>
 <li>Directed: 3-colour DFS (edge to a grey node = back edge = cycle), or Kahn's topological sort leaving nodes unplaced.</li>
 </ul>
+<pre><code><span class="k">def</span> undirected_has_cycle(adj, nodes):
+    seen = set()
+    <span class="k">def</span> dfs(u, parent):
+        seen.add(u)
+        <span class="k">for</span> v <span class="k">in</span> adj[u]:
+            <span class="k">if</span> v == parent: <span class="k">continue</span>          <span class="c"># the edge we came in on -- not a cycle</span>
+            <span class="k">if</span> v <span class="k">in</span> seen <span class="k">or</span> dfs(v, u): <span class="k">return</span> <span class="k">True</span>
+        <span class="k">return</span> <span class="k">False</span>
+    <span class="k">return</span> any(u <span class="k">not</span> <span class="k">in</span> seen <span class="k">and</span> dfs(u, <span class="k">None</span>) <span class="k">for</span> u <span class="k">in</span> nodes)</code></pre>
 
 <h3>DFS tree structure</h3>
 <p>DFS classifies edges (tree / back / forward / cross) and computes <code>disc[]</code> (discovery time)
@@ -11788,6 +11942,18 @@ and <code>low[]</code> (earliest reachable ancestor). From these:</p>
 <li><strong>Bridges</strong> &mdash; edge (u, v) is a bridge iff <code>low[v] &gt; disc[u]</code>.</li>
 <li><strong>Articulation points</strong> &mdash; removing them disconnects the graph; found via the same <code>low</code>-link condition (with a root special case).</li>
 </ul>
+<pre><code>timer = [<span class="n">0</span>]; disc, low, bridges = {}, {}, []
+<span class="k">def</span> dfs(u, parent):
+    disc[u] = low[u] = timer[<span class="n">0</span>]; timer[<span class="n">0</span>] += <span class="n">1</span>
+    <span class="k">for</span> v <span class="k">in</span> adj[u]:
+        <span class="k">if</span> v == parent: <span class="k">continue</span>
+        <span class="k">if</span> v <span class="k">not</span> <span class="k">in</span> disc:
+            dfs(v, u)
+            low[u] = min(low[u], low[v])
+            <span class="k">if</span> low[v] &gt; disc[u]:            <span class="c"># v can't reach u or above without this edge</span>
+                bridges.append((u, v))
+        <span class="k">else</span>:
+            low[u] = min(low[u], disc[v])   <span class="c"># back edge -> update reachability</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -11889,17 +12055,46 @@ A 2-SAT formula (clauses of &le; 2 literals) is satisfiable iff no variable <cod
 <tr><td>All pairs, dense, small V</td><td>Floyd-Warshall</td><td>O(V&sup3;)</td></tr>
 <tr><td>Goal-directed with a heuristic</td><td>A*</td><td>&le; Dijkstra in practice</td></tr>
 </table>
+<pre><code><span class="k">def</span> pick(graph):
+    <span class="k">if</span> graph.unweighted:      <span class="k">return</span> bfs           <span class="c"># fewest edges, O(V+E)</span>
+    <span class="k">if</span> graph.weights_0_1:     <span class="k">return</span> zero_one_bfs   <span class="c"># deque: appendleft(0-edge), append(1-edge)</span>
+    <span class="k">if</span> graph.min_weight &gt;= <span class="n">0</span>:  <span class="k">return</span> dijkstra      <span class="c"># non-negative only</span>
+    <span class="k">if</span> graph.all_pairs:       <span class="k">return</span> floyd_warshall <span class="c"># dense + small V</span>
+    <span class="k">return</span> bellman_ford                              <span class="c"># negatives + cycle detection</span></code></pre>
 
 <h3>Dijkstra</h3>
 <p>Grow a set of finalised nodes; repeatedly take the unfinalised node with the smallest tentative
 distance (min-heap), finalise it, and relax its outgoing edges. Correct <strong>only for
 non-negative weights</strong> &mdash; a negative edge could improve an already-finalised node. Use lazy
 deletion (push duplicates, skip stale pops) rather than <code>decrease-key</code>.</p>
+<pre><code><span class="k">import</span> heapq
+<span class="k">def</span> dijkstra(adj, src):                 <span class="c"># adj[u] = [(v, w), ...]</span>
+    dist = {src: <span class="n">0</span>}
+    pq = [(<span class="n">0</span>, src)]
+    <span class="k">while</span> pq:
+        d, u = heapq.heappop(pq)
+        <span class="k">if</span> d &gt; dist.get(u, <span class="k">float</span>(<span class="s">'inf'</span>)): <span class="k">continue</span>  <span class="c"># stale entry -> skip (lazy deletion)</span>
+        <span class="k">for</span> v, w <span class="k">in</span> adj[u]:
+            nd = d + w
+            <span class="k">if</span> nd &lt; dist.get(v, <span class="k">float</span>(<span class="s">'inf'</span>)):
+                dist[v] = nd
+                heapq.heappush(pq, (nd, v))   <span class="c"># relax</span>
+    <span class="k">return</span> dist</code></pre>
 
 <h3>Bellman-Ford</h3>
 <p>Relax <em>all</em> edges <code>V - 1</code> times (the longest simple path has &le; V-1 edges). A further
 relaxation that still improves something &rarr; a <strong>negative cycle</strong> reachable from the
 source. Slower but handles negatives and detects negative cycles.</p>
+<pre><code><span class="k">def</span> bellman_ford(n, edges, src):        <span class="c"># edges = [(u, v, w)]</span>
+    dist = [<span class="k">float</span>(<span class="s">'inf'</span>)] * n; dist[src] = <span class="n">0</span>
+    <span class="k">for</span> _ <span class="k">in</span> range(n - <span class="n">1</span>):               <span class="c"># V-1 full passes</span>
+        <span class="k">for</span> u, v, w <span class="k">in</span> edges:
+            <span class="k">if</span> dist[u] + w &lt; dist[v]:
+                dist[v] = dist[u] + w
+    <span class="k">for</span> u, v, w <span class="k">in</span> edges:              <span class="c"># one more pass...</span>
+        <span class="k">if</span> dist[u] + w &lt; dist[v]:
+            <span class="k">raise</span> ValueError(<span class="s">"negative cycle"</span>)  <span class="c"># ...still improves => negative cycle</span>
+    <span class="k">return</span> dist</code></pre>
 
 <h3>Floyd-Warshall</h3>
 <pre><code><span class="k">for</span> k <span class="k">in</span> V:
@@ -11914,6 +12109,20 @@ source. Slower but handles negatives and detects negative cycles.</p>
 goal. If <code>h</code> is <strong>admissible</strong> (never overestimates) the result is optimal; if also
 <strong>consistent</strong>, no node is expanded twice. A good heuristic (e.g. straight-line distance on
 a map) massively prunes the search.</p>
+<pre><code><span class="k">import</span> heapq
+<span class="k">def</span> astar(adj, src, goal, h):           <span class="c"># h(n) = estimated cost from n to goal</span>
+    g = {src: <span class="n">0</span>}
+    pq = [(h(src), src)]                 <span class="c"># priority = f = g + h</span>
+    <span class="k">while</span> pq:
+        _, u = heapq.heappop(pq)
+        <span class="k">if</span> u == goal: <span class="k">return</span> g[u]
+        <span class="k">for</span> v, w <span class="k">in</span> adj[u]:
+            ng = g[u] + w
+            <span class="k">if</span> ng &lt; g.get(v, <span class="k">float</span>(<span class="s">'inf'</span>)):
+                g[v] = ng
+                heapq.heappush(pq, (ng + h(v), v))  <span class="c"># admissible h => optimal result</span>
+    <span class="k">return</span> <span class="k">None</span>
+<span class="c"># h(n) = 0  ->  A* degenerates to Dijkstra.  h(n) = true distance  ->  straight to goal.</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -12001,6 +12210,18 @@ some MST.</p>
 <tr><td>Time</td><td>O(E log E)</td><td>O((V + E) log V) with a heap; O(V&sup2;) with an array (good for dense)</td></tr>
 <tr><td>Best for</td><td>sparse graphs, edge list given</td><td>dense graphs</td></tr>
 </table>
+<pre><code><span class="k">import</span> heapq
+<span class="k">def</span> prim(adj, start):                   <span class="c"># adj[u] = [(w, v), ...]</span>
+    seen = {start}
+    pq = list(adj[start])                <span class="c"># frontier edges leaving the tree</span>
+    heapq.heapify(pq)
+    total = <span class="n">0</span>
+    <span class="k">while</span> pq:
+        w, v = heapq.heappop(pq)
+        <span class="k">if</span> v <span class="k">in</span> seen: <span class="k">continue</span>          <span class="c"># stale frontier edge</span>
+        seen.add(v); total += w         <span class="c"># lightest edge leaving the tree = safe (cut property)</span>
+        <span class="k">for</span> e <span class="k">in</span> adj[v]: heapq.heappush(pq, e)
+    <span class="k">return</span> total</code></pre>
 
 <h3>Topological sort</h3>
 <p>A linear order of a <strong>DAG</strong>'s vertices such that every edge <code>u &rarr; v</code> has <code>u</code>
@@ -12011,11 +12232,29 @@ before <code>v</code>. Not unique. Two methods:</p>
 </ul>
 <p>Uses: build systems (<code>make</code>), task/course scheduling, spreadsheet recalculation, package
 managers, resolving symbol dependencies at link time.</p>
+<pre><code><span class="k">def</span> topo_dfs(adj, nodes):
+    seen, order = set(), []
+    <span class="k">def</span> visit(u):
+        seen.add(u)
+        <span class="k">for</span> v <span class="k">in</span> adj[u]:
+            <span class="k">if</span> v <span class="k">not</span> <span class="k">in</span> seen: visit(v)
+        order.append(u)                  <span class="c"># append on FINISH</span>
+    <span class="k">for</span> u <span class="k">in</span> nodes:
+        <span class="k">if</span> u <span class="k">not</span> <span class="k">in</span> seen: visit(u)
+    <span class="k">return</span> order[::-<span class="n">1</span>]                    <span class="c"># reverse -> every edge points forward</span></code></pre>
 
 <h3>Related</h3>
 <p>Longest path in a DAG = topological order + DP relax (the general longest-path problem is
 NP-hard, but a DAG makes it linear). Lexicographically smallest topological order = Kahn's with
 a min-heap instead of a queue.</p>
+<pre><code><span class="c"># longest path in a DAG: relax edges in topological order</span>
+<span class="k">def</span> longest_path(adj, nodes, weight):
+    order = topo_dfs(adj, nodes)
+    dist = {u: <span class="n">0</span> <span class="k">for</span> u <span class="k">in</span> nodes}
+    <span class="k">for</span> u <span class="k">in</span> order:                     <span class="c"># u's predecessors are already final</span>
+        <span class="k">for</span> v <span class="k">in</span> adj[u]:
+            dist[v] = max(dist[v], dist[u] + weight[(u, v)])
+    <span class="k">return</span> max(dist.values())            <span class="c"># O(V + E) -- only because it's a DAG</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -12095,6 +12334,11 @@ Loop invariant: the set of edges chosen so far, <code>A</code>, is a subset of s
 <h3>Naive</h3>
 <p>For each of the <code>n - m + 1</code> alignments, compare up to <code>m</code> characters. O(nm) worst case
 (e.g. text <code>aaaa&hellip;a</code>, pattern <code>aaa&hellip;ab</code>). Fine for short patterns / small text.</p>
+<pre><code><span class="k">def</span> naive_search(text, pat):
+    n, m = len(text), len(pat)
+    <span class="k">for</span> i <span class="k">in</span> range(n - m + <span class="n">1</span>):        <span class="c"># every alignment</span>
+        <span class="k">if</span> text[i:i+m] == pat:        <span class="c"># up to m comparisons each -> O(nm) worst</span>
+            <span class="k">yield</span> i</code></pre>
 
 <h3>Rabin-Karp (rolling hash)</h3>
 <ul>
@@ -12103,6 +12347,17 @@ Loop invariant: the set of edges chosen so far, <code>A</code>, is a subset of s
 <li>O(n + m) average; O(nm) worst case if many hash collisions (mitigate with a good modulus / double hashing).</li>
 <li>Shines for <strong>multiple pattern</strong> search (hash all patterns, one text pass) and 2-D pattern matching.</li>
 </ul>
+<pre><code><span class="k">def</span> rabin_karp(text, pat, B=<span class="n">256</span>, M=(<span class="n">1</span>&lt;&lt;<span class="n">61</span>)-<span class="n">1</span>):
+    n, m = len(text), len(pat)
+    hp = ht = <span class="n">0</span>; power = pow(B, m-<span class="n">1</span>, M)
+    <span class="k">for</span> i <span class="k">in</span> range(m):                     <span class="c"># hash pattern + first window</span>
+        hp = (hp*B + ord(pat[i]))  % M
+        ht = (ht*B + ord(text[i])) % M
+    <span class="k">for</span> i <span class="k">in</span> range(n - m + <span class="n">1</span>):
+        <span class="k">if</span> hp == ht <span class="k">and</span> text[i:i+m] == pat:  <span class="c"># verify -- hashes can collide</span>
+            <span class="k">yield</span> i
+        <span class="k">if</span> i + m &lt; n:                       <span class="c"># roll: drop text[i], add text[i+m], O(1)</span>
+            ht = ((ht - ord(text[i])*power)*B + ord(text[i+m])) % M</code></pre>
 
 <h3>KMP (Knuth-Morris-Pratt)</h3>
 <ul>
@@ -12121,6 +12376,19 @@ Loop invariant: the set of edges chosen so far, <code>A</code>, is a subset of s
 <p>Computes <code>Z[i]</code> = length of the longest substring starting at <code>i</code> that matches a prefix of
 the string. Run on <code>pattern + separator + text</code>; any <code>Z[i] &ge; m</code> in the text part is a
 match. O(n + m), often simpler to reason about than KMP.</p>
+<pre><code><span class="k">def</span> z_array(s):
+    n = len(s); z = [<span class="n">0</span>]*n; l = r = <span class="n">0</span>
+    <span class="k">for</span> i <span class="k">in</span> range(<span class="n">1</span>, n):
+        <span class="k">if</span> i &lt; r: z[i] = min(r - i, z[i - l])  <span class="c"># reuse the earlier match ("Z-box")</span>
+        <span class="k">while</span> i + z[i] &lt; n <span class="k">and</span> s[z[i]] == s[i + z[i]]:
+            z[i] += <span class="n">1</span>
+        <span class="k">if</span> i + z[i] &gt; r: l, r = i, i + z[i]
+    <span class="k">return</span> z
+
+<span class="k">def</span> search(text, pat):
+    z = z_array(pat + <span class="s">"\x00"</span> + text)          <span class="c"># separator can't appear in either string</span>
+    m = len(pat)
+    <span class="k">return</span> [i - m - <span class="n">1</span> <span class="k">for</span> i <span class="k">in</span> range(m+<span class="n">1</span>, len(z)) <span class="k">if</span> z[i] &gt;= m]  <span class="c"># Z[i] &gt;= m -> full match</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
