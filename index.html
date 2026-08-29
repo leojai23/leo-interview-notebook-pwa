@@ -6884,6 +6884,29 @@ coupling to the base, so use it only for genuine subtype relationships; otherwis
 a method, the derived override runs) and <strong>compile-time</strong> (overloading, generics/templates).
 Lets you write code against the abstraction and drop in new types without changing callers.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 168" role="img" aria-labelledby="d-oop4-t">
+<title id="d-oop4-t">The four pillars: two are about design, two are about behaviour</title>
+<rect class="d-box-soft" x="14" y="20" width="240" height="60" rx="6"/>
+<text class="d-t-b" x="134" y="40" text-anchor="middle">Abstraction</text>
+<text class="d-t-sm" x="134" y="58" text-anchor="middle">model the essentials,</text>
+<text class="d-t-sm" x="134" y="72" text-anchor="middle">expose <tspan class="d-t-mono">what</tspan> not <tspan class="d-t-mono">how</tspan></text>
+<rect class="d-box" x="266" y="20" width="240" height="60" rx="6"/>
+<text class="d-t-b" x="386" y="40" text-anchor="middle">Encapsulation</text>
+<text class="d-t-sm" x="386" y="58" text-anchor="middle">access control that</text>
+<text class="d-t-sm" x="386" y="72" text-anchor="middle">enforces the abstraction</text>
+<rect class="d-box" x="14" y="92" width="240" height="60" rx="6"/>
+<text class="d-t-b" x="134" y="112" text-anchor="middle">Inheritance</text>
+<text class="d-t-sm" x="134" y="130" text-anchor="middle">is-a reuse; gives a</text>
+<text class="d-t-sm" x="134" y="144" text-anchor="middle">subtype to vary over</text>
+<rect class="d-box-soft" x="266" y="92" width="240" height="60" rx="6"/>
+<text class="d-t-b" x="386" y="112" text-anchor="middle">Polymorphism</text>
+<text class="d-t-sm" x="386" y="130" text-anchor="middle">one call site,</text>
+<text class="d-t-sm" x="386" y="144" text-anchor="middle">many implementations</text>
+<text class="d-t-sm" x="14" y="166">Abstraction is the intent; encapsulation is the mechanism. Inheritance is one way to get polymorphism (composition is another).</text>
+</svg>
+<figcaption>The distinction interviewers probe: abstraction is a <em>design view</em> ("what should this expose?"); encapsulation is the <em>enforcement</em> ("private fields, validated setters") that keeps that view honest.</figcaption>
+</figure>
 <h3>The one-liner distinctions</h3>
 <table>
 <tr><th>Pair</th><th>Difference</th></tr>
@@ -7081,6 +7104,22 @@ Nested/inner classes (Java, C++, C#) can access the enclosing class's private me
 reverse. Assigning members in the body instead of an initialiser list means default-construct-then-
 overwrite, and can't initialise <code>const</code>/reference members at all.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-ooplc-t">
+<title id="d-ooplc-t">Construction runs base-to-derived; destruction runs the reverse</title>
+<text class="d-t-accent" x="14" y="16">construct  &darr;</text>
+<rect class="d-box-soft" x="90" y="22" width="180" height="22"/><text class="d-t-sm" x="180" y="37" text-anchor="middle">1. Base subobject ctor</text>
+<rect class="d-box-soft" x="90" y="46" width="180" height="22"/><text class="d-t-sm" x="180" y="61" text-anchor="middle">2. members (declaration order)</text>
+<rect class="d-box-soft" x="90" y="70" width="180" height="22"/><text class="d-t-sm" x="180" y="85" text-anchor="middle">3. Derived ctor body</text>
+<text class="d-t-accent" x="300" y="37">destruct  &uarr;</text>
+<rect class="d-box" x="300" y="46" width="200" height="22"/><text class="d-t-sm" x="400" y="61" text-anchor="middle">3. ~Derived body</text>
+<rect class="d-box" x="300" y="70" width="200" height="22"/><text class="d-t-sm" x="400" y="85" text-anchor="middle">2. members (reverse order)</text>
+<rect class="d-box" x="300" y="94" width="200" height="22"/><text class="d-t-sm" x="400" y="109" text-anchor="middle">1. ~Base subobject</text>
+<text class="d-t-sm" x="14" y="132">During <tspan class="d-t-mono">Base::Base()</tspan> the object is a Base &mdash; a virtual call resolves to Base's version, not the override.</text>
+<text class="d-t-sm" x="14" y="148">Deleting a Derived via a Base* needs <tspan class="d-t-mono">virtual ~Base()</tspan>, or only step 1 of destruction runs (leak / UB).</text>
+</svg>
+<figcaption>Members are constructed in <strong>declaration order</strong> regardless of the initializer-list order, and destroyed in the exact reverse.</figcaption>
+</figure>
 <h3>Destructors / finalisers</h3>
 <ul>
 <li><strong>C++</strong>: <code>~T()</code> runs deterministically at scope exit / <code>delete</code>. Make it <code>virtual</code> in a polymorphic base.</li>
@@ -7178,6 +7217,27 @@ Allocation and initialisation are separate calls, so between them there's a vali
 <tr><td>Hybrid / diamond</td><td><code>D : B, C</code> where <code>B : A</code> and <code>C : A</code></td></tr>
 </table>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 168" role="img" aria-labelledby="d-oopdia-t">
+<title id="d-oopdia-t">The diamond: without virtual inheritance D gets two copies of A</title>
+<rect class="d-box-soft" x="220" y="14" width="80" height="26" rx="6"/><text class="d-t-b" x="260" y="32" text-anchor="middle">A</text>
+<rect class="d-box" x="130" y="70" width="80" height="26" rx="6"/><text class="d-t-b" x="170" y="88" text-anchor="middle">B : A</text>
+<rect class="d-box" x="310" y="70" width="80" height="26" rx="6"/><text class="d-t-b" x="350" y="88" text-anchor="middle">C : A</text>
+<rect class="d-box-soft" x="220" y="126" width="80" height="26" rx="6"/><text class="d-t-b" x="260" y="144" text-anchor="middle">D : B, C</text>
+<path class="d-line" d="M240 40 L180 68" marker-end="url(#oopdia-ah)"/>
+<path class="d-line" d="M280 40 L340 68" marker-end="url(#oopdia-ah)"/>
+<path class="d-line" d="M180 96 L245 124" marker-end="url(#oopdia-ah)"/>
+<path class="d-line" d="M340 96 L275 124" marker-end="url(#oopdia-ah)"/>
+<defs><marker id="oopdia-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="14" y="80">plain:</text>
+<text class="d-t-sm" x="14" y="96">D has A-via-B</text>
+<text class="d-t-sm" x="14" y="110">and A-via-C</text>
+<text class="d-t-sm" x="14" y="124">&rarr; ambiguous</text>
+<text class="d-t-accent" x="410" y="130">virtual B:A / C:A</text>
+<text class="d-t-sm" x="410" y="146">&rarr; one shared A</text>
+</svg>
+<figcaption>C++ <code>virtual</code> inheritance gives one shared <code>A</code> subobject. Java/C# sidestep it: single class inheritance, multiple <em>interface</em> inheritance, with default-method conflicts resolved explicitly.</figcaption>
+</figure>
 <h3>The diamond problem</h3>
 <pre><code>    A
    / \
@@ -7284,6 +7344,24 @@ Each object with a virtual base stores a hidden pointer (or offset in the vtable
 <li>Cost: one indirection, not inlinable across the boundary. Benefit: open extension &mdash; new subtypes work with existing code.</li>
 </ul>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-ooppoly-t">
+<title id="d-ooppoly-t">Compile-time polymorphism is resolved by the compiler; runtime by the object</title>
+<rect class="d-box-soft" x="14" y="20" width="240" height="110" rx="6"/>
+<text class="d-t-b" x="134" y="40" text-anchor="middle">compile-time (static)</text>
+<text class="d-t-sm" x="26" y="60">overloading, templates/generics</text>
+<text class="d-t-sm" x="26" y="78">resolved from the static type</text>
+<text class="d-t-sm" x="26" y="96">no runtime cost, fully inlinable</text>
+<text class="d-t-sm" x="26" y="114">picked when the code is compiled</text>
+<rect class="d-box" x="266" y="20" width="240" height="110" rx="6"/>
+<text class="d-t-b" x="386" y="40" text-anchor="middle">runtime (dynamic)</text>
+<text class="d-t-sm" x="278" y="60">virtual methods / overriding</text>
+<text class="d-t-sm" x="278" y="78">resolved from the object type</text>
+<text class="d-t-sm" x="278" y="96">one vtable indirection per call</text>
+<text class="d-t-sm" x="278" y="114">picked while the program runs</text>
+</svg>
+<figcaption><code>shape.area()</code> where <code>area</code> is virtual is dynamic; <code>max(a, b)</code> chosen among overloads/instantiated from a template is static.</figcaption>
+</figure>
 <h3>Static vs dynamic binding</h3>
 <pre><code>Animal a = new Dog();
 a.speak();     <span class="c">// dynamic: Dog.speak() runs (overridden)</span>
@@ -7384,6 +7462,24 @@ Chosen at <strong>runtime</strong> by the object's actual type. Rules: same name
 return type must be the same or <em>covariant</em> (a subtype); access can't be narrower; can't throw
 broader checked exceptions (Java); mark with <code>override</code> / <code>@Override</code>.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 132" role="img" aria-labelledby="d-oopoo-t">
+<title id="d-oopoo-t">Overloading: same name, different params, one class. Overriding: same signature, subclass.</title>
+<rect class="d-box-soft" x="14" y="18" width="240" height="94" rx="6"/>
+<text class="d-t-b" x="134" y="36" text-anchor="middle">Overloading</text>
+<text class="d-t-mono" x="26" y="56">print(int)</text>
+<text class="d-t-mono" x="26" y="72">print(string)</text>
+<text class="d-t-sm" x="26" y="92">same class, chosen by arg types</text>
+<text class="d-t-sm" x="26" y="107">at compile time</text>
+<rect class="d-box" x="266" y="18" width="240" height="94" rx="6"/>
+<text class="d-t-b" x="386" y="36" text-anchor="middle">Overriding</text>
+<text class="d-t-mono" x="278" y="56">Base::draw()</text>
+<text class="d-t-mono" x="278" y="72">Derived::draw()  &larr; same sig</text>
+<text class="d-t-sm" x="278" y="92">subclass replaces it, chosen by</text>
+<text class="d-t-sm" x="278" y="107">object type at run time</text>
+</svg>
+<figcaption><strong>Hiding</strong> is the trap in between: a subclass member with the same <em>name</em> but a different signature hides <em>all</em> base overloads of that name &mdash; not an override, and the base versions become unreachable without qualification.</figcaption>
+</figure>
 <h3>Hiding (shadowing)</h3>
 <p>A subclass declares a member with the same name as a <em>non-virtual</em> base member (or a
 <code>static</code> method, or a field). It doesn't override &mdash; it <strong>hides</strong>. Which one you get
@@ -7489,7 +7585,25 @@ In C++ (and similarly Java for a different reason), declaring <em>any</em> membe
 <li>A class can implement <strong>many</strong> interfaces &mdash; the way to get multiple supertypes without MI of state.</li>
 <li>Modern languages blur the line: Java 8+ <code>default</code> methods, C# 8+ default interface members, so interfaces can carry behaviour &mdash; but still no instance fields.</li>
 </ul>
-
+<figure class="diagram">
+<svg viewBox="0 0 520 148" role="img" aria-labelledby="d-oopai-t">
+<title id="d-oopai-t">A class extends at most one abstract class but implements many interfaces</title>
+<rect class="d-box-soft" x="55" y="16" width="140" height="40" rx="6"/>
+<text class="d-t-b" x="125" y="34" text-anchor="middle">abstract Shape</text>
+<text class="d-t-sm" x="125" y="49" text-anchor="middle">state + some code</text>
+<rect class="d-box-alt" x="235" y="14" width="120" height="20"/><text class="d-t-sm" x="295" y="29" text-anchor="middle">Drawable</text>
+<rect class="d-box-alt" x="235" y="38" width="120" height="20"/><text class="d-t-sm" x="295" y="53" text-anchor="middle">Serializable</text>
+<rect class="d-box" x="165" y="102" width="150" height="32" rx="6"/>
+<text class="d-t-b" x="240" y="122" text-anchor="middle">class Circle</text>
+<path class="d-line" d="M180 102 C 150 78, 125 68, 125 58" marker-end="url(#oopai-ah)"/>
+<path class="d-line" d="M280 102 C 300 78, 300 62, 300 60" marker-end="url(#oopai-ah)"/>
+<path class="d-line" d="M300 102 C 330 78, 350 50, 355 34" marker-end="url(#oopai-ah)"/>
+<defs><marker id="oopai-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="120" y="82">extends (1)</text>
+<text class="d-t-sm" x="330" y="82">implements (N)</text>
+</svg>
+<figcaption><strong>Abstract class</strong> = shared implementation + fields + an "is-a" hierarchy. <strong>Interface</strong> = a capability contract, no instance state. Prefer interfaces for "can-do" roles; use an abstract class only when subclasses genuinely share code and identity.</figcaption>
+</figure>
 <h3>Choosing</h3>
 <table>
 <tr><th>Want to&hellip;</th><th>Use</th></tr>
@@ -7591,6 +7705,26 @@ A fat abstract class (or interface) forces every subclass to deal with methods i
 <span class="c">// aggregation: Team holds Players it doesn't own</span>
 <span class="k">class</span> Team { std::vector&lt;Player*&gt; roster_; }; <span class="c">// players outlive/precede the team</span></code></pre>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-oopcomp-t">
+<title id="d-oopcomp-t">Association vs aggregation vs composition, by lifetime ownership</title>
+<rect class="d-box-soft" x="10" y="24" width="160" height="56" rx="6"/>
+<text class="d-t-b" x="90" y="42" text-anchor="middle">Association</text>
+<text class="d-t-sm" x="90" y="58" text-anchor="middle">uses-a; no ownership</text>
+<text class="d-t-sm" x="90" y="72" text-anchor="middle">Driver &mdash; Road</text>
+<rect class="d-box-soft" x="180" y="24" width="160" height="56" rx="6"/>
+<text class="d-t-b" x="260" y="42" text-anchor="middle">Aggregation</text>
+<text class="d-t-sm" x="260" y="58" text-anchor="middle">has-a; parts outlive whole</text>
+<text class="d-t-sm" x="260" y="72" text-anchor="middle">Team &mdash; Player</text>
+<rect class="d-box" x="350" y="24" width="160" height="56" rx="6"/>
+<text class="d-t-b" x="430" y="42" text-anchor="middle">Composition</text>
+<text class="d-t-sm" x="430" y="58" text-anchor="middle">owns-a; parts die with whole</text>
+<text class="d-t-sm" x="430" y="72" text-anchor="middle">House &mdash; Room</text>
+<text class="d-t-sm" x="10" y="104">Weakest coupling on the left. "Favour composition over inheritance" means: get behaviour by holding a</text>
+<text class="d-t-sm" x="10" y="120">collaborator and delegating to it, rather than by subclassing &mdash; you can swap it, and you're not tied to the base.</text>
+</svg>
+<figcaption>Inheritance is compile-time and permanent; composition is a runtime wiring you can change (Strategy, Decorator, dependency injection all rely on this).</figcaption>
+</figure>
 <h3>Composition over inheritance</h3>
 <ul>
 <li>Inheritance is compile-time, fixed, exposes the whole base API, and couples you to base internals (fragile base class).</li>
@@ -7691,7 +7825,25 @@ A mixin/trait bundles behaviour (and sometimes requires certain abstract members
 <tr><td><strong>I</strong></td><td>Interface Segregation</td><td>Many small role interfaces &gt; one fat one; clients shouldn't depend on methods they don't use.</td></tr>
 <tr><td><strong>D</strong></td><td>Dependency Inversion</td><td>Depend on abstractions, not concretions. High-level policy and low-level detail both depend on an interface; inject the implementation.</td></tr>
 </table>
-
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-oopdip-t">
+<title id="d-oopdip-t">Dependency Inversion: both sides depend on an interface, not on each other</title>
+<text class="d-t-b" x="14" y="16">without DIP</text>
+<rect class="d-box" x="20" y="24" width="120" height="26" rx="5"/><text class="d-t-sm" x="80" y="41" text-anchor="middle">OrderService</text>
+<rect class="d-box" x="220" y="24" width="120" height="26" rx="5"/><text class="d-t-sm" x="280" y="41" text-anchor="middle">MySqlOrderRepo</text>
+<path class="d-line" d="M140 37 L218 37" marker-end="url(#oopdip-ah)"/>
+<defs><marker id="oopdip-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="360" y="41">hard-wired to a DB</text>
+<text class="d-t-b" x="14" y="84">with DIP</text>
+<rect class="d-box" x="20" y="92" width="120" height="26" rx="5"/><text class="d-t-sm" x="80" y="109" text-anchor="middle">OrderService</text>
+<rect class="d-box-soft" x="200" y="92" width="120" height="26" rx="5"/><text class="d-t-sm" x="260" y="109" text-anchor="middle">OrderRepo (iface)</text>
+<rect class="d-box" x="200" y="126" width="120" height="20"/><text class="d-t-sm" x="260" y="140" text-anchor="middle">MySqlOrderRepo</text>
+<path class="d-line" d="M140 105 L198 105" marker-end="url(#oopdip-ah)"/>
+<path class="d-line" d="M260 126 L260 120" marker-end="url(#oopdip-ah)"/>
+<text class="d-t-accent" x="340" y="109">swap impl / mock in tests</text>
+</svg>
+<figcaption>The arrow that used to point at a concrete class now points at an interface the high-level module owns &mdash; the low-level module implements it. That inverted arrow is the whole idea.</figcaption>
+</figure>
 <h3>Coupling &amp; cohesion</h3>
 <ul>
 <li><strong>Coupling</strong> &mdash; how much one module depends on another's internals. <em>Low</em> is good: change one thing without a ripple. Reduce it with interfaces, DI, events, small APIs.</li>
