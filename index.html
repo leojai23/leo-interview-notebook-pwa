@@ -18684,6 +18684,23 @@ Don't put this in one method with a pile of <code>if</code>s. Model it as a <str
 <p class="subtitle">O(1) get and put &mdash; the hash map + doubly linked list, and where it gets harder.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="d-lldlru-t">
+<title id="d-lldlru-t">LRU cache = hash map (O(1) find) + doubly-linked list (O(1) reorder)</title>
+<rect class="d-box-soft" x="14" y="24" width="120" height="70" rx="6"/>
+<text class="d-t-sm" x="24" y="42">hash map</text>
+<text class="d-t-mono" x="24" y="60">k1 &rarr; node</text>
+<text class="d-t-mono" x="24" y="76">k2 &rarr; node</text>
+<rect class="d-box" x="200" y="44" width="60" height="26"/><rect class="d-box" x="290" y="44" width="60" height="26"/><rect class="d-box" x="380" y="44" width="60" height="26"/>
+<text class="d-t-sm" x="230" y="61" text-anchor="middle">MRU</text><text class="d-t-sm" x="320" y="61" text-anchor="middle">...</text><text class="d-t-sm" x="410" y="61" text-anchor="middle">LRU</text>
+<path class="d-line" d="M260 57 L288 57" marker-end="url(#lldlru-ah)"/><path class="d-line" d="M350 57 L378 57" marker-end="url(#lldlru-ah)"/>
+<path class="d-line-soft" d="M288 63 L262 63"/><path class="d-line-soft" d="M378 63 L352 63"/>
+<defs><marker id="lldlru-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<path class="d-line" d="M134 55 L198 55" marker-end="url(#lldlru-ah)"/>
+<text class="d-t-sm" x="14" y="110">get(k): map lookup &rarr; unlink node &rarr; move to front. put over capacity: evict the tail (LRU), remove its map entry.</text>
+</svg>
+<figcaption>The map gives O(1) access to any node; the list gives O(1) "mark as recently used" and O(1) eviction of the oldest. Neither alone is enough. Thread-safe version guards both with one lock (or a sharded/striped design).</figcaption>
+</figure>
 <h3>LRU: the standard structure</h3>
 <ul>
 <li><strong>Hash map</strong>: key &rarr; node (O(1) lookup).</li>
@@ -18791,6 +18808,21 @@ Make it scan-resistant. Options: (1) <strong>Segmented LRU / 2Q</strong> &mdash;
 <p class="subtitle">Four algorithms, and how each handles bursts, boundaries, and distribution.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 108" role="img" aria-labelledby="d-lldrl-t">
+<title id="d-lldrl-t">Token bucket: tokens refill at a steady rate; each request spends one</title>
+<rect class="d-box-soft" x="60" y="20" width="120" height="60" rx="6"/>
+<text class="d-t-sm" x="120" y="16" text-anchor="middle">bucket (cap 10)</text>
+<text class="d-t-b" x="120" y="55" text-anchor="middle">&#9679;&#9679;&#9679;&#9679;&#9679;&#9679;</text>
+<path class="d-line" d="M120 4 L120 18" marker-end="url(#lldrl-ah)"/><text class="d-t-sm" x="130" y="12">refill r/sec</text>
+<path class="d-line" d="M180 50 L250 50" marker-end="url(#lldrl-ah)"/><text class="d-t-sm" x="190" y="44">take 1 per request</text>
+<defs><marker id="lldrl-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="255" y="36" width="110" height="26" rx="6"/><text class="d-t-sm" x="310" y="53" text-anchor="middle">token? &rarr; allow</text>
+<text class="d-t-accent" x="380" y="53">empty &rarr; reject / 429</text>
+<text class="d-t-sm" x="14" y="100">Capacity = burst tolerance; refill rate = sustained limit. Leaky bucket is the mirror image (constant drain, queue on top).</text>
+</svg>
+<figcaption>Also: <strong>fixed window</strong> (simple, but 2&times; burst at the boundary), <strong>sliding window log</strong> (exact, memory-heavy), <strong>sliding window counter</strong> (good approximation). Distributed limiter keeps counts in Redis with atomic scripts.</figcaption>
+</figure>
 <h3>The algorithms</h3>
 <table>
 <tr><th>Algorithm</th><th>Idea</th><th>Bursts</th></tr>
@@ -18907,6 +18939,22 @@ stopping at every requested floor along the way, until there are no more request
 reverse. This minimises direction changes and starvation vs "serve nearest request" (which can
 strand someone at the top).</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 100" role="img" aria-labelledby="d-lldelev-t">
+<title id="d-lldelev-t">Elevator car state machine</title>
+<rect class="d-box-soft" x="200" y="34" width="80" height="28" rx="6"/><text class="d-t-sm" x="240" y="52" text-anchor="middle">IDLE</text>
+<rect class="d-box" x="40" y="34" width="90" height="28" rx="6"/><text class="d-t-sm" x="85" y="52" text-anchor="middle">MOVING UP</text>
+<rect class="d-box" x="350" y="34" width="100" height="28" rx="6"/><text class="d-t-sm" x="400" y="52" text-anchor="middle">MOVING DOWN</text>
+<rect class="d-box" x="200" y="72" width="80" height="24" rx="6"/><text class="d-t-sm" x="240" y="88" text-anchor="middle">DOORS OPEN</text>
+<path class="d-line" d="M200 44 L132 44" marker-end="url(#lldelev-ah)"/><text class="d-t-sm" x="140" y="38">req above</text>
+<path class="d-line" d="M280 48 L348 48" marker-end="url(#lldelev-ah)"/><text class="d-t-sm" x="290" y="42">req below</text>
+<path class="d-line" d="M130 54 C 160 66, 190 62, 210 60" marker-end="url(#lldelev-ah)"/>
+<path class="d-line" d="M350 54 C 320 66, 290 62, 270 60" marker-end="url(#lldelev-ah)"/>
+<path class="d-line" d="M240 62 L240 70" marker-end="url(#lldelev-ah)"/><text class="d-t-sm" x="246" y="70">reached floor</text>
+<defs><marker id="lldelev-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Scheduling: SCAN/LOOK &mdash; keep going in the current direction, serving stops in order, then reverse. Two request types: <strong>hall calls</strong> (up/down at a floor) and <strong>car calls</strong> (a target floor). Multi-car dispatch assigns a hall call to the best car by estimated arrival.</figcaption>
+</figure>
 <h3>State machine per car</h3>
 <pre><code>IDLE  &mdash;request&rarr;  MOVING_UP / MOVING_DOWN
 MOVING_*  &mdash;reached a stop&rarr;  DOORS_OPENING &rarr; DOORS_OPEN &rarr; DOORS_CLOSING &rarr; MOVING_* or IDLE
@@ -19304,6 +19352,21 @@ Work in small, safe steps under a growing test net &mdash; the "strangler fig" a
 <p class="subtitle">A repeatable structure for the 45 minutes, and the numbers to do capacity math in your head.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 78" role="img" aria-labelledby="d-sdfw-t">
+<title id="d-sdfw-t">The system-design interview flow</title>
+<rect class="d-box" x="6" y="26" width="86" height="26" rx="5"/><text class="d-t-sm" x="49" y="43" text-anchor="middle">clarify</text>
+<rect class="d-box" x="98" y="26" width="86" height="26" rx="5"/><text class="d-t-sm" x="141" y="43" text-anchor="middle">estimate</text>
+<rect class="d-box" x="190" y="26" width="86" height="26" rx="5"/><text class="d-t-sm" x="233" y="43" text-anchor="middle">API + data</text>
+<rect class="d-box" x="282" y="26" width="90" height="26" rx="5"/><text class="d-t-sm" x="327" y="43" text-anchor="middle">high-level</text>
+<rect class="d-box" x="378" y="26" width="80" height="26" rx="5"/><text class="d-t-sm" x="418" y="43" text-anchor="middle">deep-dive</text>
+<rect class="d-box-soft" x="464" y="26" width="50" height="26" rx="5"/><text class="d-t-sm" x="489" y="43" text-anchor="middle">bottle-necks</text>
+<path class="d-line" d="M92 39 L96 39" marker-end="url(#sdfw-ah)"/><path class="d-line" d="M184 39 L188 39" marker-end="url(#sdfw-ah)"/><path class="d-line" d="M276 39 L280 39" marker-end="url(#sdfw-ah)"/><path class="d-line" d="M372 39 L376 39" marker-end="url(#sdfw-ah)"/><path class="d-line" d="M458 39 L462 39" marker-end="url(#sdfw-ah)"/>
+<defs><marker id="sdfw-ah" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path class="d-fill" d="M0 0 L7 3.5 L0 7 Z"/></marker></defs>
+<text class="d-t-sm" x="6" y="70">Spend the first ~5 min on scope + numbers; they drive every later decision (a 100 RPS design is not a 100k RPS design).</text>
+</svg>
+<figcaption>Capacity math to have ready: 1 day &asymp; 86,400 s; QPS = daily requests / 86,400 (&times;2&ndash;3 for peak); storage = items &times; size &times; retention &times; replication.</figcaption>
+</figure>
 <h3>The structure</h3>
 <ol>
 <li><strong>Clarify (5 min)</strong> &mdash; functional requirements, non-functional (scale, latency, availability, consistency), and explicit non-goals. Nail down the 2&ndash;3 features you'll design.</li>
@@ -19411,6 +19474,22 @@ Compare your estimated working set and throughput against a single modern server
 <p class="subtitle">Spreading traffic across servers, removing dead ones, and where the LB itself can fail.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 108" role="img" aria-labelledby="d-sdlb-t">
+<title id="d-sdlb-t">A load balancer spreads requests across a pool with health checks</title>
+<rect class="d-box-alt" x="14" y="40" width="70" height="26"/><text class="d-t-sm" x="49" y="57" text-anchor="middle">clients</text>
+<rect class="d-box-soft" x="160" y="34" width="90" height="38" rx="6"/><text class="d-t-sm" x="205" y="50" text-anchor="middle">LB</text><text class="d-t-sm" x="205" y="64" text-anchor="middle">(VIP)</text>
+<path class="d-line" d="M84 53 L158 53" marker-end="url(#sdlb-ah)"/>
+<rect class="d-box" x="340" y="10" width="90" height="20"/><text class="d-t-sm" x="385" y="24" text-anchor="middle">server 1</text>
+<rect class="d-box" x="340" y="44" width="90" height="20"/><text class="d-t-sm" x="385" y="58" text-anchor="middle">server 2</text>
+<rect class="d-box" x="340" y="78" width="90" height="20" style="opacity:.4"/><text class="d-t-sm" x="385" y="92" text-anchor="middle">server 3 (unhealthy)</text>
+<path class="d-line" d="M250 48 L338 20" marker-end="url(#sdlb-ah)"/>
+<path class="d-line" d="M250 56 L338 54" marker-end="url(#sdlb-ah)"/>
+<defs><marker id="sdlb-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="100"><tspan class="d-t-b">L4</tspan> routes by IP/port (fast, protocol-agnostic). <tspan class="d-t-b">L7</tspan> reads HTTP &rarr; path/host routing, TLS termination, retries, sticky sessions.</text>
+</svg>
+<figcaption>Algorithms: round-robin, least-connections, weighted, consistent-hash (for cache affinity). Health checks eject bad backends; a passive check also demotes on error spikes.</figcaption>
+</figure>
 <h3>L4 vs L7</h3>
 <table>
 <tr><th></th><th>L4 (transport)</th><th>L7 (application)</th></tr>
@@ -19523,6 +19602,21 @@ Classic least-connections works well only when every backend is identical and ev
 (Redis/Memcached) &rarr; database buffer pool. Cache as close to the client as the freshness
 requirement allows.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 106" role="img" aria-labelledby="d-sdcache-t">
+<title id="d-sdcache-t">Cache-aside: app checks cache, falls back to the DB on a miss, then fills</title>
+<rect class="d-box-soft" x="14" y="34" width="80" height="30" rx="6"/><text class="d-t-sm" x="54" y="53" text-anchor="middle">app</text>
+<rect class="d-box" x="200" y="10" width="90" height="26" rx="6"/><text class="d-t-sm" x="245" y="27" text-anchor="middle">cache</text>
+<rect class="d-box" x="200" y="62" width="90" height="26" rx="6"/><text class="d-t-sm" x="245" y="79" text-anchor="middle">database</text>
+<path class="d-line" d="M94 44 L198 24" marker-end="url(#sdcache-ah)"/><text class="d-t-sm" x="100" y="30">1. GET</text>
+<path class="d-line" d="M198 30 C 150 40, 130 55, 100 60" marker-end="url(#sdcache-ah)"/><text class="d-t-accent" x="110" y="72">2. miss</text>
+<path class="d-line" d="M94 56 L198 74" marker-end="url(#sdcache-ah)"/><text class="d-t-sm" x="100" y="90">3. read DB</text>
+<path class="d-line" d="M200 66 C 240 50, 240 40, 244 38" marker-end="url(#sdcache-ah)"/><text class="d-t-sm" x="300" y="52">4. set (with TTL)</text>
+<defs><marker id="sdcache-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="102">On write: update DB, then <tspan class="d-t-b">invalidate</tspan> (or update) the cache key. Guard the miss path against a <tspan class="d-t-b">stampede</tspan> (locking / stale-while-revalidate).</text>
+</svg>
+<figcaption>Other patterns: read-through / write-through (cache sits inline), write-back (cache acks, flushes later &mdash; fast but can lose data). Eviction: LRU/LFU + TTL.</figcaption>
+</figure>
 <h3>Read patterns</h3>
 <table>
 <tr><th>Pattern</th><th>How</th></tr>
@@ -19724,6 +19818,19 @@ A hot shard receives disproportionate load, becoming the bottleneck while others
 <p class="subtitle">What you give up during a partition, and the spectrum of "how fresh must a read be".</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 110" role="img" aria-labelledby="d-sdcap-t">
+<title id="d-sdcap-t">During a network partition you must choose consistency or availability</title>
+<rect class="d-box-soft" x="14" y="30" width="140" height="34" rx="6"/><text class="d-t-sm" x="84" y="51" text-anchor="middle">partition happens</text>
+<path class="d-line" d="M154 40 L214 24" marker-end="url(#sdcap-ah)"/>
+<path class="d-line" d="M154 54 L214 74" marker-end="url(#sdcap-ah)"/>
+<defs><marker id="sdcap-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="220" y="10" width="290" height="30" rx="6"/><text class="d-t-sm" x="230" y="29">CP: refuse writes on the minority side (stay correct)</text>
+<rect class="d-box" x="220" y="60" width="290" height="30" rx="6"/><text class="d-t-sm" x="230" y="79">AP: keep serving, reconcile later (stay up)</text>
+<text class="d-t-sm" x="14" y="106">No partition (the normal case) &rarr; PACELC: you still trade <tspan class="d-t-b">latency</tspan> vs consistency (sync vs async replication).</text>
+</svg>
+<figcaption>"Pick 2 of 3" is a simplification &mdash; partitions <em>will</em> happen, so the real choice is C-vs-A <em>when</em> one does. Examples: CP = etcd/ZooKeeper/Spanner; AP = Dynamo/Cassandra with tunable quorums.</figcaption>
+</figure>
 <h3>CAP, stated precisely</h3>
 <p>In a distributed store, <strong>during a network partition</strong> you must choose between
 <strong>C</strong>onsistency (every read sees the latest write) and <strong>A</strong>vailability (every
@@ -20364,6 +20471,27 @@ the same content always produces the same hash, and any change to the content pr
 completely different hash. Objects live in <code>.git/objects/</code> (loose objects, then
 packed into <code>.pack</code> files for efficiency).</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 130" role="img" aria-labelledby="d-gitobj-t">
+<title id="d-gitobj-t">A commit points to a tree of trees and blobs; commits chain by parent</title>
+<rect class="d-box" x="14" y="20" width="80" height="24" rx="5"/><text class="d-t-sm" x="54" y="36" text-anchor="middle">commit A</text>
+<rect class="d-box" x="140" y="20" width="80" height="24" rx="5"/><text class="d-t-sm" x="180" y="36" text-anchor="middle">commit B</text>
+<path class="d-line" d="M140 32 L96 32" marker-end="url(#gitobj-ah)"/><text class="d-t-sm" x="100" y="16">parent</text>
+<rect class="d-box-soft" x="140" y="60" width="80" height="22"/><text class="d-t-sm" x="180" y="75" text-anchor="middle">tree /</text>
+<rect class="d-box-soft" x="100" y="96" width="70" height="20"/><text class="d-t-sm" x="135" y="110" text-anchor="middle">tree src/</text>
+<rect class="d-box-alt" x="200" y="96" width="90" height="20"/><text class="d-t-sm" x="245" y="110" text-anchor="middle">blob README</text>
+<rect class="d-box-alt" x="60" y="120" width="80" height="18" style="opacity:0"/>
+<path class="d-line" d="M180 44 L180 58" marker-end="url(#gitobj-ah)"/>
+<path class="d-line" d="M170 82 L140 94" marker-end="url(#gitobj-ah)"/>
+<path class="d-line" d="M195 82 L235 94" marker-end="url(#gitobj-ah)"/>
+<defs><marker id="gitobj-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="300" y="36">blob = file bytes (no name)</text>
+<text class="d-t-sm" x="300" y="54">tree = dir listing (name,mode,hash)</text>
+<text class="d-t-sm" x="300" y="72">commit = one root tree + parent(s)</text>
+<text class="d-t-sm" x="300" y="90">+ author + message</text>
+</svg>
+<figcaption>Every object's name is the SHA of its content, so identical files anywhere share one blob and unchanged directories reuse one tree. History is a DAG of commits; branches/tags are just files holding a commit hash.</figcaption>
+</figure>
 <h3>The four object types</h3>
 <table>
 <tr><th>Type</th><th>What it holds</th></tr>
@@ -20482,6 +20610,19 @@ Storing every object as its own zlib-compressed file ("loose objects") wastes sp
 <tr><td><strong>Working tree</strong></td><td>The actual files on disk you edit. "What I'm working on right now."</td></tr>
 </table>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 96" role="img" aria-labelledby="d-git3t-t">
+<title id="d-git3t-t">add and commit move content across the three trees</title>
+<rect class="d-box" x="14" y="34" width="120" height="30" rx="6"/><text class="d-t-sm" x="74" y="53" text-anchor="middle">working tree</text>
+<rect class="d-box-soft" x="200" y="34" width="120" height="30" rx="6"/><text class="d-t-sm" x="260" y="53" text-anchor="middle">index (staged)</text>
+<rect class="d-box" x="386" y="34" width="120" height="30" rx="6"/><text class="d-t-sm" x="446" y="53" text-anchor="middle">HEAD (last commit)</text>
+<path class="d-line" d="M134 44 L198 44" marker-end="url(#git3t-ah)"/><text class="d-t-sm" x="140" y="38">git add</text>
+<path class="d-line" d="M320 44 L384 44" marker-end="url(#git3t-ah)"/><text class="d-t-sm" x="326" y="38">git commit</text>
+<path class="d-line" d="M384 58 C 300 74, 200 74, 136 60" marker-end="url(#git3t-ah)"/><text class="d-t-sm" x="230" y="88">git checkout / reset --hard</text>
+<defs><marker id="git3t-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption><code>git status</code> is just three diffs: HEAD&harr;index ("to be committed"), index&harr;working ("not staged"), and untracked. <code>reset --soft</code> moves HEAD only; <code>--mixed</code> HEAD+index; <code>--hard</code> all three (destructive).</figcaption>
+</figure>
 <h3>The basic workflow moves content between them</h3>
 <pre>edit file        # working tree changes, index & HEAD unchanged
 git add file     # copy working-tree version into the index
@@ -20739,6 +20880,20 @@ A normal ref (<code>.git/refs/heads/main</code>) contains a 40-hex commit hash &
 A ← B ← C       main</pre>
 <p>You want <code>feature</code> to include <code>main</code>'s new commit C.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 132" role="img" aria-labelledby="d-gitmr-t">
+<title id="d-gitmr-t">Merge adds a 2-parent commit; rebase replays your commits as new ones</title>
+<text class="d-t-b" x="14" y="16">merge main into feature</text>
+<circle cx="40" cy="40" r="7" class="d-box"/><circle cx="80" cy="40" r="7" class="d-box"/><circle cx="120" cy="26" r="7" class="d-box-soft"/><circle cx="120" cy="54" r="7" class="d-box"/><circle cx="165" cy="40" r="7" class="d-box-soft"/>
+<path class="d-line-soft" d="M47 40 L73 40"/><path class="d-line-soft" d="M86 38 L114 28"/><path class="d-line-soft" d="M86 42 L114 52"/><path class="d-line-soft" d="M126 27 L159 38"/><path class="d-line-soft" d="M126 53 L159 42"/>
+<text class="d-t-sm" x="180" y="44">M has 2 parents; nothing rewritten</text>
+<text class="d-t-b" x="14" y="86">rebase feature onto main</text>
+<circle cx="40" cy="110" r="7" class="d-box"/><circle cx="80" cy="110" r="7" class="d-box"/><circle cx="120" cy="110" r="7" class="d-box"/><circle cx="160" cy="110" r="7" class="d-box-soft"/><circle cx="200" cy="110" r="7" class="d-box-soft"/>
+<path class="d-line-soft" d="M47 110 L73 110"/><path class="d-line-soft" d="M87 110 L113 110"/><path class="d-line-soft" d="M127 110 L153 110"/><path class="d-line-soft" d="M167 110 L193 110"/>
+<text class="d-t-sm" x="215" y="114">linear; your commits get new hashes</text>
+</svg>
+<figcaption><strong>Golden rule:</strong> never rebase commits that others have already pulled. Merge preserves true history (and a revertable bubble); rebase gives a clean linear log for review.</figcaption>
+</figure>
 <h3>Merge</h3>
 <p><code>git checkout feature; git merge main</code> creates a <strong>merge commit</strong> M
 with two parents (E and C):</p>
