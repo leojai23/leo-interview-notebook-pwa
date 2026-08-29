@@ -16773,6 +16773,1060 @@ Work in small, safe steps under a growing test net &mdash; the "strangler fig" a
 </section>
 <!-- /TOPIC:lld:evolving-design -->
 
+<!-- ============================== SYSTEM DESIGN TOPICS ============================== -->
+<!-- TOPIC:sysd:framework -->
+<section class="view topic" id="v-sysd-framework" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>Interview Framework &amp; Estimation</h1>
+<p class="subtitle">A repeatable structure for the 45 minutes, and the numbers to do capacity math in your head.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The structure</h3>
+<ol>
+<li><strong>Clarify (5 min)</strong> &mdash; functional requirements, non-functional (scale, latency, availability, consistency), and explicit non-goals. Nail down the 2&ndash;3 features you'll design.</li>
+<li><strong>Estimate (3 min)</strong> &mdash; QPS (avg &amp; peak), storage/year, bandwidth, and whether it fits on one machine. These numbers drive every later decision.</li>
+<li><strong>API (3 min)</strong> &mdash; the handful of endpoints, their shapes.</li>
+<li><strong>Data model (5 min)</strong> &mdash; entities, access patterns, then choose storage (SQL / KV / doc / column / blob) <em>from the access patterns</em>.</li>
+<li><strong>High-level design (10 min)</strong> &mdash; boxes and arrows: clients &rarr; LB &rarr; stateless app tier &rarr; caches / DB / queue / object store. Walk the main read and write paths.</li>
+<li><strong>Deep dive (10 min)</strong> &mdash; the interviewer picks 1&ndash;2 areas; go deep: sharding key, cache invalidation, fan-out, consistency.</li>
+<li><strong>Bottlenecks &amp; wrap (5 min)</strong> &mdash; single points of failure, hot spots, what breaks at 10&times; scale, monitoring.</li>
+</ol>
+
+<h3>Latency numbers to know (order of magnitude)</h3>
+<table>
+<tr><th>Operation</th><th>~Time</th></tr>
+<tr><td>L1 / branch mispredict</td><td>~1&thinsp;ns / ~5&thinsp;ns</td></tr>
+<tr><td>Main memory reference</td><td>~100&thinsp;ns</td></tr>
+<tr><td>Mutex lock/unlock</td><td>~25&thinsp;ns</td></tr>
+<tr><td>Compress 1&thinsp;KB</td><td>~1&ndash;3&thinsp;&micro;s</td></tr>
+<tr><td>SSD random read</td><td>~16&ndash;100&thinsp;&micro;s</td></tr>
+<tr><td>Datacenter round trip</td><td>~0.5&thinsp;ms</td></tr>
+<tr><td>Read 1&thinsp;MB sequentially from SSD</td><td>~50&ndash;200&thinsp;&micro;s</td></tr>
+<tr><td>Disk seek (HDD)</td><td>~5&ndash;10&thinsp;ms</td></tr>
+<tr><td>Cross-continent round trip</td><td>~100&ndash;150&thinsp;ms</td></tr>
+</table>
+
+<h3>Estimation shortcuts</h3>
+<ul>
+<li>1 day &asymp; 86,400 s &asymp; <strong>10&#8309; s</strong>. So <strong>1M requests/day &asymp; ~12 QPS</strong> average; multiply by 2&ndash;10 for peak.</li>
+<li>1 char &asymp; 1 byte; a "tweet" ~300 B; a small row ~1&ndash;2 KB; a photo ~1&ndash;5 MB; a minute of video ~10&ndash;50 MB.</li>
+<li>Storage/year = writes/sec &times; bytes/write &times; 3&times;10&#8311; s.</li>
+<li>A modern server: ~tens of thousands of simple QPS, ~64&ndash;256 GB RAM, ~10&ndash;40 TB SSD, ~10&ndash;25 Gbps NIC.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Flow: clarify &rarr; estimate &rarr; API &rarr; data model &rarr; high-level (LB &rarr; stateless app &rarr; cache/DB/queue/blob) &rarr; deep dive &rarr; bottlenecks.</li>
+<li>Always: functional + non-functional (scale, latency, availability, consistency) + non-goals.</li>
+<li>Estimate QPS (avg &amp; peak &times;2&ndash;10), storage/year, bandwidth; check "fits on one box?".</li>
+<li>1M/day &asymp; 12 QPS avg. Day &asymp; 10&#8309; s. Storage/yr = wps &times; bytes &times; 3&times;10&#8311;.</li>
+<li>Memory ~100&thinsp;ns, SSD read ~50&thinsp;&micro;s, DC RTT ~0.5&thinsp;ms, cross-continent ~100&thinsp;ms, HDD seek ~10&thinsp;ms.</li>
+<li>Choose storage from access patterns, not by default.</li>
+<li>Keep the app tier <strong>stateless</strong> (state in DB/cache/session store) so it scales horizontally.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Roughly how many QPS is 1 million requests per day?</dt>
+<dd>~12 average (1M / 86,400). Design for peak, which is typically 2&ndash;10&times; the average depending on the traffic pattern &mdash; so plan for ~50&ndash;120 QPS.</dd>
+<dt>What's the order-of-magnitude latency of a main-memory access vs a datacenter round trip?</dt>
+<dd>~100 nanoseconds for memory; ~0.5 milliseconds (500,000 ns) for an in-datacenter RPC round trip &mdash; about 5000&times;. Cross-continent is ~100&ndash;150 ms, another ~300&times;.</dd>
+<dt>Why estimate before designing?</dt>
+<dd>The numbers decide the architecture: 10 QPS and 10 GB fits on one machine (design accordingly); 1M QPS and 100 TB/year forces sharding, caching, and async processing from the start. Designing without numbers leads to over- or under-engineering.</dd>
+<dt>Why keep the application tier stateless?</dt>
+<dd>So you can add/remove instances freely behind a load balancer without session affinity, and any instance can serve any request. Session/user state goes to a shared store (Redis, DB, or a signed token).</dd>
+<dt>How do you pick a datastore in the interview?</dt>
+<dd>From the access patterns: key lookups by id &rarr; KV; queries across fields / transactions &rarr; relational; whole-aggregate documents / flexible schema &rarr; document; huge write volume with known query shapes &rarr; wide-column; large binary objects &rarr; blob store; relationships / traversal &rarr; graph. State the pattern, then the choice.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>First step when given a system design prompt?</summary><div class="answer-box">
+Clarify requirements &mdash; functional, non-functional (scale/latency/availability/consistency), and what's out of scope.
+</div></details>
+<details class="answer-reveal"><summary>Seconds in a day, to one significant figure?</summary><div class="answer-box">
+~90,000 (86,400) &mdash; often rounded to 10&#8309; for mental math.
+</div></details>
+<details class="answer-reveal"><summary>Where should user session state live in a horizontally scaled web tier?</summary><div class="answer-box">
+In a shared store (Redis / DB) or a signed client token &mdash; not in an app instance's memory.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Estimate storage for a service ingesting 5,000 events/sec, each ~500 bytes, retained 1 year.</summary><div class="answer-box">
+5,000 &times; 500 B = 2.5 MB/s. &times; 86,400 s/day &asymp; 216 GB/day. &times; 365 &asymp; ~79 TB/year raw. Add ~1.5&ndash;3&times; for indexes/replication overhead &rarr; ~120&ndash;240 TB. Conclusion: doesn't fit one node &rarr; you need partitioning + a retention/compaction strategy (or tiered storage: hot in a fast store, cold in object storage / parquet).
+</div></details>
+<details class="answer-reveal"><summary>A read-heavy service does 50k QPS, each request 1 DB query at 2 ms. How many DB connections/replicas roughly?</summary><div class="answer-box">
+By Little's Law, concurrency = throughput &times; latency = 50,000 &times; 0.002 s = 100 in-flight queries at any instant. So you need ~100 usable connections (plus headroom, say 150&ndash;200) across the read replicas. If one replica sustains ~10k QPS of this query, you need ~5&ndash;6 replicas (plus one for redundancy). Caching the hot reads (say 90% hit rate) cuts DB QPS to ~5k &rarr; 1&ndash;2 replicas.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How do you reason about the "does it fit on one machine?" question, and why does it matter so much?</summary><div class="answer-box">
+Compare your estimated working set and throughput against a single modern server: ~128&ndash;512 GB RAM, ~10&ndash;40 TB NVMe, ~25&ndash;100 Gbps network, and &mdash; for the CPU &mdash; anywhere from a few thousand to hundreds of thousands of "simple" operations/sec depending on how much work each does (a Redis GET: ~100k+/s/core; a complex query with joins: dozens/s). Check four dimensions: (1) <em>Does the hot dataset fit in RAM?</em> If yes, you can serve reads from memory on one box and the design collapses to "one replicated node + backups". If no, you're doing disk I/O per read and need caching or sharding. (2) <em>Does peak QPS &times; per-request CPU exceed one machine's cores?</em> If yes, you need a horizontally scalable stateless tier. (3) <em>Does storage/year exceed one machine's disk?</em> If yes, sharding or object storage. (4) <em>Does peak bandwidth exceed the NIC?</em> (matters for media/CDN-shaped systems). It matters because <strong>the moment you can't fit on one machine, you inherit distributed-systems problems</strong> &mdash; partitioning, replication, consistency trade-offs, partial failure, cross-node coordination &mdash; which are an order of magnitude more design and operational complexity. A strong answer explicitly says "at this scale it fits on one primary with read replicas and we're done; at 100&times; we'd shard by X" &mdash; showing you scale the <em>design effort</em> to the actual requirements rather than reaching for Kafka and 20 microservices for 100 QPS.
+</div></details>
+<details class="answer-reveal"><summary>What non-functional requirements do candidates most often forget to pin down, and how does each change the design?</summary><div class="answer-box">
+(1) <strong>Consistency requirement per operation</strong> &mdash; "must a user see their own write immediately?" (read-your-writes), "can two users briefly see different values?" (eventual OK), "does money/inventory need strict serializability?". This decides single-primary vs multi-primary, sync vs async replication, whether you can use a cache freely, and whether you need distributed transactions or can use a saga. (2) <strong>Availability target</strong> &mdash; 99.9% (~8.8 h/yr down) vs 99.99% (~52 min) vs 99.999% changes whether you need multi-AZ, multi-region, active-active, and how much redundancy/failover automation. (3) <strong>Latency SLO and at which percentile</strong> &mdash; "p50 &lt; 100 ms" is very different from "p99.9 &lt; 200 ms"; tail latency drives timeouts, hedged requests, connection-pool sizing, and whether synchronous fan-out is acceptable. (4) <strong>Durability</strong> &mdash; "can we lose the last few seconds of writes on a crash?" decides sync vs async commit, replication factor, and whether an in-memory queue is acceptable. (5) <strong>Read:write ratio</strong> &mdash; 100:1 (cache everything, read replicas) vs 1:1 (caching helps less, write path is the bottleneck) vs write-heavy (LSM storage, batching, async). (6) <strong>Data retention &amp; deletion</strong> &mdash; GDPR "delete on request", retention limits, and audit requirements change storage choice and add a deletion pipeline. (7) <strong>Traffic shape</strong> &mdash; steady vs spiky (flash sale, viral event) decides autoscaling, queue buffering, and pre-provisioning. (8) <strong>Cost sensitivity</strong> &mdash; sometimes a stated constraint. Asking about these early, and restating "so we're optimising for availability over consistency here, correct?", is a strong signal and prevents designing the wrong system confidently.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:framework -->
+
+<!-- TOPIC:sysd:load-balancing -->
+<section class="view topic" id="v-sysd-load-balancing" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>Load Balancing</h1>
+<p class="subtitle">Spreading traffic across servers, removing dead ones, and where the LB itself can fail.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>L4 vs L7</h3>
+<table>
+<tr><th></th><th>L4 (transport)</th><th>L7 (application)</th></tr>
+<tr><td>Routes by</td><td>IP + port</td><td>URL path, Host, headers, cookies</td></tr>
+<tr><td>Sees payload</td><td>no</td><td>yes (terminates the connection, often TLS)</td></tr>
+<tr><td>Cost / features</td><td>fast, cheap, protocol-agnostic</td><td>retries, rewrites, path routing, WAF, canary &mdash; more CPU</td></tr>
+<tr><td>Examples</td><td>AWS NLB, IPVS, hardware LBs</td><td>nginx, HAProxy, Envoy, ALB</td></tr>
+</table>
+
+<h3>Algorithms</h3>
+<ul>
+<li><strong>Round robin</strong> (+ weighted) &mdash; simple, good when requests are uniform.</li>
+<li><strong>Least connections / least response time</strong> &mdash; adapts to uneven request cost.</li>
+<li><strong>Consistent hashing</strong> &mdash; same key &rarr; same backend (cache affinity, sticky routing) with minimal remap on membership change.</li>
+<li><strong>IP hash</strong> &mdash; cheap client&rarr;backend stickiness.</li>
+</ul>
+
+<h3>Health checks &amp; failure</h3>
+<ul>
+<li><strong>Active</strong>: LB probes each backend (<code>/healthz</code>) and ejects failing ones. <strong>Passive</strong>: mark a backend down after N consecutive request errors.</li>
+<li>Distinguish "liveness" (process up) from "readiness" (can serve &mdash; DB connected, caches warm). Drain connections gracefully on deploy.</li>
+<li>The LB is a SPOF &rarr; run it redundantly: a VIP with failover (keepalived/VRRP), an anycast address, or a managed LB across AZs. Global traffic uses DNS/GeoDNS/anycast to pick a region, then a regional LB.</li>
+</ul>
+
+<h3>Sticky sessions</h3>
+<p>Pin a client to one backend (cookie or IP hash). Needed only if the backend holds per-session
+state &mdash; the better fix is stateless backends (session in Redis / signed token) so any request
+can go anywhere, enabling free scaling and deploys.</p>
+
+<h3>Autoscaling</h3>
+<p>Scale the backend pool on a signal (CPU, request rate, queue depth, p99 latency). Scale out
+fast, in slowly (avoid flapping). Pre-warm for known spikes. The LB must pick up new instances
+automatically (service discovery / target groups).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>L4: routes by IP:port, payload-blind, fast, connection-preserving. L7: reads HTTP, path/host/header routing, TLS termination, retries, canary.</li>
+<li>Algorithms: round-robin / weighted (uniform), least-connections / least-latency (uneven cost), consistent-hash (cache affinity), IP-hash (cheap stickiness).</li>
+<li>Health: active probe (<code>/healthz</code>) + passive ejection; separate liveness vs readiness; graceful connection draining on deploy.</li>
+<li>LB is a SPOF &rarr; redundant (VIP+VRRP, anycast, multi-AZ managed LB). Global: DNS/GeoDNS/anycast &rarr; regional LB.</li>
+<li>Sticky sessions only if backends are stateful &mdash; prefer stateless (session in Redis/token).</li>
+<li>Autoscale on CPU / RPS / queue depth / p99; out fast, in slow; service discovery so the LB sees new instances.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>When do you need an L7 load balancer?</dt>
+<dd>When routing decisions depend on request content &mdash; send <code>/api</code> and <code>/static</code> to different pools, route by <code>Host</code> for multi-tenant, do path-based canary/blue-green, terminate TLS centrally, or apply a WAF. If you only need "spread TCP connections across identical servers", L4 is faster and cheaper.</dd>
+<dt>Liveness vs readiness health check?</dt>
+<dd>Liveness = "is the process alive?" (restart it if not). Readiness = "can it serve traffic <em>now</em>?" (has DB connections, caches warm, not overloaded). The LB routes only to <em>ready</em> instances; an instance can be live but temporarily not ready (starting up, reconnecting).</dd>
+<dt>Why is consistent hashing used for load balancing in front of caches?</dt>
+<dd>It maps a key to the same backend most of the time, so cache hit rates stay high, and when a backend is added/removed only ~1/N of keys move &mdash; avoiding the mass cache-miss stampede that plain modulo hashing causes.</dd>
+<dt>The load balancer is a single point of failure. How do you address that?</dt>
+<dd>Run it redundantly: an active/standby pair sharing a virtual IP with fast failover (VRRP/keepalived), an anycast IP announced from multiple nodes, or a cloud managed LB that's inherently multi-AZ. For multi-region, DNS or anycast directs users to a region and a regional LB pair handles it from there.</dd>
+<dt>How do you avoid needing sticky sessions?</dt>
+<dd>Make the backends stateless &mdash; store session data in a shared store (Redis) or a signed/encrypted cookie/JWT the client sends each request. Then any instance can serve any request, so you can scale and deploy without worrying about affinity.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which LB layer can route by URL path?</summary><div class="answer-box">
+Layer 7 (application).
+</div></details>
+<details class="answer-reveal"><summary>Which algorithm adapts to backends handling requests of very different cost?</summary><div class="answer-box">
+Least connections (or least response time).
+</div></details>
+<details class="answer-reveal"><summary>What removes a crashed backend from rotation?</summary><div class="answer-box">
+Health checks (active probing or passive error-based ejection).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>After a deploy, users get errors for ~30 s even though the new instances are healthy. Cause and fix?</summary><div class="answer-box">
+Old instances were killed before the LB stopped sending them traffic, or new instances were added to rotation before they were actually ready (still warming caches / opening DB pools). Fix: on shutdown, first fail the readiness check (LB drains), wait for in-flight requests to finish (connection draining with a timeout), <em>then</em> exit. On startup, don't pass readiness until dependencies are connected and warm. Use rolling deploys with <code>maxUnavailable</code> small, and health-check grace periods.
+</div></details>
+<details class="answer-reveal"><summary>Your service is behind one LB in one AZ. Design for AZ failure.</summary><div class="answer-box">
+Run backends in &ge;2 (ideally 3) AZs, and a cross-AZ load balancer (cloud managed LBs span AZs by default; for self-managed, an LB pair per AZ behind a global entry). The database needs a multi-AZ setup too (a standby in another AZ with automatic failover, or a quorum across 3 AZs). DNS/anycast at the top so if a whole region degrades you can shift traffic. Test with game days / chaos experiments that actually kill an AZ's instances.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why can "least connections" load balancing perform badly, and what's the modern alternative?</summary><div class="answer-box">
+Classic least-connections works well only when every backend is identical and every request costs the same amount of the resource that matters. Failure modes: (1) a backend that's <em>slow</em> (GC pause, degraded disk, noisy neighbour) accumulates connections and, counterintuitively, <em>attracts more</em> under least-connections in some implementations, or is avoided so hard it never recovers &mdash; and "connection count" doesn't capture "this box is at 95% CPU". (2) In a large fleet behind multiple LB instances, each LB only sees its own connections, so global balance is poor. (3) Long-lived connections (HTTP/2, gRPC, websockets) break the model &mdash; connection count is nearly constant regardless of load. The modern approach: <strong>power of two choices</strong> (pick two backends at random, send to the less-loaded &mdash; provably close to optimal balance with O(1) state and no global coordination, used by Envoy, Finagle, NGINX Plus); <strong>latency-/EWMA-based</strong> weighting where each backend's recent response-time and error-rate feed a dynamic weight (Netflix's approach), so a degrading backend sheds load automatically; <strong>outlier detection</strong> (eject a backend that's returning 5xx or timing out at an anomalous rate, re-admit gradually); and for request-level fairness with expensive requests, <strong>concurrency limiting per backend</strong> (a token per in-flight request) plus <strong>load-based shedding</strong>. For gRPC/HTTP-2 you also need <em>request</em>-level LB (each RPC balanced independently) not connection-level, often via a client-side LB (xDS/Envoy) or an L7 proxy that de-multiplexes streams.
+</div></details>
+<details class="answer-reveal"><summary>Explain how a large service actually routes a user request from their browser to a specific backend process, layer by layer.</summary><div class="answer-box">
+(1) <strong>DNS</strong>: the browser resolves <code>api.example.com</code>; the authoritative DNS (often GeoDNS / a traffic manager like Route 53, NS1, Akamai) returns an IP for the nearest healthy <em>region/PoP</em> based on the resolver's location and per-region health, with a low TTL so it can shift traffic. Some providers return an <strong>anycast</strong> IP instead, and BGP routes the packets to the nearest edge. (2) <strong>Edge / CDN PoP</strong>: the anycast IP terminates at a CDN edge that may serve cached static content directly, or (for dynamic API traffic) terminates TLS and proxies onward over a warm, optimised backbone connection to the origin region. (3) <strong>Regional L4 LB</strong>: at the origin, a layer-4 load balancer (hardware, or IPVS/Maglev-style ECMP where routers hash flows across many LB nodes, each LB node consistently hashing the 4-tuple to a backend so connections stay pinned) spreads connections across the L7 proxy tier. Google's Maglev and Cloudflare's Unimog are examples &mdash; they give per-flow consistency without shared state so LB nodes are stateless and horizontally scalable. (4) <strong>L7 proxy tier</strong> (Envoy / nginx / a service mesh ingress): parses HTTP, does path/host routing, applies auth/rate-limit/WAF, picks the target <em>service</em>, and load-balances at the <em>request</em> level across that service's instances &mdash; using power-of-two-choices or EWMA weights, honouring outlier detection and per-instance concurrency limits, and re-resolving the instance list from <strong>service discovery</strong> (Consul, EDS/xDS, Kubernetes endpoints) as instances come and go. (5) <strong>Backend instance</strong>: the request lands on one process; if that process is itself multi-threaded/async, an internal work queue or thread pool assigns it to a worker. Cross-cutting: every hop has its own health checking and connection draining, timeouts are set to decrease at each inner layer (so an inner call times out before the outer one gives up), retries are budgeted (retry only at one layer, with a cap, to avoid retry storms), and the whole path is traced (a trace/span id propagated in headers) so you can see where a slow request spent its time.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:load-balancing -->
+
+<!-- TOPIC:sysd:caching -->
+<section class="view topic" id="v-sysd-caching" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>Caching Strategies &amp; Invalidation</h1>
+<p class="subtitle">Where to cache, which read/write pattern, and the two hard problems: invalidation and stampede.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Where</h3>
+<p>Client / browser &rarr; CDN edge &rarr; API gateway &rarr; in-process (per app instance) &rarr; distributed
+(Redis/Memcached) &rarr; database buffer pool. Cache as close to the client as the freshness
+requirement allows.</p>
+
+<h3>Read patterns</h3>
+<table>
+<tr><th>Pattern</th><th>How</th></tr>
+<tr><td><strong>Cache-aside</strong> (lazy)</td><td>app checks cache; on miss, reads DB, populates cache. Most common; cache only holds what's asked for.</td></tr>
+<tr><td><strong>Read-through</strong></td><td>app asks the cache; the cache library fetches from DB on miss. Same effect, logic in the cache layer.</td></tr>
+</table>
+
+<h3>Write patterns</h3>
+<table>
+<tr><th>Pattern</th><th>Trade-off</th></tr>
+<tr><td><strong>Write-through</strong></td><td>write DB + cache synchronously &mdash; cache always fresh, writes slower.</td></tr>
+<tr><td><strong>Write-back</strong> (write-behind)</td><td>write cache, flush to DB async &mdash; fast writes, risk of loss on cache crash, DB lags.</td></tr>
+<tr><td><strong>Write-around</strong></td><td>write DB only, skip cache &mdash; avoids polluting cache with write-once data; next read is a miss.</td></tr>
+</table>
+<p>Common combo: <strong>cache-aside reads + write-through-or-invalidate on writes</strong>. On a write,
+either update the cache entry or (safer) delete it so the next read repopulates &mdash; avoids
+stale-write races.</p>
+
+<h3>The hard problems</h3>
+<ul>
+<li><strong>Invalidation</strong>: keeping the cache consistent with the source. Options: short TTLs (accept bounded staleness), explicit delete on write, versioned keys (<code>user:123:v7</code>), or a change-data-capture stream that invalidates. "There are only two hard things&hellip; cache invalidation."</li>
+<li><strong>Stampede / dogpile</strong>: a hot key expires and thousands of requests all miss and hit the DB at once. Fixes: per-key single-flight (one request recomputes, others wait), probabilistic early expiry (refresh slightly before TTL), serve-stale-while-revalidate, or a lock in the cache.</li>
+<li><strong>Hot key</strong>: one key hotter than a single cache node can serve &mdash; replicate it to multiple nodes, or add a tiny local L1 with a 1&ndash;5 s TTL.</li>
+<li><strong>Thundering herd on cold start</strong>: a fresh/flushed cache means every request misses &mdash; warm it, or ramp traffic.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Layers: client &rarr; CDN &rarr; gateway &rarr; in-process &rarr; Redis/Memcached &rarr; DB buffer pool.</li>
+<li>Reads: cache-aside (app manages) or read-through (cache library manages). Cache-aside is the default.</li>
+<li>Writes: write-through (fresh, slower), write-back (fast, lossy), write-around (skip cache for write-once).</li>
+<li>On write: <strong>delete the cache key</strong> (repopulate on next read) &mdash; safer than update against races.</li>
+<li>Invalidation: short TTL, explicit delete, versioned keys, or CDC-driven.</li>
+<li>Stampede: per-key single-flight, early/probabilistic refresh, stale-while-revalidate, lock.</li>
+<li>Hot key: replicate across nodes or add a short-TTL local L1. Cold cache: warm it / ramp.</li>
+<li>Cache hit rate is the metric &mdash; watch it; a drop means wrong keys, too-short TTL, or churn.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is cache-aside?</dt>
+<dd>The application checks the cache first; on a miss it reads the database, then writes the value into the cache before returning. The cache only ever holds data that's been requested. It's the most common pattern and keeps caching logic in the app.</dd>
+<dt>On a write, should you update the cache entry or delete it?</dt>
+<dd>Deleting is safer. Updating from the write path can race with a concurrent read that repopulates with a stale DB value, leaving the cache wrong. Deleting forces the next read to fetch fresh from the DB. (Update is fine if you have a single writer per key or a version check.)</dd>
+<dt>What is a cache stampede and how do you prevent it?</dt>
+<dd>When a popular key expires, many concurrent requests all miss and hit the backing store simultaneously, overloading it. Prevent with per-key single-flight (only one request recomputes; the rest wait for its result), refreshing the value slightly before it expires (probabilistic early expiration), or serving the stale value while one request refreshes in the background.</dd>
+<dt>Write-through vs write-back?</dt>
+<dd>Write-through updates the cache and the database synchronously on every write &mdash; the cache is always consistent but writes are as slow as the DB. Write-back updates the cache immediately and flushes to the DB asynchronously &mdash; writes are fast, but a cache crash can lose unflushed writes and the DB is temporarily behind.</dd>
+<dt>How do you handle a "hot key" that's read more than one cache node can handle?</dt>
+<dd>Replicate that key across multiple cache nodes (route reads randomly among them), or add a small in-process L1 cache on each app server with a very short TTL (1&ndash;5 s) to absorb the request volume, accepting a few seconds of staleness for that key.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>In cache-aside, who populates the cache on a miss?</summary><div class="answer-box">
+The application &mdash; it reads the DB and writes the value into the cache.
+</div></details>
+<details class="answer-reveal"><summary>Which write strategy risks losing data if the cache crashes?</summary><div class="answer-box">
+Write-back (write-behind) &mdash; writes buffered in the cache aren't yet persisted.
+</div></details>
+<details class="answer-reveal"><summary>Simple way to bound cache staleness?</summary><div class="answer-box">
+A short TTL on entries.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A profile page caches the user's data for 10 min. The user edits their name and it doesn't update for 10 min. Fix.</summary><div class="answer-box">
+Invalidate on write: when the profile is updated, delete <code>user:{id}:profile</code> from the cache (and any derived keys like a rendered card), so the next read repopulates with fresh data. Keep a modest TTL as a backstop for missed invalidations. If the user must see their own change instantly even before propagation, do read-your-writes: after the write, either bypass the cache for that user's next read or write the new value into their session/local cache.
+</div></details>
+<details class="answer-reveal"><summary>Your Redis cache node fails; the database immediately falls over. What went wrong and how do you prevent it?</summary><div class="answer-box">
+The DB was sized assuming the cache absorbs, say, 95% of reads; losing the cache 20&times;'d its load instantly (cache-loss stampede). Mitigations: (1) run the cache as a replicated cluster so a single node loss only drops its shard, and clients fail over; (2) on cache miss/error, protect the DB with per-key single-flight and a concurrency limiter / circuit breaker so it degrades (higher latency, some 503s) rather than collapses; (3) keep a small local L1 on app servers so a cache outage still serves hot keys; (4) capacity-plan the DB for "cache cold" as a survivable-degraded mode, and load-test it; (5) warm the cache gradually on recovery rather than letting full traffic hit a cold cache.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design cache invalidation for a system where one source record feeds many derived, cached views (e.g. a product feeds search results, category pages, recommendation blocks, the product page itself).</summary><div class="answer-box">
+Point invalidation from the write path won't scale &mdash; the writer would have to know every derived view. Use <strong>change-data-capture + a fan-out invalidation pipeline</strong>. (1) Every write to the product goes to the DB and emits a change event (via the transactional <em>outbox</em> pattern or a CDC connector like Debezium reading the WAL &mdash; so the event is guaranteed iff the write committed). (2) A consumer maps <code>product:{id} changed</code> to the set of affected cache keys. For directly-keyed views (<code>product:{id}</code>) that's a delete. For <em>derived</em> views (search results containing this product, category page N) you have choices: <strong>dependency tracking</strong> &mdash; when a view is cached, also record "this view depends on products [a,b,c]" in a reverse index, so an invalidation looks up dependents and deletes them (accurate, but the reverse index is extra state and can get large); or <strong>tag/generation-based</strong> &mdash; tag each cached search/category entry with a <code>catalog-generation</code> counter, bump the generation on any catalog change, and lazily treat older-generation entries as misses (cheap, but over-invalidates &mdash; one product change busts all category caches). A middle ground: <strong>coarse tags</strong> (per category, per brand) so a change busts only related views. (3) For high-churn source data, don't invalidate at all &mdash; use short TTLs + stale-while-revalidate on the derived views and accept seconds of lag; reserve precise invalidation for the product page itself and price/availability. (4) Make invalidation <em>idempotent and retry-safe</em> (deleting a key twice is fine) and monitor the pipeline lag &mdash; a stalled invalidation consumer silently serves stale data, so alert on consumer lag and have a periodic full TTL sweep as a backstop. (5) For CDN-cached HTML, use surrogate keys / cache tags (Fastly, Cloudflare) so one API call purges all edge copies tagged with <code>product-{id}</code>.
+</div></details>
+<details class="answer-reveal"><summary>Explain the negative-cache and "cache penetration" problem, and how to defend a database from queries for keys that don't exist.</summary><div class="answer-box">
+<strong>Cache penetration</strong>: requests for keys that <em>don't exist</em> in the DB always miss the cache (nothing to cache) and hit the DB every time &mdash; an attacker (or a buggy client) hammering random/enumerated ids can bypass the cache entirely and overload the database, even though the cache is "working". Defenses: (1) <strong>Negative caching</strong> &mdash; cache the "not found" result too, with a short TTL (e.g. 30&ndash;60 s), so repeated lookups for a missing key are served from cache. Keep the TTL short so a key that's later created isn't shadowed for long, or invalidate the negative entry on create. (2) <strong>Bloom filter (or cuckoo filter)</strong> in front of the cache/DB containing all valid keys: a lookup first checks the filter; a "definitely not present" answer short-circuits to 404 without touching cache or DB. The filter is small (a few bits per key), rebuilt/updated as keys are added, and its false-positive rate just means an occasional real lookup for a non-key (acceptable). This is what Redis/CDN edge configs and many read-heavy services use. (3) <strong>Input validation</strong> &mdash; reject malformed/out-of-range ids before they reach the cache layer. (4) <strong>Rate limiting per client</strong> on 404-heavy traffic. (5) For enumeration attacks, use non-sequential/opaque ids so an attacker can't just count up. The combination of a Bloom filter for the bulk "key doesn't exist" case plus short-TTL negative caching for the ones that slip through, behind a rate limiter, keeps the DB protected from both accidental and malicious penetration.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:caching -->
+
+<!-- TOPIC:sysd:db-scaling -->
+<section class="view topic" id="v-sysd-db-scaling" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>Database Scaling: Replication &amp; Sharding</h1>
+<p class="subtitle">Scale reads with replicas, scale writes with shards &mdash; and pay for both in complexity.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The ladder (do these in order)</h3>
+<ol>
+<li><strong>Optimise</strong>: indexes, query rewrites, connection pooling, schema fixes. Buys a lot.</li>
+<li><strong>Scale up</strong>: bigger box (more RAM = more of the working set cached). Simple; has a ceiling.</li>
+<li><strong>Caching</strong>: offload reads to Redis/CDN (see Caching topic).</li>
+<li><strong>Read replicas</strong>: async copies of the primary; route reads to them, writes to the primary.</li>
+<li><strong>Functional partitioning</strong>: split by feature (users DB, orders DB, analytics DB).</li>
+<li><strong>Sharding</strong>: horizontally split one dataset across many primaries by a shard key. Last resort &mdash; big complexity jump.</li>
+</ol>
+
+<h3>Replication</h3>
+<ul>
+<li><strong>Async</strong> (default): fast writes, but replicas lag &mdash; a read right after a write may see stale data (<em>replication lag</em>). Handle with: read-your-writes routing (send that user's reads to the primary briefly), or wait-for-LSN.</li>
+<li><strong>Sync / semi-sync</strong>: primary waits for &ge;1 replica to ack &mdash; no data loss on primary failure, higher write latency.</li>
+<li><strong>Failover</strong>: promote a replica when the primary dies (automatic with a coordinator; watch for split-brain &mdash; fence the old primary).</li>
+</ul>
+
+<h3>Sharding</h3>
+<ul>
+<li><strong>Shard key</strong> choice is everything: it must spread load evenly and keep related data together. Range-based (easy scans, risk of hot ranges), hash-based (even spread, no range scans), or directory/lookup-based (flexible, extra hop).</li>
+<li><strong>Hotspots</strong>: a celebrity user, a "today" partition &mdash; mitigate with key salting, sub-sharding hot keys, or a separate tier.</li>
+<li><strong>Cross-shard queries &amp; transactions</strong> are expensive (scatter-gather, 2PC/saga). Design so the common queries hit one shard.</li>
+<li><strong>Resharding</strong> (adding shards) is painful &mdash; use consistent hashing / virtual buckets from the start so you move ~1/N of data, and build it online (dual-write + backfill + cutover).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Order: index/tune &rarr; scale up &rarr; cache &rarr; read replicas &rarr; functional split &rarr; shard. Don't skip to sharding.</li>
+<li>Read replicas scale <strong>reads</strong>; sharding scales <strong>writes</strong> + storage.</li>
+<li>Async replication &rarr; replication lag &rarr; stale reads. Fix with read-your-writes (route to primary) or LSN wait. Sync = no loss, slower writes.</li>
+<li>Failover: promote a replica; fence the old primary to avoid split-brain.</li>
+<li>Shard key: even distribution + co-locate related data. Hash (even, no ranges), range (scans, hot ranges), directory (flexible, extra hop).</li>
+<li>Hotspots (celebrity, "today"): salt the key, sub-shard, or isolate.</li>
+<li>Cross-shard joins/transactions are costly &rarr; design queries to hit one shard; use consistent hashing so resharding moves ~1/N.</li>
+<li>Resharding online: dual-write + backfill + verify + cutover.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Read replicas vs sharding &mdash; what does each solve?</dt>
+<dd>Read replicas add read capacity (and read availability) by serving reads from async copies &mdash; but every replica still holds the whole dataset and all writes go to one primary, so write throughput and total storage aren't helped. Sharding splits the data across multiple independent primaries, so writes, storage, and working-set memory all scale &mdash; at a large jump in complexity.</dd>
+<dt>What is replication lag and how do you deal with a "user edits then can't see the edit" bug?</dt>
+<dd>Async replicas apply the primary's changes after a delay (ms to seconds under load). A read routed to a replica right after a write can miss it. Fixes: for a short window after a write, route that user's reads to the primary (read-your-writes); or have the write return the log position (LSN) and make the read wait until the chosen replica has applied at least that LSN; or cache the just-written value in the user's session.</dd>
+<dt>What makes a good shard key?</dt>
+<dd>It distributes both data volume and request load evenly (no hot shard), and it co-locates data that's queried together so common queries touch a single shard. E.g. shard a chat app by <code>conversation_id</code> so all messages of a conversation are together; sharding by <code>message_id</code> would scatter a conversation's history.</dd>
+<dt>Why is resharding hard, and how do you make it less so?</dt>
+<dd>Adding a shard with naive modulo hashing remaps almost every key, requiring a massive data move with the system live. Use consistent hashing or a large fixed number of virtual buckets mapped to physical shards, so adding capacity moves only ~1/N of the data. Do the migration online: dual-write to old and new locations, backfill historical data, verify, then flip reads and stop the dual-write.</dd>
+<dt>How do you handle a cross-shard query like "all orders in the last hour across all users"?</dt>
+<dd>Scatter-gather: query every shard in parallel and merge results in the app / a coordinator &mdash; acceptable if infrequent. For frequent cross-cutting queries, maintain a separate denormalized store (a search index, a time-series DB, or an analytics warehouse fed by CDC) optimised for that access pattern, rather than forcing the sharded OLTP store to serve it.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which scaling technique increases write throughput?</summary><div class="answer-box">
+Sharding (horizontal partitioning across multiple primaries).
+</div></details>
+<details class="answer-reveal"><summary>Where do writes go in a primary + read-replicas setup?</summary><div class="answer-box">
+To the primary only. Reads can go to replicas.
+</div></details>
+<details class="answer-reveal"><summary>What causes stale reads from a replica?</summary><div class="answer-box">
+Replication lag &mdash; the replica hasn't yet applied the primary's latest changes.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You shard users by <code>hash(user_id)</code>. A query "get a user's 50 most recent orders" is now slow. Why, and fix?</summary><div class="answer-box">
+Orders were probably sharded by <code>order_id</code> (or their own hash), so one user's orders are spread across all shards &mdash; the query becomes scatter-gather + merge + sort. Fix: co-locate &mdash; shard orders by <code>user_id</code> too (same shard function), so a user and all their orders live on one shard and the query is a single-shard indexed lookup. The trade-off: a query "all orders for product X" now scatters instead &mdash; you pick the shard key for the <em>dominant</em> access pattern and serve the other via a secondary index / search store.
+</div></details>
+<details class="answer-reveal"><summary>Your primary DB is at 80% CPU, 95% reads. Cheapest effective next step?</summary><div class="answer-box">
+Add read replicas and route reads to them &mdash; it directly offloads the 95%. Before that, verify indexes/queries are sane and add a cache for the hottest reads (which may drop primary load enough to need no replicas). Sharding would be premature here since it's a <em>read</em> problem, not a write/storage one.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Walk through migrating a single-primary Postgres to a sharded setup with zero downtime.</summary><div class="answer-box">
+(1) <strong>Choose the shard key</strong> from the dominant access pattern; decide on N logical buckets (e.g. 1024) mapped to a small number of physical shards, so future resharding just remaps buckets. (2) <strong>Introduce a routing layer</strong> in the app (or a proxy like Vitess/Citus) that computes bucket = <code>hash(key) % 1024</code> &rarr; physical shard. Initially all buckets point at the existing DB &mdash; behaviour unchanged, but the indirection is in place. (3) <strong>Stand up the new shards</strong> (empty). (4) <strong>Dual-write</strong>: the app writes each row to both its current location and its target shard (in the same transaction where possible, or via the outbox so it's reliable). New data is now on both. (5) <strong>Backfill</strong> historical data to the target shards with a throttled batch job that reads by bucket range and copies, tracking progress; run it during low traffic, resumable. (6) <strong>Verify</strong>: a checksum/row-count comparison per bucket between old and new; reconcile discrepancies (usually rows changed mid-backfill &mdash; a second pass or a CDC-based catch-up). (7) <strong>Cut over reads</strong> bucket-by-bucket (or shard-by-shard): flip the routing so reads for migrated buckets go to the new shard; monitor error rate and lag; keep the ability to flip back. (8) <strong>Stop dual-writing</strong> to the old DB once all buckets are cut over and stable for a bake period. (9) <strong>Decommission</strong> the old DB (keep a backup). Throughout: feature-flag every step, migrate a canary bucket first, have a rollback for each phase, and watch replication lag, error rates, and query latency. The routing-by-bucket design means adding a 5th physical shard later is just "move ~1/5 of buckets" with the same dual-write/backfill/verify/cutover machinery, not another full migration.
+</div></details>
+<details class="answer-reveal"><summary>What is a "hot shard" / "hot partition", give three real causes, and how do you fix each without a full reshard?</summary><div class="answer-box">
+A hot shard receives disproportionate load, becoming the bottleneck while others idle. <strong>Cause 1: skewed key distribution</strong> &mdash; a few keys are far more active (a celebrity account with millions of followers, a viral post, a huge tenant on a multi-tenant DB sharded by <code>tenant_id</code>). Fix: <em>sub-shard the hot key</em> &mdash; split that one entity's data across multiple shards with a composite key (<code>celebrity_id + bucket</code>), fanning writes/reads across buckets and merging on read; or <em>promote the hot entity</em> to its own dedicated shard/instance. <strong>Cause 2: time-based key</strong> &mdash; sharding or a range index by timestamp means <em>all</em> current writes land on the "now" partition (append hotspot), classic in time-series and in DynamoDB/Cassandra with a monotonic partition key. Fix: <em>salt the key</em> with a random or hash prefix (<code>shard = hash(id) % K</code> combined with the day) so today's writes spread across K partitions; queries for a time range read all K and merge. <strong>Cause 3: pathological query pattern</strong> &mdash; a popular query (e.g. a leaderboard, a "trending" list, a global config row) that every request reads, all hitting the shard that owns that row. Fix: this is a <em>caching</em> problem, not a sharding one &mdash; cache the result aggressively (short TTL + stale-while-revalidate), replicate the row to every shard, or serve it from a dedicated read-optimised store. General mitigations that don't require resharding: per-key rate limiting to cap the damage, request coalescing/single-flight on the hot key, adaptive throttling on the hot shard so it sheds load rather than falling over, and a monitoring dashboard of per-shard QPS/CPU so hotspots are caught early (an unmonitored hot shard is how "the DB is slow" incidents start).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:db-scaling -->
+
+<!-- TOPIC:sysd:cap-consistency -->
+<section class="view topic" id="v-sysd-cap-consistency" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>CAP &amp; Consistency Models</h1>
+<p class="subtitle">What you give up during a partition, and the spectrum of "how fresh must a read be".</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>CAP, stated precisely</h3>
+<p>In a distributed store, <strong>during a network partition</strong> you must choose between
+<strong>C</strong>onsistency (every read sees the latest write) and <strong>A</strong>vailability (every
+request gets a non-error response). You <em>cannot</em> have both while partitioned. When there's no
+partition, you can have both.</p>
+<ul>
+<li><strong>CP</strong>: refuse requests on the minority side to stay consistent &mdash; etcd, ZooKeeper, HBase, Spanner.</li>
+<li><strong>AP</strong>: keep serving, reconcile later (eventual consistency) &mdash; Cassandra, DynamoDB, Riak.</li>
+<li><strong>PACELC</strong>: extends it &mdash; <em>if</em> Partition then A or C; <em>else</em> trade Latency vs Consistency.</li>
+</ul>
+
+<h3>Consistency models (strongest &rarr; weakest)</h3>
+<table>
+<tr><th>Model</th><th>Guarantee</th></tr>
+<tr><td><strong>Linearizable / strong</strong></td><td>reads see the most recent completed write, as if one copy. Needs consensus / a leader.</td></tr>
+<tr><td><strong>Sequential</strong></td><td>all clients see operations in the same order (not necessarily real-time).</td></tr>
+<tr><td><strong>Causal</strong></td><td>operations that are causally related are seen in order; concurrent ones may differ.</td></tr>
+<tr><td><strong>Read-your-writes</strong></td><td>you always see your own prior writes (others may lag).</td></tr>
+<tr><td><strong>Monotonic reads</strong></td><td>you never see time go backwards on successive reads.</td></tr>
+<tr><td><strong>Eventual</strong></td><td>if writes stop, all replicas converge&hellip; eventually. Reads may be stale/out of order meanwhile.</td></tr>
+</table>
+
+<h3>Quorums (Dynamo-style)</h3>
+<p>N replicas; a write waits for <code>W</code> acks, a read queries <code>R</code>. If
+<code>W + R &gt; N</code> a read is guaranteed to see the latest write (overlap). Tunable per
+operation: <code>W=N, R=1</code> (fast reads, slow/fragile writes), <code>W=1, R=N</code> (fast writes,
+slow reads), <code>W=R=(N/2)+1</code> (balanced, majority). Doesn't give linearizability on its own
+(needs read-repair + anti-entropy, and it's still subject to concurrent-write conflicts).</p>
+
+<h3>Choosing</h3>
+<p>Money, inventory, uniqueness &rarr; strong/linearizable (accept lower availability / higher latency).
+Feeds, likes, presence, analytics &rarr; eventual is fine (favour availability + latency). Often
+<em>per-operation</em>: strong for "reserve seat", eventual for "show seat map".</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>CAP: during a partition, pick C or A. No partition &rarr; can have both.</li>
+<li>CP (etcd/ZK/Spanner) refuses on the minority side; AP (Cassandra/Dynamo) serves stale + reconciles.</li>
+<li>PACELC: else, Latency vs Consistency.</li>
+<li>Models: linearizable &gt; sequential &gt; causal &gt; read-your-writes / monotonic reads &gt; eventual.</li>
+<li>Quorum: <code>W + R &gt; N</code> &rArr; reads see latest write. Tune per op (<code>W=N,R=1</code> / <code>W=1,R=N</code> / majority).</li>
+<li>Strong needs consensus/leader (Raft/Paxos) &rarr; latency + reduced availability. Eventual = cheap + available.</li>
+<li>Choose per operation: strong for money/inventory/uniqueness; eventual for feeds/likes/presence.</li>
+<li>ACID consistency (constraints) &ne; CAP consistency (replica agreement).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>State CAP correctly.</dt>
+<dd>When a network partition splits a distributed data store, it must sacrifice either consistency (some reads return stale/no data) or availability (some requests error). Without a partition, a system can provide both.</dd>
+<dt>What does <code>W + R &gt; N</code> guarantee in a quorum system?</dt>
+<dd>That the set of replicas a read contacts (<code>R</code>) overlaps with the set the latest write reached (<code>W</code>) in at least one replica &mdash; so the read <em>can</em> observe the newest version (with versioning to pick it). It's necessary for strong-ish reads but not sufficient for linearizability (concurrent writes still need conflict resolution).</dd>
+<dt>What is read-your-writes consistency?</dt>
+<dd>A client is guaranteed to see the effects of its own previous writes on subsequent reads, even if other clients might still see stale data. Implemented by routing that client's reads to the primary (or a caught-up replica) for a window, or by including a version token.</dd>
+<dt>Give an operation that needs strong consistency and one that doesn't.</dt>
+<dd>Needs strong: reserving the last item in stock, transferring money, claiming a unique username &mdash; a stale read causes a real error. Fine with eventual: displaying a like count, a social feed, "user is online" &mdash; brief staleness is imperceptible and availability matters more.</dd>
+<dt>Is a single-node database "CP" or "CA"?</dt>
+<dd>CAP is about distributed systems; a single node isn't partition-tolerant at all. People loosely call it "CA", but really CAP doesn't apply until the data is replicated or partitioned across nodes.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>In CAP, what forces the C-vs-A choice?</summary><div class="answer-box">
+A network partition &mdash; nodes can't communicate.
+</div></details>
+<details class="answer-reveal"><summary>What does the E in PACELC stand for?</summary><div class="answer-box">
+"Else" &mdash; the non-partition case (Latency vs Consistency trade-off).
+</div></details>
+<details class="answer-reveal"><summary>Which is stronger: causal or eventual consistency?</summary><div class="answer-box">
+Causal &mdash; it additionally guarantees causally-related operations are seen in order.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A comment thread shows a reply before the comment it replies to. Which consistency model would prevent this, and how?</summary><div class="answer-box">
+<strong>Causal consistency</strong>. The reply causally depends on the parent comment (it was written after reading it), so a causally-consistent store guarantees any client that sees the reply has already seen the parent. Implementation: attach causal metadata &mdash; a version vector or a "depends-on" set of the operations the writer had observed &mdash; and a replica only makes a write visible once it has applied that write's dependencies. Cheaper approximations: route a conversation's reads and writes through the same partition/replica (so ordering is naturally preserved), or on the client, buffer a reply until its parent is present.
+</div></details>
+<details class="answer-reveal"><summary>You have N=3 replicas. What (W, R) for "writes must survive one node loss with no data loss, reads can be slightly stale"?</summary><div class="answer-box">
+<code>W = 2</code> (a write is acked by a majority, so it survives losing any one node &mdash; the surviving 2 always include at least one with the write). <code>R = 1</code> is acceptable if slight staleness is OK and you rely on read-repair / anti-entropy to converge; if you want reads to see the latest confirmed write, use <code>R = 2</code> so <code>W + R = 4 &gt; 3</code>. The trade: <code>R=1</code> gives faster, more available reads at the cost of occasionally serving a value that isn't the very latest.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is "eventually consistent" not enough for a shopping cart, and what stronger-but-not-strong model do Dynamo-style systems actually provide?</summary><div class="answer-box">
+Pure last-write-wins eventual consistency loses data: add item A on your phone, add item B on your laptop before replicas sync &mdash; LWW keeps only whichever write has the higher timestamp, and one item silently vanishes (Amazon's original Dynamo paper's motivating example). What you want is that concurrent updates <em>merge</em> rather than clobber. Dynamo provides <strong>causal consistency with conflict detection via version vectors</strong>: each object carries a vector clock; a write includes the version it read, so the store can tell whether a new write <em>supersedes</em> the current version (causally after &mdash; just replace) or is <em>concurrent</em> with it (neither dominates &mdash; keep <em>both</em> as sibling versions). On the next read the client gets all siblings and must reconcile &mdash; for a cart, "merge = union of items" (so A and B both survive; a removed item needs a tombstone or a per-item counter to not resurrect). This is <em>strong eventual consistency</em>: replicas that have received the same set of updates are in the same state, and the merge function is commutative/associative/idempotent so order and duplicates don't matter &mdash; the formalisation of which is <strong>CRDTs</strong> (a grow-only set, an OR-set for add/remove, a PN-counter for the quantity). The application pays with merge logic and metadata overhead, but never loses a user's action and stays available during partitions &mdash; the right trade for a cart, where "briefly showing an extra item" is far better than "dropped the thing they added".
+</div></details>
+<details class="answer-reveal"><summary>How does Google Spanner claim to provide external consistency (linearizability) globally, seemingly beating CAP?</summary><div class="answer-box">
+Spanner doesn't beat CAP &mdash; it's a <strong>CP</strong> system that chooses consistency and gives up availability during a partition (a minority partition can't serve reads/writes). What's notable is that it provides <em>external consistency</em> (a stronger-than-linearizable guarantee: if transaction T1 commits before T2 starts in real time, every observer sees T1 before T2) across data centres on different continents, which normally requires either coordinating on every operation (too slow) or accepting weaker consistency. It achieves this with <strong>TrueTime</strong>: a time API backed by GPS receivers and atomic clocks in every datacenter that returns an <em>interval</em> <code>[earliest, latest]</code> guaranteed to contain the true absolute time, with the uncertainty (<code>&epsilon;</code>) typically a few milliseconds. On commit, a transaction is assigned a timestamp <code>s</code> = TrueTime.now().latest, and Spanner then <strong>waits out the uncertainty</strong> ("commit wait") &mdash; it holds locks until TrueTime.now().earliest &gt; s, i.e. until it's certain that real time has passed <code>s</code> everywhere &mdash; before making the write visible. This guarantees that any transaction that starts later (anywhere) gets a strictly higher timestamp, so timestamp order == real-time order == the serialization order. Reads at a timestamp are lock-free (MVCC snapshot reads) and can be served by any replica that's caught up to that timestamp. Underneath, each shard ("Paxos group") uses Paxos for replication and a leader; cross-shard transactions use 2PC across the Paxos leaders. The cost: commit latency includes ~2&epsilon; of commit-wait (so tightening clock sync directly improves latency &mdash; hence the atomic clocks), writes need a Paxos majority, and availability drops on partition. It's "CAP-compliant CP with unusually good latency and global linearizability, bought with special hardware for tight time bounds".
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:cap-consistency -->
+
+<!-- TOPIC:sysd:queues -->
+<section class="view topic" id="v-sysd-queues" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>Message Queues &amp; Async Processing</h1>
+<p class="subtitle">Decouple producers from consumers &mdash; and the delivery, ordering, and failure guarantees that follow.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What a queue buys you</h3>
+<ul>
+<li><strong>Decoupling</strong> &mdash; producer doesn't know or wait for consumers.</li>
+<li><strong>Buffering / smoothing</strong> &mdash; absorb spikes; consumers work at their own rate (backpressure via a bounded queue / consumer lag).</li>
+<li><strong>Retry &amp; durability</strong> &mdash; a failed message is redelivered; survives a consumer crash.</li>
+<li><strong>Fan-out</strong> &mdash; one event, many independent consumers (pub/sub).</li>
+</ul>
+
+<h3>Delivery semantics</h3>
+<table>
+<tr><th>Semantic</th><th>Meaning</th></tr>
+<tr><td><strong>At-most-once</strong></td><td>fire and forget; may be lost, never duplicated. OK for metrics.</td></tr>
+<tr><td><strong>At-least-once</strong></td><td>redelivered until acked &mdash; may be <em>duplicated</em>. The common default; consumers must be idempotent.</td></tr>
+<tr><td><strong>Exactly-once</strong></td><td>no loss, no dup. Only achievable end-to-end with idempotency/dedup or transactional processing (Kafka EOS within Kafka). Usually you engineer "effectively once" = at-least-once + idempotent consumer.</td></tr>
+</table>
+
+<h3>Ordering</h3>
+<p>Global order is expensive/unavailable at scale. Most systems give <strong>per-partition (per-key)
+order</strong>: messages with the same key (userId, orderId) go to the same partition and are
+processed in order; different keys are unordered relative to each other. Choose the partition key
+so "must be ordered together" data shares one.</p>
+
+<h3>Failure handling</h3>
+<ul>
+<li><strong>Retry with backoff</strong> (+ jitter) for transient failures; cap attempts.</li>
+<li><strong>Dead-letter queue (DLQ)</strong>: after N failures, move the message aside for inspection/replay &mdash; don't block the queue or drop it silently.</li>
+<li><strong>Poison message</strong>: one message that always fails can stall a partition &mdash; DLQ it.</li>
+<li><strong>Consumer lag</strong> is the key metric: rising lag = consumers can't keep up (scale out, or the messages are too expensive).</li>
+</ul>
+
+<h3>Kafka vs SQS/RabbitMQ (rough)</h3>
+<p><strong>Kafka</strong>: partitioned log, high throughput, replayable (offset-based), ordered per partition,
+consumers track their own offset. Great for event streaming, CDC, fan-out to many consumer
+groups. <strong>SQS / RabbitMQ</strong>: classic queue, per-message ack/delete, easy autoscaling of
+consumers, built-in DLQ/visibility timeout, no replay. Good for task/job processing.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Queue = decouple + buffer spikes + retry/durability + fan-out (pub/sub).</li>
+<li>Delivery: at-most-once (lossy), at-least-once (dup-prone &mdash; default; make consumers idempotent), exactly-once (only "effectively once" via idempotency/dedup).</li>
+<li>Ordering: per-partition/per-key only. Route "must be ordered together" data to the same key.</li>
+<li>Retry with exponential backoff + jitter; cap attempts; then &rarr; DLQ (never silently drop; don't block on a poison message).</li>
+<li>Watch <strong>consumer lag</strong> &mdash; rising = scale consumers or messages too heavy.</li>
+<li>Kafka: partitioned replayable log, per-partition order, many consumer groups &mdash; streaming/CDC/fan-out.</li>
+<li>SQS/RabbitMQ: per-message ack/delete, visibility timeout, easy consumer autoscaling, built-in DLQ &mdash; task queues.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is "at-least-once" the common default, and what does it demand of consumers?</dt>
+<dd>Because guaranteeing no loss is essential and cheap (redeliver until acked), while guaranteeing no duplicate end-to-end is hard. So a message can be processed more than once (consumer crashed after doing the work but before acking, or an ack was lost). Consumers must be <strong>idempotent</strong> &mdash; processing the same message twice has the same effect as once.</dd>
+<dt>How do you get ordering in a partitioned queue?</dt>
+<dd>You get order only <em>within</em> a partition. Assign a partition key such that all messages that must be ordered relative to each other (e.g. all events for one <code>account_id</code>) hash to the same partition; they're then delivered and processed in order. Cross-partition ordering isn't guaranteed.</dd>
+<dt>What is a dead-letter queue for?</dt>
+<dd>Messages that fail processing repeatedly (bad data, a bug, a permanently-unavailable dependency) are moved to a separate DLQ after N attempts, instead of being retried forever (blocking the queue) or dropped (losing data). You alert on DLQ depth, inspect the messages, fix the cause, and replay them.</dd>
+<dt>What is consumer lag and why do you monitor it?</dt>
+<dd>The gap between the latest produced message and the latest one the consumer has processed (in Kafka, the offset difference). Rising lag means consumers can't keep up &mdash; you're falling behind real time. It's the primary health signal for a queue-backed pipeline; you respond by scaling consumers, optimising the per-message work, or shedding load.</dd>
+<dt>Kafka vs a traditional queue like SQS &mdash; when each?</dt>
+<dd>Kafka when you need a replayable event log, per-key ordering at high throughput, and multiple independent consumer groups reading the same stream (event sourcing, CDC, analytics fan-out). SQS/RabbitMQ when you have discrete tasks/jobs, want simple per-message ack/delete and visibility timeouts, easy consumer autoscaling, and don't need replay.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which delivery semantic can produce duplicates?</summary><div class="answer-box">
+At-least-once.
+</div></details>
+<details class="answer-reveal"><summary>Where does a message go after exceeding its retry limit?</summary><div class="answer-box">
+A dead-letter queue (DLQ).
+</div></details>
+<details class="answer-reveal"><summary>What determines which partition a message lands in?</summary><div class="answer-box">
+Its partition/message key (hashed).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>An order-processing consumer sometimes charges a customer twice. Root cause and fix?</summary><div class="answer-box">
+At-least-once redelivery: the consumer processed the "place order" message, charged the card, then crashed (or its ack was lost) before committing the offset, so the message was redelivered and it charged again. Fix: make the charge idempotent &mdash; pass an idempotency key (the message id / order id) to the payment provider so a repeat call returns the original result instead of charging again; and/or record "processed message X" in the same transaction as the side effect (dedup table) and skip already-seen ids. Then redelivery is harmless.
+</div></details>
+<details class="answer-reveal"><summary>Your queue consumers are keeping up on average but lag spikes badly during traffic bursts. Options?</summary><div class="answer-box">
+The queue is already absorbing the spike (that's its job) but consumers drain too slowly. Options: (1) autoscale consumers on <em>lag</em> (or queue depth), scaling out fast; (2) increase per-consumer parallelism (more partitions so you can add more consumers &mdash; you can't have more active consumers than partitions in Kafka); (3) batch processing (process N messages per DB transaction / API call) to raise throughput; (4) make the work cheaper or move slow parts to a second downstream queue; (5) if some messages are lower priority, use separate queues so bursts of bulk work don't delay urgent messages. Set an alert on lag and a max-age so you know if you're falling behind SLA.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how Kafka provides "exactly-once semantics" and why it's still not truly exactly-once end-to-end.</summary><div class="answer-box">
+Kafka EOS has three pieces: (1) <strong>Idempotent producer</strong> &mdash; each producer gets a producer id and monotonic sequence numbers per partition; the broker dedups retried sends, so a producer retry after a network blip doesn't create a duplicate <em>in the log</em>. (2) <strong>Transactions</strong> &mdash; a producer can atomically write to multiple partitions <em>and</em> commit its consumer offsets in one transaction, coordinated by a transaction coordinator with a two-phase commit to the partition leaders; consumers with <code>isolation.level=read_committed</code> only see messages from committed transactions. This enables the classic "consume &rarr; transform &rarr; produce" pipeline (Kafka Streams) to be exactly-once: reading input, producing output, and advancing the input offset all commit or all abort together, so a crash-and-restart reprocesses from the last committed offset and re-produces the same output atomically &mdash; no dupes, no loss, <em>within the Kafka boundary</em>. Why it's not truly end-to-end exactly-once: the moment your consumer does a side effect <em>outside</em> Kafka &mdash; charge a card, send an email, write to an external DB that isn't in the Kafka transaction &mdash; that external action can happen and then the offset commit fails, or vice versa. Kafka can't make a Stripe call and an offset commit atomic. So for external effects you're back to "at-least-once + make the external effect idempotent" (idempotency key, dedup table, upsert), which the industry calls <strong>effectively-once</strong>. Also: EOS adds latency (transaction coordination), reduces throughput, requires careful configuration (<code>enable.idempotence</code>, <code>transactional.id</code>, <code>acks=all</code>, replication), and a bug in transaction handling can stall consumers on a "hanging transaction". So Kafka EOS is genuinely useful for stream-processing topologies but "exactly-once" is a property of the Kafka-internal pipeline, not a magic wand for side effects.
+</div></details>
+<details class="answer-reveal"><summary>Design the failure and ordering strategy for a payment events pipeline: events must be processed per-account in order, none lost, transient failures retried, permanent failures isolated, and a bad deploy must be recoverable.</summary><div class="answer-box">
+<strong>Ordering</strong>: partition the topic by <code>account_id</code> so all of an account's events land on one partition and are consumed in order by one consumer; different accounts parallelise across partitions. Size partition count for peak parallelism (you can add partitions later but it changes key&rarr;partition mapping, so over-provision). <strong>Processing model</strong>: single-threaded per partition (or a per-account lock if you multiplex), commit the offset only <em>after</em> the side effect is durably done. <strong>Idempotency</strong>: each event has a stable id; the consumer records processed ids in a dedup table written in the <em>same DB transaction</em> as the effect, and skips seen ids &mdash; so at-least-once redelivery is safe. <strong>Transient failures</strong> (downstream 5xx, timeout): retry in-process with exponential backoff + jitter, a few attempts; if still failing, <em>do not skip ahead</em> (that would break ordering for the account) &mdash; either block that partition with bounded backoff (accepting lag on that account) or, better, move the whole account's stream to a <strong>per-account retry topic</strong> processed more slowly, and pause the main partition consumer for that key until it drains, preserving order. <strong>Permanent failures</strong> (malformed event, business-rule rejection): after N attempts, publish to a <strong>DLQ</strong> with full context (original event, error, stack, attempt count) and <em>advance past it</em> only if skipping is acceptable for that event type; if order integrity means you can't skip, DLQ it <em>and</em> halt that account's stream with an alert for a human to decide (replace, replay, or manually resolve). Alert on DLQ depth and on any halted partition. <strong>Bad deploy recovery</strong>: because Kafka is a replayable log, keep a generous retention (e.g. 7&ndash;30 days) and store the offsets the consumer group had committed. If a deploy processes events wrongly, stop consumers, roll back the code, reset the consumer group's offsets to just before the bad deploy started (or to a saved checkpoint), and reprocess &mdash; which is safe precisely because of the dedup table (already-applied events are skipped) and idempotent effects. For effects that <em>can't</em> be un-done or re-derived (an email already sent), the dedup table prevents re-sending; for external DB writes, use upserts keyed by event id. Also keep a "processing version" stamp so you can tell which events were touched by the bad version. <strong>Monitoring</strong>: per-partition lag, DLQ depth, retry-topic depth, dedup-table hit rate (a spike means heavy redelivery &mdash; investigate), and end-to-end event age SLO.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:queues -->
+
+<!-- TOPIC:sysd:idempotency -->
+<section class="view topic" id="v-sysd-idempotency" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>Idempotency, Retries &amp; Exactly-Once</h1>
+<p class="subtitle">Networks fail mid-request, so everything gets retried &mdash; make the retry safe.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Why it matters</h3>
+<p>A client sends "charge $50", gets no response (timeout, dropped connection), and retries. Did the
+first one succeed? The client can't tell. Without protection you double-charge. <strong>Idempotency</strong>
+means processing the same logical request N times has the same effect as once.</p>
+
+<h3>Idempotency keys</h3>
+<ul>
+<li>The client generates a unique key per logical operation (a UUID) and sends it with every retry (<code>Idempotency-Key</code> header, Stripe-style).</li>
+<li>The server, on first receipt, records <code>(key &rarr; in-progress)</code> atomically; does the work; stores <code>(key &rarr; result)</code>. A retry with the same key returns the stored result without re-doing the work. A retry while still in-progress waits or returns 409.</li>
+<li>Keys expire after a window (24h) &mdash; long enough to cover retries, short enough to bound storage.</li>
+</ul>
+
+<h3>Naturally idempotent designs</h3>
+<ul>
+<li><code>PUT /resource/{id}</code> with the full state (vs <code>POST</code> which creates).</li>
+<li>Upserts keyed by a business id; <code>SET x = value</code> (not <code>x += 1</code>).</li>
+<li>Conditional writes: <code>UPDATE ... WHERE version = N</code> (optimistic concurrency &mdash; a stale retry does nothing).</li>
+<li>Dedup table: record processed request/message ids, skip seen ones (do the insert + the effect in one transaction).</li>
+</ul>
+
+<h3>Retry hygiene</h3>
+<ul>
+<li>Exponential backoff <strong>+ jitter</strong> &mdash; synchronised retries cause a thundering herd ("retry storm") that keeps a recovering service down.</li>
+<li><strong>Retry budget</strong>: cap retries as a fraction of total traffic; retry only at <em>one</em> layer (not client + gateway + service, which multiplies).</li>
+<li>Only retry idempotent / safe operations, or ones with an idempotency key. Retry on transient errors (timeout, 503, connection reset), not on 400/401/404.</li>
+<li><strong>Circuit breaker</strong>: after a failure threshold, stop calling a dead dependency for a cool-off, then probe.</li>
+</ul>
+
+<h3>The transactional outbox</h3>
+<p>To reliably "update the DB <em>and</em> publish an event", write the event to an <code>outbox</code> table
+in the same transaction as the business change; a separate poller/CDC publishes outbox rows to
+the queue and marks them sent. No lost events, no phantom events, and the queue consumer's
+idempotency handles the at-least-once delivery.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Idempotent = same effect for 1 or N executions. Required because retries are unavoidable.</li>
+<li>Idempotency key: client sends a UUID per logical op; server stores key&rarr;result, returns stored result on retry. Expire keys after ~24h.</li>
+<li>Prefer naturally idempotent ops: <code>PUT</code> full state, upsert by business id, <code>SET</code> not <code>+=</code>, conditional <code>WHERE version=N</code>.</li>
+<li>Dedup table: record processed ids in the same transaction as the effect; skip seen.</li>
+<li>Retries: exponential backoff <strong>+ jitter</strong>; retry at one layer only; retry budget (% of traffic); only transient errors; circuit breaker for dead deps.</li>
+<li>DB write + event publish atomically &rarr; <strong>transactional outbox</strong> (+ CDC/poller), consumer idempotent.</li>
+<li>"Exactly-once" in practice = at-least-once delivery + idempotent processing = <em>effectively once</em>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why can't a payment API just "not process the same request twice" on its own?</dt>
+<dd>It can't tell a genuine second payment from a retry of the first &mdash; the requests look identical and the network hid the first response. The <em>client</em> must supply an idempotency key that stays constant across retries of the same logical operation, so the server can recognise "I've already done this one" and return the original result.</dd>
+<dt>How does an idempotency key work server-side?</dt>
+<dd>On first receipt the server atomically inserts <code>(key, status=in_progress)</code>; if that insert conflicts, it's a retry &mdash; return the stored result (or wait if still in progress). Otherwise it performs the operation and updates the row to <code>(key, status=done, result=...)</code>. All retries with that key then get the stored result.</dd>
+<dt>Which operations are naturally idempotent?</dt>
+<dd><code>GET</code>, <code>PUT</code> (set full state), <code>DELETE</code>; assignments like <code>status = 'paid'</code>; upserts keyed by a business identifier; conditional updates with a version check. Non-idempotent: <code>POST</code> that creates, counters (<code>x = x + 1</code>), appends, "send email".</dd>
+<dt>What is a retry storm and how do you prevent it?</dt>
+<dd>Many clients retry a failing service simultaneously, and because their retries are synchronised (same fixed delay), the load spikes in waves that prevent recovery. Prevent with exponential backoff <em>plus jitter</em> (randomise the delay), a cap on attempts, a retry budget (retry at most X% of requests), retrying at only one layer, and a circuit breaker that stops calls to a dependency that's clearly down.</dd>
+<dt>What problem does the transactional outbox solve?</dt>
+<dd>The dual-write problem: you can't atomically "commit a DB change" and "publish a message to a broker" &mdash; a crash between them loses the event or publishes one for a change that rolled back. The outbox writes the event into a table in the <em>same</em> DB transaction as the change; a separate process reliably relays outbox rows to the broker afterward.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Is <code>PUT</code> idempotent?</summary><div class="answer-box">
+Yes &mdash; sending the same <code>PUT</code> repeatedly leaves the resource in the same state.
+</div></details>
+<details class="answer-reveal"><summary>What do you add to a fixed retry delay to avoid synchronised retries?</summary><div class="answer-box">
+Jitter (randomness).
+</div></details>
+<details class="answer-reveal"><summary>Should you retry an HTTP 400 response?</summary><div class="answer-box">
+No &mdash; it's a client error; the same request will fail again. Retry transient errors (timeouts, 503, connection resets).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Design an idempotent "create order" endpoint.</summary><div class="answer-box">
+Client sends <code>POST /orders</code> with an <code>Idempotency-Key</code> header (a UUID it keeps constant across retries). Server: <code>INSERT INTO idempotency(key, status) VALUES (?, 'processing')</code> &mdash; if it fails on the unique constraint, the key exists: return the stored response (200 with the original order) or 409 if still processing. If the insert succeeds, create the order in the same transaction, then update the idempotency row with the response body and status <code>done</code>, keyed for lookup. Set a TTL (24h) on idempotency rows. Now any number of retries yield exactly one order and the same response.
+</div></details>
+<details class="answer-reveal"><summary>A microservice updates its DB then calls another service; sometimes the DB commit succeeds but the call is lost. Fix without distributed transactions.</summary><div class="answer-box">
+Transactional outbox: in the same DB transaction as the update, insert a row into an <code>outbox</code> table describing the message to send. A separate relay (a poller on the outbox, or CDC on the WAL) reads unsent outbox rows and publishes them to a queue/calls the other service, marking them sent on success (with retries). The downstream is made idempotent (dedup on the message id). Now the message is sent iff the DB change committed, exactly-effectively-once, with no 2PC.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Walk through the failure modes of an idempotency-key implementation and how to handle each.</summary><div class="answer-box">
+(1) <strong>Concurrent duplicate requests</strong> (client fires two before the first responds): the second's <code>INSERT ... key</code> hits the unique constraint while the first row is still <code>processing</code>. Options: return <code>409 Conflict</code> ("retry shortly"), or block/poll until the first finishes and return its result. Blocking is friendlier but ties up a connection &mdash; use a short timeout then 409. (2) <strong>Crash after the effect, before storing the result</strong>: the idempotency row is stuck at <code>processing</code> forever, so retries get 409 indefinitely even though the work was done. Mitigate with a <code>processing</code> lease/timeout: if a row has been <code>processing</code> longer than T, a retry may take it over &mdash; but then you might re-run the effect. So the effect itself must <em>also</em> be idempotent (dedup on the same key inside the payment provider / DB), making the idempotency row an optimisation, not the sole guarantee. (3) <strong>Same key, different request body</strong> (client bug: reused a key for a new operation): detect it &mdash; store a hash of the request payload with the key and reject (<code>422</code>) if a later request with that key has a different hash, rather than silently returning the old result. (4) <strong>Key expiry vs late retry</strong>: a retry arrives after the key's TTL &rarr; treated as new &rarr; double effect. Set the TTL well beyond the maximum realistic retry window (Stripe uses 24h), and ideally keep the effect idempotent independently. (5) <strong>Storage failure of the idempotency store</strong>: if the store is a separate system and it's down, you can't check &mdash; fail closed (reject) for money-moving ops, or fall back to the effect's own idempotency. (6) <strong>Partial results / multi-step operations</strong>: if "create order" does 3 things and crashes after step 2, storing "done" would be wrong. Either make the whole thing one DB transaction (so it's all-or-nothing and the idempotency row commits with it), or model it as a saga with its own per-step idempotency and a resumable state machine. The robust design: idempotency key as the fast-path dedup, plus the underlying effect being idempotent so a lease takeover or expired key can't cause a double.
+</div></details>
+<details class="answer-reveal"><summary>Compare "at-least-once + idempotent consumer" with true two-phase-commit exactly-once, and explain why the industry overwhelmingly chooses the former.</summary><div class="answer-box">
+<strong>2PC exactly-once</strong>: a coordinator runs prepare/commit across the message broker and the consumer's database (both must support XA/2PC), so consuming a message and applying its effect are one atomic transaction &mdash; no dupes, no loss, no consumer-side idempotency needed. <strong>At-least-once + idempotent consumer</strong>: the broker redelivers until acked (so no loss), and the consumer dedups (idempotency key / processed-id table / upsert) so redelivery is harmless. Why the industry picks the latter: (1) <strong>2PC is a blocking protocol</strong> &mdash; if the coordinator dies after prepare, participants hold locks/resources until it recovers; this couples the availability of the broker and the DB and creates head-of-line blocking. (2) <strong>Not everything speaks XA</strong> &mdash; Kafka, most modern brokers, HTTP APIs, and many databases (and certainly external services like Stripe or an email provider) have no distributed-transaction support, so 2PC simply isn't an option across those boundaries. (3) <strong>Performance</strong> &mdash; 2PC adds round trips and coordination on every message; at-least-once is a single ack. (4) <strong>Operational complexity</strong> &mdash; a transaction coordinator is another stateful component to run, monitor, and recover; "hung transactions" are a known pain. (5) <strong>Idempotency is needed anyway</strong> &mdash; for retries at the API layer, for replay after bugs, for reprocessing after a bad deploy &mdash; so once your effects are idempotent, exactly-once delivery buys you little. The pragmatic result is <strong>effectively-once</strong>: cheap, non-blocking, works across heterogeneous systems, and degrades gracefully. The cost is that you must design every consumer's side effects to be idempotent (a real discipline: dedup tables, natural keys, upserts, conditional writes), and reason carefully about non-idempotent-by-nature effects (sending an email &mdash; dedup on a send-id before calling the provider). 2PC-style exactly-once is reserved for cases where both endpoints are in the same transactional system (Kafka Streams' EOS within Kafka) or a single database.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:idempotency -->
+
+<!-- TOPIC:sysd:cdn-storage -->
+<section class="view topic" id="v-sysd-cdn-storage" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>CDNs, Blob Storage &amp; Static Content</h1>
+<p class="subtitle">Serving files and media at scale &mdash; edge caching, object stores, and presigned uploads.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Object / blob storage (S3, GCS, Azure Blob)</h3>
+<ul>
+<li>Flat key&rarr;object store (the "folders" are just key prefixes). Massive scale, ~11 nines durability (erasure-coded across facilities), cheap, but higher per-request latency than a disk and eventual-ish listing.</li>
+<li>Store the <em>bytes</em> here (images, video, backups, logs, build artifacts); store <em>metadata</em> (owner, tags, the object key) in your DB.</li>
+<li><strong>Presigned URLs</strong>: your backend signs a time-limited URL granting <code>PUT</code> (upload) or <code>GET</code> (download) directly to the object store &mdash; the large bytes never transit your servers. The client uploads straight to S3; your API just issues the URL and later records the metadata.</li>
+<li>Lifecycle rules: auto-transition old objects to colder/cheaper tiers, expire after N days.</li>
+</ul>
+
+<h3>CDN</h3>
+<ul>
+<li>A global mesh of edge PoPs that cache your content near users. Origin can be your object store or your app.</li>
+<li><strong>Cache key</strong>: usually URL + selected headers/query params. Be deliberate &mdash; caching on a param you didn't mean to (or a per-user cookie) either fragments the cache or leaks data.</li>
+<li><strong>TTL / <code>Cache-Control</code></strong>: long TTLs for immutable assets; use <strong>content-hashed filenames</strong> (<code>app.9f3a2c.js</code>) so a new version = a new URL = instant "invalidation" with no purge.</li>
+<li><strong>Purge / invalidation</strong>: explicit for content that changes at a stable URL; surrogate keys / cache tags let one call purge all related objects. Purges take seconds&ndash;minutes to propagate.</li>
+<li>Also provides: TLS termination, compression, HTTP/2-3, DDoS absorption, edge compute, and <strong>origin shielding</strong> (one mid-tier cache all edges fetch through, so the origin sees ~1 request per object).</li>
+</ul>
+
+<h3>Hot objects &amp; media</h3>
+<p>A viral video: the CDN absorbs it (that's the point). Within the CDN, popular objects are
+replicated across a PoP's servers. For live video / large VOD: chunked adaptive streaming
+(HLS/DASH) &mdash; segments are just cacheable static files; the manifest lists bitrates and the
+player picks based on bandwidth.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Object storage: flat key&rarr;bytes, huge scale, ~11 nines durability, cheap, higher latency. Bytes in S3, metadata in your DB.</li>
+<li><strong>Presigned URLs</strong>: client uploads/downloads directly to/from the object store; big bytes bypass your servers.</li>
+<li>Lifecycle rules: tier down / expire old objects automatically.</li>
+<li>CDN caches content at edge PoPs near users; cache key = URL + chosen headers/params (be careful).</li>
+<li>Immutable assets: long TTL + content-hashed filenames &rarr; new version = new URL = no purge needed.</li>
+<li>Mutable-at-stable-URL: explicit purge / surrogate keys; propagation takes seconds&ndash;minutes.</li>
+<li>CDN also: TLS, compression, HTTP/2-3, DDoS absorption, edge compute, origin shielding.</li>
+<li>Media: adaptive streaming (HLS/DASH) &mdash; segments are cacheable static files.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Where do you store an uploaded profile photo &mdash; your database or object storage?</dt>
+<dd>Object storage (S3/GCS) for the image bytes; your database stores only the metadata (user id, the object key, content type, size, upload time). Databases are bad at large blobs (bloat, backup size, buffer-pool pollution); object stores are purpose-built and cheap.</dd>
+<dt>What is a presigned URL and why use one for uploads?</dt>
+<dd>A time-limited, signed URL your backend generates that authorises the holder to <code>PUT</code> (or <code>GET</code>) a specific object directly against the object store. For uploads, the client sends the file straight to S3 using that URL &mdash; your servers never handle the megabytes, saving bandwidth and CPU and avoiding a proxy bottleneck.</dd>
+<dt>How do you "invalidate" a JavaScript bundle on the CDN when you deploy a new version?</dt>
+<dd>Don't invalidate &mdash; change the URL. Build with a content hash in the filename (<code>bundle.[hash].js</code>); the new deploy references the new filename, which is a cache miss and fetches fresh, while the old file stays cached for anyone still on the old HTML. Set a very long TTL since the content at a given URL never changes.</dd>
+<dt>What's the risk of including a query parameter or cookie in the CDN cache key?</dt>
+<dd>Including a param that varies per request (a tracking token, a session id) makes every request a unique key &mdash; near-zero hit rate. Worse, if a per-user response gets cached under a key that another user matches, you leak one user's data to another. Only key on params that genuinely change the response, and strip cookies for cacheable paths.</dd>
+<dt>What is origin shielding?</dt>
+<dd>Designating one CDN cache tier that all edge PoPs fetch <em>through</em>, so on a cache miss the origin gets a single request instead of one per PoP. It collapses cache-fill storms and purge storms, smooths origin load, and lets you firewall the origin to accept traffic only from the shield.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What lets a client upload a file directly to S3 without it passing through your server?</summary><div class="answer-box">
+A presigned (pre-authorised, time-limited) URL.
+</div></details>
+<details class="answer-reveal"><summary>How do you make a static asset cache "forever" yet still deploy new versions?</summary><div class="answer-box">
+Content-hashed filenames &mdash; a new build produces a new URL, so the old cached file is simply never requested again.
+</div></details>
+<details class="answer-reveal"><summary>What's the typical durability figure for cloud object storage?</summary><div class="answer-box">
+~11 nines (99.999999999%) &mdash; via erasure coding across multiple facilities.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Design the image upload flow for a social app.</summary><div class="answer-box">
+Client calls <code>POST /uploads</code> &rarr; backend generates an object key (<code>user/{id}/{uuid}.jpg</code>), returns a presigned <code>PUT</code> URL (5&ndash;15 min expiry) + the key. Client <code>PUT</code>s the bytes directly to the object store. Client then calls <code>POST /photos</code> with the key + caption; backend verifies the object exists (HEAD) and its size/type, writes a <code>photo</code> row (owner, key, dimensions, status=pending). An async worker (triggered by an S3 event) generates resized variants / thumbnails, runs moderation/NSFW checks, extracts EXIF, and flips status to <code>ready</code>. Serving: images are fronted by the CDN with long TTLs and content-hashed or immutable keys; the app returns CDN URLs. Cleanup: a job removes objects with no matching <code>ready</code> row after 24h (abandoned uploads).
+</div></details>
+<details class="answer-reveal"><summary>Your origin is getting hammered every time a popular file's TTL expires across the CDN. Fix?</summary><div class="answer-box">
+Enable <strong>origin shielding</strong> so only one shield PoP revalidates with the origin per object; other PoPs fetch from the shield. Add <strong>stale-while-revalidate</strong> so edges serve the slightly-stale file while one background request refreshes it (no synchronized miss). Stagger/jitter TTLs so many objects don't expire in lockstep. For truly immutable content, use content-hashed URLs and a near-infinite TTL so there's no revalidation at all. And put the origin behind a firewall that only accepts the shield's IPs.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design video-on-demand delivery for a service with 100M users: upload, transcode, storage, and adaptive playback.</summary><div class="answer-box">
+<strong>Upload</strong>: presigned multipart upload directly to object storage (large files, resumable, parallel parts). An upload-complete event kicks off processing. <strong>Transcode pipeline</strong>: a job splits the source into GOP-aligned chunks and fans out transcoding across a worker fleet (or a managed service like MediaConvert), producing a <em>ladder</em> of renditions (e.g. 240p/360p/480p/720p/1080p/4K at target bitrates) in a streaming container &mdash; segmented into 2&ndash;10 s <strong>HLS/DASH</strong> fragments &mdash; plus a manifest per rendition and a master manifest. Also generate: thumbnails/sprite sheets for scrubbing, captions, and per-title encoding (analyse the content to pick optimal bitrates per video rather than a fixed ladder &mdash; Netflix's approach, big bandwidth savings). Store all segments + manifests in object storage with a key scheme like <code>video/{id}/{rendition}/seg-{n}.ts</code>. <strong>Delivery</strong>: everything is <em>static cacheable files</em>, so put a CDN in front with long TTLs; segments are immutable (content-addressed keys), manifests get shorter TTLs (or are immutable per-version too). Popular titles are naturally hot in the CDN; origin shielding + a multi-tier cache keep origin fetches minimal; for the very biggest titles, pre-push (pre-warm) segments to PoPs before a release. <strong>Playback</strong>: the player downloads the master manifest, measures throughput and buffer level, and requests segments from the rendition that will keep the buffer full &mdash; ramping up/down as bandwidth changes (ABR). It fetches a few segments ahead. DRM (Widevine/FairPlay/PlayReady) wraps the segments with license servers gating keys. <strong>Live</strong> is the same but the manifest grows as segments are produced, with a short DVR window and lower-latency modes (LL-HLS/CMAF chunked transfer). <strong>Cost/scale levers</strong>: per-title encoding, AV1/HEVC for newer clients (smaller files), tiered storage (cold titles to cheaper storage), CDN offload ratio as the key metric, and regional origins. <strong>Metadata</strong> (catalog, availability, user watch history, recommendations) is a separate concern in your databases &mdash; the video-serving path is deliberately "just static files behind a CDN" because that's what scales to 100M users at reasonable cost.
+</div></details>
+<details class="answer-reveal"><summary>How would you serve private user content (e.g. paid downloads, medical records) through a CDN without leaking it?</summary><div class="answer-box">
+The core tension: a CDN caches responses by URL and serves them to anyone who requests that URL, but this content must only reach authorised users. Approaches, roughly in order of strength: (1) <strong>Signed URLs / signed cookies</strong> &mdash; the CDN validates a short-lived signature (HMAC over the path + expiry, sometimes + client IP) before serving; your app issues the signature only to authorised users. The object can still be cached at the edge (keyed on the path, ignoring the signature params), so you get CDN performance, but a leaked signed URL works until it expires &mdash; keep expiries short (minutes) and consider IP-binding. (2) <strong>Signed cookies</strong> for a whole path prefix (a user's media directory) so you don't sign every URL; good for apps that load many assets. (3) <strong>Edge auth / edge compute</strong> &mdash; run a function at the PoP (Cloudflare Workers, Lambda@Edge) that checks a session token / calls an auth service before serving from cache; more flexible policy, small latency cost, and the origin stays protected. (4) <strong>Per-user cache keys</strong> &mdash; include the user id in the cache key so responses can't cross users; only viable if the per-user hit rate justifies it (usually not for unique downloads). (5) <strong>No CDN caching, CDN as pass-through</strong> &mdash; the CDN terminates TLS and proxies to origin with auth on every request; you lose edge caching but keep DDoS protection, TLS offload, and a warm backbone connection &mdash; fine for low-volume sensitive downloads. (6) <strong>Encrypt at rest, decrypt client-side</strong> &mdash; the CDN serves ciphertext; the client gets the key via an authenticated channel; the CDN never sees plaintext (used for the most sensitive data, adds client complexity and defeats server-side transforms). Never rely on "unguessable URL" alone (no expiry, no auth) &mdash; those leak via logs, referrers, browser history, and sharing. For regulated data (HIPAA/PCI), also ensure the CDN vendor is contractually covered (BAA), access-logged, and that cache TTLs for private content are short or zero.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:cdn-storage -->
+
+<!-- TOPIC:sysd:url-shortener -->
+<section class="view topic" id="v-sysd-url-shortener" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>Design a URL Shortener</h1>
+<p class="subtitle">The classic warm-up &mdash; key generation, the read-heavy redirect path, and scale.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Requirements &amp; estimate</h3>
+<ul>
+<li>Functional: <code>POST /shorten {url}</code> &rarr; short code; <code>GET /{code}</code> &rarr; 301/302 redirect. Optional: custom alias, expiry, click analytics, user accounts.</li>
+<li>Scale example: 100M new links/month &asymp; ~40 writes/s; read:write ~100:1 &rarr; ~4000 redirects/s (peak &times;several). 5 years &rarr; ~6B links.</li>
+<li>Storage: ~6B &times; (short code + long URL + metadata) &asymp; a few hundred GB &mdash; fits comfortably; the challenge is <em>redirect latency and QPS</em>, not size.</li>
+</ul>
+
+<h3>Short code generation</h3>
+<table>
+<tr><th>Approach</th><th>Notes</th></tr>
+<tr><td>Base62 of an auto-increment id</td><td>7 chars = 62^7 &asymp; 3.5&times;10&sup1;&sup2; codes. Sequential &rarr; guessable/enumerable; needs a global counter (a DB sequence, or a range-allocator / Snowflake-style id).</td></tr>
+<tr><td>Random code + collision check</td><td>generate 7 random base62 chars, insert with a unique constraint, retry on conflict. Unguessable; collision rate negligible until the space fills.</td></tr>
+<tr><td>Hash(url) &rarr; take first N chars</td><td>same URL &rarr; same code (dedup for free), but collisions between <em>different</em> URLs must be handled (append a disambiguator).</td></tr>
+<tr><td>Offline key pool</td><td>a "key generation service" pre-generates unique codes into a table; the write path just pops one. Removes collision handling from the hot path.</td></tr>
+</table>
+
+<h3>Storage &amp; the read path</h3>
+<ul>
+<li>A KV store or a simple table: <code>code (PK) &rarr; long_url, created_at, expires_at, owner</code>. Shard by <code>code</code> hash if needed.</li>
+<li><strong>Redirect path must be fast</strong>: <code>GET /{code}</code> &rarr; cache lookup (Redis / in-process LRU) &rarr; on miss, DB &rarr; cache it &rarr; return <code>301</code> (permanent, cacheable by browsers/proxies) or <code>302</code> (if you need to count every click / change targets). Most links are hit hard right after creation then decay &mdash; caching gives &gt;95% hit rate.</li>
+<li>Put the whole thing behind a CDN for the redirect (301s are cacheable) if analytics allow.</li>
+</ul>
+
+<h3>Analytics &amp; extras</h3>
+<p>Emit a click event (code, timestamp, referrer, geo from IP, UA) to a queue &rarr; async aggregation
+(counts by day/country/referrer) in a separate store &mdash; never on the redirect's critical path.
+Custom aliases: reserve the code with a unique constraint; validate charset/length; block
+profanity/reserved words. Expiry: store <code>expires_at</code>, check on read, lazy-delete +
+background sweep.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>API: <code>POST /shorten</code> &rarr; code; <code>GET /{code}</code> &rarr; redirect. It's <strong>read-heavy</strong> (~100:1).</li>
+<li>Code: base62(id) (compact, but sequential/guessable + needs a counter) / random+unique-constraint+retry (unguessable) / hash(url) (dedup, handle collisions) / pre-generated key pool (no hot-path collision handling).</li>
+<li>7 base62 chars &asymp; 3.5&times;10&sup1;&sup2; &mdash; plenty.</li>
+<li>Store: <code>code &rarr; url + metadata</code> in KV / small table; shard by code hash at scale. Size is small; QPS is the problem.</li>
+<li>Redirect path: cache (Redis / local LRU, &gt;95% hit) &rarr; DB on miss. <code>301</code> if cacheable / no per-click count needed; <code>302</code> if you must count or may change the target.</li>
+<li>Analytics: fire a click event to a queue &rarr; async aggregation. Never on the redirect path.</li>
+<li>Custom alias: unique constraint + validation + blocklist. Expiry: <code>expires_at</code> + lazy + sweep.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is a URL shortener a read-heavy system, and how does that shape the design?</dt>
+<dd>Each link is created once but redirected many times (often 100:1 or more). So the redirect path is optimised above all: an aggressive cache (Redis + per-instance LRU) fronting a simple key-value lookup, cacheable <code>301</code>s, minimal work per request, and analytics pushed off to async. The write path can be comparatively heavy.</dd>
+<dt>Base62 of an auto-increment id vs a random code &mdash; trade-offs?</dt>
+<dd>Sequential base62 gives the shortest codes and is simple, but codes are guessable/enumerable (a competitor can crawl all your links) and you need a globally unique increasing id (a bottleneck or a distributed id scheme). Random codes are unguessable and need no global counter, at the cost of a uniqueness check (insert with a unique constraint, retry on the rare collision).</dd>
+<dt>301 or 302 for the redirect?</dt>
+<dd><code>301</code> (permanent) lets browsers, proxies, and CDNs cache the redirect &mdash; great for performance, but you then don't see most repeat clicks (bad for analytics) and can't change where the code points. <code>302</code> (found/temporary) means every click hits your server &mdash; you can count them and change the target &mdash; at higher load. Many services use <code>302</code> for analytics reasons.</dd>
+<dt>How do you keep click analytics off the critical path?</dt>
+<dd>On redirect, emit a lightweight click event (code, time, referrer, IP-derived geo, user agent) to a message queue and return the redirect immediately. Downstream consumers aggregate into counts/dimensions in a separate analytics store. The redirect never waits on analytics writes.</dd>
+<dt>How do you support custom aliases without collisions?</dt>
+<dd>Treat the alias as the primary key with a unique constraint; the create request fails if it's taken (return 409). Validate the charset and length, and reject reserved paths (<code>api</code>, <code>login</code>), profanity, and impersonation attempts. Custom and generated codes share the same key space and table.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How many unique codes does 7 base62 characters give?</summary><div class="answer-box">
+62^7 &asymp; 3.5 &times; 10&sup1;&sup2;.
+</div></details>
+<details class="answer-reveal"><summary>What's the dominant traffic pattern?</summary><div class="answer-box">
+Reads (redirects) &mdash; far more than writes (shortening).
+</div></details>
+<details class="answer-reveal"><summary>Where do you store the code&rarr;URL mapping?</summary><div class="answer-box">
+A key-value store or a small indexed table, fronted by a cache.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two servers generate short codes concurrently from a shared counter. How do you avoid a bottleneck?</summary><div class="answer-box">
+Don't have each write hit one global counter. <strong>Range allocation</strong>: each app instance claims a block of ids (say 10,000) from the counter service in one round trip, then hands them out locally; when the block runs low it grabs another. The central counter is touched once per 10k writes instead of every write. Alternatively use a distributed id scheme (Snowflake: timestamp + machine id + sequence) that needs no coordination at all, then base62-encode it &mdash; accepting slightly longer, time-ordered codes.
+</div></details>
+<details class="answer-reveal"><summary>A few links go viral and their redirects overwhelm one cache/DB shard. Fix?</summary><div class="answer-box">
+Hot-key problem. The links are already cacheable, so: add a small per-instance L1 cache with a short TTL so most viral hits never leave the app server; for a 301-eligible link, let the CDN cache the redirect so the edge absorbs it entirely; if using 302, replicate the hot entries across multiple cache nodes and route reads randomly. Since the value (a URL) is tiny and immutable, replication is cheap. Monitor per-code request rates so you can react.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the system for global low-latency redirects (users on every continent) with the ability to update or delete links.</summary><div class="answer-box">
+Redirect latency is dominated by the user&rarr;server round trip, so you must serve redirects from <strong>edge locations near the user</strong>, not one region. Architecture: (1) The code&rarr;URL mapping is small and read-mostly &mdash; replicate it globally. Options: a globally-distributed database (DynamoDB global tables, Spanner, CockroachDB) with a replica in each region, or push the mapping to <strong>edge KV stores</strong> (Cloudflare KV, DynamoDB + DAX, Fastly's config) that each PoP reads locally. (2) The redirect runs as <strong>edge compute</strong> (Workers / Lambda@Edge): read the code from the local edge KV, return the redirect &mdash; single-digit-ms, no origin hop for the hot path. (3) <strong>Writes</strong> (create/update/delete) go to a primary region's database; changes propagate to the edge KV asynchronously (seconds), which is fine because links rarely change and a brief propagation delay on an <em>update</em> is acceptable (the old target still works). For <em>deletes</em> that must be immediate (abuse/legal takedown), also maintain a small, fast-propagating denylist checked at the edge, or accept the propagation window and additionally return a takedown page from the primary. (4) Use <strong>302</strong> if you need per-click analytics or the ability to change targets; emit click events from the edge to a regional queue &rarr; central aggregation. Use <strong>301 + long cache</strong> for links where analytics don't matter, letting browsers/CDN cache and cutting even the edge-KV read. (5) <strong>Consistency</strong>: creation should be read-your-writes for the creator (they get the code back and it works immediately) &mdash; achieved by writing to the primary and returning the code, while global visibility is eventual; a redirect for a brand-new code in a far region might 404 for a few seconds, mitigated by a fallback that, on edge-KV miss, does one origin lookup and populates. (6) Custom-alias uniqueness must be enforced at the <em>primary</em> (a global unique constraint), not at the edge, so alias creation is a single-region transaction even though reads are global. Trade-off summary: you get ~10 ms redirects worldwide and simple scaling because the data is tiny and read-mostly; you pay with eventual-consistency handling for updates/deletes and a single-region write path for uniqueness.
+</div></details>
+<details class="answer-reveal"><summary>How do you prevent your URL shortener from being abused for phishing, malware distribution, and spam?</summary><div class="answer-box">
+Shorteners hide the destination, which attackers love. Layered defences: (1) <strong>At creation</strong> &mdash; check the target URL against threat-intel feeds (Google Safe Browsing, PhishTank, commercial reputation APIs), block known-bad domains, newly-registered domains, and IP-literal URLs; rate-limit link creation per account/IP; require auth for bulk creation; disallow shortening URLs that already point at other shorteners (redirect chains). (2) <strong>Ongoing scanning</strong> &mdash; re-scan targets periodically (a link created clean can be repointed or the destination page changed after approval &mdash; "time-bomb" links); crawl/render high-traffic destinations to detect phishing kits and malware. (3) <strong>At redirect time</strong> &mdash; for links flagged as risky or unverified, show an <strong>interstitial warning page</strong> ("You are being redirected to example.com &mdash; proceed?") rather than an immediate redirect; block outright for confirmed-malicious. (4) <strong>Transparency</strong> &mdash; offer a preview endpoint (<code>+</code> suffix, or <code>/preview/{code}</code>) so users and security tools can see the destination without visiting it; publish the destination in the response for scanners. (5) <strong>Abuse signals</strong> &mdash; watch for a link with a sudden traffic spike from spam-like sources, many links from one account to similar domains, or user reports; auto-suspend and review. (6) <strong>Takedown</strong> &mdash; a fast path to disable a code globally (the denylist from the previous answer), an abuse-report form, and cooperation with registrars/hosts. (7) <strong>Reputation</strong> &mdash; track per-account trust; new/untrusted accounts get interstitials and lower rate limits, established clean accounts get direct redirects. The unavoidable tension: interstitials and scanning add latency and friction that hurt legitimate use, so you tune aggressiveness by the link's and creator's risk score rather than applying it uniformly.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:url-shortener -->
+
+<!-- TOPIC:sysd:chat-feed -->
+<section class="view topic" id="v-sysd-chat-feed" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>Design a News Feed / Chat System</h1>
+<p class="subtitle">Fan-out on write vs read, delivery, ordering, and the celebrity problem.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>News feed: the core question is fan-out</h3>
+<table>
+<tr><th></th><th>Fan-out on write (push)</th><th>Fan-out on read (pull)</th></tr>
+<tr><td>On post</td><td>write the post id into every follower's feed list (precomputed timeline in Redis)</td><td>do nothing extra</td></tr>
+<tr><td>On feed load</td><td>read the precomputed list &mdash; fast, O(1)-ish</td><td>query recent posts from everyone you follow, merge, sort &mdash; expensive</td></tr>
+<tr><td>Cost</td><td>write amplification = follower count; wasteful for inactive followers</td><td>read amplification = followee count; slow for users following thousands</td></tr>
+<tr><td>Best for</td><td>most users (few followers, read often)</td><td>celebrities (millions of followers)</td></tr>
+</table>
+<p><strong>Hybrid</strong> (what Twitter/Instagram do): push for normal accounts; for a followed
+<em>celebrity</em>, don't fan out &mdash; pull their recent posts at read time and merge into the
+pushed feed. Threshold on follower count.</p>
+
+<h3>Feed storage &amp; ranking</h3>
+<ul>
+<li>Per-user timeline = a capped list (last ~800 post ids) in Redis, backed by a durable store for regeneration.</li>
+<li>Chronological is simplest; ranked feeds add a scoring service (recency, affinity, engagement prediction) applied at read time over a candidate set.</li>
+<li>New follower / cache miss: regenerate the timeline by pulling from followees (the pull path is the fallback).</li>
+</ul>
+
+<h3>Chat: the core question is delivery</h3>
+<ul>
+<li><strong>Connection layer</strong>: clients hold a persistent connection (WebSocket) to a gateway server; a registry maps <code>userId &rarr; gateway node</code> (in Redis) so a message can be routed to the recipient's node, which pushes it down the socket. Offline &rarr; store and send a push notification.</li>
+<li><strong>Storage</strong>: messages in a store partitioned by <code>conversation_id</code> (all of a chat's messages together, ordered). Wide-column (Cassandra) or a sharded DB suits the write volume and access pattern ("last N messages of conversation X").</li>
+<li><strong>Ordering</strong>: per-conversation order via a monotonic sequence assigned by the conversation's owning partition (not client timestamps &mdash; clock skew). Clients sort by that sequence.</li>
+<li><strong>Delivery state</strong>: sent / delivered / read receipts are per-recipient status rows or a "last read sequence" per user per conversation.</li>
+<li><strong>Group chat</strong>: fan out the message to each member's delivery path; large groups have the same celebrity-style amplification problem &mdash; cap group size or pull for huge groups.</li>
+<li><strong>Presence</strong>: heartbeats to the gateway; publish online/offline transitions; presence is best-effort and eventually consistent.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Feed: <strong>fan-out on write</strong> (precompute each follower's timeline &mdash; fast reads, write amplification) vs <strong>fan-out on read</strong> (merge followees' posts at read &mdash; slow reads, no write cost).</li>
+<li><strong>Hybrid</strong>: push for normal users, pull for celebrities (follower-count threshold), merge at read.</li>
+<li>Timeline = capped list of post ids in Redis + durable backing store for regen on miss/new-follow.</li>
+<li>Ranked feed = candidate set + scoring service at read time.</li>
+<li>Chat: persistent WebSocket to a gateway; <code>userId &rarr; gateway node</code> registry in Redis for routing; offline &rarr; store + push notification.</li>
+<li>Messages partitioned by <code>conversation_id</code>, ordered by a server-assigned per-conversation sequence (not client clocks).</li>
+<li>Delivery/read state = per-user "last read sequence" per conversation.</li>
+<li>Group chat / huge groups = fan-out per member; cap size or pull for very large groups. Presence = best-effort heartbeats.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Fan-out on write vs fan-out on read for a news feed?</dt>
+<dd>On write: when you post, the post is pushed into every follower's precomputed timeline, so loading a feed is a cheap list read &mdash; but a post by someone with 10M followers does 10M writes. On read: nothing happens at post time; loading a feed queries recent posts from everyone you follow and merges them &mdash; cheap writes, but slow for users following thousands. Most systems use a hybrid.</dd>
+<dt>What is the "celebrity problem" and the fix?</dt>
+<dd>Fan-out on write amplifies by follower count, so accounts with millions of followers make each post catastrophically expensive and flood inactive followers' timelines. Fix: for accounts above a follower threshold, <em>don't</em> fan out &mdash; fetch their recent posts at feed-read time and merge them into the reader's otherwise-pushed timeline.</dd>
+<dt>How does a chat message reach a specific online user?</dt>
+<dd>Each user's client holds a WebSocket to a gateway server; a registry (Redis) maps user id &rarr; which gateway node. To deliver, the system looks up the recipient's node and forwards the message to it (via a queue or direct RPC), and that node pushes it down the socket. If the user is offline, the message is stored and a push notification is sent.</dd>
+<dt>How do you order messages in a conversation correctly?</dt>
+<dd>Assign each message a monotonically increasing sequence number from the partition that owns the conversation (server-side), not the sender's clock &mdash; client clocks are skewed and untrustworthy. Clients display messages sorted by that sequence, and track a "last read sequence" per conversation for read receipts and unread counts.</dd>
+<dt>Where do a user's feed timeline and a conversation's messages physically live?</dt>
+<dd>The timeline is a capped list of post ids per user, cached in Redis (with a durable backing store to rebuild it). Conversation messages are stored partitioned by conversation id &mdash; all messages of one chat co-located and ordered &mdash; typically in a wide-column store or a sharded database sized for the write volume.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which fan-out strategy makes feed reads fastest?</summary><div class="answer-box">
+Fan-out on write (push) &mdash; the timeline is precomputed.
+</div></details>
+<details class="answer-reveal"><summary>What protocol do chat clients typically use for real-time delivery?</summary><div class="answer-box">
+WebSocket (a persistent bidirectional connection).
+</div></details>
+<details class="answer-reveal"><summary>What do you partition chat messages by?</summary><div class="answer-box">
+<code>conversation_id</code> &mdash; so a chat's messages are co-located and ordered.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A user follows 5,000 accounts and their feed load is slow under pure fan-out-on-read. What do you do?</summary><div class="answer-box">
+Switch that user (and most users) to fan-out on write: maintain a precomputed timeline list so a feed load is one capped list read plus a batch fetch of the post bodies. Keep fan-out-on-read only for the celebrity accounts among those 5,000 &mdash; pull their recent posts at read time and merge. Cache the merged result briefly. Cap the timeline length (e.g. 800 entries) so it doesn't grow unbounded. For the initial timeline build (or after a cache miss), do a one-time pull-and-merge from all followees and store it.
+</div></details>
+<details class="answer-reveal"><summary>How do you deliver a message to a user who's offline, then online on 3 devices?</summary><div class="answer-box">
+On send, always persist the message to the conversation store with its sequence number. If the recipient has no live connection, enqueue a push notification. When the user comes online on a device, that device connects to a gateway, registers <code>(userId, deviceId) &rarr; node</code>, and does a <em>sync</em>: "give me all messages in my conversations after last-seen-sequence per conversation". Each device tracks its own last-seen watermark, so all three converge to the full history. New live messages are then pushed to every registered device for that user (fan-out over the user's device list). Read receipts update a per-user (not per-device) last-read sequence so "read" is consistent across the user's devices.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the connection/gateway tier for a chat service with 50M concurrent WebSocket connections. How do connections, routing, and failure work?</summary><div class="answer-box">
+<strong>Connection tier</strong>: a fleet of stateless-ish gateway servers, each holding maybe 100k&ndash;500k connections (tuned with epoll/kqueue, large fd limits, and careful memory per connection). 50M / 200k &asymp; 250+ gateway nodes across regions/AZs. A layer-4 load balancer (or DNS + client-side selection) spreads new connections; connections are long-lived so LB just needs to balance <em>counts</em>, not requests. <strong>Routing registry</strong>: a distributed store (Redis Cluster / a purpose-built service) maps <code>userId &rarr; {gatewayNode, connectionId}</code> (a set, since multi-device). Updated on connect/disconnect with a TTL + heartbeat so stale entries expire if a node dies. <strong>Message delivery</strong>: sender's gateway (or an API server) receives a message, persists it, then looks up each recipient's gateway node(s) in the registry and forwards the message there &mdash; via an internal message bus (Kafka/NATS topic per gateway node, or direct gRPC). The recipient's gateway pushes it down the matching socket(s). For group chat, resolve the member list &rarr; their nodes &rarr; forward once per node (dedup) rather than once per member. <strong>Backpressure</strong>: a slow client's send buffer fills &mdash; the gateway drops the connection (client reconnects and re-syncs from its watermark) rather than buffering unboundedly. <strong>Failure</strong>: a gateway node crashes &rarr; its ~200k clients' connections drop; clients auto-reconnect (with jittered backoff to avoid a reconnect storm) to a new node via the LB, re-register, and sync missed messages by watermark &mdash; because the source of truth is the persisted conversation store, no messages are lost, only a brief delivery gap. To avoid a thundering herd when a big node dies, clients spread reconnects over tens of seconds and the LB steers them to underloaded nodes. <strong>Scaling</strong>: add gateway nodes; the registry and message bus scale independently. <strong>Regional</strong>: gateways in each region; cross-region messages route through the bus; presence and routing registries are regional with a global overlay for cross-region conversations. Metrics: connections per node, message fan-out latency, reconnect rate (spikes = a node problem), registry lookup latency, and per-node memory/fd headroom.
+</div></details>
+<details class="answer-reveal"><summary>How would you rank a news feed (not chronological) at scale, and what are the failure modes?</summary><div class="answer-box">
+<strong>Two-stage funnel</strong>. Stage 1 &mdash; <em>candidate generation</em>: assemble a few hundred to a few thousand candidate items cheaply &mdash; the user's pushed timeline (recent posts from followees), plus pulled recent posts from followed celebrities, plus optionally "recommended" items (posts from non-followees the user might like, from a separate retrieval model). This stage optimises for recall and speed, not precision. Stage 2 &mdash; <em>ranking</em>: score each candidate with a model predicting the probability of each valued engagement (click, like, comment, share, dwell time, "meaningful interaction", and negative signals like hide/report), combined into a single value score with tuned weights; also apply business rules (diversity &mdash; don't show 5 posts from one author; freshness decay; demote borderline/policy content; inject ads). Serve the top N. <strong>Where the compute goes</strong>: candidate generation and feature fetching (author affinity, user history, post features, real-time engagement counts) dominate; the model inference is batched. Feature freshness matters &mdash; engagement counts and the user's recent activity feed into the score, so there's a real-time feature store. <strong>Failure modes</strong>: (1) <em>Feedback loops</em> &mdash; the model learns "users engage with outrage/clickbait" and amplifies it; needs explicit negative-feedback signals, diversity constraints, and integrity classifiers in the loop. (2) <em>Cold start</em> &mdash; new users/posts have no engagement features; fall back to popularity + demographic priors, explore deliberately. (3) <em>Filter bubble</em> &mdash; pure engagement optimisation narrows the feed; inject exploration and source diversity. (4) <em>Staleness</em> &mdash; if the ranking pipeline lags, users see an old feed; have a chronological fallback and cap end-to-end latency. (5) <em>Latency budget</em> &mdash; ranking must complete in tens of ms for a feed load; if the model service is slow, serve a cheaper heuristic ranking rather than blocking. (6) <em>Metric myopia</em> &mdash; optimising short-term clicks can hurt long-term retention and wellbeing; teams add long-horizon and survey-based objectives. (7) <em>Consistency</em> &mdash; the same user refreshing shouldn't see a totally reshuffled feed; add position stability / seen-item suppression. The system is deliberately layered so each stage can degrade independently (skip recommendations, skip ranking &rarr; chronological) under load or failure.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:chat-feed -->
+
 </main>
 
 <footer class="site-footer">
@@ -16988,25 +18042,23 @@ Work in small, safe steps under a growing test net &mdash; the "strangler fig" a
       ["logging-library",   "Design a Logging Library",           "Levels, sinks/appenders, formatters, async ring buffer, filtering, structured logs."],
       ["concurrency-lld",   "Thread-Safety in Low-Level Design",  "Immutability, confinement, thread-safe singletons, monitor objects, lock scope."],
       ["evolving-design",   "Evolving a Design & Over-Engineering","YAGNI vs extensibility, rule of three, refactoring seams, when patterns pay off."]
+    ],
+    sysd: [
+      ["framework",       "Interview Framework & Estimation",     "Clarify &rarr; estimate &rarr; API &rarr; data &rarr; high-level &rarr; deep-dive &rarr; bottlenecks; latency numbers, capacity math."],
+      ["load-balancing",  "Load Balancing",                      "L4 vs L7, algorithms, health checks, sticky sessions, DNS/anycast, autoscaling."],
+      ["caching",         "Caching Strategies & Invalidation",   "Cache-aside/read-through/write-through/back, TTL, eviction, stampede, invalidation."],
+      ["db-scaling",      "Database Scaling: Replication & Sharding","Read replicas, replication lag, shard keys, hotspots, resharding, federation."],
+      ["cap-consistency", "CAP & Consistency Models",            "CP vs AP, strong/eventual/causal/read-your-writes, quorums, PACELC, tunable consistency."],
+      ["queues",          "Message Queues & Async Processing",   "Decoupling, at-least/at-most/exactly-once, ordering, DLQ, backpressure, Kafka vs SQS."],
+      ["idempotency",     "Idempotency, Retries & Exactly-Once", "Idempotency keys, dedup, retry storms, outbox pattern, effectively-once."],
+      ["cdn-storage",     "CDNs, Blob Storage & Static Content", "Edge caching, cache keys, purge, object storage, presigned URLs, hot objects."],
+      ["url-shortener",   "Design a URL Shortener",              "API, key generation, storage, redirect path, analytics, custom aliases, scale."],
+      ["chat-feed",       "Design a News Feed / Chat System",    "Fan-out on write vs read, timeline, delivery, presence, ordering, celebrity problem."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    sysd: [
-      "The interview framework & estimation",
-      "Latency numbers & back-of-envelope math",
-      "Load balancing",
-      "Caching strategies & invalidation",
-      "Database scaling: replication & sharding",
-      "SQL vs NoSQL selection",
-      "The CAP theorem & consistency models",
-      "Message queues & async processing",
-      "Rate limiting & idempotency",
-      "CDNs, blob storage & static content",
-      "Design a URL shortener",
-      "Design a news feed / chat system"
-    ],
     git: [
       "The object model (blob / tree / commit)",
       "The three trees (working / index / HEAD)",
