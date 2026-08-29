@@ -12728,6 +12728,24 @@ map (page-table pointer), open-file table, scheduling info (priority, CPU time u
 signal handlers, accounting. On a context switch the running process's state is saved into its
 PCB and the next process's is restored from its PCB.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 132" role="img" aria-labelledby="d-osproc-t">
+<title id="d-osproc-t">Process state transitions</title>
+<rect class="d-box" x="14" y="52" width="70" height="28" rx="6"/><text class="d-t-sm" x="49" y="70" text-anchor="middle">New</text>
+<rect class="d-box-soft" x="140" y="52" width="70" height="28" rx="6"/><text class="d-t-sm" x="175" y="70" text-anchor="middle">Ready</text>
+<rect class="d-box-soft" x="280" y="52" width="80" height="28" rx="6"/><text class="d-t-sm" x="320" y="70" text-anchor="middle">Running</text>
+<rect class="d-box" x="280" y="8" width="80" height="26" rx="6"/><text class="d-t-sm" x="320" y="25" text-anchor="middle">Waiting</text>
+<rect class="d-box" x="430" y="52" width="76" height="28" rx="6"/><text class="d-t-sm" x="468" y="70" text-anchor="middle">Terminated</text>
+<path class="d-line" d="M84 66 L138 66" marker-end="url(#osproc-ah)"/>
+<path class="d-line" d="M210 62 L278 62" marker-end="url(#osproc-ah)"/><text class="d-t-sm" x="222" y="56">dispatch</text>
+<path class="d-line" d="M300 80 C 260 100, 200 100, 190 82" marker-end="url(#osproc-ah)"/><text class="d-t-sm" x="210" y="112">timer / preempt</text>
+<path class="d-line" d="M320 52 L320 36" marker-end="url(#osproc-ah)"/><text class="d-t-sm" x="326" y="46">I/O wait</text>
+<path class="d-line" d="M280 22 C 210 22, 175 30, 175 50" marker-end="url(#osproc-ah)"/><text class="d-t-sm" x="200" y="18">I/O done</text>
+<path class="d-line" d="M360 62 L428 62" marker-end="url(#osproc-ah)"/><text class="d-t-sm" x="372" y="56">exit</text>
+<defs><marker id="osproc-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Only one process per CPU is <strong>Running</strong>; the scheduler picks the next from <strong>Ready</strong>. A process blocked on I/O is <strong>Waiting</strong> and consumes no CPU. The PCB stores everything needed to resume it.</figcaption>
+</figure>
 <h3>States</h3>
 <pre><code>NEW -&gt; READY &lt;-&gt; RUNNING -&gt; TERMINATED
               |        ^
@@ -12823,6 +12841,20 @@ Validate the path and permissions; read the file header (ELF, or <code>#!</code>
 <p class="subtitle">Shared memory and cheap creation &mdash; at the cost of shared blast radius.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-osthr-t">
+<title id="d-osthr-t">Threads in one process share the address space but each has its own stack</title>
+<rect class="d-box" x="14" y="16" width="492" height="100" rx="6"/>
+<text class="d-t-b" x="24" y="34">one process</text>
+<rect class="d-box-soft" x="24" y="42" width="140" height="26"/><text class="d-t-sm" x="94" y="59" text-anchor="middle">code (.text)</text>
+<rect class="d-box-soft" x="24" y="72" width="140" height="26"/><text class="d-t-sm" x="94" y="89" text-anchor="middle">heap + globals</text>
+<rect class="d-box-soft" x="24" y="100" width="220" height="12"/><text class="d-t-sm" x="180" y="110" text-anchor="middle">open files, PID, signals &mdash; shared</text>
+<rect class="d-box-alt" x="270" y="42" width="70" height="60"/><text class="d-t-sm" x="305" y="66" text-anchor="middle">T1</text><text class="d-t-sm" x="305" y="82" text-anchor="middle">stack</text>
+<rect class="d-box-alt" x="350" y="42" width="70" height="60"/><text class="d-t-sm" x="385" y="66" text-anchor="middle">T2</text><text class="d-t-sm" x="385" y="82" text-anchor="middle">stack</text>
+<rect class="d-box-alt" x="430" y="42" width="66" height="60"/><text class="d-t-sm" x="463" y="66" text-anchor="middle">T3</text><text class="d-t-sm" x="463" y="82" text-anchor="middle">+ regs, PC</text>
+</svg>
+<figcaption>Because the heap is shared, two threads touching the same object need synchronisation. Because stacks are private, locals are naturally thread-safe. A thread switch is cheaper than a process switch (no page-table / TLB change within a process).</figcaption>
+</figure>
 <h3>What threads share vs own</h3>
 <table>
 <tr><th>Shared by all threads in a process</th><th>Private per thread</th></tr>
@@ -13038,6 +13070,22 @@ Now you're placing tasks across N run queues (usually per-CPU, to avoid a global
 <li><strong>Context switch</strong>: the scheduler swaps one thread/process off the CPU and another on. Includes a mode switch <em>plus</em> saving/restoring the full register set into the PCB/TCB and (for a different process) switching the address space.</li>
 </ul>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 118" role="img" aria-labelledby="d-osctx-t">
+<title id="d-osctx-t">A context switch saves one task's CPU state and restores another's</title>
+<rect class="d-box-soft" x="14" y="40" width="110" height="30" rx="6"/><text class="d-t-sm" x="69" y="59" text-anchor="middle">Task A running</text>
+<rect class="d-box" x="164" y="20" width="130" height="30" rx="6"/><text class="d-t-sm" x="229" y="39" text-anchor="middle">save A: regs, PC, SP</text>
+<rect class="d-box" x="164" y="58" width="130" height="30" rx="6"/><text class="d-t-sm" x="229" y="77" text-anchor="middle">restore B from its PCB</text>
+<rect class="d-box-soft" x="334" y="40" width="110" height="30" rx="6"/><text class="d-t-sm" x="389" y="59" text-anchor="middle">Task B running</text>
+<path class="d-line" d="M124 52 L162 38" marker-end="url(#osctx-ah)"/>
+<path class="d-line" d="M294 40 C 310 40, 320 50, 332 52" marker-end="url(#osctx-ah)"/>
+<path class="d-line" d="M124 58 L162 72" marker-end="url(#osctx-ah)" style="opacity:.4"/>
+<defs><marker id="osctx-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="100">Direct cost ~1&ndash;5&micro;s. The bigger hit is <tspan class="d-t-b">indirect</tspan>: cold caches and (across processes) a TLB flush &mdash; tens of &micro;s of slow memory.</text>
+<text class="d-t-sm" x="14" y="114">Triggered by a timer interrupt (preemption), a blocking syscall, or a higher-priority task becoming ready.</text>
+</svg>
+<figcaption>A <strong>mode switch</strong> (user&harr;kernel for a syscall) is much cheaper &mdash; it stays in the same address space and often doesn't switch tasks at all.</figcaption>
+</figure>
 <h3>What a context switch costs</h3>
 <ol>
 <li>Save the outgoing task's registers (GP, PC, SP, FP/SIMD state &mdash; sometimes lazily) into its control block.</li>
@@ -13143,6 +13191,25 @@ Suppose a context switch (direct + amortised indirect: TLB refill, cache misses)
 <li>Enables demand paging, copy-on-write, memory-mapped files, shared libraries.</li>
 </ul>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="d-osvm-t">
+<title id="d-osvm-t">Virtual address = page number + offset; the page table maps page to frame</title>
+<rect class="d-box-alt" x="14" y="30" width="120" height="26"/><text class="d-t-sm" x="54" y="47" text-anchor="middle">page #</text><text class="d-t-sm" x="110" y="47" text-anchor="middle">offset</text>
+<line class="d-line-soft" x1="94" y1="30" x2="94" y2="56"/>
+<text class="d-t-b" x="14" y="24">virtual address</text>
+<rect class="d-box-soft" x="200" y="24" width="110" height="40" rx="6"/><text class="d-t-sm" x="255" y="40" text-anchor="middle">page table</text>
+<text class="d-t-sm" x="255" y="56" text-anchor="middle">(via TLB first)</text>
+<path class="d-line" d="M134 40 L198 40" marker-end="url(#osvm-ah)"/>
+<defs><marker id="osvm-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-alt" x="370" y="30" width="130" height="26"/><text class="d-t-sm" x="410" y="47" text-anchor="middle">frame #</text><text class="d-t-sm" x="465" y="47" text-anchor="middle">offset</text>
+<line class="d-line-soft" x1="450" y1="30" x2="450" y2="56"/>
+<path class="d-line" d="M310 44 L368 44" marker-end="url(#osvm-ah)"/>
+<text class="d-t-b" x="370" y="24">physical address</text>
+<text class="d-t-sm" x="14" y="86">The offset is copied unchanged; only the page number is translated. The <tspan class="d-t-b">TLB</tspan> caches recent page&rarr;frame</text>
+<text class="d-t-sm" x="14" y="102">mappings so most translations skip the page-table walk; a miss walks the (multi-level) table in hardware.</text>
+</svg>
+<figcaption>Benefits: isolation (each process its own space), the illusion of contiguous memory, demand paging, copy-on-write, and shared read-only pages (libs, <code>.text</code>).</figcaption>
+</figure>
 <h3>Paging &amp; translation</h3>
 <p>Memory is divided into fixed <strong>pages</strong> (typically 4&thinsp;KB) and physical <strong>frames</strong>.
 A <strong>page table</strong> per process maps virtual page &rarr; physical frame + permission bits
@@ -13455,6 +13522,21 @@ A reader/writer lock still has readers taking and releasing the lock (atomic ops
 </ol>
 <p>Break <em>any one</em> and deadlock is impossible.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="d-osdl-t">
+<title id="d-osdl-t">A resource-allocation cycle: each thread holds what the other needs</title>
+<rect class="d-box" x="60" y="44" width="70" height="28" rx="6"/><text class="d-t-sm" x="95" y="62" text-anchor="middle">T1</text>
+<rect class="d-box" x="380" y="44" width="70" height="28" rx="6"/><text class="d-t-sm" x="415" y="62" text-anchor="middle">T2</text>
+<rect class="d-box-soft" x="215" y="14" width="80" height="24" rx="6"/><text class="d-t-sm" x="255" y="30" text-anchor="middle">lock A</text>
+<rect class="d-box-soft" x="215" y="78" width="80" height="24" rx="6"/><text class="d-t-sm" x="255" y="94" text-anchor="middle">lock B</text>
+<path class="d-line" d="M215 26 C 160 26, 110 36, 100 42" marker-end="url(#osdl-ah)"/><text class="d-t-sm" x="130" y="20">holds</text>
+<path class="d-line" d="M120 52 C 170 60, 210 74, 214 80" marker-end="url(#osdl-ah)"/><text class="d-t-sm" x="130" y="78">wants</text>
+<path class="d-line" d="M295 88 C 350 88, 400 78, 410 72" marker-end="url(#osdl-ah)"/><text class="d-t-sm" x="360" y="100">holds</text>
+<path class="d-line" d="M395 42 C 350 34, 300 24, 294 22" marker-end="url(#osdl-ah)"/><text class="d-t-sm" x="360" y="24">wants</text>
+<defs><marker id="osdl-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Deadlock needs all four Coffman conditions at once: <strong>mutual exclusion</strong>, <strong>hold-and-wait</strong>, <strong>no preemption</strong>, <strong>circular wait</strong>. Break any one &mdash; the common fix is a global <em>lock ordering</em> to kill the cycle.</figcaption>
+</figure>
 <h3>The four strategies</h3>
 <table>
 <tr><th>Strategy</th><th>How</th></tr>
@@ -13769,6 +13851,21 @@ count = count + 1;
 update. This is a <strong>data race</strong>: two threads access the same location, at least one writes,
 with no synchronisation and no defined ordering &mdash; undefined behaviour in C/C++/Java's model.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="d-ccrace-t">
+<title id="d-ccrace-t">count++ is three steps; interleaving loses an update</title>
+<text class="d-t-b" x="70" y="14">Thread 1</text><text class="d-t-b" x="330" y="14">Thread 2</text>
+<text class="d-t-mono" x="20" y="34">read count (0)</text>
+<text class="d-t-mono" x="280" y="52">read count (0)</text>
+<text class="d-t-mono" x="20" y="70">add 1 &rarr; 1</text>
+<text class="d-t-mono" x="280" y="88">add 1 &rarr; 1</text>
+<text class="d-t-mono" x="20" y="88">write 1</text>
+<text class="d-t-mono" x="280" y="106">write 1</text>
+<line class="d-line-soft" x1="255" y1="18" x2="255" y2="112"/>
+<text class="d-t-accent" x="380" y="106">final = 1, not 2</text>
+</svg>
+<figcaption>A <strong>data race</strong> is the language-level UB: two threads access the same memory, one writes, no synchronisation. A <strong>race condition</strong> is the broader logic bug where the outcome depends on timing. Fix with a mutex, or make <code>count</code> atomic.</figcaption>
+</figure>
 <h3>Data race vs race condition</h3>
 <ul>
 <li><strong>Data race</strong> &mdash; the concrete "unsynchronised concurrent access" defect above. Tools (TSan) detect these.</li>
@@ -13880,6 +13977,26 @@ Sequential consistency (Lamport): the result of any execution is <em>as if</em> 
 </table>
 <p>Start coarse; refine only where profiling shows lock contention.</p>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 118" role="img" aria-labelledby="d-ccmx-t">
+<title id="d-ccmx-t">A condition variable parks a thread until another signals a state change</title>
+<rect class="d-box" x="14" y="20" width="150" height="80" rx="6"/>
+<text class="d-t-sm" x="24" y="38">consumer:</text>
+<text class="d-t-mono" x="24" y="54">lock(m)</text>
+<text class="d-t-mono" x="24" y="70">while(!ready)</text>
+<text class="d-t-mono" x="34" y="86">cv.wait(m)</text>
+<rect class="d-box" x="350" y="20" width="156" height="80" rx="6"/>
+<text class="d-t-sm" x="360" y="38">producer:</text>
+<text class="d-t-mono" x="360" y="54">lock(m)</text>
+<text class="d-t-mono" x="360" y="70">ready = true</text>
+<text class="d-t-mono" x="360" y="86">cv.notify_one()</text>
+<path class="d-line" d="M350 74 C 280 74, 240 60, 166 66" marker-end="url(#ccmx-ah)"/>
+<defs><marker id="ccmx-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="200" y="46">wait() atomically unlocks m + sleeps;</text>
+<text class="d-t-sm" x="200" y="104">wakes, re-locks m, re-checks the predicate</text>
+</svg>
+<figcaption>Always wait in a <code>while</code> loop, not an <code>if</code> &mdash; <strong>spurious wakeups</strong> happen, and another thread may grab the resource between notify and re-lock. The mutex protects the shared predicate; the condvar just avoids busy-waiting.</figcaption>
+</figure>
 <h3>Condition variables</h3>
 <pre><code>lock(m);
 while (!predicate())      <span class="c">// WHILE, not if</span>
@@ -14180,6 +14297,21 @@ state. Hardware provides: atomic load/store, <code>fetch_add</code>/<code>fetch_
 <pre><code><span class="c">// atomically: if (*p == expected) { *p = desired; return true; } else { expected = *p; return false; }</span>
 bool compare_exchange(p, &amp;expected, desired);</code></pre>
 
+<figure class="diagram">
+<svg viewBox="0 0 520 116" role="img" aria-labelledby="d-cccas-t">
+<title id="d-cccas-t">Compare-and-swap loop: read, compute, swap-if-unchanged, else retry</title>
+<rect class="d-box" x="20" y="40" width="90" height="28" rx="6"/><text class="d-t-sm" x="65" y="58" text-anchor="middle">read old</text>
+<rect class="d-box" x="150" y="40" width="110" height="28" rx="6"/><text class="d-t-sm" x="205" y="58" text-anchor="middle">new = f(old)</text>
+<rect class="d-box-soft" x="300" y="40" width="160" height="28" rx="6"/><text class="d-t-sm" x="380" y="58" text-anchor="middle">CAS(addr, old, new)</text>
+<path class="d-line" d="M110 54 L148 54" marker-end="url(#cccas-ah)"/>
+<path class="d-line" d="M260 54 L298 54" marker-end="url(#cccas-ah)"/>
+<path class="d-line" d="M380 68 C 380 92, 65 92, 65 70" marker-end="url(#cccas-ah)"/>
+<defs><marker id="cccas-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="200" y="104">failed (someone else changed it) &rarr; loop</text>
+<text class="d-t-sm" x="470" y="44" text-anchor="end">ok &rarr; done</text>
+</svg>
+<figcaption>One hardware instruction does compare+swap atomically. Lock-free, but a losing thread spins &mdash; and the <strong>ABA problem</strong> (value goes A&rarr;B&rarr;A) can fool a naive CAS; use tagged pointers or hazard pointers.</figcaption>
+</figure>
 <h3>The CAS loop</h3>
 <pre><code>old = x.load();
 <span class="k">do</span> {
@@ -14492,6 +14624,24 @@ Herlihy's consensus hierarchy ranks synchronisation primitives by the maximum nu
 <p class="subtitle">Reuse a fixed set of threads to run a stream of tasks &mdash; and size it right.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 110" role="img" aria-labelledby="d-ccpool-t">
+<title id="d-ccpool-t">A thread pool: many tasks, a bounded queue, a fixed set of workers</title>
+<rect class="d-box-alt" x="14" y="34" width="70" height="20"/><rect class="d-box-alt" x="14" y="56" width="70" height="20"/><rect class="d-box-alt" x="14" y="12" width="70" height="20"/>
+<text class="d-t-sm" x="49" y="90" text-anchor="middle">tasks</text>
+<rect class="d-box-soft" x="150" y="24" width="120" height="44" rx="6"/><text class="d-t-sm" x="210" y="42" text-anchor="middle">queue</text><text class="d-t-sm" x="210" y="58" text-anchor="middle">(bounded)</text>
+<path class="d-line" d="M84 40 L148 42" marker-end="url(#ccpool-ah)"/>
+<defs><marker id="ccpool-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="340" y="10" width="90" height="20"/><text class="d-t-sm" x="385" y="24" text-anchor="middle">worker 1</text>
+<rect class="d-box" x="340" y="36" width="90" height="20"/><text class="d-t-sm" x="385" y="50" text-anchor="middle">worker 2</text>
+<rect class="d-box" x="340" y="62" width="90" height="20"/><text class="d-t-sm" x="385" y="76" text-anchor="middle">worker 3</text>
+<path class="d-line" d="M270 40 L338 20" marker-end="url(#ccpool-ah)"/>
+<path class="d-line" d="M270 46 L338 46" marker-end="url(#ccpool-ah)"/>
+<path class="d-line" d="M270 52 L338 72" marker-end="url(#ccpool-ah)"/>
+<text class="d-t-sm" x="14" y="104">CPU-bound pool &asymp; number of cores; I/O-bound higher. Full queue &rarr; backpressure (block / reject), never unbounded memory.</text>
+</svg>
+<figcaption>Reuses threads instead of paying thread-creation cost per task, and caps concurrency so the machine isn't oversubscribed. Watch for deadlock if pool tasks block waiting on other pool tasks.</figcaption>
+</figure>
 <h3>Why pools</h3>
 <p>Creating a thread per task is expensive (stack allocation, kernel setup) and unbounded (a spike
 of tasks spawns thousands of threads &rarr; memory blow-up, scheduler thrash). A pool caps
