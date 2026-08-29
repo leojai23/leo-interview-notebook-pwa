@@ -14678,6 +14678,1065 @@ Several effects: (1) <strong>Frequency throttling</strong> &mdash; on many Intel
 </section>
 <!-- /TOPIC:arch:simd-perf -->
 
+<!-- ============================== BUILD & TOOLCHAIN TOPICS ============================== -->
+<!-- TOPIC:build:pipeline -->
+<section class="view topic" id="v-build-pipeline" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>The C/C++ Compilation Pipeline</h1>
+<p class="subtitle">Four stages from <code>.c</code> to executable &mdash; and what you can inspect at each.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The four stages</h3>
+<table>
+<tr><th>Stage</th><th>Tool</th><th>In &rarr; Out</th><th>See it with</th></tr>
+<tr><td>Preprocess</td><td>cpp</td><td><code>.c</code> + headers &rarr; expanded <code>.i</code> (one translation unit)</td><td><code>gcc -E</code></td></tr>
+<tr><td>Compile</td><td>cc1 / clang</td><td><code>.i</code> &rarr; assembly <code>.s</code></td><td><code>gcc -S</code></td></tr>
+<tr><td>Assemble</td><td>as</td><td><code>.s</code> &rarr; object file <code>.o</code> (machine code + symbol table + relocations)</td><td><code>gcc -c</code></td></tr>
+<tr><td>Link</td><td>ld / lld / gold</td><td><code>.o</code> files + libraries &rarr; executable or shared library</td><td><code>gcc</code> (default final step)</td></tr>
+</table>
+
+<h3>What each stage does</h3>
+<ul>
+<li><strong>Preprocess</strong>: <code>#include</code> file inclusion, <code>#define</code> macro expansion, <code>#if</code> conditional compilation, comment removal, line markers. No knowledge of C syntax.</li>
+<li><strong>Compile</strong>: parse, type-check, optimise, generate target assembly for <em>this TU only</em>. Errors like "undeclared identifier", type mismatches, most warnings.</li>
+<li><strong>Assemble</strong>: encode instructions to bytes; build a symbol table (what this <code>.o</code> defines and needs) and relocation entries (addresses to patch later).</li>
+<li><strong>Link</strong>: resolve every undefined symbol against another <code>.o</code> or library, lay out sections, apply relocations, produce the final binary. Errors like "undefined reference", "multiple definition".</li>
+</ul>
+
+<h3>Separate compilation</h3>
+<p>Each <code>.c</code> compiles independently to a <code>.o</code>; only changed files (and dependents via
+headers) recompile, then a fast relink. This is why the preprocessor + a stable header interface
+matter for build times, and why LTO (optimising across TUs at link time) is a separate opt-in
+that costs link time.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Preprocess (<code>-E</code>) &rarr; Compile (<code>-S</code>) &rarr; Assemble (<code>-c</code>) &rarr; Link (default).</li>
+<li>Preprocessor: <code>#include</code>/<code>#define</code>/<code>#if</code>, text only, no C awareness.</li>
+<li>Compiler: parse + type-check + optimise + emit asm, per translation unit; "undeclared", type errors, warnings.</li>
+<li>Assembler: asm &rarr; machine code + symbol table + relocations in a <code>.o</code>.</li>
+<li>Linker: resolve undefined symbols, place sections, apply relocations; "undefined reference", "multiple definition".</li>
+<li>Separate compilation: recompile only changed TUs, then relink &mdash; fast incremental builds.</li>
+<li>LTO defers optimisation to link time for cross-TU inlining, at the cost of link time.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Name the four stages of building a C program.</dt>
+<dd>Preprocessing, compilation (to assembly), assembly (to an object file), and linking (to an executable or library).</dd>
+<dt>Which stage produces an "undefined reference" error?</dt>
+<dd>Linking &mdash; the compiler happily accepts a call to a function it has only a declaration for; the linker fails when no object file or library defines that symbol.</dd>
+<dt>What does <code>gcc -c file.c</code> produce and stop at?</dt>
+<dd>It preprocesses, compiles, and assembles <code>file.c</code> into <code>file.o</code>, but does not link. You link the <code>.o</code> files together in a separate step.</dd>
+<dt>Does the preprocessor understand C syntax?</dt>
+<dd>No &mdash; it operates purely on tokens/text: inclusion, macro substitution, conditional compilation. It doesn't know types, scopes, or expressions.</dd>
+<dt>Why does changing one header trigger recompiling many source files?</dt>
+<dd>Every <code>.c</code> that <code>#include</code>s that header (directly or transitively) has a different preprocessed translation unit now, so its <code>.o</code> is stale and must be rebuilt. This is why minimising header dependencies (forward declarations, PImpl) speeds up builds.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Flag to see preprocessor output only?</summary><div class="answer-box">
+<code>gcc -E file.c</code>.
+</div></details>
+<details class="answer-reveal"><summary>What's inside a <code>.o</code> file besides machine code?</summary><div class="answer-box">
+A symbol table (defined and undefined symbols) and relocation entries (places to patch with final addresses).
+</div></details>
+<details class="answer-reveal"><summary>Which tool resolves symbols across object files?</summary><div class="answer-box">
+The linker (<code>ld</code> / <code>lld</code> / <code>gold</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You get "undefined reference to `foo`" but the header declaring <code>foo</code> is included. What's wrong?</summary><div class="answer-box">
+A declaration isn't a definition. The header tells the compiler <code>foo</code> exists; you still need to <em>link</em> the object file or library that <em>defines</em> it &mdash; you forgot to add <code>foo.o</code> / <code>-lfoo</code> to the link line, or it's after the thing that uses it (link order), or it's a C function being called from C++ without <code>extern "C"</code> (name mangling mismatch).
+</div></details>
+<details class="answer-reveal"><summary>Your build is slow. How does understanding the pipeline guide fixes?</summary><div class="answer-box">
+Profile which stage dominates. Preprocessing/parsing heavy &rarr; cut header bloat (forward declares, PImpl, precompiled headers / modules, <code>include-what-you-use</code>). Compile (optimisation) heavy &rarr; lower <code>-O</code> for dev builds, split huge TUs, use <code>-ftime-trace</code> (Clang) to find expensive templates. Link heavy &rarr; use a fast linker (lld/mold), disable LTO for dev, dynamic instead of static linking locally. Whole rebuilds &rarr; <code>ccache</code>, better dependency tracking, unity/jumbo builds cautiously.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is Link-Time Optimization (LTO) actually doing, and what are its costs?</summary><div class="answer-box">
+Without LTO, the compiler optimises each translation unit in isolation &mdash; it can't inline a function defined in another <code>.c</code>, can't propagate constants across the boundary, can't devirtualise based on whole-program knowledge, and can't remove a function that's unused program-wide (only unused within its TU). LTO defers final code generation: each <code>.o</code> stores the compiler's <em>intermediate representation</em> (GIMPLE / LLVM bitcode) instead of (or alongside) machine code; at link time a plugin in the linker hands all the IR back to the compiler, which now optimises with a whole-program view &mdash; cross-module inlining, interprocedural constant propagation, aggressive dead-code and dead-data elimination, better devirtualization, and (with PGO) hot/cold splitting across modules. Typical wins: 5&ndash;20% runtime, and meaningful binary-size reduction from dead-stripping. Costs: <strong>link time explodes</strong> (the "link" step is now a whole-program compile &mdash; minutes for large binaries; ThinLTO mitigates this with a lightweight summary phase + parallel per-module backend optimisation, trading some cross-module optimisation quality for near-parallel-compile link times); <strong>memory</strong> (monolithic LTO can need many GB); <strong>debuggability</strong> suffers (inlining and reordering across modules); <strong>incremental builds</strong> lose their benefit since a change can force re-optimising the whole program (ThinLTO's caching helps); and it can expose latent UB/ODR violations that per-TU compilation accidentally hid. Practice: LTO (usually ThinLTO) for release/CI builds, off for local dev.
+</div></details>
+<details class="answer-reveal"><summary>How do C++20 modules change the pipeline compared to headers?</summary><div class="answer-box">
+Headers are a <em>textual</em> mechanism: every <code>#include</code> pastes the file's tokens into the TU, so a widely-included header is preprocessed and parsed <em>once per TU that includes it</em> &mdash; the same 50k lines of standard-library headers re-parsed for every <code>.cpp</code>, which is why C++ builds are slow and why include order and macro leakage cause bugs. <strong>Modules</strong> add a real compilation artifact: a module interface unit (<code>export module foo;</code>) is compiled once into a <strong>BMI/CMI</strong> (Binary Module Interface &mdash; a serialised, already-parsed AST + exported symbol table), and every TU that says <code>import foo;</code> just loads that binary form &mdash; no re-parsing, no preprocessor exposure (macros defined in the module don't leak to importers), and import order doesn't matter. This restructures the build graph: the compiler now needs the BMIs of a TU's imports built <em>before</em> it, so the build system must discover the module dependency graph (a new "scan" phase) and schedule interface units first &mdash; a significant change for Make/CMake/Ninja, and the main reason adoption has been slow despite the compilers supporting it. Payoffs when it works: large drops in build time for module-heavy code, genuine encapsulation (only <code>export</code>ed names are visible), and the death of include guards / the ODR-via-textual-inclusion footguns. Costs: BMIs are compiler- and flag-specific (not portable, must be rebuilt on flag changes), tooling (IDEs, static analysers, ccache) is still catching up, and mixed header/module codebases have subtle visibility rules.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:pipeline -->
+
+<!-- TOPIC:build:translation-units -->
+<section class="view topic" id="v-build-translation-units" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>Translation Units &amp; the Preprocessor</h1>
+<p class="subtitle">What "one file compiles independently" really means, and the One Definition Rule.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Translation unit</h3>
+<p>A single <code>.c</code>/<code>.cpp</code> plus every header it <code>#include</code>s (recursively), after
+preprocessing. The compiler sees exactly this and nothing else &mdash; it has no knowledge of other
+<code>.cpp</code> files. Each TU becomes one <code>.o</code>.</p>
+
+<h3>Headers &amp; include guards</h3>
+<pre><code><span class="c">// widget.h</span>
+<span class="k">#ifndef</span> WIDGET_H
+<span class="k">#define</span> WIDGET_H
+<span class="c">/* declarations only */</span>
+<span class="k">#endif</span></code></pre>
+<p>A header can be pulled in multiple times through different paths in one TU; the guard (or
+<code>#pragma once</code>) makes the second and later inclusions no-ops so you don't get duplicate
+declarations. Headers should contain <strong>declarations</strong>, <code>inline</code>/<code>constexpr</code>
+definitions, templates, and type definitions &mdash; not non-inline function or variable definitions.</p>
+
+<h3>The One Definition Rule (ODR)</h3>
+<ul>
+<li>Each entity (non-inline function, variable) may be <strong>defined once</strong> across the whole program.</li>
+<li>Types, templates, inline functions may be defined in <em>every</em> TU &mdash; but every definition must be <strong>token-for-token identical</strong> (same tokens, same meaning of names).</li>
+<li>Violating the "identical" clause is <strong>ODR-UB</strong>: it usually links fine (the linker keeps one copy) but behaves unpredictably. Caused by: a header compiled with different macros/flags in different TUs, a struct with different members in two files, inconsistent packing.</li>
+</ul>
+
+<h3>Reducing TU coupling</h3>
+<ul>
+<li><strong>Forward declarations</strong> instead of includes where only a pointer/reference is used.</li>
+<li><strong>PImpl</strong> (pointer to implementation): the header exposes only an opaque pointer; the real members live in the <code>.cpp</code>, so changing them doesn't recompile clients.</li>
+<li>Put implementation details in the <code>.cpp</code>; keep headers minimal.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>TU = one <code>.c</code>/<code>.cpp</code> + its includes, after preprocessing &rarr; one <code>.o</code>. The compiler sees only this.</li>
+<li>Include guard / <code>#pragma once</code> makes repeated inclusion in one TU harmless.</li>
+<li>Headers: declarations, type defs, templates, <code>inline</code>/<code>constexpr</code> defs. <strong>Not</strong> plain function/variable definitions.</li>
+<li><strong>ODR</strong>: define a non-inline function/variable exactly once program-wide; define types/templates/inline funcs once per TU but <em>identically</em>.</li>
+<li>ODR "not identical" (different macros/flags/members across TUs) = silent UB &mdash; often links, then misbehaves.</li>
+<li>Cut recompiles: forward declare, PImpl, keep headers light, avoid heavy transitive includes.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is a translation unit?</dt>
+<dd>The single source file plus everything it includes, after the preprocessor runs. It's the unit of compilation &mdash; the compiler processes one TU at a time and emits one object file, with no visibility into other TUs.</dd>
+<dt>Why do headers need include guards?</dt>
+<dd>Within one translation unit a header can be reached via multiple include paths (A includes B and C, both of which include D). Without a guard, D's declarations appear multiple times &mdash; a redefinition error for types. The guard skips all but the first inclusion.</dd>
+<dt>State the One Definition Rule.</dt>
+<dd>A non-inline function or variable must have exactly one definition in the entire program. Types, templates, and inline functions may be defined in multiple TUs, but every definition must be identical token-for-token with the same name lookups.</dd>
+<dt>What's a subtle ODR violation that still links?</dt>
+<dd>A struct defined with an extra member (or different packing) in one <code>.cpp</code> than another &mdash; e.g. because a config macro differs between the two compilations. The linker picks one layout; code compiled against the other reads/writes wrong offsets. It builds and runs, then corrupts memory nondeterministically.</dd>
+<dt>How does PImpl reduce build times?</dt>
+<dd>The public header only declares a class holding a pointer to an undefined <code>Impl</code>; all real data members and includes live in the <code>.cpp</code>. Changing the implementation's members or its includes doesn't change the header, so client TUs don't recompile &mdash; only the one <code>.cpp</code> does.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>How many object files does one translation unit produce?</summary><div class="answer-box">
+One.
+</div></details>
+<details class="answer-reveal"><summary>Where do you put a non-inline function's definition &mdash; header or source?</summary><div class="answer-box">
+Source file (<code>.cpp</code>). The header gets only the declaration.
+</div></details>
+<details class="answer-reveal"><summary>What can you use instead of <code>#include</code> when you only need a pointer to a type?</summary><div class="answer-box">
+A forward declaration: <code>class Foo;</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You define <code>const int MAX = 100;</code> in a header included by several <code>.cpp</code> files. C or C++ &mdash; what happens?</summary><div class="answer-box">
+In <strong>C</strong>: file-scope <code>const</code> has external linkage, so each TU defines the same symbol &rarr; multiple-definition link error. In <strong>C++</strong>: a <code>const</code> at namespace scope has internal linkage by default, so each TU gets its own private copy &mdash; it links, but there are N copies (fine for an <code>int</code>, wasteful for large objects, and their addresses differ). Cleanest: <code>inline constexpr int MAX = 100;</code> (C++17) for one shared entity, or <code>constexpr</code>/<code>enum</code>.
+</div></details>
+<details class="answer-reveal"><summary>A program links fine but crashes only in release builds. You suspect an ODR issue. How do you find it?</summary><div class="answer-box">
+Look for a type/inline function whose definition depends on a macro, optimisation level, or flag that differs between TUs &mdash; grep for <code>#ifdef</code> around struct members, check that all files use the same <code>-D</code>s, packing pragmas, and standard version. Build with <code>-Wodr</code> (GCC, needs LTO) or <code>-flto</code> which often diagnoses mismatched definitions. Clang's <code>-fsanitize=cfi</code> or the "gold"/lld ODR checks help. Also check for a header that's compiled once as C and once as C++, or two libraries each carrying a differently-built copy of the same header-only type.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is the ODR "same tokens, same lookups" wording necessary &mdash; give a case where identical-looking definitions still violate it.</summary><div class="answer-box">
+Two TUs can contain byte-identical text for an inline function or template yet have it <em>mean</em> different things because unqualified names resolve differently in each context. Example: a header-only <code>template&lt;class T&gt; void log(const T&amp; x){ write(x); }</code> &mdash; in TU A, <code>write</code> finds a <code>void write(int)</code> visible at the point of definition; in TU B, a different <code>write</code> (a local overload, a different namespace brought in by a <code>using</code>, or a macro) is in scope. Both instantiations compile; the linker merges them (COMDAT) keeping one; now half the program calls the wrong <code>write</code>. Same with a definition that references a <code>static</code>/anonymous-namespace entity (different object per TU), an inline function whose body calls another inline function with a TU-specific definition, or a class with a member whose type is a macro expanding differently. That's why the rule isn't "same source" but "same sequence of tokens <em>and</em> each name refers to the same entity in every definition". Practically: header-only code must not depend on what's visible at the include site &mdash; fully qualify names, avoid ADL surprises, don't reference internal-linkage symbols from inline/template definitions.
+</div></details>
+<details class="answer-reveal"><summary>How do inline functions and templates avoid multiple-definition link errors despite being defined in every TU that uses them?</summary><div class="answer-box">
+The standard grants them an explicit ODR exemption (multiple definitions allowed, provided they're identical), and the toolchain implements it with <strong>COMDAT sections</strong> / <strong>weak symbols</strong>. When the compiler emits an out-of-line copy of an inline function or a template instantiation, it places it in its own section marked as a "COMDAT group" keyed by the mangled name (e.g. <code>.text._Z3fooIiEvv</code>), and marks the symbol <em>weak</em> or <em>linkonce</em>. The linker, seeing the same COMDAT key from multiple object files, keeps <em>one</em> and discards the rest (rather than erroring on the duplicate the way it would for a strong symbol). This is also how the same <code>std::string</code> methods end up defined in hundreds of <code>.o</code>s but the final binary has one copy each. The catch: the linker assumes the copies are equivalent and just picks one (often the first, or the largest) &mdash; if they actually differ (ODR violation), you silently get whichever copy won, with no diagnostic. It's also why an inline function's address is consistent across the program (one surviving copy) and why removing <code>inline</code> from a header function definition breaks the build with "multiple definition" (now it's a strong symbol).
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:translation-units -->
+
+<!-- TOPIC:build:object-symbols -->
+<section class="view topic" id="v-build-object-symbols" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>Object Files, Symbols &amp; Relocations</h1>
+<p class="subtitle">What's inside a <code>.o</code>, and the vocabulary linker errors use.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>ELF sections</h3>
+<table>
+<tr><th>Section</th><th>Holds</th></tr>
+<tr><td><code>.text</code></td><td>machine code (read + execute)</td></tr>
+<tr><td><code>.rodata</code></td><td>string literals, <code>const</code> data</td></tr>
+<tr><td><code>.data</code></td><td>initialised globals/statics (non-zero)</td></tr>
+<tr><td><code>.bss</code></td><td>zero/uninitialised globals/statics &mdash; just a size, no file bytes</td></tr>
+<tr><td><code>.symtab</code> / <code>.strtab</code></td><td>symbol table + names</td></tr>
+<tr><td><code>.rela.text</code> etc.</td><td>relocation entries</td></tr>
+<tr><td><code>.debug_*</code></td><td>DWARF debug info (from <code>-g</code>)</td></tr>
+</table>
+
+<h3>Symbols</h3>
+<ul>
+<li><strong>Defined</strong> (this <code>.o</code> provides it) vs <strong>undefined</strong> (needs it from elsewhere &mdash; shows as <code>U</code> in <code>nm</code>).</li>
+<li><strong>Global</strong> (external linkage, visible to the linker) vs <strong>local</strong> (<code>static</code>, lowercase in <code>nm</code>).</li>
+<li><strong>Weak</strong> (<code>W</code>): a global that a strong definition overrides; multiple weaks are allowed. Used for inline functions, <code>__attribute__((weak))</code> optional hooks.</li>
+<li><strong>Common</strong> (<code>C</code>): a tentative definition (<code>int x;</code> in C) &mdash; merged by the linker. Modern default (<code>-fno-common</code>) makes these normal definitions so duplicates error.</li>
+</ul>
+
+<h3>Relocations</h3>
+<p>The assembler doesn't know final addresses, so it emits placeholders plus <strong>relocation
+entries</strong> saying "patch the 4 bytes at offset X to point at symbol <code>foo</code> (+ addend), using
+this formula". The linker (and, for shared libs, the dynamic loader) applies them. PC-relative
+relocations enable position-independent code.</p>
+
+<h3>Inspection tools</h3>
+<pre><code>nm file.o            <span class="c"># symbols: T=text def, D=data def, U=undefined, W=weak, t/d=local</span>
+nm -C ...            <span class="c"># demangle C++ names</span>
+objdump -d file.o    <span class="c"># disassemble</span>
+objdump -r file.o    <span class="c"># relocations</span>
+readelf -a file.o    <span class="c"># full ELF structure</span>
+c++filt _Z3fooi      <span class="c"># demangle one name</span>
+size file.o          <span class="c"># .text/.data/.bss sizes</span>
+strings file         <span class="c"># printable strings</span></code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>ELF sections: <code>.text</code> (code), <code>.rodata</code> (const), <code>.data</code> (init non-zero), <code>.bss</code> (zero, no file bytes), <code>.symtab</code>, <code>.rela.*</code>, <code>.debug_*</code>.</li>
+<li>Symbol states: defined vs undefined (<code>U</code>); global vs local (<code>static</code>); weak (<code>W</code>, overridable); common (<code>C</code>, tentative &mdash; killed by <code>-fno-common</code>).</li>
+<li>Relocations = "patch bytes here to reference symbol S" &mdash; applied by the linker / dynamic loader.</li>
+<li><code>nm</code> letters: <code>T</code>/<code>t</code> text, <code>D</code>/<code>d</code> data, <code>B</code>/<code>b</code> bss, <code>U</code> undefined, <code>W</code> weak. Uppercase = global.</li>
+<li>Tools: <code>nm -C</code>, <code>objdump -d</code>/<code>-r</code>, <code>readelf -a</code>, <code>c++filt</code>, <code>size</code>, <code>strings</code>, <code>ldd</code>.</li>
+<li>Strip debug/symbols with <code>strip</code> (or ship a separate <code>.debug</code> via <code>objcopy --only-keep-debug</code>).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does <code>U</code> mean in <code>nm</code> output?</dt>
+<dd>An undefined symbol &mdash; the object file references it but doesn't define it, so the linker must find it in another object or library.</dd>
+<dt>Why does <code>.bss</code> take no space in the object file but <code>.data</code> does?</dt>
+<dd><code>.bss</code> is zero-initialised, so only its size needs recording; the loader zero-fills that region at startup. <code>.data</code> holds non-zero initial values, which must be stored byte-for-byte in the file.</dd>
+<dt>What is a weak symbol?</dt>
+<dd>A global definition that yields to a strong (normal) definition of the same name if one exists, and doesn't conflict with other weak definitions. Compilers emit weak symbols for inline functions and template instantiations; you can mark optional hook functions <code>__attribute__((weak))</code>.</dd>
+<dt>What is a relocation?</dt>
+<dd>An instruction to the linker/loader: "the value at this offset in this section needs to be computed from the final address of symbol S (plus an addend), using this relocation type". It exists because the assembler can't know final addresses.</dd>
+<dt>How do you see the symbols a shared library exports?</dt>
+<dd><code>nm -D --defined-only libfoo.so</code> (dynamic symbol table), or <code>readelf --dyn-syms</code>, or <code>objdump -T</code>.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which section holds string literals?</summary><div class="answer-box">
+<code>.rodata</code>.
+</div></details>
+<details class="answer-reveal"><summary>Command to demangle a C++ symbol name?</summary><div class="answer-box">
+<code>c++filt</code>, or <code>nm -C</code> / <code>objdump -C</code>.
+</div></details>
+<details class="answer-reveal"><summary>What kind of symbol does a <code>static</code> function produce?</summary><div class="answer-box">
+A local symbol (lowercase <code>t</code> in <code>nm</code>) &mdash; not visible to the linker outside its object file.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Two libraries both define <code>int global_config;</code> at file scope. Historically it linked; now it errors. Why?</summary><div class="answer-box">
+Old default (<code>-fcommon</code>): an uninitialised file-scope variable became a "common" symbol, and the linker merged same-named commons into one &mdash; silently. GCC 10 / modern Clang default to <code>-fno-common</code>, making each a normal (tentative-then-emitted) definition, so two of them is a "multiple definition" error. The correct fix: define it once in one <code>.c</code>, and put <code>extern int global_config;</code> in a shared header.
+</div></details>
+<details class="answer-reveal"><summary>Your binary is huge. How do you find out what's taking the space?</summary><div class="answer-box">
+<code>size -A binary</code> for per-section sizes; <code>nm --size-sort -C binary | tail</code> for the biggest symbols; <code>bloaty</code> (Google) for a hierarchical breakdown by section, symbol, compile unit, and even diffing two binaries. Common culprits: unstripped debug info (<code>strip</code> or split it), template instantiation bloat, statically linked libraries, no <code>-ffunction-sections -Wl,--gc-sections</code> to drop unused code, RTTI/exception tables, embedded resources.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain <code>-ffunction-sections -fdata-sections</code> + <code>--gc-sections</code> and its limits.</summary><div class="answer-box">
+Normally the compiler puts all functions from a TU into one <code>.text</code> section and all data into <code>.data</code>/<code>.bss</code>; the linker's unit of inclusion is the whole section, so if you reference <em>any</em> symbol from an object file, you pull in <em>all</em> its code (for a static lib, at least the whole member <code>.o</code>). <code>-ffunction-sections</code>/<code>-fdata-sections</code> tells the compiler to emit each function and each data object into its <em>own</em> section (<code>.text.foo</code>, <code>.data.bar</code>). Then the linker's <code>--gc-sections</code> does a mark-and-sweep from the entry point (and other roots: exported symbols, <code>KEEP()</code> sections, init/fini arrays) and <em>discards any section nothing references</em> &mdash; dead-code elimination at link granularity. Big wins for embedded firmware and for trimming statically-linked libraries. Limits and gotchas: (1) it's conservative &mdash; anything reachable via a function pointer, a vtable, an exception-handling table, RTTI, or a relocation from a kept section is retained, so C++ with polymorphism/exceptions keeps more than you'd hope. (2) Sections referenced only from the symbol table or by name (interrupt vector tables, linker-script-placed data, plugin entry points) must be protected with <code>KEEP()</code> in the linker script or <code>__attribute__((used))</code>, or they vanish. (3) It slightly increases <code>.o</code> size and link time (many more sections). (4) It doesn't cross into shared libraries. LTO does a better job (whole-program reachability on the IR, including devirtualization to prove a virtual isn't called) but at much higher link cost; <code>--gc-sections</code> is the cheap, always-on baseline.
+</div></details>
+<details class="answer-reveal"><summary>What are the common relocation types (<code>R_X86_64_PC32</code>, <code>_PLT32</code>, <code>_GOTPCREL</code>, <code>_64</code>) and when is each used?</summary><div class="answer-box">
+<strong><code>R_X86_64_64</code></strong>: patch a full 64-bit absolute address of the symbol &mdash; used for pointer-sized data that must hold a real address (a global pointer initialised to <code>&amp;foo</code>, vtable entries in non-PIE). Requires the target to be at a known address, so in PIE/PIC these become dynamic relocations resolved at load time. <strong><code>R_X86_64_PC32</code></strong>: 32-bit PC-relative &mdash; "displacement from the next instruction to the symbol". Used for direct calls/jumps and RIP-relative data access <em>within the same module</em>, where the distance fits in &plusmn;2GB. Position-independent (only relative), no dynamic reloc needed if the symbol is defined locally. <strong><code>R_X86_64_PLT32</code></strong>: like PC32 but the target is allowed to be a <strong>PLT stub</strong> &mdash; emitted for calls to functions that <em>might</em> be in another shared library; if the symbol turns out local the linker relaxes it to a plain PC32 direct call, otherwise it points at the Procedure Linkage Table entry that does the lazy dynamic resolve. <strong><code>R_X86_64_GOTPCREL</code></strong>: PC-relative reference to the symbol's slot in the <strong>Global Offset Table</strong> &mdash; used to access a <em>global variable</em> that may be defined in another shared object; the code loads the address from the GOT (which the dynamic loader filled in), adding one indirection. So roughly: intra-module code &rarr; PC32; inter-module (or maybe-inter-module) calls &rarr; PLT32; inter-module data &rarr; GOTPCREL; absolute pointers in data &rarr; 64 (becoming a load-time dynamic reloc under ASLR/PIE). Reading <code>objdump -dr</code> and seeing which of these appear tells you how position-independent and how "library-boundary-crossing" the code is.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:object-symbols -->
+
+<!-- TOPIC:build:linker -->
+<section class="view topic" id="v-build-linker" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>The Linker: Resolution &amp; Ordering</h1>
+<p class="subtitle">Why link order matters, and how "undefined reference" and "multiple definition" happen.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What the linker does</h3>
+<ol>
+<li><strong>Symbol resolution</strong>: for every undefined symbol, find exactly one definition among the inputs.</li>
+<li><strong>Section placement</strong>: merge same-named sections, assign addresses (per a linker script).</li>
+<li><strong>Relocation</strong>: patch every reference with the now-known address.</li>
+<li>Write the executable / shared object (headers, program segments, dynamic info).</li>
+</ol>
+
+<h3>Link order (the classic gotcha)</h3>
+<p>The traditional Unix linker processes inputs <strong>left to right</strong>, keeping a set of
+"currently undefined" symbols. When it reaches a <strong>static library</strong> (<code>.a</code>), it pulls
+in <em>only</em> the member objects that satisfy a currently-undefined symbol. So a library must
+come <em>after</em> the objects that use it:</p>
+<pre><code>gcc main.o -lfoo         <span class="c"># OK: main.o needs foo, then -lfoo provides it</span>
+gcc -lfoo main.o         <span class="c"># FAIL: at -lfoo nothing is undefined yet, so it's skipped;</span>
+                         <span class="c">#       then main.o needs foo -> "undefined reference"</span></code></pre>
+<p>Circular dependencies between static libs: repeat them, or wrap in
+<code>-Wl,--start-group ... --end-group</code>. Object files (<code>.o</code>) are always fully included
+regardless of order.</p>
+
+<h3>Common errors</h3>
+<ul>
+<li><strong>undefined reference to X</strong>: no input defines X (missing <code>.o</code>/library, wrong link order, C/C++ mangling mismatch, wrong library version).</li>
+<li><strong>multiple definition of X</strong>: two strong definitions (a real function/variable definition in a header included twice, missing <code>inline</code>/<code>static</code>, two libs with the same symbol).</li>
+<li><strong>DSO missing from command line</strong>: an indirect dependency you now must name explicitly.</li>
+</ul>
+
+<h3>Optimisations at link</h3>
+<p><code>--gc-sections</code> (drop unused sections), <code>--icf</code> (identical code folding &mdash; merge
+byte-identical functions), <code>-flto</code> (whole-program optimisation), <code>-s</code> (strip). Fast
+linkers: <code>lld</code>, <code>mold</code>, <code>gold</code> &mdash; large wins over classic <code>ld</code> for big binaries.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Linker: resolve every undefined symbol to exactly one definition &rarr; place sections &rarr; apply relocations &rarr; emit binary.</li>
+<li>Static libs (<code>.a</code>) are scanned left-to-right; only members that resolve a <em>currently</em>-undefined symbol are pulled in &rarr; put libraries <strong>after</strong> the code that uses them.</li>
+<li>Circular static-lib deps: list them twice, or <code>-Wl,--start-group ... --end-group</code>.</li>
+<li>Plain <code>.o</code> files are always fully linked, order-independent.</li>
+<li>"undefined reference" = missing/mis-ordered lib, mangling mismatch, wrong version.</li>
+<li>"multiple definition" = two strong defs (def in header, missing <code>inline</code>/<code>static</code>, duplicate lib symbol).</li>
+<li>Link-time: <code>--gc-sections</code>, <code>--icf</code>, <code>-flto</code>, <code>-s</code> (strip). Use <code>lld</code>/<code>mold</code> for speed.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why does <code>gcc -lm main.o</code> fail but <code>gcc main.o -lm</code> work?</dt>
+<dd>The linker scans left to right tracking undefined symbols. At <code>-lm</code> (first) nothing is undefined yet, so no members of libm are pulled in. Then <code>main.o</code> introduces undefined math symbols, but libm has already been passed. Put libraries after the objects/libraries that depend on them.</dd>
+<dt>How do you resolve a circular dependency between two static libraries?</dt>
+<dd>List them more than once (<code>-la -lb -la</code>), or group them: <code>-Wl,--start-group -la -lb -Wl,--end-group</code>, which makes the linker re-scan the group until no new symbols are resolved.</dd>
+<dt>What causes "multiple definition of `foo`"?</dt>
+<dd>Two strong definitions of the same symbol in the link &mdash; commonly a non-inline function or a variable defined in a header that's included by two <code>.cpp</code> files, or forgetting <code>static</code>/<code>inline</code>, or linking two libraries that each carry the symbol.</dd>
+<dt>Are object files order-sensitive on the link line?</dt>
+<dd>No &mdash; every <code>.o</code> is included in full regardless of position. Only static libraries (<code>.a</code>) are order-sensitive because the linker pulls members from them selectively.</dd>
+<dt>What does the linker's identical-code-folding (ICF) do?</dt>
+<dd>Detects functions whose compiled machine code is byte-for-byte identical (very common with templates instantiated for different-but-layout-compatible types) and keeps just one copy, redirecting all callers to it &mdash; shrinking the binary. "Safe" ICF avoids folding functions whose address is taken and compared.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Where on the link line do libraries go relative to the objects that use them?</summary><div class="answer-box">
+After &mdash; to the right of the objects/libraries that reference their symbols.
+</div></details>
+<details class="answer-reveal"><summary>Which input type is order-independent: <code>.o</code> or <code>.a</code>?</summary><div class="answer-box">
+<code>.o</code> object files (always fully linked). <code>.a</code> archives are order-sensitive.
+</div></details>
+<details class="answer-reveal"><summary>Two error strings a linker produces?</summary><div class="answer-box">
+"undefined reference to X" and "multiple definition of X".
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A C library function called from C++ gives "undefined reference" even though you linked the library. Why?</summary><div class="answer-box">
+Name mangling: the C++ compiler mangled the call to <code>_Z3fooi</code> (or similar), but the C library exports the plain symbol <code>foo</code>. The C header must wrap its declarations in <code>extern "C" { ... }</code> (usually guarded by <code>#ifdef __cplusplus</code>) so the C++ compiler emits an unmangled reference. If you can't edit the header, wrap the include yourself.
+</div></details>
+<details class="answer-reveal"><summary>Your app pulls in a huge static library but uses two functions from it. Binary is bloated. Options?</summary><div class="answer-box">
+Ensure the library was built with <code>-ffunction-sections -fdata-sections</code> and link with <code>-Wl,--gc-sections</code> so unused members' sections are discarded (a static lib's <em>member object</em> is the minimum inclusion unit otherwise, so one used symbol drags in its whole <code>.o</code>). Or use a shared library so the code isn't copied in at all. Or LTO, which can dead-strip across the whole program. Or find a smaller/modular alternative.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how the linker resolves a symbol when it appears in an executable, one shared library it links directly, and another it doesn't &mdash; and what "symbol interposition" means.</summary><div class="answer-box">
+At <em>static link</em> time, the linker only needs to know that <em>some</em> shared object on the link line (or a transitive <code>DT_NEEDED</code>) exports the symbol &mdash; it records an undefined dynamic symbol and a dependency, and defers actual binding to runtime. At <em>load</em> time, the dynamic loader builds a single global symbol namespace by processing objects in a defined order (executable first, then its <code>DT_NEEDED</code> libraries breadth-first). The <strong>first</strong> definition found for a given name wins for <em>everyone</em> &mdash; this is <strong>symbol interposition</strong>: because the executable is searched before the libraries, a function the executable defines with the same name as one in a library will be the one <em>the library itself</em> calls (unless the library was built to prevent it). This is the mechanism behind <code>LD_PRELOAD</code> (inject a library that gets searched first, so your <code>malloc</code>/<code>open</code> replaces the real one everywhere), and behind the classic bug where an app accidentally defines <code>read</code> or <code>_init</code> and breaks libc. The cost: to preserve the possibility of interposition, position-independent code in a shared library must call even its <em>own</em> global functions through the PLT/GOT (an indirection) rather than a direct call, and access its own globals via the GOT &mdash; measurable overhead. Mitigations that opt out of interposition for speed: <code>-fvisibility=hidden</code> + explicit <code>__attribute__((visibility("default")))</code> on the real API (non-exported symbols get direct calls), <code>-Bsymbolic</code> / <code>-Bsymbolic-functions</code> (bind references to definitions within the same DSO at link time), and <code>protected</code> visibility. These make the library faster and more self-consistent but mean <code>LD_PRELOAD</code> can no longer override its internal calls.
+</div></details>
+<details class="answer-reveal"><summary>Why can link order between two static libraries that <em>mutually</em> depend still fail even with a single pass, and how does <code>--start-group</code> actually work?</summary><div class="answer-box">
+Single-pass left-to-right resolution keeps a running "undefined set". Say <code>liba.a</code> has <code>a_func</code> (which calls <code>b_func</code>) and <code>libb.a</code> has <code>b_func</code> (which calls <code>a_helper</code> from <code>liba.a</code>). Link line <code>main.o -la -lb</code>: <code>main.o</code> leaves <code>a_func</code> undefined &rarr; at <code>-la</code>, pull in the member with <code>a_func</code>, which adds <code>b_func</code> to undefined &rarr; at <code>-lb</code>, pull in the member with <code>b_func</code>, which adds <code>a_helper</code> to undefined &rarr; but <code>-la</code> is already <em>behind</em> us, so <code>a_helper</code> stays undefined &rarr; error. <code>-Wl,--start-group -la -lb -Wl,--end-group</code> tells the linker to treat the enclosed archives as a unit and <strong>iterate</strong>: scan the group, and if the pass resolved any new symbols (i.e. pulled in new members that introduced new undefineds satisfiable within the group), scan it again &mdash; repeat until a full pass adds nothing. So the second pass over the group finds <code>a_helper</code> in <code>liba.a</code>. The cost is O(passes &times; group size) link time, which is why you scope the group tightly rather than wrapping the whole link line. The cleaner fix is to break the cycle (merge the libraries, or move the shared helper into a third base library that both depend on), or use a linker like <code>lld</code>/<code>gold</code> which effectively does whole-archive symbol resolution and is far less order-sensitive. <code>-Wl,--whole-archive</code> (force <em>all</em> members in, order-independent) is the sledgehammer &mdash; correct but bloats the binary.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:linker -->
+
+<!-- TOPIC:build:static-dynamic -->
+<section class="view topic" id="v-build-static-dynamic" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>Static vs Dynamic Libraries</h1>
+<p class="subtitle">Copy the code in at build time, or load it at run time &mdash; and everything that follows.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The two models</h3>
+<table>
+<tr><th></th><th>Static (<code>.a</code> / <code>.lib</code>)</th><th>Dynamic (<code>.so</code> / <code>.dll</code> / <code>.dylib</code>)</th></tr>
+<tr><td>When linked</td><td>build time &mdash; needed members copied into the binary</td><td>load time (or later via <code>dlopen</code>)</td></tr>
+<tr><td>Binary size</td><td>larger (code baked in)</td><td>smaller</td></tr>
+<tr><td>Memory</td><td>each process has its own copy</td><td>one copy of the code shared across processes</td></tr>
+<tr><td>Deployment</td><td>self-contained, no external deps</td><td>must ship / have the right <code>.so</code> versions present</td></tr>
+<tr><td>Updates</td><td>relink to pick up a library fix</td><td>drop-in a new <code>.so</code> (if ABI-compatible)</td></tr>
+<tr><td>Startup</td><td>fast</td><td>loader must find, map, and relocate each library</td></tr>
+</table>
+
+<h3>Position-independent code</h3>
+<p>Shared libraries are built with <code>-fPIC</code> so they work at any load address (ASLR). References
+to globals and cross-library functions go through the <strong>GOT</strong> (Global Offset Table) and
+<strong>PLT</strong> (Procedure Linkage Table), filled in by the dynamic loader &mdash; a small indirection
+cost. Executables use <code>-fPIE</code> (PIC for the main program) &mdash; now the default for ASLR.</p>
+
+<h3>Runtime loading</h3>
+<ul>
+<li>The loader (<code>ld.so</code>) reads the executable's <code>DT_NEEDED</code> list, searches <code>RUNPATH</code>/<code>LD_LIBRARY_PATH</code>/<code>/etc/ld.so.cache</code>/system dirs, maps each library, and applies relocations. <code>ldd binary</code> shows the resolved list.</li>
+<li><strong>Lazy binding</strong>: a function's address is resolved on first call (via the PLT). <code>LD_BIND_NOW</code> forces eager resolution.</li>
+<li><code>dlopen</code>/<code>dlsym</code>/<code>dlclose</code> for plugins loaded explicitly at runtime.</li>
+</ul>
+
+<h3>Versioning</h3>
+<p><strong>SONAME</strong> (<code>libfoo.so.2</code>) encodes the ABI major version; a compatible update
+bumps only the minor (<code>libfoo.so.2.3</code> &rarr; <code>2.4</code>) and keeps the same SONAME so existing
+binaries keep working. Symbol versioning (<code>libc.so.6</code> with <code>GLIBC_2.34</code> tags) lets one
+<code>.so</code> serve old and new callers. Break the ABI &rarr; bump the SONAME.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Static (<code>.a</code>): linked at build, code copied in &rarr; bigger binary, per-process copy, self-contained, fast start, relink to update.</li>
+<li>Dynamic (<code>.so</code>/<code>.dll</code>): linked at load (or <code>dlopen</code>) &rarr; smaller binary, code shared across processes, external dependency, slower start.</li>
+<li><code>.so</code> built with <code>-fPIC</code>; calls/globals go via PLT/GOT (loader fills them, small indirection). Executables use <code>-fPIE</code>.</li>
+<li>Loader: <code>DT_NEEDED</code> + search path (<code>RUNPATH</code> &gt; <code>LD_LIBRARY_PATH</code> &gt; <code>ld.so.cache</code> &gt; defaults); lazy binding by default; <code>ldd</code> to inspect.</li>
+<li>SONAME = ABI major version; compatible updates keep it, incompatible ones bump it. Symbol versioning serves old + new callers from one <code>.so</code>.</li>
+<li><code>dlopen</code>/<code>dlsym</code> for runtime plugins.</li>
+<li>Static for reproducible single-file deploys / containers-from-scratch; dynamic for shared system libs and hot-patchable updates.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Static vs dynamic linking &mdash; the core trade-off?</dt>
+<dd>Static: the library code is copied into your binary at build time &mdash; self-contained, no runtime dependency, faster startup, but bigger and you must relink to get library fixes. Dynamic: the library is a separate file loaded at run time &mdash; smaller binaries, one shared copy in memory across processes, drop-in updates, but you depend on the right version being present and pay startup/indirection cost.</dd>
+<dt>Why must shared libraries be compiled with <code>-fPIC</code>?</dt>
+<dd>They can be loaded at any address (different per process under ASLR, and different libraries can't all claim the same fixed address). Position-independent code uses PC-relative addressing and indirection tables (GOT/PLT) so it works regardless of load address, without the loader having to rewrite every instruction.</dd>
+<dt>What is a SONAME and why does it matter?</dt>
+<dd>An embedded name like <code>libssl.so.3</code> that captures the ABI version. Binaries record the SONAME they were built against; the loader finds a file providing it. Backward-compatible library updates keep the SONAME (so old binaries still run); ABI-breaking changes bump it (so old binaries don't silently load an incompatible library).</dd>
+<dt>What does <code>dlopen</code> give you over normal dynamic linking?</dt>
+<dd>Explicit, on-demand loading of a library your program names at runtime (from config, a plugin directory), with <code>dlsym</code> to look up functions by string. Used for plugin architectures, optional features, and lazy loading of rarely-used heavy dependencies.</dd>
+<dt>When would you statically link everything?</dt>
+<dd>For maximally portable single-file deployment (copy the binary anywhere, no dependency hell), minimal containers (`FROM scratch`), reproducibility, avoiding "works on my machine" library-version drift, and slightly faster startup / no PLT indirection. Downsides: bigger images, security fixes in a library need every dependent rebuilt, and glibc static linking has caveats (NSS, locale).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which library type makes a bigger executable?</summary><div class="answer-box">
+Static &mdash; the used code is copied into the binary.
+</div></details>
+<details class="answer-reveal"><summary>Command to list a binary's shared-library dependencies?</summary><div class="answer-box">
+<code>ldd binary</code> (Linux); <code>otool -L</code> on macOS.
+</div></details>
+<details class="answer-reveal"><summary>What flag builds position-independent code for a shared library?</summary><div class="answer-box">
+<code>-fPIC</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your program runs on the build machine but fails with "libfoo.so.2: cannot open shared object file" on deploy. Fixes?</summary><div class="answer-box">
+The runtime host lacks that library (or the right version) on its search path. Options: install the package providing <code>libfoo.so.2</code>; ship the <code>.so</code> alongside and set <code>RUNPATH</code> (<code>-Wl,-rpath,'$ORIGIN/lib'</code>) so the loader looks next to the binary; statically link that dependency; or use a container image that bundles it. Diagnose with <code>ldd</code> (shows "not found") and <code>LD_DEBUG=libs ./prog</code> (shows the search).
+</div></details>
+<details class="answer-reveal"><summary>Two shared libraries your app loads each bundle their own copy of a third library's symbols, and you get crashes. What's happening?</summary><div class="answer-box">
+Symbol collision in the single global namespace: both copies of the third library's functions/globals have the same names, the loader binds every caller to whichever it saw first, so library A ends up calling library B's copy's state (different <code>errno</code>-like globals, different allocator arenas, mismatched struct layouts if versions differ). Fixes: make the third library a single shared dependency both link against (don't bundle); build the plugins with <code>-fvisibility=hidden</code> so only their real API is exported; load plugins with <code>dlopen(..., RTLD_LOCAL)</code> (and <code>RTLD_DEEPBIND</code> cautiously) so their symbols don't enter the global scope; or use distinct namespaces (<code>dlmopen</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Walk through what the dynamic loader does between <code>execve</code> and <code>main()</code>.</summary><div class="answer-box">
+The kernel maps the executable and, seeing it's dynamically linked (<code>PT_INTERP</code> program header naming <code>/lib64/ld-linux-x86-64.so.2</code>), also maps the loader and transfers control to <em>it</em>, not the program. The loader: (1) parses its own <code>DYNAMIC</code> section and self-relocates (bootstrap &mdash; it can't call anything yet). (2) Reads the executable's <code>DT_NEEDED</code> entries, and recursively theirs, building the dependency graph; resolves each name via <code>DT_RUNPATH</code> (or legacy <code>RPATH</code>), <code>LD_LIBRARY_PATH</code>, the <code>ld.so.cache</code> (<code>ldconfig</code>-built index), then default dirs; <code>mmap</code>s each library's segments (text shared read-only/exec, data private COW). (3) Performs <strong>relocations</strong>: for each object, processes its relocation tables &mdash; <code>R_*_RELATIVE</code> (add load base, cheap), and symbolic relocations that require searching the global symbol scope in load order (first definition wins &mdash; interposition). <code>DT_BIND_NOW</code>/<code>LD_BIND_NOW</code> or full RELRO does all function relocations now; otherwise <strong>lazy binding</strong> leaves PLT entries pointing at the resolver stub, bound on first call. (4) Applies <strong>RELRO</strong>: <code>mprotect</code>s the GOT (and other relro data) read-only after relocation to harden against GOT-overwrite attacks. (5) Runs each library's <strong>init</strong> functions in dependency order &mdash; <code>DT_INIT</code> then the <code>DT_INIT_ARRAY</code> (C++ static constructors, <code>__attribute__((constructor))</code>, <code>ifunc</code> resolvers). (6) Jumps to the executable's entry point (<code>_start</code>), which sets up the C runtime and calls <code>main</code>. On exit, <code>DT_FINI_ARRAY</code>/<code>atexit</code> destructors run in reverse. <code>LD_DEBUG=all</code> traces every step; static-PIE binaries fold the loader's job into the program itself.
+</div></details>
+<details class="answer-reveal"><summary>What is symbol versioning in glibc (<code>GLIBC_2.x</code>), and how does it let one <code>libc.so.6</code> support 20 years of binaries?</summary><div class="answer-box">
+Instead of bumping the SONAME every time a function's behaviour changes, glibc attaches a <strong>version node</strong> to each symbol. When the semantics of, say, <code>memcpy</code> or <code>realpath</code> or <code>pow</code> change in an incompatible way, glibc keeps the <em>old</em> implementation under the old version (<code>memcpy@GLIBC_2.2.5</code>) and adds the new one as the <em>default</em> (<code>memcpy@@GLIBC_2.14</code> &mdash; double-at marks the default). A binary linked years ago recorded a reference to <code>memcpy@GLIBC_2.2.5</code> and the loader binds it to the preserved old code; a freshly compiled binary gets <code>memcpy@@GLIBC_2.14</code>. This is why an ancient binary still runs on a modern system (the old symbol versions are all still present) but a binary built on a new system fails on an old one with "version `GLIBC_2.34' not found" (the new node doesn't exist there). The version map is declared in a linker version script (<code>--version-script</code>); the linker stamps each undefined reference with the version of the definition it saw at link time. It also enables <em>gradual</em> ABI evolution for third-party libraries: you can add a symbol, change one, or remove one, mark versions accordingly, and old consumers keep working &mdash; a much finer-grained tool than the all-or-nothing SONAME bump. The cost is complexity in the build (version scripts, careful "old code path" maintenance) and that it only helps for changes you anticipated versioning; a bug that changes behaviour of an <em>unversioned</em> path still breaks callers.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:static-dynamic -->
+
+<!-- TOPIC:build:abi-mangling -->
+<section class="view topic" id="v-build-abi-mangling" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>The ABI &amp; Name Mangling</h1>
+<p class="subtitle">The contract two separately-compiled pieces of code must agree on to call each other.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>What an ABI covers</h3>
+<ul>
+<li><strong>Calling convention</strong>: which registers/stack slots pass arguments and return values, who cleans up, caller- vs callee-saved registers, stack alignment.</li>
+<li><strong>Type layout</strong>: sizes, alignment, struct padding, enum underlying type, bitfield order, vtable layout, RTTI, exception tables.</li>
+<li><strong>Name mangling</strong>: how source names map to linker symbols.</li>
+<li><strong>Object-file format</strong>, standard library layout, <code>std::string</code>/<code>std::list</code> representation.</li>
+</ul>
+<p>The <strong>API</strong> is the source-level interface (function signatures); the <strong>ABI</strong> is the
+binary-level one. Code compiled separately must share an ABI to interoperate.</p>
+
+<h3>Name mangling</h3>
+<pre><code>C:    int add(int, int);          -&gt; symbol:  add
+C++:  int add(int, int);          -&gt; symbol:  _Z3addii
+C++:  int add(double, double);    -&gt; symbol:  _Z3adddd
+C++:  namespace N { void f(); }   -&gt; symbol:  _ZN1N1fEv</code></pre>
+<p>C++ encodes namespace, class, function name, parameter types (and templates, <code>const</code>,
+ref-qualifiers) into the symbol &mdash; that's how overloading and namespaces coexist at link time.
+C doesn't mangle. <code>extern "C" { ... }</code> tells a C++ compiler to emit an <em>unmangled</em>
+symbol so C and C++ can call each other; note it also disables overloading for those functions.</p>
+
+<h3>ABI breaks</h3>
+<p>Changes that keep the API but break the ABI &mdash; recompiling every consumer is required:</p>
+<ul>
+<li>Adding/removing/reordering a class's data members or virtual functions; changing a member's type.</li>
+<li>Changing an enum's underlying type; changing struct packing.</li>
+<li>Changing a function's signature in a way that affects the mangled name or the calling convention (adding a default argument is API-compatible but callers still linked against the old symbol).</li>
+<li>Switching standard-library implementation or the infamous <code>_GLIBCXX_USE_CXX11_ABI</code> flag (pre-C++11 vs C++11 <code>std::string</code>).</li>
+</ul>
+<p>Stable-ABI techniques: a pure C interface, opaque handles + accessor functions, PImpl,
+versioned symbols, "only add, never change" rules.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>ABI = binary contract: calling convention (regs/stack, saved regs, alignment), type/vtable/struct layout, name mangling, object format, stdlib layout.</li>
+<li>API = source interface; ABI = the compiled interface. Separately compiled code needs a shared ABI.</li>
+<li>C: no mangling (<code>add</code>). C++: mangled (<code>_Z3addii</code>) to encode namespace/class/params &rarr; enables overloading.</li>
+<li><code>extern "C"</code> &rarr; unmangled symbol for C&harr;C++ interop; disables overloading for those names.</li>
+<li>ABI breaks (need full recompile): change data members / virtuals / their order/type, enum base, struct packing, calling convention, stdlib ABI flag.</li>
+<li>Adding a default argument is API- but not ABI- relevant for already-linked callers.</li>
+<li>Stable ABI: expose a C API, opaque handles, PImpl, symbol versioning, additive-only changes.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>API vs ABI?</dt>
+<dd>The API is the source-level contract &mdash; function names, signatures, types &mdash; that lets code <em>compile</em> against a library. The ABI is the binary-level contract &mdash; calling convention, exact type layout, symbol names &mdash; that lets already-compiled code <em>link and run</em> against a library without recompiling.</dd>
+<dt>Why does C++ mangle names?</dt>
+<dd>To support overloading and namespaces at link time: <code>f(int)</code> and <code>f(double)</code> and <code>N::f()</code> are distinct entities but share the source name <code>f</code>. Encoding the enclosing scope and parameter types into the linker symbol makes each unique.</dd>
+<dt>What does <code>extern "C"</code> do?</dt>
+<dd>It tells the C++ compiler to use C linkage for the enclosed declarations &mdash; emit and expect an unmangled symbol name and the C calling convention &mdash; so a C++ program can call a C library and a C program can call C++ functions declared this way. Overloading isn't available for <code>extern "C"</code> names.</dd>
+<dt>Give an ABI-breaking change that isn't API-breaking.</dt>
+<dd>Adding a private data member to a class in a public header: the API (methods) is unchanged and consumer <em>source</em> still compiles, but <code>sizeof</code> and member offsets change, so any consumer compiled against the old header now has wrong layout &mdash; must recompile. Same for adding/reordering virtual functions (vtable slots shift).</dd>
+<dt>How do library authors provide a stable ABI?</dt>
+<dd>Expose a plain C interface (no mangling, no class layout), pass opaque handle pointers with accessor functions, use PImpl so the header has fixed size, only <em>add</em> symbols (never change existing ones), and use symbol versioning to keep old entry points alongside new ones.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Does C mangle function names?</summary><div class="answer-box">
+No &mdash; the linker symbol is just the function name.
+</div></details>
+<details class="answer-reveal"><summary>What wrapper makes a C++ function callable from C?</summary><div class="answer-box">
+<code>extern "C"</code> around its declaration/definition.
+</div></details>
+<details class="answer-reveal"><summary>Name two things an ABI specifies.</summary><div class="answer-box">
+Calling convention (argument/return registers, stack alignment) and type/struct layout &mdash; also name mangling and vtable layout.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A plugin built with GCC crashes when loaded by a host built with an older GCC, though both compiled fine. Likely cause?</summary><div class="answer-box">
+A C++ standard-library ABI mismatch &mdash; most famously libstdc++'s dual <code>std::string</code>/<code>std::list</code> ABI toggled by <code>_GLIBCXX_USE_CXX11_ABI</code>. If the host passes a <code>std::string</code> across the boundary and the two sides disagree on its layout (old copy-on-write vs new SSO), you read garbage. Also possible: exception-handling table or vtable-layout differences between compiler versions, or an inline function whose definition differs. Fixes: build host and plugins with the same toolchain and stdlib ABI flags, or use a pure C ABI at the plugin boundary (opaque handles + C functions).
+</div></details>
+<details class="answer-reveal"><summary>You demangle a crash symbol with <code>c++filt</code>: <code>_ZN3lib6WidgetC1ERKNS_6ConfigE</code>. Roughly what is it?</summary><div class="answer-box">
+<code>lib::Widget::Widget(lib::Config const&amp;)</code> &mdash; the <code>C1</code> is a complete-object constructor, <code>RK</code> = reference to const, <code>NS_</code> = the <code>lib</code> namespace again (substitution compression). So the crash is in a <code>Widget</code> constructor taking a <code>const Config&amp;</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why is there no standard C++ ABI, and how do the Itanium C++ ABI and MSVC differ in consequence?</summary><div class="answer-box">
+The C++ standard deliberately specifies only source semantics, leaving layout, mangling, exception mechanism, RTTI format, and calling details to the implementation &mdash; partly historical (no single vendor could dictate), partly to allow platform/perf freedom. In practice the industry converged on the <strong>Itanium C++ ABI</strong> for everything except Microsoft: GCC, Clang, ICC on Linux/macOS/BSD all follow it, so a library built with GCC can be consumed by Clang (same mangling like <code>_Z...</code>, same vtable layout, same <code>__cxa_*</code> exception runtime, same guard-variable scheme for function-local statics). This is why mixed GCC/Clang C++ codebases mostly "just work". <strong>MSVC</strong> uses its own mangling (<code>?add@@YAHHH@Z</code>-style), its own vtable and RTTI layout, SEH-based exceptions, and different calling conventions &mdash; so a C++ library built with MSVC and one built with Clang-for-Windows historically couldn't interoperate at the C++ level at all (only via a C interface). (clang-cl narrows this by targeting the MSVC ABI on Windows.) Consequences: on Linux you get a de-facto stable cross-compiler C++ ABI (though still not cross <em>compiler-version</em> for stdlib types, and not guaranteed by any standard); on Windows the C ABI has long been the only reliable cross-toolchain boundary, which is why Windows plugin/SDK interfaces are overwhelmingly C or COM (which pins vtable layout explicitly). The lesson for library authors: if you must ship binaries consumed by unknown toolchains, expose a C ABI; C++-across-the-boundary only works when everyone uses the same compiler family, version, standard-library, and flags.
+</div></details>
+<details class="answer-reveal"><summary>Explain how function-local <code>static</code> initialization is made thread-safe at the ABI level (the "guard variable").</summary><div class="answer-box">
+For <code>void f(){ static Heavy h(args); ... }</code>, C++11 requires <code>h</code> to be constructed exactly once, on the first call that reaches it, with concurrent callers blocking until it's done. The Itanium ABI implements this with a per-static <strong>guard variable</strong> (in <code>.bss</code>) and two runtime calls: on entry to the static's scope the compiler emits (roughly) <code>if (__cxa_guard_acquire(&amp;guard)) { construct h; __cxa_guard_release(&amp;guard); atexit_register(destructor); }</code>. <code>__cxa_guard_acquire</code> does a fast unlocked check of the guard's low byte (already-initialised &rarr; return 0, no lock &mdash; this is the common path, one relaxed load); if not initialised it takes a lock (a global recursive mutex, or a futex on the guard itself in modern glibc), re-checks, and either returns 1 (you construct) or, if another thread is mid-construction, blocks until <code>release</code>/<code>abort</code>. <code>__cxa_guard_release</code> sets the initialised byte with release semantics and wakes waiters. There's also <code>__cxa_guard_abort</code> for when the constructor throws (so a later call retries). Subtleties: recursive entry (the initializer calls <code>f</code> again) is undefined / deadlocks depending on implementation; the fast-path load must be an acquire (or the constructed object's writes may not be visible to a thread that sees the guard set) &mdash; some early implementations got this wrong and needed a fix; and this machinery is why a function-local static is the recommended thread-safe singleton in C++11+ ("Meyers singleton") &mdash; the compiler+ABI give you the double-checked locking correctly, including the memory barriers, for free.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:abi-mangling -->
+
+<!-- TOPIC:build:make -->
+<section class="view topic" id="v-build-make" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>make &amp; Incremental Builds</h1>
+<p class="subtitle">A dependency graph + timestamps &mdash; the model under every build system.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The core model</h3>
+<pre><code>target: prereq1 prereq2      <span class="c"># target depends on these</span>
+&lt;TAB&gt; recipe                 <span class="c"># shell commands to (re)build target</span></code></pre>
+<p><code>make</code> rebuilds <code>target</code> iff it's missing or <strong>older</strong> than any prerequisite
+(mtime comparison). It walks the dependency DAG, building leaves first. This is the whole idea:
+declare what depends on what, and only stale things rebuild.</p>
+
+<h3>Essentials</h3>
+<ul>
+<li><strong>Pattern rules</strong>: <code>%.o: %.c</code> with <code>$&lt;</code> (first prereq), <code>$@</code> (target), <code>$^</code> (all prereqs).</li>
+<li><strong>Variables</strong>: <code>CC</code>, <code>CFLAGS</code>, <code>$(wildcard *.c)</code>, <code>$(patsubst ...)</code>. <code>:=</code> (immediate) vs <code>=</code> (lazy).</li>
+<li><strong><code>.PHONY: clean all test</code></strong> &mdash; targets that aren't files, so they always run and don't clash with a file of that name.</li>
+<li><strong>Parallelism</strong>: <code>make -j$(nproc)</code> &mdash; correct only if the dependency graph is complete (missing deps &rarr; race, flaky builds).</li>
+</ul>
+
+<h3>Header dependency tracking</h3>
+<p>Naive Makefiles miss "<code>.o</code> depends on the headers the <code>.c</code> includes", so editing a
+header doesn't rebuild. The fix: <code>gcc -MMD -MP</code> emits a <code>.d</code> file listing the includes;
+<code>-include $(OBJ:.o=.d)</code> pulls them in. Now header edits trigger the right rebuilds.</p>
+
+<h3>Why people moved on</h3>
+<ul>
+<li><strong>Recursive make</strong> (a Makefile per directory calling sub-makes) fragments the dependency graph &mdash; "Recursive Make Considered Harmful". Use one top-level non-recursive Makefile, or a generator.</li>
+<li>mtime-based staleness is fooled by clock skew, <code>touch</code>, and checkout order; content-hash build systems (Bazel, Buck) are more robust.</li>
+<li>Hand-writing portable, correct Makefiles is tedious &rarr; <strong>CMake</strong>/<strong>Meson</strong> generate them (or Ninja files).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Rule: <code>target: prereqs</code> / TAB <code>recipe</code>. Rebuild if target missing or older than a prereq.</li>
+<li>Automatic vars: <code>$@</code> target, <code>$&lt;</code> first prereq, <code>$^</code> all prereqs. Pattern rule <code>%.o: %.c</code>.</li>
+<li><code>:=</code> immediate assignment, <code>=</code> recursively-expanded (lazy), <code>?=</code> default, <code>+=</code> append.</li>
+<li><code>.PHONY</code> for non-file targets (<code>all</code>, <code>clean</code>, <code>test</code>).</li>
+<li>Header deps: <code>gcc -MMD -MP</code> &rarr; <code>.d</code> files &rarr; <code>-include $(DEPS)</code>. Without this, header edits don't rebuild.</li>
+<li><code>make -j N</code> for parallelism &mdash; only safe with a complete/correct dependency graph.</li>
+<li>Avoid recursive make (fragmented graph); prefer one non-recursive Makefile or a generator (CMake &rarr; Ninja).</li>
+<li>mtime staleness is fragile; hash-based systems (Bazel) are more reproducible.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How does <code>make</code> decide whether to rebuild a target?</dt>
+<dd>It compares modification times: if the target file doesn't exist, or any prerequisite is newer than the target, the recipe runs. Otherwise it's considered up to date.</dd>
+<dt>Why declare <code>clean</code> as <code>.PHONY</code>?</dt>
+<dd>So <code>make</code> always runs its recipe even if a file named <code>clean</code> happens to exist in the directory (which would otherwise be seen as an up-to-date target and skipped).</dd>
+<dt>You edit a header but <code>make</code> rebuilds nothing. Why?</dt>
+<dd>The Makefile doesn't record that the <code>.o</code> files depend on that header &mdash; only on the <code>.c</code>. Generate dependency files with <code>gcc -MMD -MP</code> and <code>-include</code> them so header prerequisites are tracked.</dd>
+<dt>What can go wrong with <code>make -j8</code>?</dt>
+<dd>If the dependency graph is incomplete (a target uses an output that isn't listed as its prerequisite), parallel jobs can run in the wrong order or simultaneously, producing intermittent build failures or corrupt outputs. Parallel make only works when dependencies are fully and correctly declared.</dd>
+<dt>What's the problem with recursive make?</dt>
+<dd>Each sub-make only knows its own directory's dependency graph, so cross-directory dependencies are invisible &mdash; leading to under-building (stale results) or over-building (rebuilding everything to be safe), broken parallelism, and repeated work. A single non-recursive Makefile (or a generator that produces one) sees the whole graph.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>$&lt;</code> mean in a recipe?</summary><div class="answer-box">
+The first prerequisite. <code>$@</code> is the target, <code>$^</code> is all prerequisites.
+</div></details>
+<details class="answer-reveal"><summary>What must precede a recipe line?</summary><div class="answer-box">
+A literal TAB character (not spaces).
+</div></details>
+<details class="answer-reveal"><summary>Flag to build with N parallel jobs?</summary><div class="answer-box">
+<code>make -j N</code> (e.g. <code>make -j$(nproc)</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Write a minimal Makefile that builds all <code>*.c</code> into one binary with correct header tracking.</summary><div class="answer-box">
+<pre><code>CC := gcc
+CFLAGS := -O2 -g -Wall -MMD -MP
+SRC := $(wildcard *.c)
+OBJ := $(SRC:.c=.o)
+app: $(OBJ)
+	$(CC) $(CFLAGS) -o $@ $^
+%.o: %.c
+	$(CC) $(CFLAGS) -c $&lt; -o $@
+-include $(OBJ:.o=.d)
+.PHONY: clean
+clean:
+	rm -f app $(OBJ) $(OBJ:.o=.d)</code></pre>
+The <code>-MMD -MP</code> + <code>-include</code> lines are what make header edits trigger rebuilds.
+</div></details>
+<details class="answer-reveal"><summary>Your CI build passes with <code>make</code> but fails intermittently with <code>make -j</code>. Diagnosis?</summary><div class="answer-box">
+Missing or incorrect dependencies let jobs run out of order: something reads a file another job is still writing, or two jobs write the same file, or a generated header isn't declared as a prerequisite of the objects that include it. Add the missing prerequisite edges (generated files, codegen outputs, link order), avoid shared scratch files, and consider a stricter tool (Ninja from CMake, which also validates the graph). <code>make --output-sync</code> and <code>-j1</code> reproduction help isolate it.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why do content-hash build systems (Bazel, Buck2, Nix) claim better correctness and cacheability than mtime-based make, and what do they demand in return?</summary><div class="answer-box">
+mtime is a proxy for "did the input change" that's wrong in many ways: <code>git checkout</code> / <code>rsync</code> can set an old file's mtime to <em>now</em> (over-build) or a new file's to the past (under-build &mdash; stale binary that "builds clean"); clock skew across NFS/containers; <code>touch</code>; and mtime granularity races. It also gives you nothing to share: two developers building the identical source get no benefit from each other's work. Hash-based systems compute a cryptographic digest of <em>every</em> declared input to an action &mdash; source files' contents, the exact command line, the toolchain version, environment variables, and the digests of upstream outputs &mdash; and use that as a cache key. Consequences: (1) <strong>correctness</strong> &mdash; an action re-runs iff a real input changed, regardless of timestamps; (2) <strong>remote caching</strong> &mdash; if anyone (or CI) has built this exact action before, download the output instead of rebuilding, so a clean checkout can be near-instant; (3) <strong>remote execution</strong> &mdash; farm actions out to a build cluster; (4) <strong>reproducibility</strong> &mdash; same inputs &rarr; same outputs, verifiable. What they demand: every action must declare <em>all</em> its inputs and outputs precisely (no reading undeclared files, no non-deterministic output &mdash; no embedded timestamps, no <code>__DATE__</code>, sorted archive members, stable link order), the build runs in a <strong>sandbox</strong> that enforces this (an undeclared read fails), and the toolchain itself is treated as a versioned input (hermetic toolchains). This is a large upfront cost &mdash; you can't just <code>system("...")</code> &mdash; which is why they pay off mainly at large-monorepo scale where the caching and parallelism dominate, and why smaller projects stay with CMake+Ninja (which is still mtime-based but with a correct, non-recursive graph and fast null builds).
+</div></details>
+<details class="answer-reveal"><summary>Explain <code>make</code>'s <code>.SECONDEXPANSION</code>, order-only prerequisites (<code>| dir</code>), and why they exist.</summary><div class="answer-box">
+<strong>Order-only prerequisites</strong> (after a <code>|</code> in the prereq list): the target depends on them <em>existing</em> but not on their timestamp &mdash; if they're newer than the target, the target is <em>not</em> rebuilt. The canonical use is a build directory: <code>build/%.o: %.c | build</code> ensures <code>build/</code> is created first, but every <code>.o</code> doesn't rebuild every time the directory's mtime bumps (which happens whenever a file is written into it). Without this, adding one <code>.o</code> to <code>build/</code> touches the directory and triggers a full rebuild. <strong><code>.SECONDEXPANSION</code></strong>: normally a rule's prerequisite list is expanded once, when the Makefile is read. With <code>.SECONDEXPANSION</code> enabled, prerequisites are expanded a <em>second</em> time when the rule is actually considered, at which point automatic variables like <code>$@</code> are available &mdash; so you can write <code>$$(patsubst %.o,%.c,$$@)</code> or per-target prerequisite lists computed from the target name (<code>$$(DEPS_$$(notdir $$@))</code>). It's the mechanism for data-driven rules where each target has a different, computed set of prerequisites (per-plugin sources, per-test fixtures) without writing an explicit rule for each. Both features exist because <code>make</code>'s two-phase model (read all rules, then build) is otherwise too static: order-only deps decouple "must exist" from "affects staleness", and second expansion re-introduces target context into the dependency computation. They're powerful but a readability hazard &mdash; heavy use is a sign you want a generator instead.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:make -->
+
+<!-- TOPIC:build:cmake -->
+<section class="view topic" id="v-build-cmake" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>CMake Fundamentals</h1>
+<p class="subtitle">A meta-build system: describe targets and their requirements; it generates the real build.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Model: targets carry their requirements</h3>
+<pre><code>add_library(mylib src/a.cpp src/b.cpp)
+target_include_directories(mylib PUBLIC  include
+                                 PRIVATE src)
+target_link_libraries(mylib PUBLIC fmt::fmt PRIVATE Threads::Threads)
+target_compile_features(mylib PUBLIC cxx_std_20)
+
+add_executable(app src/main.cpp)
+target_link_libraries(app PRIVATE mylib)   <span class="c"># app inherits mylib's PUBLIC include dirs + libs</span></code></pre>
+<p>"Modern CMake" (3.x, target-based) attaches include paths, compile options, definitions, and
+link deps <em>to targets</em>, with <strong>usage requirements</strong> that propagate:</p>
+<table>
+<tr><th>Keyword</th><th>Applies to the target</th><th>Propagates to consumers</th></tr>
+<tr><td><code>PRIVATE</code></td><td>yes</td><td>no</td></tr>
+<tr><td><code>PUBLIC</code></td><td>yes</td><td>yes</td></tr>
+<tr><td><code>INTERFACE</code></td><td>no</td><td>yes (header-only libs)</td></tr>
+</table>
+<p>Avoid the old globals (<code>include_directories()</code>, <code>link_libraries()</code>, manual
+<code>CMAKE_CXX_FLAGS</code> hacking) &mdash; they leak everywhere.</p>
+
+<h3>Workflow</h3>
+<pre><code>cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build
+cmake --install build --prefix /opt/app</code></pre>
+<ul>
+<li><strong>Out-of-source</strong>: all generated files in <code>build/</code>, keeping the source tree clean.</li>
+<li><strong>Generators</strong>: Ninja (fast, recommended), Unix Makefiles, Visual Studio, Xcode.</li>
+<li><strong><code>find_package(Foo)</code></strong> locates dependencies (config-mode preferred, providing imported targets like <code>Foo::Foo</code>). <code>FetchContent</code> / vcpkg / Conan for fetching deps.</li>
+<li><strong>Presets</strong> (<code>CMakePresets.json</code>) capture configure/build/test option sets so everyone (and CI) builds identically.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>CMake generates a build (Ninja/Make/VS) from <code>CMakeLists.txt</code>; you don't run the compiler directly.</li>
+<li>Modern CMake = target-based: <code>target_include_directories</code> / <code>target_link_libraries</code> / <code>target_compile_*</code> with <code>PRIVATE</code>/<code>PUBLIC</code>/<code>INTERFACE</code>.</li>
+<li><code>PRIVATE</code> = this target only; <code>PUBLIC</code> = this + consumers; <code>INTERFACE</code> = consumers only (header-only).</li>
+<li>Consumers inherit a linked target's <code>PUBLIC</code>/<code>INTERFACE</code> requirements automatically &mdash; no manual path juggling.</li>
+<li>Always out-of-source: <code>cmake -S . -B build</code>; <code>cmake --build build</code>.</li>
+<li><code>-G Ninja</code> for speed; <code>-DCMAKE_BUILD_TYPE=</code> (single-config generators) or <code>--config</code> (multi-config).</li>
+<li><code>find_package(Foo CONFIG)</code> &rarr; imported targets <code>Foo::Foo</code>. <code>FetchContent</code>/vcpkg/Conan to acquire deps.</li>
+<li><code>CMakePresets.json</code> to share exact configs with the team + CI. Avoid <code>CMAKE_CXX_FLAGS</code> hacking and old <code>include_directories()</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does CMake actually produce?</dt>
+<dd>It doesn't build anything itself &mdash; it reads <code>CMakeLists.txt</code> and generates the input for a real build tool (Ninja files, Makefiles, a Visual Studio solution). You then invoke that tool (via <code>cmake --build</code>).</dd>
+<dt><code>PRIVATE</code> vs <code>PUBLIC</code> vs <code>INTERFACE</code> on <code>target_link_libraries</code>?</dt>
+<dd><code>PRIVATE</code>: the dependency is used to build this target but not exposed &mdash; consumers don't get it. <code>PUBLIC</code>: used to build this target <em>and</em> propagated, because it appears in this target's headers. <code>INTERFACE</code>: not used to build this target (it may have no sources), only propagated &mdash; for header-only libraries and pure requirement bundles.</dd>
+<dt>Why do an out-of-source build?</dt>
+<dd>All generated files (object files, CMake cache, the build system, config headers) go in a separate <code>build/</code> directory, so the source tree stays clean, you can have multiple build configs side by side, and "clean" is just <code>rm -rf build</code>.</dd>
+<dt>What does <code>find_package(fmt CONFIG)</code> give you?</dt>
+<dd>It locates the installed <code>fmt</code> package's CMake config files and imports a target (<code>fmt::fmt</code>) that already carries the right include directories, compile definitions, and library path &mdash; so <code>target_link_libraries(app PRIVATE fmt::fmt)</code> is all you need.</dd>
+<dt>What problem do CMake presets solve?</dt>
+<dd>They record named sets of configure/build/test options (generator, build type, toolchain, cache variables) in <code>CMakePresets.json</code>, so a contributor runs <code>cmake --preset ci</code> and gets byte-identical configuration to CI &mdash; no "works with my flags" drift.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Command to configure into a <code>build/</code> directory?</summary><div class="answer-box">
+<code>cmake -S . -B build</code> (optionally <code>-G Ninja -DCMAKE_BUILD_TYPE=Release</code>).
+</div></details>
+<details class="answer-reveal"><summary>Which visibility keyword is for a header-only library?</summary><div class="answer-box">
+<code>INTERFACE</code> &mdash; it has no compiled sources; its requirements only propagate to consumers.
+</div></details>
+<details class="answer-reveal"><summary>Recommended generator for fast builds?</summary><div class="answer-box">
+Ninja.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Library <code>A</code>'s public header includes <code>&lt;fmt/format.h&gt;</code>. How should <code>A</code> link fmt so consumers of <code>A</code> compile?</summary><div class="answer-box">
+<code>target_link_libraries(A PUBLIC fmt::fmt)</code> &mdash; <code>PUBLIC</code> because fmt appears in <code>A</code>'s <em>interface</em> (its public header), so any target linking <code>A</code> transitively needs fmt's include dirs and library. If fmt were only used in <code>A</code>'s <code>.cpp</code> files it would be <code>PRIVATE</code>.
+</div></details>
+<details class="answer-reveal"><summary>A teammate's build has different warnings/optimisation than yours despite the same repo. Likely cause and fix?</summary><div class="answer-box">
+Different configure-time cache variables / generator / build type / toolchain, or leftover flags in a stale <code>build/</code> cache. Fix: delete the build dir and reconfigure; standardise with <code>CMakePresets.json</code> so everyone uses <code>cmake --preset dev</code>; set compiler warnings on the target (<code>target_compile_options(app PRIVATE -Wall -Wextra)</code>) rather than relying on environment; and don't append to <code>CMAKE_CXX_FLAGS</code> from the environment.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Explain how CMake's transitive usage requirements are actually resolved, including generator expressions and the difference between build-tree and install-tree.</summary><div class="answer-box">
+Each target stores its requirements as properties: <code>INTERFACE_INCLUDE_DIRECTORIES</code>, <code>INTERFACE_COMPILE_DEFINITIONS</code>, <code>INTERFACE_COMPILE_OPTIONS</code>, <code>INTERFACE_LINK_LIBRARIES</code>, plus the non-<code>INTERFACE_</code> versions for the target's own build. When you <code>target_link_libraries(app PRIVATE mylib)</code>, at generation time CMake walks the link graph: for every target reachable, it unions the <code>INTERFACE_*</code> properties into <code>app</code>'s compile/link command &mdash; recursively, so <code>mylib</code>'s <code>PUBLIC</code> deps' interfaces also flow through. <strong>Generator expressions</strong> (<code>$&lt;...&gt;</code>) defer evaluation to generation time because a requirement can differ per configuration, per compiler, or per "am I being built vs installed": e.g. <code>target_include_directories(mylib PUBLIC $&lt;BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include&gt; $&lt;INSTALL_INTERFACE:include&gt;)</code> &mdash; when another target in the same build tree consumes <code>mylib</code>, the <code>BUILD_INTERFACE</code> path (absolute, in your source tree) is used; when <code>mylib</code> is <code>install()</code>ed and its exported config is later consumed by an <em>external</em> project via <code>find_package</code>, the <code>INSTALL_INTERFACE</code> path (relative to the install prefix) is used instead. This is why exporting a library correctly requires <code>install(TARGETS mylib EXPORT ...)</code> + <code>install(EXPORT ...)</code> generating a <code>mylibConfig.cmake</code> that recreates the imported target with install-tree paths. Other genexes: <code>$&lt;CONFIG:Debug&gt;</code>, <code>$&lt;COMPILE_LANG_AND_ID:CXX,GNU&gt;</code>, <code>$&lt;TARGET_PROPERTY:...&gt;</code>. The mental model: <code>CMakeLists.txt</code> builds a graph of targets-with-properties; generation flattens it per (config, target) into concrete flags, with genexes as the escape hatch for anything not known until then.
+</div></details>
+<details class="answer-reveal"><summary>Compare <code>find_package</code> (CONFIG vs MODULE mode), <code>FetchContent</code>, and a package manager (vcpkg/Conan) for dependency acquisition.</summary><div class="answer-box">
+<strong><code>find_package(Foo)</code> MODULE mode</strong>: CMake runs a <code>FindFoo.cmake</code> script (shipped with CMake or your project) that gropes around the system with <code>find_library</code>/<code>find_path</code> and sets variables (or, if well-written, imports a target). Works for libraries that don't ship CMake config, but the Find scripts are heuristic, often don't propagate transitive deps, and version handling is weak. <strong><code>find_package(Foo CONFIG)</code></strong>: the library was built/installed with CMake and shipped a <code>FooConfig.cmake</code> that recreates proper imported targets with full usage requirements and dependency chaining &mdash; the gold standard, but requires the dependency to already be installed somewhere CMake looks (system, <code>CMAKE_PREFIX_PATH</code>). Neither mode <em>fetches</em> anything. <strong><code>FetchContent</code></strong>: declares a dependency by URL/git ref, downloads it at configure time, and <code>add_subdirectory</code>s it into <em>your</em> build so its targets become available directly &mdash; zero external tooling, great for small header/leaf libs and CI reproducibility, but it rebuilds the dep as part of your build (slower clean builds, no shared cache across projects), and version/ODR conflicts arise if two of your deps FetchContent the same thing at different versions. <strong>vcpkg / Conan</strong>: a real package manager &mdash; resolves a dependency graph with version constraints, builds/caches binary packages per configuration (triplet/profile), and integrates via a toolchain file so <code>find_package(CONFIG)</code> then "just works". Best for larger projects with many/transitive C++ deps and for binary caching across a team/CI, at the cost of adopting the tool, writing manifests, and occasional recipe gaps. Rule of thumb: <code>find_package(CONFIG)</code> for system/OS-provided libs; <code>FetchContent</code> for a handful of small pinned deps; vcpkg/Conan once the dependency count and version-conflict pain justify it.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:cmake -->
+
+<!-- TOPIC:build:build-flags -->
+<section class="view topic" id="v-build-build-flags" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>Build Types, Flags &amp; Optimization</h1>
+<p class="subtitle">What <code>-O2</code>, <code>-g</code>, <code>NDEBUG</code>, and friends actually change.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>Optimisation levels</h3>
+<table>
+<tr><th>Flag</th><th>Effect</th></tr>
+<tr><td><code>-O0</code></td><td>none &mdash; fast compile, easy debugging, slow code. Dev default.</td></tr>
+<tr><td><code>-O1</code>/<code>-O2</code></td><td>most optimisations; <code>-O2</code> is the usual release level.</td></tr>
+<tr><td><code>-O3</code></td><td><code>-O2</code> + aggressive inlining/vectorisation; sometimes bigger and not faster &mdash; measure.</td></tr>
+<tr><td><code>-Os</code> / <code>-Oz</code></td><td>optimise for size (embedded, code-cache-bound).</td></tr>
+<tr><td><code>-Og</code></td><td>optimise but keep debuggability &mdash; good for debug builds you also want responsive.</td></tr>
+<tr><td><code>-ffast-math</code></td><td>relax IEEE-754 (reassociation, no NaN/inf handling, FTZ) &mdash; faster FP, changes results. Opt-in, per-file ideally.</td></tr>
+</table>
+
+<h3>Debug info &amp; asserts</h3>
+<ul>
+<li><code>-g</code> emits DWARF debug info. It's <em>independent</em> of <code>-O</code> &mdash; you can (and CI should) ship <code>-O2 -g</code>, then <code>strip</code> or split the debug info into a separate file (<code>objcopy --only-keep-debug</code> + <code>--add-gnu-debuglink</code>).</li>
+<li><code>-DNDEBUG</code> disables <code>assert()</code> (and often triggers "release" code paths). Release builds define it; be sure asserts have no side effects you rely on.</li>
+<li><code>-fno-omit-frame-pointer</code> keeps frame pointers so profilers/`perf` can unwind cheaply &mdash; a small speed cost, big observability win. Often worth it in production.</li>
+</ul>
+
+<h3>Target &amp; safety flags</h3>
+<ul>
+<li><code>-march=native</code> / <code>-march=x86-64-v3</code> &mdash; use newer instructions (AVX2 etc.). <code>native</code> ties the binary to the build machine's CPU.</li>
+<li>Hardening: <code>-D_FORTIFY_SOURCE=2</code>, <code>-fstack-protector-strong</code>, <code>-fPIE -pie</code>, <code>-Wl,-z,relro,-z,now</code>, <code>-fstack-clash-protection</code>, <code>-fcf-protection</code>.</li>
+<li><code>-flto</code> for whole-program optimisation (release/CI).</li>
+</ul>
+
+<h3>Build types in CMake</h3>
+<p><code>Debug</code> (<code>-O0 -g</code>), <code>Release</code> (<code>-O3 -DNDEBUG</code>),
+<code>RelWithDebInfo</code> (<code>-O2 -g -DNDEBUG</code> &mdash; the usual shipping choice),
+<code>MinSizeRel</code> (<code>-Os -DNDEBUG</code>).</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><code>-O0</code> dev, <code>-O2</code> release default, <code>-O3</code> aggressive (measure &mdash; can be slower/bigger), <code>-Os/-Oz</code> size, <code>-Og</code> debug-friendly optimised.</li>
+<li><code>-g</code> is orthogonal to <code>-O</code>. Ship <code>-O2 -g</code> then split/strip debug info (<code>objcopy --only-keep-debug</code>).</li>
+<li><code>-DNDEBUG</code> kills <code>assert()</code> &mdash; release builds set it; keep asserts side-effect-free.</li>
+<li><code>-fno-omit-frame-pointer</code> for cheap profiler unwinding (small cost, worth it in prod).</li>
+<li><code>-march=native</code> uses the build CPU's ISA &rarr; not portable; pick an ISA baseline (<code>x86-64-v2/v3</code>) for distributables.</li>
+<li>Hardening: <code>_FORTIFY_SOURCE=2</code>, <code>-fstack-protector-strong</code>, <code>-fPIE -pie</code>, full RELRO (<code>-z relro -z now</code>).</li>
+<li><code>-ffast-math</code> changes results &mdash; opt-in, scoped.</li>
+<li>CMake: <code>Debug</code>, <code>Release</code>, <code>RelWithDebInfo</code> (usual ship), <code>MinSizeRel</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Is <code>-g</code> mutually exclusive with <code>-O2</code>?</dt>
+<dd>No &mdash; they're independent. <code>-O2 -g</code> gives optimised code with debug info; optimisation makes debugging less precise (inlined/reordered code, "optimized out" variables) but you can still get useful backtraces and inspect much of the state. Shipping <code>RelWithDebInfo</code> and keeping the symbols is standard practice.</dd>
+<dt>What does <code>-DNDEBUG</code> do?</dt>
+<dd>Defines the <code>NDEBUG</code> macro, which makes the standard <code>assert()</code> expand to nothing &mdash; so assertions are compiled out in release builds. Never put required side effects inside <code>assert()</code>.</dd>
+<dt>Why might <code>-O3</code> be slower than <code>-O2</code>?</dt>
+<dd>Its aggressive inlining and loop unrolling/vectorisation can bloat code, increasing instruction-cache pressure and sometimes triggering the AVX-512 frequency penalty, without a proportional compute benefit. It's workload-dependent &mdash; benchmark both.</dd>
+<dt>What's the downside of <code>-march=native</code> for a released binary?</dt>
+<dd>It compiles for the exact CPU features of the build machine, so the binary may use instructions (AVX2, BMI2, AVX-512) that a customer's older CPU lacks &mdash; illegal-instruction crash. For distribution, target a defined baseline (<code>-march=x86-64-v2/-v3</code>) or ship multiple variants / use function multi-versioning.</dd>
+<dt>Why keep frame pointers (<code>-fno-omit-frame-pointer</code>) in production?</dt>
+<dd>They let sampling profilers and <code>perf</code> walk the stack with a cheap, reliable method instead of relying on DWARF CFI unwinding (slow, sometimes incomplete for optimised code). The ~1% runtime cost buys you production-quality flame graphs and crash backtraces.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which optimisation level is the typical release default?</summary><div class="answer-box">
+<code>-O2</code>.
+</div></details>
+<details class="answer-reveal"><summary>What macro disables <code>assert()</code>?</summary><div class="answer-box">
+<code>NDEBUG</code> (usually via <code>-DNDEBUG</code>).
+</div></details>
+<details class="answer-reveal"><summary>Which CMake build type gives optimised code plus debug symbols for shipping?</summary><div class="answer-box">
+<code>RelWithDebInfo</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Your release build is fast but crash reports have useless stack traces. Fix without slowing it down?</summary><div class="answer-box">
+Build with <code>-O2 -g</code> (debug info doesn't slow the code), then separate the symbols: <code>objcopy --only-keep-debug app app.debug; strip --strip-debug app; objcopy --add-gnu-debuglink=app.debug app</code>. Ship the stripped <code>app</code>, archive <code>app.debug</code>, and load it in the debugger / symbolication service. Optionally add <code>-fno-omit-frame-pointer</code> for cheap unwinding. Now traces are fully symbolicated with no runtime cost.
+</div></details>
+<details class="answer-reveal"><summary>A numerical result changed after you added <code>-ffast-math</code> "for speed". What happened and what do you do?</summary><div class="answer-box">
+<code>-ffast-math</code> lets the compiler reassociate floating-point (<code>(a+b)+c &rarr; a+(b+c)</code>), assume no NaN/Inf, flush denormals to zero, and use less-accurate reciprocal/rsqrt &mdash; all of which change results, sometimes materially in ill-conditioned code. Options: remove it and optimise the hot loop specifically (vectorise manually, use FMA via <code>-ffp-contract=fast</code> which is safer than full fast-math), or scope <code>-ffast-math</code> to only the files/functions where the accuracy loss is acceptable (<code>#pragma float_control</code> / <code>__attribute__((optimize))</code> / per-file CMake flags), and add a regression test pinning the numerical output.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>What is Profile-Guided Optimization (PGO), what does it improve that static heuristics can't, and what's the workflow cost?</summary><div class="answer-box">
+Compilers guess which branches are hot, which functions to inline, and how to lay out code using static heuristics (loop depth, <code>[[likely]]</code>, call-graph shape) &mdash; often wrong for real workloads. <strong>PGO</strong> feeds them <em>measured</em> behaviour: (1) build an instrumented binary (<code>-fprofile-generate</code>) that records, per branch/call/function, execution counts; (2) run it on a <em>representative</em> workload to produce profile data; (3) rebuild with <code>-fprofile-use</code>, so the optimiser knows the actual hot paths. Wins static analysis can't get: <strong>hot/cold splitting</strong> (move rarely-executed code &mdash; error handling, cold branches &mdash; out of line into a <code>.text.unlikely</code> section, so the hot path is dense and i-cache/&micro;op-cache resident); <strong>accurate inlining</strong> (inline the calls that are actually frequent, don't bloat for cold ones); <strong>block layout</strong> so the common branch direction is the fall-through (fewer taken branches, better prefetch); better <strong>register allocation</strong> and spill placement biased to hot blocks; <strong>devirtualization</strong> when the profile shows one call target dominates; and switch/jump-table vs branch-chain decisions. Typical gains: 5&ndash;20% on branch-heavy code (compilers, browsers, databases &mdash; Chrome, Firefox, LLVM itself, MySQL all ship PGO'd). Costs: the workflow needs a stable, representative training workload (a bad profile can <em>hurt</em>); it doubles the build (instrument, run, rebuild); profile data must be regenerated when the code changes enough (stale profiles degrade gracefully but drift); and CI complexity. <strong>AutoFDO / CSSPGO</strong> reduce the cost by using <code>perf</code> samples from production (no instrumented build) at some accuracy loss. PGO composes with LTO (<em>ThinLTO + PGO</em> is the common high-end release config) &mdash; PGO tells LTO what's hot across the whole program. BOLT goes further, re-optimising the <em>linked binary</em> from profiles.
+</div></details>
+<details class="answer-reveal"><summary>Explain the security-hardening flag set for a production Linux binary and what each mitigates.</summary><div class="answer-box">
+<strong><code>-D_FORTIFY_SOURCE=2/3</code></strong> (with <code>-O1+</code>): replaces unbounded libc calls (<code>memcpy</code>, <code>sprintf</code>, <code>strcpy</code>&hellip;) with <code>__*_chk</code> variants that know the destination buffer size (from <code>__builtin_object_size</code>) and abort on overflow &mdash; catches many buffer overflows at runtime with near-zero cost; level 3 handles more dynamic sizes. <strong><code>-fstack-protector-strong</code></strong>: inserts a random "canary" between local buffers and the saved return address in functions with risky stack layout; a stack buffer overflow that smashes the return address also corrupts the canary, detected on function return &rarr; <code>__stack_chk_fail</code> aborts before the corrupted return is used. Mitigates classic stack-smashing. <strong><code>-fstack-clash-protection</code></strong>: emits probing code when growing the stack by large amounts so a huge alloca/VLA can't "jump the guard page" and silently land in the heap (the Stack Clash class). <strong><code>-fPIE -pie</code></strong>: makes the main executable position-independent so <strong>ASLR</strong> randomises its base too (not just libraries) &mdash; defeats attacks that rely on fixed code addresses for ROP gadgets. <strong><code>-Wl,-z,relro -Wl,-z,now</code></strong> (full RELRO): resolve all dynamic relocations at load time, then <code>mprotect</code> the GOT and other relocation tables read-only &mdash; blocks GOT-overwrite / one-shot function-pointer hijacks (partial RELRO leaves the lazy-binding PLT GOT writable). <strong><code>-fcf-protection=full</code></strong> (Intel CET): emits <code>endbr64</code> landing pads and enables a shadow stack &mdash; hardware-enforced control-flow integrity against ROP/JOP. <strong><code>-Wl,-z,noexecstack</code></strong>: mark the stack non-executable (defeats classic shellcode injection). <strong><code>-fno-delete-null-pointer-checks</code></strong> / <code>-fwrapv</code> in some contexts: rein in UB-based optimisations that have removed security checks. Distros compile with most of this by default (Debian/Fedora hardening flags); the cost is single-digit-percent runtime and a bit of size, universally considered worth it for anything network-facing or privileged.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:build-flags -->
+
+<!-- TOPIC:build:sanitizers-ci -->
+<section class="view topic" id="v-build-sanitizers-ci" data-skill="build">
+<div class="layout">
+<nav class="sidebar" data-sidebar="build"></nav>
+<div class="topic-body">
+<h1>Sanitizers &amp; Static Analysis in CI</h1>
+<p class="subtitle">Catching memory bugs, UB, and races automatically &mdash; before they reach production.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<h3>The sanitizers (compile-time instrumentation)</h3>
+<table>
+<tr><th>Flag</th><th>Catches</th><th>Overhead</th></tr>
+<tr><td><code>-fsanitize=address</code> (ASan)</td><td>heap/stack/global buffer overflow, use-after-free, use-after-return/scope, double free, leaks</td><td>~2&times; time, ~2&ndash;3&times; memory</td></tr>
+<tr><td><code>-fsanitize=undefined</code> (UBSan)</td><td>signed overflow, misaligned/null deref, OOB shifts, bad enum/bool, invalid casts, more</td><td>small</td></tr>
+<tr><td><code>-fsanitize=thread</code> (TSan)</td><td>data races, some deadlocks/lock-order issues</td><td>~5&ndash;15&times; time, ~5&ndash;10&times; memory</td></tr>
+<tr><td><code>-fsanitize=memory</code> (MSan)</td><td>reads of uninitialised memory (Clang; needs instrumented libs)</td><td>~3&times;</td></tr>
+</table>
+<p>ASan+UBSan combine; TSan and MSan are exclusive of ASan. Build a dedicated CI job per sanitizer,
+run the full test suite, treat any report as a failure. Add <code>-fno-sanitize-recover</code> to
+abort on first error; symbolise with <code>llvm-symbolizer</code>.</p>
+
+<h3>Static analysis (no execution)</h3>
+<ul>
+<li><strong>Compiler warnings</strong> &mdash; the cheapest analyser. <code>-Wall -Wextra -Wpedantic</code>, and crucially <code>-Werror</code> so warnings can't accumulate. Add <code>-Wconversion</code>, <code>-Wshadow</code>, <code>-Wnon-virtual-dtor</code> as tolerated.</li>
+<li><strong>clang-tidy</strong> &mdash; lint + modernise + bug-prone-pattern checks; <strong>cppcheck</strong>; <strong>clang --analyze</strong> / <strong>Coverity</strong> / <strong>PVS-Studio</strong> for deeper path-sensitive analysis.</li>
+<li><strong>include-what-you-use</strong>, <strong>clang-format</strong> for hygiene.</li>
+</ul>
+
+<h3>CI gate structure</h3>
+<ol>
+<li>Fast: build with <code>-Werror</code>, run unit tests.</li>
+<li>Per-PR: clang-tidy on changed files, format check.</li>
+<li>Nightly / pre-merge: ASan+UBSan suite, TSan suite, MSan suite, valgrind for the cases sanitizers miss, fuzzers (libFuzzer/AFL) on parsers.</li>
+<li>Release: static analyzer, LTO/PGO build, reproducible-build check.</li>
+</ol>
+
+<h3>Reproducible builds</h3>
+<p>Same source + toolchain &rarr; bit-identical output. Requires stripping timestamps
+(<code>-Wno-builtin-macro-redefined -D__DATE__=</code>&hellip; or <code>SOURCE_DATE_EPOCH</code>), sorted
+inputs, fixed paths (<code>-ffile-prefix-map</code>), deterministic archive members (<code>ar D</code>).
+Enables build caching and supply-chain verification.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>ASan (<code>-fsanitize=address</code>): OOB, use-after-free/return/scope, double free, leaks. ~2&times;.</li>
+<li>UBSan (<code>=undefined</code>): signed overflow, null/misaligned deref, bad shifts/casts. Cheap; combine with ASan.</li>
+<li>TSan (<code>=thread</code>): data races, lock-order. ~5&ndash;15&times;. Exclusive of ASan.</li>
+<li>MSan (<code>=memory</code>, Clang): uninitialised reads; needs instrumented deps.</li>
+<li>Run the whole test suite under each in a dedicated CI job; any report = fail. <code>-fno-sanitize-recover</code>.</li>
+<li>Static: <code>-Wall -Wextra -Werror</code> (gate warnings), clang-tidy on diffs, cppcheck/Coverity for depth.</li>
+<li>Fuzz parsers/decoders (libFuzzer + ASan/UBSan) on every change.</li>
+<li>Reproducible builds: <code>SOURCE_DATE_EPOCH</code>, <code>-ffile-prefix-map</code>, sorted inputs, <code>ar D</code> &rarr; caching + supply-chain trust.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does AddressSanitizer catch that a normal build won't?</dt>
+<dd>Out-of-bounds accesses (heap, stack, globals), use-after-free, use-after-return/scope, double free, and (with LeakSanitizer) memory leaks &mdash; with a precise report showing the faulting access and the relevant allocation/free stacks. Overhead ~2&times;, so it's a test/CI tool, not production.</dd>
+<dt>Can you combine ASan and TSan?</dt>
+<dd>No &mdash; they use incompatible shadow-memory schemes. Run them as separate builds/CI jobs. ASan + UBSan <em>can</em> be combined.</dd>
+<dt>Why run tests under UBSan even though the code "works"?</dt>
+<dd>Undefined behaviour (signed overflow, null/misaligned dereference, out-of-range shift, invalid enum) may produce correct results today and be miscompiled tomorrow when the optimiser exploits the "can't happen" assumption. UBSan flags it deterministically at the point it occurs.</dd>
+<dt>What's the value of <code>-Werror</code> in CI?</dt>
+<dd>It turns warnings into build failures, so they can't accumulate and drown out new ones. Combined with <code>-Wall -Wextra</code>, the compiler becomes a free static analyser that every developer already runs.</dd>
+<dt>What makes a build "reproducible" and why care?</dt>
+<dd>Given the same source and toolchain, it produces bit-identical binaries &mdash; achieved by eliminating embedded timestamps, absolute paths, non-deterministic ordering, and PRNG-seeded layout. It enables reliable build caching and lets third parties verify that a released binary really came from the published source (supply-chain security).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Flag for the thread (data-race) sanitizer?</summary><div class="answer-box">
+<code>-fsanitize=thread</code>.
+</div></details>
+<details class="answer-reveal"><summary>Which two sanitizers are commonly combined?</summary><div class="answer-box">
+AddressSanitizer and UndefinedBehaviorSanitizer (<code>-fsanitize=address,undefined</code>).
+</div></details>
+<details class="answer-reveal"><summary>What compiler flag makes warnings fail the build?</summary><div class="answer-box">
+<code>-Werror</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>ASan reports a use-after-free with no obvious owner. How do you use the report?</summary><div class="answer-box">
+The report has three stacks: where the invalid read/write happened, where the block was <em>allocated</em>, and where it was <em>freed</em>. Trace the "freed here" stack to find who released it prematurely, and the "allocated here" stack to identify the object. Often it's ownership confusion &mdash; two owners, a dangling callback/iterator, or an object freed while a task referencing it is still queued. Fix by clarifying ownership (smart pointers, clear lifetime), not by suppressing.
+</div></details>
+<details class="answer-reveal"><summary>TSan flags a race on a variable you "know" is fine because writes are rare. Response?</summary><div class="answer-box">
+"Rare" doesn't make a data race defined &mdash; it's still UB and the compiler/CPU can reorder or tear it. TSan is correct to flag it. If it's a flag, make it <code>std::atomic</code> (relaxed is enough for a plain flag); if it guards data, add the proper lock or acquire/release. If it's genuinely a benign statistics counter where you accept approximate values, still make it a relaxed atomic so it's well-defined, and annotate/suppress only that specific access with justification.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>How does AddressSanitizer actually detect out-of-bounds and use-after-free &mdash; what's "shadow memory" and "redzones"?</summary><div class="answer-box">
+ASan maps every 8 bytes of application memory to 1 byte of <strong>shadow memory</strong> (at address <code>(addr &gt;&gt; 3) + offset</code>), which encodes how many of those 8 bytes are addressable (0&ndash;8) or a negative code meaning "poisoned" (redzone, freed, stack-after-return, etc.). The compiler instruments every memory access to first compute the shadow address, load the shadow byte, and check whether the access is fully within addressable bytes &mdash; a few instructions, hence ~2&times;. Allocations are wrapped in <strong>redzones</strong>: <code>malloc(n)</code> actually reserves <code>n</code> + poisoned bytes before and after, so an overflow of a few bytes lands in a poisoned redzone and is caught immediately with the allocation stack. On <code>free</code>, the whole region's shadow is poisoned and the block goes into a <strong>quarantine</strong> (FIFO, bounded size) rather than being reused right away &mdash; so a use-after-free hits poisoned shadow and reports the free stack; only after the block ages out of quarantine can it be reallocated (which is why ASan can miss a UAF if quarantine is small and allocation pressure is high). Stack variables get redzones inserted by the compiler and their shadow poisoned on scope exit (catches use-after-scope) and on return (use-after-return, with fake stack frames). Globals get redzones and registration so overflows into adjacent globals are caught. Limitations: it detects <em>spatial</em> errors near the redzones and <em>temporal</em> errors within the quarantine window, but not arbitrary wild pointers into valid-but-wrong objects, not overflows that skip entirely over a redzone into another live object, and not uninitialised reads (that's MSan). It also can't see into non-instrumented code (system libraries) &mdash; hence interceptors for libc functions.
+</div></details>
+<details class="answer-reveal"><summary>Design a CI strategy that gives strong safety guarantees for a C++ network service without making PR feedback unbearably slow.</summary><div class="answer-box">
+Tier by cost vs signal. <strong>Per-commit / PR (fast, blocking, &lt;10 min)</strong>: build with <code>-Wall -Wextra -Werror</code> on the two primary compilers (GCC + Clang &mdash; each catches different things), run the unit + fast integration tests, run <code>clang-tidy</code> and <code>clang-format</code> <em>only on the diff</em> (bounded time), and a quick UBSan run (cheap overhead) of the unit suite. Cache the build (ccache/sccache) and use a fast linker (mold/lld) so incremental PR builds stay short. <strong>Merge-queue / pre-merge (medium, blocking, ~30&ndash;60 min)</strong>: full ASan+UBSan run of the entire test suite (unit + integration + end-to-end), TSan run of the concurrency-relevant tests, a Release build with LTO to catch ODR/optimiser-exposed bugs, and a short (few-minutes) fuzzing run of each parser/protocol decoder seeded from the corpus, with any new crash blocking. <strong>Nightly / continuous (non-blocking, hours)</strong>: long fuzzing sessions with corpus minimisation and coverage feedback (libFuzzer/AFL++ under ASan+UBSan), MSan build + suite (needs instrumented deps, so pinned), Valgrind for the subset sanitizers can't cover, the static analyzer (Coverity/clang-analyzer) full run, a sanitizer build under production-like load/soak, and a reproducible-build verification. <strong>Release</strong>: PGO+ThinLTO build with the hardening flag set, SBOM generation, and signing. Cross-cutting: keep a flaky-test quarantine so infra noise doesn't erode trust in the sanitizer gates; make sanitizer failures page the author with the symbolised report attached; and periodically run the <em>full</em> sanitizer matrix on <code>main</code> so a slow-accumulating issue in rarely-exercised code is still caught. The principle: cheap, high-signal checks block the developer loop; expensive, high-coverage checks run asynchronously but still gate the merge or the release.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:build:sanitizers-ci -->
+
 </main>
 
 <footer class="site-footer">
@@ -14869,24 +15928,23 @@ Several effects: (1) <strong>Frequency throttling</strong> &mdash; on many Intel
       ["alignment-layout", "Alignment & Struct Layout",            "Natural alignment, padding, packing, cache-line straddling, alignas."],
       ["memory-barriers",  "The Hardware Memory Model & Barriers", "Store buffers, x86-TSO vs ARM, acquire/release fences, why volatile isn't enough."],
       ["simd-perf",        "SIMD, False Sharing & Measuring",      "Vectorization, auto-vec vs intrinsics, false sharing, roofline, benchmarking pitfalls."]
+    ],
+    build: [
+      ["pipeline",          "The C/C++ Compilation Pipeline",    "Preprocess &rarr; compile &rarr; assemble &rarr; link; -E/-S/-c; what each stage consumes and emits."],
+      ["translation-units", "Translation Units & the Preprocessor","One .c + includes = one TU; header guards; macros; the ODR; forward declarations."],
+      ["object-symbols",    "Object Files, Symbols & Relocations","ELF sections, defined/undefined/weak symbols, relocations, nm/objdump/readelf."],
+      ["linker",            "The Linker: Resolution & Ordering", "Symbol resolution, link order, --start-group, multiple definition, LTO, GC-sections."],
+      ["static-dynamic",    "Static vs Dynamic Libraries",       ".a vs .so/.dll, load time vs run time, PIC, versioning, dlopen, symbol interposition."],
+      ["abi-mangling",      "The ABI & Name Mangling",           "Calling convention, struct layout, C++ mangling, extern C, ABI breaks, versioning."],
+      ["make",              "make & Incremental Builds",         "Rules, prerequisites, timestamps, .PHONY, header deps, parallel -j, recursive make."],
+      ["cmake",             "CMake Fundamentals",               "Targets, PUBLIC/PRIVATE/INTERFACE, generators, find_package, out-of-source, presets."],
+      ["build-flags",       "Build Types, Flags & Optimization", "-O0..-O3/-Os, -g, NDEBUG, -march, LTO, -fno-omit-frame-pointer, stripping."],
+      ["sanitizers-ci",     "Sanitizers & Static Analysis in CI","ASan/UBSan/TSan/MSan, -Werror, clang-tidy/cppcheck, warnings-as-gates, reproducible builds."]
     ]
   };
 
   // ---- planned topics for skills not yet written (titles only) ----------
   var PLANNED = {
-    build: [
-      "The C/C++ compilation pipeline",
-      "Translation units & the preprocessor",
-      "Object files, symbols & relocations",
-      "The linker: resolution & ordering",
-      "Static vs dynamic libraries",
-      "The ABI & name mangling",
-      "make & incremental builds",
-      "CMake fundamentals",
-      "Build types, flags & optimization levels",
-      "Sanitizers & static analysis in CI",
-      "Debug symbols, stripping & nm/objdump"
-    ],
     lld: [
       "Requirements -> classes -> responsibilities",
       "SOLID applied to a real design",
