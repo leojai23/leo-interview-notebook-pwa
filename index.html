@@ -4759,6 +4759,27 @@ r = 20;           <span class="c">// x is now 20</span>
 
 <span class="k">int</span>* p = &amp;x;      <span class="c">// pointer: separate object holding an address</span>
 p = <span class="k">nullptr</span>;      <span class="c">// can be reseated, can be null</span></code></pre>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-cppref-t">
+<title id="d-cppref-t">A reference is a second name for one object; a pointer is its own object</title>
+<text class="d-t-b" x="14" y="16">int&amp; r = x;   &mdash;   r and x are the same storage</text>
+<rect class="d-box-soft" x="120" y="24" width="150" height="34"/>
+<text class="d-t-b" x="195" y="46" text-anchor="middle">20</text>
+<text class="d-t-sm" x="112" y="45" text-anchor="end">x</text>
+<text class="d-t-sm" x="278" y="45">r  (same box)</text>
+<text class="d-t-sm" x="14" y="52">no arrow &mdash; nothing to point at</text>
+<text class="d-t-b" x="14" y="92">int* p = &amp;x;   &mdash;   p is a separate variable holding x's address</text>
+<rect class="d-box" x="60" y="100" width="90" height="30"/>
+<text class="d-t-sm" x="105" y="119" text-anchor="middle">p</text>
+<rect class="d-box-soft" x="300" y="100" width="90" height="30"/>
+<text class="d-t-b" x="345" y="119" text-anchor="middle">20</text>
+<text class="d-t-sm" x="345" y="97" text-anchor="middle">x</text>
+<path class="d-line" d="M150 115 L298 115" marker-end="url(#cppref-ah)"/>
+<defs><marker id="cppref-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="200" y="145"><tspan class="d-t-mono">p</tspan> can be reseated / set to <tspan class="d-t-mono">nullptr</tspan>; <tspan class="d-t-mono">r</tspan> is bound to <tspan class="d-t-mono">x</tspan> for life.</text>
+</svg>
+<figcaption>The compiler often implements a reference <em>as</em> a hidden pointer, but the language gives it no identity of its own &mdash; <code>&amp;r</code> is <code>&amp;x</code>, and there is no "reference to a reference".</figcaption>
+</figure>
 <table>
 <tr><th></th><th>Reference</th><th>Pointer</th></tr>
 <tr><td>Nullable</td><td>No</td><td>Yes</td></tr>
@@ -4918,6 +4939,30 @@ or normal exit all run the destructor.</p>
     if (bad) <span class="k">return</span>;                     <span class="c">// dtors still run: file closed, mutex unlocked</span>
     out &lt;&lt; data;
 }                                        <span class="c">// dtors run here on the normal path</span></code></pre>
+<figure class="diagram">
+<svg viewBox="0 0 520 176" role="img" aria-labelledby="d-cppraii-t">
+<title id="d-cppraii-t">Every way out of the scope runs the destructor</title>
+<rect class="d-box-soft" x="200" y="18" width="120" height="30" rx="6"/>
+<text class="d-t-b" x="260" y="37" text-anchor="middle">ctor: acquire</text>
+<path class="d-line" d="M260 48 L260 66" marker-end="url(#cppraii-ah)"/>
+<defs><marker id="cppraii-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="180" y="66" width="160" height="30" rx="6"/>
+<text class="d-t-sm" x="260" y="85" text-anchor="middle">work with the resource</text>
+<!-- three exits -->
+<path class="d-line" d="M180 81 C 110 81, 90 110, 90 122" marker-end="url(#cppraii-ah)"/>
+<path class="d-line" d="M260 96 L260 122" marker-end="url(#cppraii-ah)"/>
+<path class="d-line" d="M340 81 C 420 81, 440 110, 440 122" marker-end="url(#cppraii-ah)"/>
+<rect class="d-box-alt" x="40" y="122" width="100" height="26"/><text class="d-t-sm" x="90" y="139" text-anchor="middle">early return</text>
+<rect class="d-box-alt" x="210" y="122" width="100" height="26"/><text class="d-t-sm" x="260" y="139" text-anchor="middle">normal exit</text>
+<rect class="d-box-alt" x="390" y="122" width="100" height="26"/><text class="d-t-sm" x="440" y="139" text-anchor="middle">exception</text>
+<path class="d-line" d="M90 148 C 90 160, 240 160, 258 160" marker-end="url(#cppraii-ah)"/>
+<path class="d-line" d="M260 148 L260 158" marker-end="url(#cppraii-ah)"/>
+<path class="d-line" d="M440 148 C 440 160, 280 160, 262 160" marker-end="url(#cppraii-ah)"/>
+<rect class="d-box-soft" x="180" y="158" width="160" height="14" rx="4"/>
+<text class="d-t-accent" x="260" y="169" text-anchor="middle">~dtor: release &mdash; always</text>
+</svg>
+<figcaption>RAII moves the release from "every code path the programmer must remember" to "one destructor the compiler guarantees to call". Members and bases are destroyed in <strong>reverse</strong> of construction order.</figcaption>
+</figure>
 <p>Standard RAII types: <code>std::unique_ptr</code>/<code>shared_ptr</code>, <code>lock_guard</code>/<code>unique_lock</code>/<code>scoped_lock</code>,
 <code>fstream</code>, <code>std::vector</code>/<code>string</code>, <code>std::jthread</code>. Roll your own with a small wrapper
 class or <code>std::unique_ptr</code> with a custom deleter.</p>
@@ -5025,6 +5070,27 @@ A scope-guard: a small template holding a callable and invoking it in its destru
 <p>The compiler-generated copy constructor and copy assignment do a <em>memberwise</em> copy. For a
 class holding a raw owning pointer that means two objects pointing at the same buffer &mdash; a
 double-free and aliasing bug. You then need a <strong>deep copy</strong> that duplicates the buffer.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 172" role="img" aria-labelledby="d-cpprof-t">
+<title id="d-cpprof-t">Memberwise (shallow) copy shares the heap buffer; deep copy duplicates it</title>
+<text class="d-t-b" x="14" y="16">shallow (compiler default)  &rarr;  double free</text>
+<rect class="d-box" x="20" y="24" width="70" height="28"/><text class="d-t-sm" x="55" y="42" text-anchor="middle">a.p_</text>
+<rect class="d-box" x="20" y="56" width="70" height="28"/><text class="d-t-sm" x="55" y="74" text-anchor="middle">b.p_</text>
+<rect class="d-box-soft" x="230" y="40" width="120" height="28"/><text class="d-t-sm" x="290" y="58" text-anchor="middle">[1,2,3] on heap</text>
+<path class="d-line" d="M90 38 L228 48" marker-end="url(#cpprof-ah)"/>
+<path class="d-line" d="M90 70 L228 60" marker-end="url(#cpprof-ah)"/>
+<defs><marker id="cpprof-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="360" y="58">both dtors delete it</text>
+<text class="d-t-b" x="14" y="112">deep copy</text>
+<rect class="d-box" x="20" y="120" width="70" height="26"/><text class="d-t-sm" x="55" y="137" text-anchor="middle">a.p_</text>
+<rect class="d-box" x="20" y="150" width="70" height="20"/><text class="d-t-sm" x="55" y="164" text-anchor="middle">b.p_</text>
+<rect class="d-box-soft" x="230" y="116" width="120" height="22"/><text class="d-t-sm" x="290" y="132" text-anchor="middle">[1,2,3]</text>
+<rect class="d-box-soft" x="230" y="148" width="120" height="22"/><text class="d-t-sm" x="290" y="164" text-anchor="middle">[1,2,3] (its own)</text>
+<path class="d-line" d="M90 132 L228 127" marker-end="url(#cpprof-ah)"/>
+<path class="d-line" d="M90 159 L228 159" marker-end="url(#cpprof-ah)"/>
+</svg>
+<figcaption><strong>Rule of 0:</strong> hold the buffer in a <code>std::vector</code>/<code>unique_ptr</code> member and the compiler-generated copy/move/dtor all become correct &mdash; you write none of the five.</figcaption>
+</figure>
 <pre><code><span class="k">class</span> Buf {
     <span class="k">int</span>* p_; size_t n_;
 <span class="k">public</span>:
@@ -5047,6 +5113,24 @@ implementation handles both copy and move assignment, is self-assignment safe, a
 strong exception guarantee (the copy happens before any mutation).</p>
 
 <h3>Suppression rules</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 138" role="img" aria-labelledby="d-cpprof2-t">
+<title id="d-cpprof2-t">Declaring one special member changes which others the compiler generates</title>
+<rect class="d-box" x="14" y="24" width="150" height="30" rx="6"/>
+<text class="d-t-sm" x="89" y="43" text-anchor="middle">you declare ~dtor or copy</text>
+<path class="d-line" d="M164 39 L214 39" marker-end="url(#cpprof2-ah)"/>
+<defs><marker id="cpprof2-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-alt" x="216" y="24" width="290" height="30" rx="6"/>
+<text class="d-t-sm" x="228" y="43">move ops <tspan class="d-t-accent">NOT generated</tspan> &rarr; silent fallback to copy</text>
+<rect class="d-box" x="14" y="66" width="150" height="30" rx="6"/>
+<text class="d-t-sm" x="89" y="85" text-anchor="middle">you declare a move op</text>
+<path class="d-line" d="M164 81 L214 81" marker-end="url(#cpprof2-ah)"/>
+<rect class="d-box-alt" x="216" y="66" width="290" height="30" rx="6"/>
+<text class="d-t-sm" x="228" y="85">copy ops <tspan class="d-t-accent">deleted</tspan> &rarr; class becomes move-only</text>
+<text class="d-t-accent" x="14" y="124">Safe habit: touch one of the five &rarr; <tspan class="d-t-mono">= default</tspan> / <tspan class="d-t-mono">= delete</tspan> the other four explicitly.</text>
+</svg>
+<figcaption>This is why "I added a destructor for logging and my type suddenly does expensive deep copies everywhere" happens.</figcaption>
+</figure>
 <ul>
 <li>Declaring a destructor or any copy op &rArr; move ops are <strong>not</strong> generated (you silently get copies where you expected moves).</li>
 <li>Declaring a move op &rArr; copy ops are <strong>deleted</strong>.</li>
@@ -5155,6 +5239,24 @@ actually runs. <code>std::forward&lt;T&gt;(x)</code> conditionally casts, used w
 preserve the caller's lvalue/rvalue-ness ("perfect forwarding").</p>
 
 <h3>Writing move operations</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 168" role="img" aria-labelledby="d-cppmove-t">
+<title id="d-cppmove-t">Move = copy the pointer, then null the source. Copy = duplicate the buffer.</title>
+<text class="d-t-b" x="14" y="16">before:  string a = "hello";</text>
+<rect class="d-box" x="20" y="24" width="70" height="26"/><text class="d-t-sm" x="55" y="41" text-anchor="middle">a.ptr</text>
+<rect class="d-box-soft" x="220" y="24" width="130" height="26"/><text class="d-t-mono" x="285" y="41" text-anchor="middle">"hello"</text>
+<path class="d-line" d="M90 37 L218 37" marker-end="url(#cppmove-ah)"/>
+<defs><marker id="cppmove-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-b" x="14" y="78">after:  string b = std::move(a);</text>
+<rect class="d-box" x="20" y="86" width="70" height="26"/><text class="d-t-sm" x="55" y="103" text-anchor="middle">a.ptr</text>
+<text class="d-t-accent" x="96" y="103">= nullptr</text>
+<rect class="d-box" x="20" y="118" width="70" height="26"/><text class="d-t-sm" x="55" y="135" text-anchor="middle">b.ptr</text>
+<rect class="d-box-soft" x="220" y="118" width="130" height="26"/><text class="d-t-mono" x="285" y="135" text-anchor="middle">"hello"</text>
+<path class="d-line" d="M90 131 L218 131" marker-end="url(#cppmove-ah)"/>
+<text class="d-t-sm" x="14" y="160">O(1): no allocation, no <tspan class="d-t-mono">memcpy</tspan> of the characters. <tspan class="d-t-mono">a</tspan> is now empty-but-valid.</text>
+</svg>
+<figcaption><code>std::move(a)</code> emits <em>no</em> instructions &mdash; it is a cast that makes <code>a</code> bind to the <code>&amp;&amp;</code> overload. The pointer-stealing happens inside the move constructor shown below.</figcaption>
+</figure>
 <pre><code>Buf(Buf&amp;&amp; o) <span class="k">noexcept</span>
     : p_(o.p_), n_(o.n_) { o.p_ = <span class="k">nullptr</span>; o.n_ = 0; }   <span class="c">// leave source destructible</span></code></pre>
 <ul>
@@ -5246,9 +5348,38 @@ Guaranteed: initialising an object from a <em>prvalue</em> of the same type &mda
 <details class="section" open><summary>Notes</summary><div class="section-body">
 <h3>How dynamic dispatch works</h3>
 <p>A class with any <code>virtual</code> function gets a hidden <strong>vptr</strong> pointing at its class's
-<strong>vtable</strong> &mdash; an array of function pointers. A call <code>base_ptr-&gt;draw()</code> reads the vptr,
-indexes the vtable, and calls the most-derived override. Cost: one extra indirection and a
-non-inlinable call.</p>
+<strong>vtable</strong> &mdash; an array of function pointers, one per virtual. A call
+<code>base_ptr-&gt;draw()</code> reads the vptr, indexes the vtable at <code>draw</code>'s fixed slot, and
+calls whatever address is there &mdash; the most-derived override. Cost: one extra load and an
+indirect, non-inlinable call.</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 200" role="img" aria-labelledby="d-cppvt-t">
+<title id="d-cppvt-t">Object holds a vptr to its class vtable of function pointers</title>
+<text class="d-t-b" x="14" y="16">Shape* p = new Circle;   p-&gt;area();</text>
+<!-- object -->
+<rect class="d-box" x="14" y="26" width="120" height="66"/>
+<text class="d-t-sm" x="74" y="20" text-anchor="middle">Circle object</text>
+<rect class="d-box-soft" x="20" y="32" width="108" height="22"/><text class="d-t-sm" x="74" y="47" text-anchor="middle">vptr</text>
+<rect class="d-box-alt" x="20" y="56" width="108" height="30"/><text class="d-t-sm" x="74" y="75" text-anchor="middle">double r</text>
+<!-- vtable -->
+<rect class="d-box" x="220" y="26" width="150" height="96"/>
+<text class="d-t-sm" x="295" y="20" text-anchor="middle">vtable for Circle</text>
+<rect class="d-box-alt" x="226" y="32" width="138" height="22"/><text class="d-t-sm" x="234" y="47">[0] &amp;Circle::area</text>
+<rect class="d-box-alt" x="226" y="56" width="138" height="22"/><text class="d-t-sm" x="234" y="71">[1] &amp;Circle::~Circle</text>
+<rect class="d-box-alt" x="226" y="80" width="138" height="22"/><text class="d-t-sm" x="234" y="95">[2] &amp;Shape::name  (not overridden)</text>
+<!-- code -->
+<rect class="d-box-soft" x="430" y="30" width="100" height="26"/><text class="d-t-mono" x="480" y="47" text-anchor="middle">Circle::area</text>
+<path class="d-line" d="M128 43 L218 43" marker-end="url(#cppvt-ah)"/>
+<defs><marker id="cppvt-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<path class="d-line" d="M364 43 L428 43" marker-end="url(#cppvt-ah)"/>
+<text class="d-t-sm" x="150" y="38">1. load vptr</text>
+<text class="d-t-sm" x="376" y="38">2. slot [0]</text>
+<text class="d-t-sm" x="14" y="140">One vtable per class (shared by all its objects); one vptr per object. A <tspan class="d-t-mono">Shape*</tspan> pointing</text>
+<text class="d-t-sm" x="14" y="156">at a <tspan class="d-t-mono">Square</tspan> would carry Square's vptr &rarr; slot [0] is <tspan class="d-t-mono">Square::area</tspan>. That is dynamic dispatch.</text>
+<text class="d-t-sm" x="14" y="180">Non-virtual calls skip all this and jump straight to the function of the static type.</text>
+</svg>
+<figcaption>Adding the first <code>virtual</code> grows every object by one pointer (the vptr). <code>final</code> can let the compiler prove the dynamic type and "devirtualise" the call back to a direct one.</figcaption>
+</figure>
 <pre><code><span class="k">struct</span> Shape {
     <span class="k">virtual</span> <span class="k">double</span> area() <span class="k">const</span> = 0;   <span class="c">// pure virtual -> abstract class</span>
     <span class="k">virtual</span> ~Shape() = <span class="k">default</span>;         <span class="c">// REQUIRED for polymorphic base</span>
@@ -5358,6 +5489,20 @@ For a class with a virtual destructor, the compiler typically puts two destructo
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
 <h3>Member vs free function</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 124" role="img" aria-labelledby="d-cppop-t">
+<title id="d-cppop-t">Member operator: left side is this. Free operator: both sides are parameters.</title>
+<text class="d-t-b" x="14" y="16">a + b  as a member:  a.operator+(b)</text>
+<rect class="d-box-soft" x="20" y="24" width="60" height="24"/><text class="d-t-sm" x="50" y="40" text-anchor="middle">a = *this</text>
+<rect class="d-box" x="120" y="24" width="60" height="24"/><text class="d-t-sm" x="150" y="40" text-anchor="middle">b = param</text>
+<text class="d-t-accent" x="200" y="40">no conversion on the left &rarr; <tspan class="d-t-mono">2 + a</tspan> fails</text>
+<text class="d-t-b" x="14" y="80">a + b  as a free function:  operator+(a, b)</text>
+<rect class="d-box" x="20" y="88" width="60" height="24"/><text class="d-t-sm" x="50" y="104" text-anchor="middle">a = param</text>
+<rect class="d-box" x="120" y="88" width="60" height="24"/><text class="d-t-sm" x="150" y="104" text-anchor="middle">b = param</text>
+<text class="d-t-accent" x="200" y="104">both convert &rarr; <tspan class="d-t-mono">2 + a</tspan> and <tspan class="d-t-mono">a + 2</tspan> both work</text>
+</svg>
+<figcaption>Rule of thumb: <code>=</code>, <code>[]</code>, <code>()</code>, <code>-&gt;</code> must be members; symmetric binary operators (<code>+</code>, <code>==</code>, <code>&lt;&lt;</code>) are free functions (often hidden <code>friend</code>s) so both operands get implicit conversions.</figcaption>
+</figure>
 <ul>
 <li><strong>Member</strong>: <code>=</code>, <code>[]</code>, <code>()</code>, <code>-&gt;</code>, and anything that must have a class lvalue on the left.</li>
 <li><strong>Free (often <code>friend</code>)</strong>: symmetric binary operators (<code>+</code>, <code>==</code>, <code>&lt;&lt;</code>) so that implicit conversions work on <em>both</em> sides (<code>2 + mynum</code> as well as <code>mynum + 2</code>).</li>
@@ -5475,6 +5620,24 @@ The built-in <code>&amp;&amp;</code>/<code>||</code> short-circuit and impose a 
 <span class="k">struct</span> Array { T data[N]; size_t size() <span class="k">const</span> { <span class="k">return</span> N; } };</code></pre>
 <p>A template is a <em>pattern</em>; the compiler <strong>instantiates</strong> a concrete version for each set
 of arguments actually used. Unused member functions of a class template aren't instantiated.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-cpptpl-t">
+<title id="d-cpptpl-t">One template pattern, one generated class per distinct type argument</title>
+<rect class="d-box-alt" x="180" y="16" width="160" height="34" rx="6"/>
+<text class="d-t-mono" x="260" y="30" text-anchor="middle">template&lt;class T&gt;</text>
+<text class="d-t-mono" x="260" y="44" text-anchor="middle">struct vector { ... };</text>
+<path class="d-line" d="M215 50 C 190 66, 120 66, 100 78" marker-end="url(#cpptpl-ah)"/>
+<path class="d-line" d="M260 50 L260 78" marker-end="url(#cpptpl-ah)"/>
+<path class="d-line" d="M305 50 C 330 66, 400 66, 420 78" marker-end="url(#cpptpl-ah)"/>
+<defs><marker id="cpptpl-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<rect class="d-box" x="20" y="80" width="150" height="30" rx="5"/><text class="d-t-mono" x="95" y="99" text-anchor="middle">vector&lt;int&gt;</text>
+<rect class="d-box" x="185" y="80" width="150" height="30" rx="5"/><text class="d-t-mono" x="260" y="99" text-anchor="middle">vector&lt;string&gt;</text>
+<rect class="d-box" x="350" y="80" width="150" height="30" rx="5"/><text class="d-t-mono" x="425" y="99" text-anchor="middle">vector&lt;Widget*&gt;</text>
+<text class="d-t-sm" x="20" y="134">Each is a separate real class with its own machine code &mdash; the source of both</text>
+<text class="d-t-sm" x="20" y="148">templates' power and their code-bloat / slow-compile reputation.</text>
+</svg>
+<figcaption>Instantiation is lazy and per-argument-set: <code>vector&lt;int&gt;</code> used in two <code>.cpp</code> files is generated in both and de-duplicated by the linker (COMDAT folding).</figcaption>
+</figure>
 
 <h3>Argument deduction</h3>
 <ul>
@@ -5604,6 +5767,24 @@ T twice(T x) { <span class="k">return</span> x + x; }        <span class="c">// 
 <span class="k">auto</span> f(std::ranges::range <span class="k">auto</span>&amp;&amp; r);   <span class="c">// terse form</span></code></pre>
 
 <h3>CRTP &mdash; static polymorphism</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 138" role="img" aria-labelledby="d-cppcrtp-t">
+<title id="d-cppcrtp-t">CRTP: the base is templated on the derived class</title>
+<rect class="d-box-soft" x="150" y="18" width="220" height="30" rx="6"/>
+<text class="d-t-mono" x="260" y="37" text-anchor="middle">Base&lt;Derived&gt;</text>
+<rect class="d-box" x="150" y="80" width="220" height="30" rx="6"/>
+<text class="d-t-mono" x="260" y="99" text-anchor="middle">class Derived : Base&lt;Derived&gt;</text>
+<path class="d-line" d="M260 80 L260 50" marker-end="url(#cppcrtp-ah)"/>
+<defs><marker id="cppcrtp-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="270" y="68">inherits from</text>
+<path class="d-dash" d="M150 33 C 60 33, 60 95, 148 95" marker-end="url(#cppcrtp-ah)"/>
+<text class="d-t-accent" x="14" y="66">Base calls</text>
+<text class="d-t-accent" x="14" y="80">static_cast&lt;Derived*&gt;</text>
+<text class="d-t-accent" x="14" y="94">(this)-&gt;impl()</text>
+<text class="d-t-sm" x="14" y="132">The base statically knows the exact derived type &mdash; dispatch resolves at compile time, no vptr, inlinable.</text>
+</svg>
+<figcaption>Same "call the derived override from base code" effect as <code>virtual</code>, but resolved at compile time. Trade-off: the concrete type must be known statically &mdash; no heterogeneous <code>vector&lt;Base*&gt;</code>.</figcaption>
+</figure>
 <pre><code><span class="k">template</span>&lt;<span class="k">class</span> Derived&gt;
 <span class="k">struct</span> Printable {
     <span class="k">void</span> print() <span class="k">const</span> {
@@ -5714,6 +5895,33 @@ When two candidate function templates are both viable and constrained, the one w
 <tr><td><code>array&lt;T,N&gt;</code></td><td>contiguous, fixed</td><td>O(1)</td><td>compile-time size, no heap</td></tr>
 </table>
 <p>Container adaptors: <code>stack</code>, <code>queue</code> (on <code>deque</code>), <code>priority_queue</code> (on <code>vector</code> + heap).</p>
+<figure class="diagram">
+<svg viewBox="0 0 540 220" role="img" aria-labelledby="d-cppstl-t">
+<title id="d-cppstl-t">How the main containers store their elements</title>
+<!-- vector -->
+<text class="d-t-b" x="14" y="16">vector &mdash; one contiguous heap block (+ size, capacity)</text>
+<rect class="d-box-soft" x="14" y="22" width="40" height="22"/><rect class="d-box-soft" x="54" y="22" width="40" height="22"/><rect class="d-box-soft" x="94" y="22" width="40" height="22"/><rect class="d-box-soft" x="134" y="22" width="40" height="22"/>
+<rect class="d-box-alt" x="174" y="22" width="80" height="22"/><text class="d-t-sm" x="214" y="37" text-anchor="middle">spare cap</text>
+<!-- list -->
+<text class="d-t-b" x="14" y="76">list &mdash; separately allocated nodes, prev/next pointers</text>
+<rect class="d-box" x="14" y="82" width="60" height="26"/><rect class="d-box" x="114" y="82" width="60" height="26"/><rect class="d-box" x="214" y="82" width="60" height="26"/>
+<path class="d-line" d="M74 95 L112 95" marker-end="url(#cppstl-ah)"/><path class="d-line" d="M174 95 L212 95" marker-end="url(#cppstl-ah)"/>
+<path class="d-line-soft" d="M112 100 L76 100"/><path class="d-line-soft" d="M212 100 L176 100"/>
+<defs><marker id="cppstl-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<!-- map -->
+<text class="d-t-b" x="14" y="134">map / set &mdash; balanced binary search tree of nodes</text>
+<rect class="d-box" x="120" y="140" width="40" height="20"/>
+<rect class="d-box" x="70" y="172" width="40" height="20"/><rect class="d-box" x="170" y="172" width="40" height="20"/>
+<path class="d-line-soft" d="M130 160 L95 172"/><path class="d-line-soft" d="M150 160 L185 172"/>
+<!-- unordered -->
+<text class="d-t-b" x="290" y="134">unordered_map &mdash; bucket array &rarr; chains</text>
+<rect class="d-box-alt" x="290" y="140" width="24" height="18"/><rect class="d-box-alt" x="314" y="140" width="24" height="18"/><rect class="d-box-alt" x="338" y="140" width="24" height="18"/><rect class="d-box-alt" x="362" y="140" width="24" height="18"/>
+<rect class="d-box" x="314" y="168" width="34" height="18"/><rect class="d-box" x="362" y="168" width="34" height="18"/><rect class="d-box" x="362" y="190" width="34" height="18"/>
+<path class="d-line-soft" d="M326 158 L331 168"/><path class="d-line-soft" d="M374 158 L379 168"/><path class="d-line-soft" d="M379 186 L379 190"/>
+<text class="d-t-sm" x="14" y="216">Contiguity (vector/array) = cache-friendly, cheap to iterate. Node-based (list/map/unordered) = stable addresses, pointer chasing.</text>
+</svg>
+<figcaption>Reach for <code>vector</code> by default. <code>list</code> is almost never faster in practice despite its O(1) insert &mdash; the constant factors and cache misses dominate.</figcaption>
+</figure>
 
 <h3>Iterator invalidation &mdash; the exam favourite</h3>
 <table>
@@ -5822,6 +6030,23 @@ Sorted <code>vector</code> + <code>std::lower_bound</code>: O(log n) lookup like
 std::transform(a.begin(), a.end(), std::back_inserter(out), fn);
 <span class="k">auto</span> total = std::accumulate(v.begin(), v.end(), 0L);
 <span class="k">bool</span> ok = std::all_of(v.begin(), v.end(), pred);</code></pre>
+<figure class="diagram">
+<svg viewBox="0 0 520 128" role="img" aria-labelledby="d-cppalgo-t">
+<title id="d-cppalgo-t">Algorithms work on a half-open iterator range [begin, end)</title>
+<rect class="d-box-soft" x="20" y="34" width="50" height="28"/><rect class="d-box-soft" x="70" y="34" width="50" height="28"/><rect class="d-box-soft" x="120" y="34" width="50" height="28"/><rect class="d-box-soft" x="170" y="34" width="50" height="28"/>
+<rect class="d-box-alt" x="220" y="34" width="50" height="28"/>
+<text class="d-t-b" x="45" y="53" text-anchor="middle">5</text><text class="d-t-b" x="95" y="53" text-anchor="middle">1</text><text class="d-t-b" x="145" y="53" text-anchor="middle">4</text><text class="d-t-b" x="195" y="53" text-anchor="middle">2</text>
+<path class="d-line" d="M20 26 L20 32" marker-end="url(#cppalgo-ah)"/>
+<path class="d-line" d="M220 26 L220 32" marker-end="url(#cppalgo-ah)"/>
+<defs><marker id="cppalgo-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="20" y="20">begin()</text>
+<text class="d-t-accent" x="200" y="20">end() &mdash; one past last</text>
+<text class="d-t-sm" x="20" y="86">The algorithm never sees the container &mdash; only the pair of iterators. So <tspan class="d-t-mono">sort(v.begin()+1, v.end())</tspan></text>
+<text class="d-t-sm" x="20" y="102">sorts a sub-range, and <tspan class="d-t-mono">remove_if</tspan> can only shuffle elements &mdash; it can't shrink the container (hence erase&ndash;remove).</text>
+<text class="d-t-sm" x="20" y="122">Iterator power: input &lt; forward &lt; bidirectional &lt; random-access &mdash; each algorithm needs a minimum category.</text>
+</svg>
+<figcaption><code>begin == end</code> means empty; the range is <code>end - begin</code> elements. This half-open convention is why loops and sub-ranges compose without off-by-one juggling.</figcaption>
+</figure>
 <p>C++20 <strong>ranges</strong> remove the begin/end noise and compose lazily:</p>
 <pre><code><span class="k">namespace</span> rv = std::ranges::views;
 <span class="k">for</span> (<span class="k">int</span> x : v | rv::filter(is_even) | rv::transform(square) | rv::take(5))
@@ -5943,6 +6168,31 @@ With <code>template&lt;class F&gt; void each(F f)</code>, the exact callable typ
 </ul>
 
 <h3><code>std::shared_ptr</code> &mdash; shared ownership</h3>
+<figure class="diagram">
+<svg viewBox="0 0 540 176" role="img" aria-labelledby="d-cppsp-t">
+<title id="d-cppsp-t">Two shared_ptr and a weak_ptr sharing one control block and object</title>
+<rect class="d-box" x="14" y="24" width="90" height="26"/><text class="d-t-sm" x="59" y="41" text-anchor="middle">sp1</text>
+<rect class="d-box" x="14" y="58" width="90" height="26"/><text class="d-t-sm" x="59" y="75" text-anchor="middle">sp2</text>
+<rect class="d-box" x="14" y="100" width="90" height="26"/><text class="d-t-sm" x="59" y="117" text-anchor="middle">wp (weak)</text>
+<!-- control block -->
+<rect class="d-box-soft" x="220" y="30" width="150" height="70" rx="6"/>
+<text class="d-t-b" x="295" y="24" text-anchor="middle">control block</text>
+<text class="d-t-sm" x="230" y="50">strong = 2</text>
+<text class="d-t-sm" x="230" y="68">weak = 1</text>
+<text class="d-t-sm" x="230" y="86">deleter, allocator</text>
+<!-- object -->
+<rect class="d-box-alt" x="430" y="40" width="96" height="40" rx="6"/>
+<text class="d-t-sm" x="478" y="64" text-anchor="middle">Widget</text>
+<path class="d-line" d="M104 37 L218 48" marker-end="url(#cppsp-ah)"/>
+<path class="d-line" d="M104 71 L218 70" marker-end="url(#cppsp-ah)"/>
+<path class="d-dash" d="M104 113 C 160 113, 180 95, 218 88" marker-end="url(#cppsp-ah)"/>
+<path class="d-line" d="M370 58 L428 58" marker-end="url(#cppsp-ah)"/>
+<defs><marker id="cppsp-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="150"><tspan class="d-t-mono">strong &rarr; 0</tspan>: destroy the Widget. <tspan class="d-t-mono">strong == 0 &amp;&amp; weak == 0</tspan>: free the control block too.</text>
+<text class="d-t-sm" x="14" y="168"><tspan class="d-t-mono">weak_ptr</tspan> keeps the control block alive (so it can tell if the object is gone) but not the object.</text>
+</svg>
+<figcaption><code>make_shared&lt;Widget&gt;()</code> allocates the control block and the <code>Widget</code> as one block; <code>shared_ptr(new Widget)</code> makes two allocations and can leave the object leaked if the <code>shared_ptr</code> ctor throws.</figcaption>
+</figure>
 <ul>
 <li>Holds a <strong>control block</strong> with a strong count and a weak count; the object is destroyed when the strong count hits 0, the control block when the weak count also hits 0.</li>
 <li>Refcount updates are atomic &mdash; thread-safe count, but <em>not</em> a thread-safe object.</li>
@@ -6051,6 +6301,23 @@ It creates a <em>second, independent</em> control block for an object that's pre
 } <span class="k">catch</span> (...) {                        <span class="c">// anything else</span>
     cleanup(); <span class="k">throw</span>;                    <span class="c">// rethrow current exception</span>
 }</code></pre>
+<figure class="diagram">
+<svg viewBox="0 0 520 168" role="img" aria-labelledby="d-cppexc-t">
+<title id="d-cppexc-t">throw unwinds the stack, running each frame's destructors, to the matching catch</title>
+<rect class="d-box-soft" x="180" y="18" width="160" height="24"/><text class="d-t-sm" x="260" y="34" text-anchor="middle">main &mdash; try { ... } catch</text>
+<rect class="d-box" x="180" y="46" width="160" height="24"/><text class="d-t-sm" x="260" y="62" text-anchor="middle">parse() &mdash; local Buf b</text>
+<rect class="d-box" x="180" y="74" width="160" height="24"/><text class="d-t-sm" x="260" y="90" text-anchor="middle">token() &mdash; lock_guard lk</text>
+<rect class="d-box-alt" x="180" y="102" width="160" height="24"/><text class="d-t-accent" x="260" y="118" text-anchor="middle">read() &mdash; throw runtime_error</text>
+<path class="d-line" d="M175 114 C 120 114, 100 40, 176 32" marker-end="url(#cppexc-ah)"/>
+<defs><marker id="cppexc-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="350" y="90">~lock_guard (unlock)</text>
+<text class="d-t-sm" x="350" y="62">~Buf (free)</text>
+<text class="d-t-sm" x="350" y="34">caught here</text>
+<text class="d-t-sm" x="14" y="150">Each frame between the <tspan class="d-t-mono">throw</tspan> and the <tspan class="d-t-mono">catch</tspan> is torn down in reverse order, running destructors &mdash;</text>
+<text class="d-t-sm" x="14" y="166">this is why RAII + exceptions = leak-free. A destructor that <tspan class="d-t-mono">throw</tspan>s during unwinding calls <tspan class="d-t-mono">std::terminate</tspan>.</text>
+</svg>
+<figcaption>No matching <code>catch</code> anywhere on the stack &rarr; <code>std::terminate</code>. A function that never throws should be marked <code>noexcept</code> (and a <code>noexcept</code> function that does throw also calls <code>terminate</code>).</figcaption>
+</figure>
 <ul>
 <li><code>throw expr;</code> copies/moves <code>expr</code> into an implementation-managed area, then unwinds the stack: every fully-constructed local's destructor runs, up to a matching <code>catch</code>.</li>
 <li>Catch by <code>const&amp;</code> (no slicing, no copy). Order handlers most-derived first.</li>
@@ -6166,6 +6433,23 @@ It happens if a destructor (or other cleanup) throws <em>while</em> stack unwind
 <tr><td><code>consteval</code> (C++20)</td><td>An <em>immediate</em> function &mdash; every call must be evaluated at compile time or it's an error.</td></tr>
 <tr><td><code>constinit</code> (C++20)</td><td>Guarantees static/thread-storage init happens at compile time (no dynamic-init order fiasco), but the object stays mutable.</td></tr>
 </table>
+<figure class="diagram">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="d-cppce-t">
+<title id="d-cppce-t">A constexpr function runs at compile time when it can, at run time otherwise</title>
+<rect class="d-box-soft" x="180" y="18" width="160" height="26" rx="6"/>
+<text class="d-t-mono" x="260" y="36" text-anchor="middle">constexpr int f(int)</text>
+<path class="d-line" d="M230 44 C 200 58, 150 58, 130 68" marker-end="url(#cppce-ah)"/>
+<path class="d-line" d="M290 44 C 320 58, 370 58, 390 68" marker-end="url(#cppce-ah)"/>
+<defs><marker id="cppce-ah" markerWidth="9" markerHeight="9" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L9 4 L0 8 Z"/></marker></defs>
+<rect class="d-box-alt" x="30" y="70" width="200" height="26" rx="5"/>
+<text class="d-t-sm" x="130" y="88" text-anchor="middle">f(10) in array size / template</text>
+<text class="d-t-accent" x="130" y="112" text-anchor="middle">&rarr; evaluated by the compiler</text>
+<rect class="d-box-alt" x="290" y="70" width="200" height="26" rx="5"/>
+<text class="d-t-sm" x="390" y="88" text-anchor="middle">f(runtime_x)</text>
+<text class="d-t-sm" x="390" y="112" text-anchor="middle">&rarr; normal function call</text>
+</svg>
+<figcaption><code>consteval</code> removes the right branch &mdash; every call <em>must</em> fold at compile time. <code>constexpr</code> just says "eligible", not "always".</figcaption>
+</figure>
 
 <h3>Example</h3>
 <pre><code><span class="k">constexpr</span> <span class="k">int</span> factorial(<span class="k">int</span> n) {

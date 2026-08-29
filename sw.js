@@ -1,6 +1,6 @@
 /* Leo Interview Preparation Notebook - service worker
    Cache-first with network fallback. Bump CACHE_NAME whenever index.html changes. */
-const CACHE_NAME = 'leo-interview-v21';
+const CACHE_NAME = 'leo-interview-v22';
 const ASSETS = [
   './',
   './index.html',
