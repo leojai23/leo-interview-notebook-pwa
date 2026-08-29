@@ -7,7 +7,7 @@ Every topic has four blocks: **Notes** (full explanation), **Cheat Sheet** (cond
 recall), **Q&A** (short self-check pairs), and **Interview Questions** graded
 Basic → Intermediate → Advanced with click-to-reveal answers. No quizzes.
 
-## Roadmap — 21 skill areas — ✅ all complete
+## Roadmap — 24 skill areas — ✅ all complete
 
 Built one skill at a time. Every area is written; open any topic at `#/<slug>/<topic>`.
 
@@ -30,6 +30,11 @@ Built one skill at a time. Every area is written; open any topic at `#/<slug>/<t
 
 **Delivery & tools**
 - ✅ Jira & Agile Boards (`jira`) · CDN & Edge Delivery (`cdn`) — 10 topics each
+
+**Virtualization**
+- ✅ **Containers & Isolation** (`containers`) — 9 topics (VMs vs containers, namespaces, cgroups, OverlayFS, OCI/runc/containerd, seccomp/caps/rootless, container networking, build-by-hand)
+- ✅ **Docker** (`docker`) — 12 topics (architecture, CLI, images & registries, Dockerfiles, build cache, multi-stage, volumes, networking, Compose, resources, hardening, production)
+- ✅ **Kubernetes** (`k8s`) — 14 topics (architecture, objects & reconciliation, pods, workloads, services & DNS, ingress/Gateway API, config & secrets, storage/PV/PVC, scheduling, autoscaling, RBAC & Pod Security, NetworkPolicies, observability, Helm/GitOps/operators)
 
 ## Files
 

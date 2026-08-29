@@ -1,7 +1,7 @@
 {
   "name": "Leo Interview Preparation Notebook",
   "short_name": "Leo Interview",
-  "description": "Personal quick-reference notebook for technical interview preparation and skill refresh — 21 skill areas across languages (C, C++, shell), CS fundamentals, systems, low-level & system design, Git, observability (Grafana/Splunk/monitoring), and delivery tools (Jira, CDN). Notes, cheat sheets, Q&A, and levelled interview questions with click-to-reveal answers.",
+  "description": "Personal quick-reference notebook for technical interview preparation and skill refresh — 24 skill areas across languages (C, C++, shell), CS fundamentals, systems, low-level & system design, Git, observability (Grafana/Splunk/monitoring), delivery tools (Jira, CDN), and virtualization (containers, Docker, Kubernetes). Notes, cheat sheets, Q&A, and levelled interview questions with click-to-reveal answers.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
