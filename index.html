@@ -13890,6 +13890,14 @@ NoSQL stores are <em>schema-flexible at write time</em> (the engine won't reject
 <figcaption>OSI has 7 layers; the practical model is 4&ndash;5: Application (HTTP/DNS) &middot; Transport (TCP/UDP) &middot; Network (IP) &middot; Link (Ethernet/Wi-Fi). Routers work at L3, switches at L2.</figcaption>
 </figure>
 <h3>The layers</h3>
+<pre><code><span class="c"># curl -v shows the stack in action, bottom to top:</span>
+$ curl -v https://example.com/
+*   Trying <span class="n">93.184.216.34:443</span>...            <span class="c"># L3 IP  +  L4 TCP port 443</span>
+* Connected to example.com (93.184.216.34) port 443
+* TLSv1.3 (OUT), TLS handshake, ClientHello   <span class="c"># L5-6 TLS wraps the app data</span>
+&gt; GET / HTTP/2                                <span class="c"># L7 application protocol</span>
+&gt; Host: example.com
+&lt; HTTP/2 200</code></pre>
 <table>
 <tr><th>OSI</th><th>TCP/IP</th><th>Job</th><th>Examples / PDU</th></tr>
 <tr><td>7 Application</td><td rowspan="3">Application</td><td>App-level protocols</td><td>HTTP, DNS, SMTP / <em>data</em></td></tr>
@@ -13905,6 +13913,12 @@ NoSQL stores are <em>schema-flexible at write time</em> (the engine won't reject
 <p>Sending: each layer wraps the layer above's PDU with its own header (and the link layer a
 trailer). HTTP data &rarr; + TCP header &rarr; + IP header &rarr; + Ethernet header/trailer &rarr; bits.
 Receiving reverses it, each layer stripping its header and handing the payload up.</p>
+<pre><code><span class="c"># tcpdump prints the nested headers of one packet, outermost first:</span>
+$ sudo tcpdump -n -i eth0 tcp port <span class="n">80</span>
+12:00:01.123  IP 10.0.0.5.54321 &gt; 93.184.216.34.80:   <span class="c"># L3 src/dst IP + L4 src/dst port</span>
+             Flags [P.], seq 1:518, ack 1, win 502,   <span class="c"># L4 TCP header fields</span>
+             length 517: HTTP: GET / HTTP/1.1          <span class="c"># L7 payload rides inside</span>
+<span class="c"># the L2 Ethernet header/trailer is stripped by the NIC before tcpdump sees it here</span></code></pre>
 
 <h3>Why layering</h3>
 <ul>
@@ -13912,11 +13926,20 @@ Receiving reverses it, each layer stripping its header and handing the payload u
 <li>Interoperability: agreed interfaces between layers.</li>
 <li>Trade-off: some overhead and occasional cross-layer inefficiency (e.g. TCP over lossy wireless misinterprets loss as congestion).</li>
 </ul>
+<pre><code><span class="c"># the interface between layers is a stable API, so you can swap an implementation:</span>
+$ ip link set eth0 down          <span class="c"># unplug Ethernet (L2)...</span>
+$ nmcli device connect wlan0     <span class="c"># ...switch to Wi-Fi (L2)</span>
+$ curl https://example.com/      <span class="c"># L3/L4/L7 code unchanged and still works</span></code></pre>
 
 <h3>OSI vs TCP/IP</h3>
 <p>OSI is the 7-layer reference model (good for teaching/terminology). TCP/IP (4 or 5 layers) is
 what the internet actually runs. In practice people say "layer 3" (IP) and "layer 4" (TCP/UDP)
 and "layer 7" (HTTP) from the OSI numbering even while using the TCP/IP stack.</p>
+<pre><code><span class="c"># the OSI numbers people actually use day to day:</span>
+<span class="c">#   "L2 issue"  -> switch / VLAN / MAC / ARP</span>
+<span class="c">#   "L3 issue"  -> IP routing, subnet, firewall rule</span>
+<span class="c">#   "L4 LB"     -> HAProxy in TCP mode: forwards by ip:port, no payload inspection</span>
+<span class="c">#   "L7 LB"     -> nginx: routes by Host header / URL path, can terminate TLS</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -13999,6 +14022,15 @@ Saltzer, Reed &amp; Clark (1984): a function (reliability, security, ordering) s
 <li><strong>Private ranges</strong> (RFC 1918): <code>10.0.0.0/8</code>, <code>172.16.0.0/12</code>, <code>192.168.0.0/16</code> &mdash; not routable on the internet, used behind NAT.</li>
 <li><code>127.0.0.1</code> loopback; <code>0.0.0.0</code> "any"; link-local <code>169.254.x.x</code>.</li>
 </ul>
+<pre><code>$ ip addr show eth0
+    inet 192.168.1.37/24 ...            <span class="c"># private (RFC1918), /24 = 24 network bits</span>
+    inet6 2001:db8:abcd:12::37/64 ...   <span class="c"># IPv6, /64 subnet</span>
+
+$ ip addr show lo
+    inet 127.0.0.1/8                    <span class="c"># loopback -- never leaves the host</span>
+
+$ curl ifconfig.me                      <span class="c"># the ONE public IP your NAT presents to the world</span>
+203.0.113.9</code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-ntip-t">
@@ -14018,6 +14050,16 @@ Saltzer, Reed &amp; Clark (1984): a function (reliability, security, ordering) s
 (254 usable; <code>.0</code> network, <code>.255</code> broadcast). The <strong>mask</strong> <code>255.255.255.0</code> is
 the same thing. Bigger prefix = smaller subnet. Subnetting splits an address block into
 routable pieces; supernetting (route aggregation) combines them.</p>
+<pre><code><span class="c"># /26 = 26 network bits -> 2^(32-26) = 64 addresses, 62 usable</span>
+$ ipcalc 192.168.1.0/26
+Network:   192.168.1.0/26
+HostMin:   192.168.1.1
+HostMax:   192.168.1.62
+Broadcast: 192.168.1.63          <span class="c"># next /26 starts at .64</span>
+
+<span class="c"># "are 10.0.5.9 and 10.0.5.200 in the same /24?"  -> (ip &amp; mask) equal?</span>
+<span class="c">#   10.0.5.9   &amp; 255.255.255.0  = 10.0.5.0</span>
+<span class="c">#   10.0.5.200 &amp; 255.255.255.0  = 10.0.5.0   -> yes, talk directly</span></code></pre>
 
 <h3>Getting the packet out</h3>
 <ol>
@@ -14025,17 +14067,38 @@ routable pieces; supernetting (route aggregation) combines them.</p>
 <li>If not, send to the <strong>default gateway</strong> (router).</li>
 <li>Each router does a <strong>longest-prefix-match</strong> lookup in its routing table, decrements TTL, and forwards to the next hop. Repeat until delivery (or TTL hits 0 &rarr; ICMP "time exceeded", which <code>traceroute</code> exploits).</li>
 </ol>
+<pre><code>$ ip route get 93.184.216.34
+93.184.216.34 via 192.168.1.1 dev eth0 src 192.168.1.37   <span class="c"># not local -> via the gateway</span>
+
+$ traceroute -n 93.184.216.34
+ 1  192.168.1.1     1.1 ms      <span class="c"># each hop = a router that hit TTL 0 and sent ICMP</span>
+ 2  10.20.0.1       8.4 ms
+ 3  93.184.216.34   14 ms       <span class="c"># TTL incremented per probe until the dest replies</span></code></pre>
 
 <h3>Routing tables &amp; protocols</h3>
 <p>Entries: <code>destination/prefix &rarr; next-hop, interface, metric</code>. Populated statically or by
 protocols: <strong>OSPF</strong>/IS-IS (link-state, within an organisation), <strong>BGP</strong> (path-vector,
 between autonomous systems &mdash; it's what glues the internet together and what breaks during big
 outages).</p>
+<pre><code>$ ip route
+default via 192.168.1.1 dev eth0            <span class="c"># 0.0.0.0/0 -- matches everything, lowest priority</span>
+10.8.0.0/24 via 10.8.0.1 dev tun0           <span class="c"># VPN route -- more specific, wins for 10.8.0.x</span>
+192.168.1.0/24 dev eth0 scope link          <span class="c"># directly attached, no next-hop</span>
+<span class="c"># lookup = LONGEST prefix match: /24 beats /0 for a 192.168.1.x destination</span></code></pre>
 
 <h3>NAT</h3>
 <p>A home/office router rewrites private source IP:port to its single public IP:port on the way
 out, keeps a translation table, and reverses it on replies. Enables address sharing; breaks
 inbound connections (need port forwarding) and the end-to-end principle.</p>
+<pre><code><span class="c"># source NAT (masquerade): rewrite outgoing private src -> the router's public IP</span>
+$ iptables -t nat -A POSTROUTING -s 192.168.1.0/24 -o eth0 -j MASQUERADE
+
+<span class="c"># the router's translation table (conntrack):</span>
+<span class="c">#   192.168.1.37:54321  &lt;->  203.0.113.9:60000   -> 93.184.216.34:443</span>
+<span class="c"># reply to 203.0.113.9:60000 is rewritten back to 192.168.1.37:54321</span>
+
+<span class="c"># inbound needs an explicit port-forward (DNAT):</span>
+$ iptables -t nat -A PREROUTING -p tcp --dport 8080 -j DNAT --to 192.168.1.50:80</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -14131,17 +14194,36 @@ CGNAT puts a second NAT layer at the ISP, so many customers share one public IPv
 <li><strong>3-way handshake:</strong> client &rarr; <code>SYN(seq=x)</code>; server &rarr; <code>SYN-ACK(seq=y, ack=x+1)</code>; client &rarr; <code>ACK(ack=y+1)</code>. Now both sides know each other's initial sequence numbers.</li>
 <li><strong>Teardown:</strong> each side sends <code>FIN</code> and gets an <code>ACK</code> (4 packets, or 3 if combined). The active closer enters <strong>TIME_WAIT</strong> (~2&times;MSL, e.g. 60&ndash;120s) so late/duplicate segments can't corrupt a new connection on the same ports.</li>
 </ul>
+<pre><code>$ sudo tcpdump -n host 93.184.216.34 and tcp
+IP 10.0.0.5.54321 &gt; 93.184.216.34.443: Flags [S],  seq 1000        <span class="c"># SYN</span>
+IP 93.184.216.34.443 &gt; 10.0.0.5.54321: Flags [S.], seq 8000, ack 1001  <span class="c"># SYN-ACK</span>
+IP 10.0.0.5.54321 &gt; 93.184.216.34.443: Flags [.],  ack 8001        <span class="c"># ACK -> ESTABLISHED</span>
+...
+IP 10.0.0.5.54321 &gt; 93.184.216.34.443: Flags [F.]                  <span class="c"># FIN; closer then waits in TIME_WAIT</span>
+$ ss -tan | grep TIME-WAIT | wc -l    <span class="c"># many TIME_WAIT sockets after a load test = normal</span></code></pre>
 
 <h3>Reliability &amp; ordering</h3>
 <p>Every byte has a sequence number. The receiver ACKs the next expected byte (cumulative);
 missing data is retransmitted after a timeout (<strong>RTO</strong>, based on measured RTT) or after
 <strong>3 duplicate ACKs</strong> (fast retransmit). <strong>Selective ACK (SACK)</strong> lets the receiver
 tell the sender exactly which ranges arrived so only the gaps are resent.</p>
+<pre><code><span class="c"># segment 2 of 4 is lost; receiver keeps ACKing "next expected = start of seg 2":</span>
+recv seg1  -&gt; ACK 1461
+recv seg3  -&gt; ACK 1461   (dup 1)      <span class="c"># out of order, gap not filled</span>
+recv seg4  -&gt; ACK 1461   (dup 2)
+recv seg5  -&gt; ACK 1461   (dup 3)  -&gt;  sender FAST-RETRANSMITS seg2 (no RTO wait)
+<span class="c"># with SACK the receiver also says "got 2921-5840", so only seg2 is resent</span></code></pre>
 
 <h3>Flow control</h3>
 <p>The receiver advertises a <strong>window size</strong> (bytes it can currently buffer). The sender never
 has more than that unacknowledged. Window 0 pauses the sender; it probes periodically. This
 protects a <em>slow receiver</em>.</p>
+<pre><code>$ ss -ti dst 93.184.216.34
+    ... rcv_space:29200 ...              <span class="c"># receiver's advertised window (bytes it can buffer now)</span>
+    ... cwnd:10 ssthresh:7 ...           <span class="c"># sender sends min(cwnd, advertised window)</span>
+
+<span class="c"># a stuck consumer that never read() its socket -> window shrinks to 0</span>
+<span class="c"># -> sender blocks, periodically sends 1-byte "window probes" until space opens</span></code></pre>
 
 <h3>Congestion control</h3>
 <p>Protects the <em>network</em>. The sender keeps a <strong>congestion window (cwnd)</strong> and sends
@@ -14151,11 +14233,26 @@ protects a <em>slow receiver</em>.</p>
 <li><strong>Congestion avoidance:</strong> above the threshold, cwnd grows by ~1 MSS per RTT (linear).</li>
 <li><strong>On loss:</strong> classic (Reno) halves cwnd on 3 dup-ACKs (fast recovery); a timeout resets cwnd to 1 (worse). Newer: CUBIC (default on Linux, better for high bandwidth-delay), BBR (models bottleneck bandwidth + RTT instead of treating loss as the only signal).</li>
 </ul>
+<pre><code>$ sysctl net.ipv4.tcp_congestion_control
+net.ipv4.tcp_congestion_control = cubic   <span class="c"># Linux default</span>
+$ sysctl -w net.ipv4.tcp_congestion_control=bbr  <span class="c"># models bandwidth+RTT, not just loss</span>
+
+<span class="c"># cwnd over time on one connection:</span>
+<span class="c">#   slow start:   1 -&gt; 2 -&gt; 4 -&gt; 8 -&gt; 16 (x2 per RTT) until ssthresh or loss</span>
+<span class="c">#   avoidance:    16 -&gt; 17 -&gt; 18 (+1 per RTT, linear)</span>
+<span class="c">#   3 dup-ACKs:   cwnd /= 2      |    RTO timeout: cwnd = 1  (start over)</span></code></pre>
 
 <h3>Nagle &amp; delayed ACK</h3>
 <p>Nagle coalesces small writes to reduce tiny packets; delayed ACK waits ~200ms to piggyback
 ACKs. Together they can cause latency spikes for request/response traffic &mdash; disable Nagle
 with <code>TCP_NODELAY</code> for interactive protocols.</p>
+<pre><code><span class="c">// interactive protocol (RPC, SSH, game): turn Nagle OFF so small writes go now</span>
+<span class="k">int</span> one = <span class="n">1</span>;
+setsockopt(fd, IPPROTO_TCP, TCP_NODELAY, &amp;one, <span class="k">sizeof</span> one);
+
+<span class="c">// Nagle ON + delayed ACK = the classic 40ms stall:</span>
+<span class="c">//   client sends a small request, Nagle holds the next write awaiting an ACK,</span>
+<span class="c">//   server's delayed-ACK timer holds the ACK ~200ms -> deadlock until the timer fires</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -14238,6 +14335,14 @@ TCP delivers bytes strictly in order. If segment N is lost, segments N+1, N+2&he
 <li><strong>No</strong> connection setup, <strong>no</strong> reliability, <strong>no</strong> ordering, <strong>no</strong> flow/congestion control. A datagram is sent once; it may be lost, duplicated, or reordered.</li>
 <li>Message-oriented: each <code>sendto</code> is one datagram the receiver gets whole (or not at all) &mdash; unlike TCP's byte stream with no message boundaries.</li>
 </ul>
+<pre><code><span class="k">int</span> fd = socket(AF_INET, SOCK_DGRAM, <span class="n">0</span>);   <span class="c">// SOCK_DGRAM = UDP; no connect(), no handshake</span>
+
+<span class="c">// one sendto = exactly one datagram; the peer recvfrom()s it whole or not at all</span>
+sendto(fd, <span class="s">"PING"</span>, <span class="n">4</span>, <span class="n">0</span>, (<span class="k">struct</span> sockaddr*)&amp;dst, <span class="k">sizeof</span> dst);
+
+<span class="k">char</span> buf[<span class="n">1500</span>];
+ssize_t n = recvfrom(fd, buf, <span class="k">sizeof</span> buf, <span class="n">0</span>, <span class="k">NULL</span>, <span class="k">NULL</span>);
+<span class="c">// n could be 4, or this recvfrom could block forever -- the PING may simply be lost</span></code></pre>
 
 <h3>When to choose UDP</h3>
 <table>
@@ -14249,11 +14354,22 @@ TCP delivers bytes strictly in order. If segment N is lost, segments N+1, N+2&he
 <tr><td>Metrics, logs, telemetry (statsd, syslog)</td><td>lossy is acceptable; don't want backpressure on the app</td></tr>
 <tr><td>Service discovery (mDNS, DHCP)</td><td>broadcast to unknown peers</td></tr>
 </table>
+<pre><code>$ dig +short example.com          <span class="c"># DNS: one UDP datagram out, one back -- retry is cheaper than a handshake</span>
+$ dig +tcp example.com            <span class="c"># falls back to TCP only for big responses / zone transfers</span>
+
+<span class="c"># media: RTP-over-UDP -- a 40ms-late audio packet is useless, so it's dropped, not resent</span>
+$ ffmpeg -i in.mp4 -f rtp rtp://239.0.0.1:5004</code></pre>
 
 <h3>Reliability on top of UDP</h3>
 <p>If you need <em>some</em> guarantees, you re-implement selectively: sequence numbers + ACKs for the
 messages that matter, forward error correction, your own pacing/congestion control (be a good
 network citizen!), and NAT keepalives. This is what QUIC, RTP/RTCP, DTLS, and game netcode do.</p>
+<pre><code><span class="c"># minimal app-level reliability layered on UDP:</span>
+send({seq: n, data: chunk})
+start_timer(n)
+on_ack(k):    stop_timer(k)                 <span class="c"># peer confirmed receipt</span>
+on_timeout(n): send({seq: n, ...}); backoff()  <span class="c"># selective retransmit + your own pacing</span>
+<span class="c"># only mark the messages that MUST arrive as reliable; leave the rest fire-and-forget</span></code></pre>
 
 <h3>Gotchas</h3>
 <ul>
@@ -14261,6 +14377,12 @@ network citizen!), and NAT keepalives. This is what QUIC, RTP/RTCP, DTLS, and ga
 <li>No congestion control means a misbehaving UDP app can cause congestion collapse &mdash; add your own.</li>
 <li>Amplification: small spoofed request &rarr; large response (DNS, NTP, memcached) is a DDoS vector.</li>
 </ul>
+<pre><code><span class="c"># fragmentation: a 4000-byte datagram is split into 3 IP fragments;</span>
+<span class="c"># lose ONE fragment -> the kernel discards the whole 4000-byte datagram.</span>
+<span class="c">#   fix: cap app payload at ~1200 bytes (safe internet MTU), or set DF and do PMTUD.</span>
+
+<span class="c"># amplification: 60-byte spoofed DNS query -> 3000-byte ANY response at the victim</span>
+<span class="c">#   ~50x gain. Mitigation: BCP38 source-address filtering, rate limiting, no open resolvers.</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -14340,6 +14462,11 @@ Use a proven layer rather than hand-rolling: <strong>QUIC</strong> streams (reli
 <p>The namespace is a tree: root (<code>.</code>) &rarr; TLD (<code>.com</code>, <code>.org</code>, <code>.io</code>) &rarr;
 authoritative servers for a domain (<code>example.com</code>). No single server has everything;
 resolution walks down the tree.</p>
+<pre><code>$ dig +trace www.example.com
+.                       NS  a.root-servers.net.        <span class="c"># 1. root: "ask a TLD server"</span>
+com.                    NS  a.gtld-servers.net.        <span class="c"># 2. .com TLD: "ask the domain's NS"</span>
+example.com.            NS  a.iana-servers.net.        <span class="c"># 3. authoritative for example.com</span>
+www.example.com.  300   A   93.184.216.34             <span class="c"># 4. the answer, TTL 300s</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 132" role="img" aria-labelledby="d-ntdns-t">
@@ -14364,6 +14491,15 @@ resolution walks down the tree.</p>
 <li>If not cached, the recursive resolver does <strong>iterative</strong> queries: asks a <strong>root</strong> server (&rarr; "ask the <code>.com</code> servers"), then a <strong>TLD</strong> server (&rarr; "ask <code>example.com</code>'s nameservers"), then the <strong>authoritative</strong> server (&rarr; the answer).</li>
 <li>The recursive resolver caches the answer for its <strong>TTL</strong> and returns it to the client, which also caches it.</li>
 </ol>
+<pre><code>$ cat /etc/resolv.conf
+nameserver 1.1.1.1               <span class="c"># the recursive resolver the stub asks</span>
+
+$ dig www.example.com
+;; QUESTION SECTION:
+;www.example.com.        IN  A
+;; ANSWER SECTION:
+www.example.com. 276 IN  A   93.184.216.34    <span class="c"># 276 = seconds LEFT on the cached TTL (was 300)</span>
+;; Query time: 1 msec                          <span class="c"># 1ms = served from the resolver's cache</span></code></pre>
 
 <h3>Record types</h3>
 <table>
@@ -14376,18 +14512,37 @@ resolution walks down the tree.</p>
 <tr><td><code>SOA</code></td><td>zone metadata (serial, refresh, TTLs)</td></tr>
 <tr><td><code>PTR</code></td><td>IP &rarr; name (reverse DNS)</td></tr>
 </table>
+<pre><code>$ dig +short example.com MX
+10 mail.example.com.            <span class="c"># priority 10 -- lower is preferred</span>
+$ dig +short example.com TXT
+"v=spf1 include:_spf.google.com ~all"
+$ dig +short -x 93.184.216.34   <span class="c"># reverse (PTR): IP -> name</span>
+$ dig +short www.example.com CNAME   <span class="c"># CNAME chains resolve to a final A/AAAA</span></code></pre>
 
 <h3>Caching &amp; TTL</h3>
 <p>Every record has a TTL (seconds) controlling how long resolvers may cache it. Low TTL = faster
 changes but more queries; high TTL = fewer queries but slow propagation. "DNS propagation delay"
 is really just old cached records expiring. Negative answers (<code>NXDOMAIN</code>) are cached too
 (per the SOA's minimum).</p>
+<pre><code><span class="c"># migration playbook: drop TTL first, wait it out, then cut over</span>
+<span class="c">#  day -2:  set  www  A  &lt;old-ip&gt;  TTL 60      (was 3600)</span>
+<span class="c">#  day  0:  change to &lt;new-ip&gt;   -- caches expire within 60s, not an hour</span>
+<span class="c">#  day +1:  raise TTL back to 3600</span>
+$ dig +short www.example.com   <span class="c"># poll from several networks until all return the new IP</span></code></pre>
 
 <h3>Modern DNS</h3>
 <p><strong>DoH</strong> (DNS over HTTPS) / <strong>DoT</strong> (over TLS) encrypt queries against snooping and
 tampering. <strong>DNSSEC</strong> signs records so resolvers can verify authenticity (prevents cache
 poisoning) &mdash; but doesn't encrypt. DNS is also a load-balancing tool: multiple <code>A</code> records,
 GeoDNS, weighted responses.</p>
+<pre><code>$ curl -s -H 'accept: application/dns-json' \
+    'https://1.1.1.1/dns-query?name=example.com&amp;type=A'   <span class="c"># DoH: query over HTTPS, port 443</span>
+
+$ dig example.com +dnssec +short      <span class="c"># RRSIG present -> records are cryptographically signed</span>
+
+$ dig +short bigsite.com A            <span class="c"># multiple A records = DNS round-robin load spreading</span>
+203.0.113.10
+203.0.113.11</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -14470,6 +14625,15 @@ When a very popular record's TTL expires, every cache miss at a busy resolver tr
 <li><strong>Status classes:</strong> 1xx info, 2xx success (200, 201, 204), 3xx redirect (301 permanent, 302/307 temporary, 304 not-modified), 4xx client error (400, 401, 403, 404, 409, 422, 429), 5xx server error (500, 502, 503, 504).</li>
 <li><strong>Headers:</strong> <code>Content-Type</code>, <code>Cache-Control</code>/<code>ETag</code>, <code>Authorization</code>, <code>Accept</code>, <code>Host</code> (required in 1.1). Stateless &mdash; each request self-contained; state via cookies/tokens.</li>
 </ul>
+<pre><code>PUT /users/7 HTTP/1.1              <span class="c"># idempotent: send it 3x, user 7 ends the same</span>
+Host: api.example.com
+Authorization: Bearer eyJ...
+Content-Type: application/json
+
+{"name": "Ann"}
+
+HTTP/1.1 200 OK                    <span class="c"># 201 if it created, 204 if no body, 409 on a conflict</span>
+ETag: "v4"                         <span class="c"># client can later send If-None-Match: "v4" -> 304</span></code></pre>
 
 <h3>HTTP/1.1</h3>
 <p>Text protocol, one request/response at a time per connection. <strong>Keep-alive</strong> reuses the
@@ -14477,6 +14641,11 @@ TCP connection; <strong>pipelining</strong> (send multiple without waiting) exis
 practice. Browsers work around the serialisation by opening ~6 parallel connections per origin.
 <strong>Head-of-line blocking</strong> at the HTTP level: a slow response blocks the ones behind it on
 that connection.</p>
+<pre><code>$ curl --http1.1 -v https://api.example.com/a
+&lt; HTTP/1.1 200 OK
+&lt; Connection: keep-alive           <span class="c"># TCP connection reused for the next request...</span>
+<span class="c"># ...but request B waits for A's full response first (HTTP-level head-of-line blocking)</span>
+<span class="c"># browsers dodge this by opening ~6 TCP connections per origin</span></code></pre>
 
 <h3>HTTP/2</h3>
 <ul>
@@ -14485,11 +14654,21 @@ that connection.</p>
 <li>Stream <strong>prioritisation</strong>, server <strong>push</strong> (now deprecated/removed &mdash; ineffective in practice).</li>
 <li>Still over TCP &rarr; <strong>TCP-level head-of-line blocking</strong>: one lost packet stalls <em>all</em> streams.</li>
 </ul>
+<pre><code>$ curl --http2 -v https://api.example.com/a &amp; curl --http2 https://api.example.com/b
+* Using HTTP/2, server supports multiplexing
+* h2h3 [:method: GET] ... stream 1        <span class="c"># request A -> stream 1</span>
+* h2h3 [:method: GET] ... stream 3        <span class="c"># request B -> stream 3, SAME TCP connection, concurrent</span>
+<span class="c"># but a single dropped TCP segment stalls BOTH streams until it's retransmitted</span></code></pre>
 
 <h3>HTTP/3</h3>
 <p>Runs over <strong>QUIC</strong> (over UDP). Per-stream reliability &rarr; a loss on one stream doesn't
 block others. Combined transport+TLS 1.3 handshake (1-RTT, 0-RTT on resume). Connection
 migration across IP changes. TLS is mandatory.</p>
+<pre><code>$ curl --http3 -v https://cloudflare.com/
+* Connected to cloudflare.com ... via HTTP/3      <span class="c"># QUIC over UDP/443</span>
+&lt; alt-svc: h3=":443"; ma=86400                    <span class="c"># servers advertise h3; client upgrades on the next visit</span>
+<span class="c"># loss on stream 1 does NOT block stream 3 -- QUIC recovers per-stream</span>
+<span class="c"># switch Wi-Fi -&gt; cellular mid-download: connection ID survives, no reconnect</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -14570,12 +14749,23 @@ HTTP/2 headers repeat massively across requests (cookies, user-agent, accept). S
 <li><strong>Integrity</strong> &mdash; an AEAD tag detects tampering.</li>
 <li><strong>Authentication</strong> &mdash; the server proves its identity with a certificate (mutual TLS adds client auth).</li>
 </ul>
+<pre><code>$ openssl s_client -connect example.com:443 -brief
+Protocol version: TLSv1.3
+Ciphersuite: TLS_AES_256_GCM_SHA384      <span class="c"># AEAD = confidentiality + integrity in one</span>
+Verification: OK                         <span class="c"># authentication: cert chain trusted</span>
+Peer certificate: CN = example.com
+<span class="c"># tamper with a byte in transit -> the GCM auth tag fails -> connection aborts</span></code></pre>
 
 <h3>Symmetric vs asymmetric</h3>
 <p>Asymmetric crypto (RSA, ECDSA, ECDH) is slow but lets strangers agree on a secret / verify
 identity. Symmetric crypto is fast. So TLS uses asymmetric during the handshake to
 <strong>authenticate</strong> and to <strong>derive a shared symmetric key</strong>, then encrypts the bulk data
 symmetrically.</p>
+<pre><code><span class="c"># handshake (asymmetric, ~once): ECDHE key agreement + a signature over the transcript</span>
+<span class="c">#   -> both sides now hold the same 32-byte session key</span>
+
+<span class="c"># bulk data (symmetric, per record): AES-GCM with that session key -- ~GB/s per core</span>
+<span class="c">#   asymmetric ops per connection: 1-2      symmetric ops: millions</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 124" role="img" aria-labelledby="d-nttls-t">
@@ -14596,6 +14786,13 @@ Your OS/browser ships a set of trusted root CAs. The server presents its cert pl
 the client verifies the signature chain up to a trusted root, checks the domain matches (SAN),
 the validity dates, and revocation (OCSP stapling / CRL). <strong>Let's Encrypt</strong> made certs free
 and automated (ACME).</p>
+<pre><code>$ openssl s_client -connect example.com:443 -showcerts &lt;/dev/null 2&gt;/dev/null \
+    | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
+subject= CN = example.com
+issuer=  C = US, O = Let's Encrypt, CN = R3        <span class="c"># leaf signed by an intermediate...</span>
+notAfter=Sep  1 12:00:00 2024 GMT                  <span class="c"># ...expiry checked by the client</span>
+X509v3 Subject Alternative Name: DNS:example.com, DNS:www.example.com  <span class="c"># must match the host</span>
+<span class="c"># chain: leaf  &lt;-  Let's Encrypt R3  &lt;-  ISRG Root X1 (in the OS trust store)</span></code></pre>
 
 <h3>TLS 1.3 handshake (1-RTT)</h3>
 <ol>
@@ -14605,12 +14802,23 @@ and automated (ACME).</p>
 </ol>
 <p><strong>0-RTT resumption</strong>: on a repeat visit the client can send data in the first flight using a
 pre-shared key &mdash; fast, but replayable, so only for idempotent requests.</p>
+<pre><code>ClientHello   { ciphers, key_share=g^x }                 --&gt;    <span class="c"># 1 flight from client</span>
+                        &lt;-- ServerHello { key_share=g^y }, {EncryptedExtensions,
+                                          Certificate, CertVerify, Finished}
+{Finished}, {application_data}  --&gt;                              <span class="c"># app data on the 2nd flight = 1-RTT</span>
+<span class="c"># resume:  ClientHello + early_data (0-RTT)  -- only safe for GET/idempotent (replayable)</span></code></pre>
 
 <h3>Forward secrecy</h3>
 <p>Ephemeral Diffie-Hellman (ECDHE) means each session's keys are derived from fresh random values
 and discarded after. Stealing the server's long-term private key later does <em>not</em> let an
 attacker decrypt past captured sessions. TLS 1.3 makes this mandatory (removed static-RSA key
 exchange).</p>
+<pre><code><span class="c"># each connection: server generates a fresh ephemeral key pair (x, g^x), uses it once, discards x</span>
+<span class="c">#   session key = KDF( (g^y)^x )   -- never sent, never stored</span>
+
+<span class="c"># attacker records ciphertext today, steals the server's cert private key next year:</span>
+<span class="c">#   static RSA (TLS &lt;=1.2): private key decrypts ALL recorded past sessions   -- bad</span>
+<span class="c">#   ECDHE (TLS 1.3):        past sessions stay safe -- the per-session x is long gone</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -14707,12 +14915,29 @@ close()                        close()</code></pre>
 <p>0&ndash;1023 well-known (need privilege), 1024&ndash;49151 registered, 49152&ndash;65535 ephemeral (client
 source ports). A TCP connection is identified by the 4-tuple <code>(src IP, src port, dst IP, dst
 port)</code> &mdash; that's why one server port serves thousands of clients.</p>
+<pre><code>$ ss -tan
+State   Local Address:Port    Peer Address:Port
+LISTEN  0.0.0.0:443           0.0.0.0:*          <span class="c"># one listening socket</span>
+ESTAB   10.0.0.5:443          203.0.113.7:51002  <span class="c"># distinct 4-tuples,</span>
+ESTAB   10.0.0.5:443          203.0.113.7:51044  <span class="c"># same server ip:port -> both fine</span>
+ESTAB   10.0.0.5:443          198.51.100.9:40311
+<span class="c"># the kernel demuxes incoming packets to a socket by the full (sip,sport,dip,dport)</span></code></pre>
 
 <h3>Blocking vs non-blocking</h3>
 <ul>
 <li><strong>Blocking</strong>: <code>read()</code> waits until data arrives. Simple; one thread per connection &rarr; doesn't scale to 10k+ connections (memory, context-switch cost).</li>
 <li><strong>Non-blocking + event loop</strong>: <code>O_NONBLOCK</code> + <code>epoll</code>/<code>kqueue</code>/<code>IOCP</code> &mdash; one thread watches many fds, handles whichever is ready. Basis of nginx, Node.js, Redis.</li>
 </ul>
+<pre><code><span class="c">// blocking: this thread parks until bytes arrive (fine for a few connections)</span>
+<span class="k">int</span> n = read(fd, buf, <span class="k">sizeof</span> buf);
+
+<span class="c">// non-blocking + epoll: one thread, thousands of fds</span>
+fcntl(fd, F_SETFL, O_NONBLOCK);
+<span class="k">int</span> ep = epoll_create1(<span class="n">0</span>);
+epoll_ctl(ep, EPOLL_CTL_ADD, fd, &amp;(<span class="k">struct</span> epoll_event){.events = EPOLLIN, .data.fd = fd});
+<span class="k">struct</span> epoll_event ev[<span class="n">64</span>];
+<span class="k">int</span> k = epoll_wait(ep, ev, <span class="n">64</span>, <span class="n">-1</span>);   <span class="c">// returns only the fds that are READY</span>
+<span class="k">for</span> (<span class="k">int</span> i = <span class="n">0</span>; i &lt; k; i++) handle(ev[i].data.fd);  <span class="c">// read() now won't block</span></code></pre>
 
 <h3>Common issues</h3>
 <ul>
@@ -14721,6 +14946,18 @@ port)</code> &mdash; that's why one server port serves thousands of clients.</p>
 <li><code>EINTR</code>: a syscall interrupted by a signal &mdash; retry.</li>
 <li>A dead peer isn't noticed until you write (and get <code>RST</code>/<code>EPIPE</code>) or a keepalive fails &mdash; use <code>SO_KEEPALIVE</code> or app-level heartbeats.</li>
 </ul>
+<pre><code><span class="k">int</span> yes = <span class="n">1</span>;
+setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &amp;yes, <span class="k">sizeof</span> yes);  <span class="c">// rebind despite lingering TIME_WAIT</span>
+
+<span class="c">// write() can be short -- always loop:</span>
+size_t off = <span class="n">0</span>;
+<span class="k">while</span> (off &lt; len) {
+    ssize_t w = write(fd, buf + off, len - off);
+    <span class="k">if</span> (w &lt; <span class="n">0</span>) { <span class="k">if</span> (errno == EINTR) <span class="k">continue</span>;   <span class="c">// interrupted -> retry</span>
+                  <span class="k">if</span> (errno == EPIPE) break;      <span class="c">// peer gone -> stop</span>
+                  <span class="k">return</span> <span class="n">-1</span>; }
+    off += (size_t)w;
+}</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -14804,6 +15041,16 @@ Traditionally all worker processes/threads share one listening fd and race in <c
 <tr><td>Client knows?</td><td>yes (configured)</td><td>no (looks like the server)</td></tr>
 <tr><td>Uses</td><td>corporate egress filtering, caching, anonymity, bypassing geo-blocks</td><td>TLS termination, load balancing, caching, compression, WAF, hiding backend topology</td></tr>
 </table>
+<pre><code><span class="c"># forward proxy: the CLIENT is configured to use it</span>
+$ export https_proxy=http://proxy.corp:3128
+$ curl https://example.com/            <span class="c"># request goes to proxy.corp, which fetches it</span>
+
+<span class="c"># reverse proxy (nginx): the client just sees "the server"</span>
+server {
+    listen 443 ssl;
+    server_name api.example.com;
+    location / { proxy_pass http://127.0.0.1:8080; }   <span class="c"># TLS terminates here; app is plain HTTP</span>
+}</code></pre>
 
 <h3>Load balancers</h3>
 <ul>
@@ -14812,6 +15059,17 @@ Traditionally all worker processes/threads share one listening fd and race in <c
 <li><strong>Algorithms</strong>: round-robin, least-connections, weighted, consistent hashing (for cache affinity), IP hash.</li>
 <li><strong>Health checks</strong> remove unhealthy backends; <strong>sticky sessions</strong> pin a client to one backend (needed only if the backend holds session state &mdash; better to externalise it).</li>
 </ul>
+<pre><code><span class="c"># HAProxy: L7 path routing + least-connections + health checks</span>
+frontend web
+    bind :443 ssl crt /etc/ssl/site.pem
+    use_backend api  if { path_beg /api/ }      <span class="c"># route by URL -> needs L7</span>
+    default_backend  web
+
+backend api
+    balance leastconn                           <span class="c"># or roundrobin / source (IP hash)</span>
+    option httpchk GET /healthz
+    server a1 10.0.1.11:8080 check              <span class="c"># 'check' -> ejected when /healthz fails</span>
+    server a2 10.0.1.12:8080 check</code></pre>
 
 <h3>CDN</h3>
 <p>A globally distributed set of edge caches near users. Serves static assets (and increasingly
@@ -14819,10 +15077,23 @@ dynamic/API responses) from the nearest POP, reducing latency and origin load. A
 DDoS absorption, TLS termination, compression, edge compute (Workers/Lambda@Edge), and origin
 shielding. Cache control via <code>Cache-Control</code>, <code>ETag</code>, surrogate keys, and explicit
 purge/invalidation.</p>
+<pre><code>$ curl -sI https://cdn.example.com/app.abc123.js
+cache-control: public, max-age=31536000, immutable   <span class="c"># hashed filename -> cache forever</span>
+age: 84213                                            <span class="c"># seconds this object has lived in the edge cache</span>
+x-cache: HIT, cloudfront                              <span class="c"># served from the POP, origin not touched</span>
+
+$ curl -sI https://cdn.example.com/index.html
+cache-control: no-cache          <span class="c"># revalidate every time (ETag), so deploys show immediately</span>
+x-cache: MISS from edge          <span class="c"># fetched from origin (or the origin shield) this time</span></code></pre>
 
 <h3>Anycast</h3>
 <p>The same IP announced from many locations; BGP routes each client to the topologically nearest
 one. Used by DNS roots, CDNs, and DDoS scrubbing to spread load and shorten paths.</p>
+<pre><code>$ dig +short one.one.one.one         <span class="c"># 1.1.1.1 -- one IP...</span>
+1.1.1.1
+$ mtr -r 1.1.1.1                     <span class="c"># ...but from London you land in a London PoP,</span>
+                                     <span class="c">#    from Sydney a Sydney PoP -- same IP, ~5ms each</span>
+<span class="c"># the CDN announces 1.1.1.1 from hundreds of sites via BGP; routers pick the shortest AS path</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -14908,6 +15179,15 @@ matching future requests automatically. Attributes:</p>
 <li><code>SameSite=Strict/Lax/None</code> &mdash; controls sending on cross-site requests (CSRF defence; <code>Lax</code> is the modern default).</li>
 <li><code>Domain</code>, <code>Path</code>, <code>Max-Age</code>/<code>Expires</code>.</li>
 </ul>
+<pre><code>HTTP/1.1 200 OK
+Set-Cookie: sid=abc123; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=86400
+<span class="c">//  HttpOnly -> document.cookie can't read it (XSS can't steal it)</span>
+<span class="c">//  Secure   -> never sent over plain http</span>
+<span class="c">//  SameSite=Lax -> not sent on cross-site POST (CSRF defence), IS sent on top-level GET nav</span>
+
+<span class="c">// every later request to the same site carries it automatically:</span>
+GET /account HTTP/1.1
+Cookie: sid=abc123</code></pre>
 
 <h3>Session vs token auth</h3>
 <table>
@@ -14916,6 +15196,14 @@ matching future requests automatically. Attributes:</p>
 <tr><td>Revocation</td><td>delete the session &mdash; instant</td><td>hard &mdash; valid until expiry (needs a blocklist / short TTL + refresh)</td></tr>
 <tr><td>Scaling</td><td>needs shared session store</td><td>stateless, easy to scale</td></tr>
 </table>
+<pre><code><span class="c"># server session: cookie is just a key into Redis</span>
+sid = random_token()
+redis.setex(<span class="s">"sess:"</span> + sid, <span class="n">3600</span>, user_id)      <span class="c"># revoke = redis.del(...), instant</span>
+
+<span class="c"># JWT: signed, self-contained, server stores nothing</span>
+token = base64(header) + <span class="s">"."</span> + base64({sub: <span class="n">7</span>, exp: now + <span class="n">900</span>}) + <span class="s">"."</span> + hmac_sha256(...)
+<span class="c"># verify = recompute the HMAC; no DB hit. But you CAN'T revoke it before exp=900s</span>
+<span class="c"># -> short access token + a revocable refresh token</span></code></pre>
 
 <h3>Same-origin policy &amp; CORS</h3>
 <p>Origin = scheme + host + port. By default JS can <em>send</em> a cross-origin request but can't
@@ -14925,6 +15213,18 @@ matching future requests automatically. Attributes:</p>
 that the server must answer with the allowed methods/headers before the real request is sent.
 CORS is enforced by the <em>browser</em>, not the server &mdash; it's not a server-side security
 control.</p>
+<pre><code><span class="c"># preflight (browser sends this automatically for a non-simple request):</span>
+OPTIONS /api/orders HTTP/1.1
+Origin: https://app.example.com
+Access-Control-Request-Method: PUT
+Access-Control-Request-Headers: content-type
+
+<span class="c"># server must approve BEFORE the real PUT is allowed to run:</span>
+HTTP/1.1 204 No Content
+Access-Control-Allow-Origin: https://app.example.com
+Access-Control-Allow-Methods: GET, PUT, DELETE
+Access-Control-Allow-Headers: content-type
+<span class="c"># NOTE: curl / server-to-server calls ignore all of this -- CORS is a browser-only guard</span></code></pre>
 
 <h3>Real-time: polling &rarr; WebSockets</h3>
 <table>
@@ -14934,6 +15234,17 @@ control.</p>
 <tr><td>Server-Sent Events</td><td>one-way server&rarr;client stream over HTTP (<code>text/event-stream</code>), auto-reconnect</td></tr>
 <tr><td>WebSocket</td><td>full-duplex; starts as an HTTP <code>Upgrade</code>, then a persistent framed TCP channel</td></tr>
 </table>
+<pre><code><span class="c">// WebSocket: one HTTP Upgrade, then a persistent 2-way channel</span>
+GET /chat HTTP/1.1
+Upgrade: websocket
+Connection: Upgrade
+Sec-WebSocket-Key: dGhlIHNhbXBsZQ==
+
+HTTP/1.1 101 Switching Protocols          <span class="c">// after this, no more HTTP -- framed messages both ways</span>
+
+<span class="c">// SSE (simpler, server -> client only, auto-reconnect):</span>
+<span class="k">const</span> es = <span class="k">new</span> EventSource(<span class="s">"/stream"</span>);
+es.onmessage = e =&gt; render(e.data);       <span class="c">// server sends: "data: {...}\n\n"</span></code></pre>
 <p>WebSockets suit chat, live dashboards, multiplayer, collaborative editing. Considerations:
 they bypass normal HTTP caching/LB semantics, need sticky routing or a pub/sub backplane
 (Redis) for multi-server fan-out, and their own auth (usually a token in the connect URL or
