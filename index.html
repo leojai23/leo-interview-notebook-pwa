@@ -33054,6 +33054,16 @@ Fix Version/s.
 <li>User requests are routed to a <em>nearby</em> PoP instead of your <strong>origin</strong>. If the edge has the response cached (<strong>HIT</strong>), it serves it immediately. On a <strong>MISS</strong> it fetches from origin (or a mid-tier), caches it, and serves it.</li>
 <li>Wins: lower latency (RTT to a nearby PoP &laquo; RTT to origin), <strong>origin offload</strong> (fewer requests reach your servers), absorbs traffic spikes, terminates TLS close to the user, and provides a security perimeter (DDoS absorption, WAF).</li>
 </ul>
+<pre># first request: MISS, edge fetches from origin
+$ curl -sI https://cdn.example/app.js
+HTTP/2 200
+cache-control: public, max-age=31536000, immutable
+age: 0
+x-cache: MISS
+# a moment later, from the same PoP: HIT, origin never touched
+$ curl -sI https://cdn.example/app.js
+age: 12
+x-cache: HIT          # RTT is now ~5-20ms to the PoP, not ~150ms to origin</pre>
 
 <h3>How users reach the nearest PoP</h3>
 <table>
@@ -33062,6 +33072,15 @@ Fix Version/s.
 <tr><td><strong>DNS-based (unicast) steering</strong></td><td>The CDN's authoritative DNS returns a different edge IP depending on the resolver's location/EDNS-client-subnet, load, and health. More control (geo, capacity, RUM-informed), but tied to DNS TTLs and resolver behaviour.</td></tr>
 <tr><td>Often <strong>both</strong>: DNS picks a region/cluster, anycast within it.</td><td></td></tr>
 </table>
+<pre># DNS steering: same name resolves to different edge IPs by resolver location
+$ dig +short cdn.example @resolver-in-frankfurt
+151.101.2.10          # EU edge
+$ dig +short cdn.example @resolver-in-tokyo
+151.101.66.10         # APAC edge
+
+# anycast: one IP announced from every PoP; BGP picks the topologically nearest
+$ curl -sI https://cdn.example/ | grep -i x-served-by
+x-served-by: cache-fra-eddf1  # Frankfurt PoP served it, no config change needed</pre>
 
 <h3>Request flow (cache miss)</h3>
 <pre>client --DNS--> nearest edge IP
@@ -33082,12 +33101,29 @@ next client in that PoP --> HIT (served from edge, no origin hop)</pre>
 <li><strong>Edge / mid-tier / shield / origin</strong> &mdash; cache layers; more layers &rarr; better offload, slightly higher miss latency.</li>
 <li><strong>PoP</strong> vs <strong>region</strong>; <strong>edge compute</strong> &mdash; run code at the PoP.</li>
 </ul>
+<pre># the numbers you report on
+hit_ratio_by_requests = hits / (hits + misses)          # e.g. 0.98
+hit_ratio_by_bytes    = hit_bytes / total_bytes         # often lower (big files miss more)
+origin_offload        = 1 - (origin_requests / edge_requests)   # 0.95 = only 5% reach you
+
+# response headers expose per-request state
+age: 3600            # seconds this object has been cached
+x-cache: HIT, MISS   # (edge, shield)  -> shield saved the origin even on an edge miss</pre>
 
 <h3>What CDNs are good/bad at</h3>
 <ul>
 <li><strong>Great</strong>: static assets (JS/CSS/images/video, downloads), cacheable API responses, TLS termination, DDoS/WAF, global reach without global infra.</li>
 <li><strong>Harder</strong>: highly personalized/uncacheable dynamic content (mitigated by micro-caching, edge compute, or just using the CDN as a fast, secure transit + TLS layer &mdash; "dynamic acceleration" with keep-alive pooled connections and optimized routes to origin).</li>
 </ul>
+<pre># GREAT: static, immutable, content-hashed
+GET /static/app.9f3a2c.js   ->  Cache-Control: public, max-age=31536000, immutable
+
+# HARDER: personalised -> either don't cache, or micro-cache for 1s
+GET /account/dashboard      ->  Cache-Control: private, no-store          # per-user
+GET /home                   ->  Cache-Control: public, s-maxage=1, stale-while-revalidate=59
+
+# "dynamic acceleration": uncacheable, but still proxied through the CDN
+#   -> pooled keepalive edge->origin + optimised backbone route beats raw internet</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -33160,6 +33196,15 @@ The proportion of traffic served from cache without reaching the origin.
 <li>Some CDNs add things by default; most let you fully customize the key.</li>
 <li>Everything in the key <strong>multiplies</strong> the number of stored objects for the "same" content. Fewer things in the key = higher reuse = higher hit ratio.</li>
 </ul>
+<pre># default key ~ scheme + host + path + full query
+GET https://cdn.example/img/logo.png            -> key: https|cdn.example|/img/logo.png
+GET https://cdn.example/img/logo.png?utm_source=x -> DIFFERENT key -> its own MISS + copy
+
+# these are all the "same" image but 4 cache entries under the default key:
+/img/logo.png
+/img/logo.png?utm_source=twitter
+/img/logo.png?fbclid=abc123
+/img/logo.png?v=1699999999            # a cache-buster someone added by hand</pre>
 
 <h3>Query string handling</h3>
 <table>
@@ -33169,6 +33214,17 @@ The proportion of traffic served from cache without reaching the origin.
 <tr><td><strong>Allowlist</strong> specific params</td><td>Best practice: key on only the params that change the content (<code>v</code>, <code>page</code>, <code>lang</code>); drop the rest.</td></tr>
 <tr><td><strong>Denylist</strong> / sort params</td><td>Strip known tracking params; sort remaining so <code>?a=1&amp;b=2</code> == <code>?b=2&amp;a=1</code>.</td></tr>
 </table>
+<pre># allowlist: key on ONLY the params that change the response (Cloudflare-style)
+cache_key.query_string.include = ["page", "size", "lang"]
+# so all of these collapse to one entry:
+/products?page=2&size=lg&utm_campaign=spring&fbclid=x&_=1699
+  -> key = /products?lang=en&page=2&size=lg     # sorted, tracking dropped
+
+# VCL flavour (Fastly / Varnish)
+sub vcl_hash {
+  set req.http.X-Key = req.url.path + "?" + querystring.filter_except(req.url.qs, "page,size,lang");
+  hash_data(req.http.X-Key);
+}</pre>
 
 <h3><code>Vary</code> &mdash; response-driven variants</h3>
 <ul>
@@ -33177,12 +33233,32 @@ The proportion of traffic served from cache without reaching the origin.
 <li><code>Vary: User-Agent</code> &mdash; <strong>disastrous</strong>: thousands of UA strings &rarr; near-zero reuse. Use device detection at the edge that maps UA to a small class (<code>mobile</code>/<code>desktop</code>/<code>tablet</code>) and key on that instead.</li>
 <li><code>Vary: Cookie</code> &mdash; usually means "don't cache"; if you must, normalize to the one cookie that matters.</li>
 </ul>
+<pre># FINE: low-cardinality, one entry per encoding
+HTTP/2 200
+content-encoding: br
+vary: accept-encoding                 # br / gzip / identity -> 3 copies, OK
+
+# DISASTER: thousands of UA strings -> ~1 hit per UA
+vary: user-agent
+
+# FIX: normalise UA to a class at the edge, vary on THAT
+# edge computes  x-device: mobile|tablet|desktop  from User-Agent
+vary: x-device                        # 3 copies again</pre>
 
 <h3>Cookies</h3>
 <ul>
 <li>Many CDNs <strong>won't cache</strong> a response that contains <code>Set-Cookie</code> (it's assumed user-specific). Strip <code>Set-Cookie</code> from static/cacheable responses at the edge or origin.</li>
 <li>By default request cookies often <em>aren't</em> in the key, but "cache by cookie X" is a common option for A/B tests or logged-in vs anonymous splits &mdash; keep the cookie value space tiny.</li>
 </ul>
+<pre># response with Set-Cookie is treated as user-specific -> not cached
+HTTP/2 200
+set-cookie: sessionid=abc; Path=/; HttpOnly      # <- blocks caching
+
+# strip it on cacheable paths (edge rule) so the asset caches:
+if (req.url ~ "^/static/") { unset beresp.http.Set-Cookie; }
+
+# deliberate split: cache by ONE normalised cookie, tiny value space
+cache_key += lookup_cookie("ab_bucket")          # "A" or "B" only, never the raw exp id</pre>
 
 <h3>Deliberate cache splitting (good uses)</h3>
 <ul>
@@ -33192,6 +33268,13 @@ The proportion of traffic served from cache without reaching the origin.
 <li><strong>Auth state</strong>: <code>anon</code> vs <code>logged-in</code> (cache the anon version aggressively; bypass or short-TTL the logged-in one).</li>
 <li><strong>Content negotiation</strong>: WebP/AVIF vs JPEG based on <code>Accept</code>, normalized to 2&ndash;3 buckets.</li>
 </ul>
+<pre># good splits are all LOW cardinality, on an edge-injected normalised header
+cache_key = path
+          + edge.geo.country            # "US" | "DE" | ...   (currency/legal)
+          + normalise_device(UA)        # mobile | desktop | tablet
+          + pick_image_fmt(Accept)      # avif | webp | jpeg
+          + cookie("ab_bucket")         # A | B
+# -> a handful of variants per path, not millions</pre>
 
 <h3>Normalization checklist</h3>
 <ul>
@@ -33201,6 +33284,14 @@ The proportion of traffic served from cache without reaching the origin.
 <li>Remove <code>Set-Cookie</code> from cacheable responses; don't <code>Vary</code> on high-cardinality headers.</li>
 <li>Measure: objects per URL, hit ratio by path, and the top cache keys by count.</li>
 </ul>
+<pre># normalisation, as edge pseudo-config
+normalize:
+  host:        lowercase, strip :443
+  path:        collapse "//" -> "/", enforce no trailing slash (except "/")
+  query:       keep [page,size,lang,v]; drop utm_*,fbclid,gclid,_ ; sort asc
+  vary:        accept-encoding only  (device/geo folded into x-* buckets)
+  response:    remove Set-Cookie on /static/* and /assets/*
+# then check: cache_objects / distinct_paths  should be small (~3-6)</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -33296,6 +33387,15 @@ The proportion of traffic served from cache without reaching the origin.
 <tr><td><code>stale-while-revalidate=N</code></td><td>Serve stale for up to N s after expiry while revalidating in the background &mdash; no user waits.</td></tr>
 <tr><td><code>stale-if-error=N</code></td><td>Serve stale for up to N s if the origin errors/times out on revalidation.</td></tr>
 </table>
+<pre># edge caches 1h, browser never (so a purge shows up immediately),
+# serve stale for a day while refreshing, and for a week if origin is down
+Cache-Control: public, s-maxage=3600, max-age=0, stale-while-revalidate=86400, stale-if-error=604800
+
+# per-user page: browser may keep it, shared caches must not
+Cache-Control: private, no-store
+
+# "check with me every time, but you may keep a copy"
+Cache-Control: no-cache        # NOT no-store: revalidates, doesn't refetch the body</pre>
 
 <h3>Validators &amp; conditional requests</h3>
 <ul>
@@ -33303,6 +33403,16 @@ The proportion of traffic served from cache without reaching the origin.
 <li>On revalidation the cache sends <code>If-None-Match: &lt;etag&gt;</code> / <code>If-Modified-Since</code>; origin replies <code>304 Not Modified</code> (cheap, no body) or <code>200</code> with the new body.</li>
 <li>Strong vs weak ETag (<code>W/"..."</code>): weak = "semantically equivalent", used when byte-for-byte identity isn't guaranteed (e.g. gzip).</li>
 </ul>
+<pre># origin response
+HTTP/2 200
+ETag: "a1b2c3"
+Last-Modified: Fri, 29 Aug 2026 09:00:00 GMT
+
+# cache revalidates when stale (no body sent if unchanged)
+GET /page  If-None-Match: "a1b2c3"
+  -> HTTP/2 304 Not Modified          # cheap: headers only, age reset
+  -> HTTP/2 200 ... ETag: "d4e5f6"    # changed: full body replaces the entry
+# weak: W/"a1b2c3"  = same meaning, not byte-identical (e.g. gzipped vs not)</pre>
 
 <h3>Freshness lifecycle</h3>
 <pre>fetched -> FRESH (age &lt; TTL): served instantly, no origin contact
@@ -33326,6 +33436,18 @@ The proportion of traffic served from cache without reaching the origin.
 <tr><td>Per-user / sensitive</td><td><code>Cache-Control: private, no-store</code></td></tr>
 <tr><td>Frequently changing but hot</td><td>Micro-cache: <code>s-maxage=1..5</code> + SWR (collapses stampedes)</td></tr>
 </table>
+<pre># hashed asset  -> new build = new URL, so cache forever
+GET /static/app.3f9a2c.js
+Cache-Control: public, max-age=31536000, immutable
+
+# home page  -> edge 5 min, browser 0, survive refreshes + origin outage
+GET /
+Cache-Control: public, s-maxage=300, max-age=0, stale-while-revalidate=86400, stale-if-error=604800
+Surrogate-Key: home
+
+# hot changing endpoint -> micro-cache absorbs a stampede into 1 origin hit/sec
+GET /api/leaderboard
+Cache-Control: public, s-maxage=2, stale-while-revalidate=10</pre>
 
 <h3>Gotchas</h3>
 <ul>
@@ -33334,6 +33456,14 @@ The proportion of traffic served from cache without reaching the origin.
 <li>Setting only <code>max-age</code> means the browser also caches it that long &mdash; you then can't "push" an update without changing the URL. Use <code>s-maxage</code> for edge + small/zero <code>max-age</code> for browser when you need fast invalidation.</li>
 <li>A <code>Vary</code> mismatch or <code>Set-Cookie</code> can silently prevent caching regardless of <code>Cache-Control</code>.</li>
 </ul>
+<pre># "I set max-age=3600 but can't push updates" -> the BROWSER also cached it 1h
+Cache-Control: max-age=3600                 # bad for anything you might need to purge
+Cache-Control: s-maxage=3600, max-age=0     # edge 1h, browser revalidates -> purge works
+
+# these silently kill caching even with a perfect Cache-Control:
+Set-Cookie: sid=...        # response looks user-specific
+Vary: Cookie               # near-zero reuse
+# Expires is legacy; if both present, Cache-Control wins</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -33409,12 +33539,29 @@ The proportion of traffic served from cache without reaching the origin.
 <tr><td><strong>Purge all</strong></td><td>Wipe the whole property</td><td>Emergency only &mdash; causes a global cold cache and origin load spike.</td></tr>
 <tr><td><strong>Versioned URL</strong></td><td>Change the URL so the old cache entry is simply never requested (<code>app.9f2c.js</code>, <code>?v=42</code>)</td><td>No purge needed; the cleanest approach for assets.</td></tr>
 </table>
+<pre># by URL (must cover every variant)
+curl -X PURGE https://cdn.example/blog/post-1
+
+# by prefix
+curl -X POST .../purge -d '{"prefixes":["https://cdn.example/images/"]}'
+
+# by tag / surrogate key (Fastly)
+curl -X POST -H "Fastly-Key: $KEY" .../service/$SID/purge/prod-123
+
+# versioned URL: no purge call at all
+&lt;script src="/static/app.9f2c1a.js"&gt;   # new build -> new name -> old entry just goes cold</pre>
 
 <h3>Soft vs hard purge</h3>
 <ul>
 <li><strong>Hard purge</strong>: evict immediately. Next request is a blocking MISS &rarr; if many hit at once, a stampede to origin.</li>
 <li><strong>Soft purge</strong>: mark the object <em>stale</em> but keep it. Next request serves stale instantly and triggers a single background revalidation (needs <code>stale-while-revalidate</code>). Much gentler; preferred default.</li>
 </ul>
+<pre># HARD purge: object evicted -> 10k concurrent requests all MISS -> origin stampede
+curl -X POST .../purge/prod-123
+
+# SOFT purge: object marked stale -> served instantly, ONE background revalidation
+curl -X POST -H "Fastly-Soft-Purge: 1" .../purge/prod-123
+# requires the response to carry: Cache-Control: ... stale-while-revalidate=60</pre>
 
 <h3>Propagation</h3>
 <ul>
@@ -33423,6 +33570,15 @@ The proportion of traffic served from cache without reaching the origin.
 <li>Multi-tier caches: a purge should invalidate edge <em>and</em> shield/mid-tier, or the edge just re-pulls the stale object from the shield.</li>
 <li>Browser caches are <strong>not</strong> purgeable &mdash; only versioned URLs or short browser TTLs solve that.</li>
 </ul>
+<pre># multi-tier: purge must hit edge AND shield, or the edge re-pulls stale from shield
+POST .../purge  { "key": "prod-123", "scope": "all-tiers" }
+
+# batch instead of thousands of URL purges (rate-limited / metered)
+POST .../purge  { "keys": ["prod-123","prod-124","cat-shoes"] }   # one call, one tag fan-out
+
+# the part you CANNOT purge:
+Cache-Control: max-age=0, s-maxage=86400   # browser keeps 0s -> update visible after purge
+#   (max-age=3600 here would strand the old copy in every browser for an hour)</pre>
 
 <h3>Surrogate keys / cache tags in practice</h3>
 <pre>Response for GET /product/123:
@@ -33447,6 +33603,14 @@ On "product 123 price changed":
 <li>Relying on purge for correctness with no TTL backstop &mdash; a missed purge means indefinitely stale. Always keep a max TTL.</li>
 <li>Hard-purging hot objects &rarr; origin stampede. Soft purge + SWR instead.</li>
 </ul>
+<pre># WRONG on every deploy: nukes everything, global cold cache, origin spike
+curl -X POST .../purge_all
+
+# RIGHT: assets are versioned (no purge), only purge the HTML/API that changed
+#   deploy -> new /static/app.<hash>.js  (self-invalidating)
+#   curl -X POST .../purge/homepage .../purge/nav
+# and: tag responses so you never have to remember the URL variants
+Surrogate-Key: prod-123   ->  purge prod-123  covers /product/123, /category/*, /search?...</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -33520,6 +33684,15 @@ No &mdash; only versioned URLs or short browser TTLs address that.
 <li><strong>Pull</strong> CDN (normal): origin holds the canonical copy; edges pull on demand. <strong>Push</strong>: you upload assets to CDN storage ahead of time (rare now; used for large media libraries).</li>
 <li>Origin config: hostname(s), ports, TLS (verify cert, SNI, min version), host header to send, path rewrites, timeouts, retry policy, and which request headers to forward.</li>
 </ul>
+<pre># typical origin definition
+origin:
+  hostname:        origin.internal.example       # not public
+  port:            443
+  tls:             { min_version: "1.2", verify: true, sni: origin.example.com }
+  host_header:     www.example.com               # what the app expects to see
+  connect_timeout: 2s
+  read_timeout:    30s
+  forward_headers: [Authorization, X-Request-Id]  # allowlist, not "all"</pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 96" role="img" aria-labelledby="d-cdnshield-t">
@@ -33545,6 +33718,14 @@ No &mdash; only versioned URLs or short browser TTLs address that.
 <li>Trade-off: a miss now has an extra hop (edge &rarr; shield &rarr; origin), slightly higher miss latency, for much better offload and origin protection. Almost always worth it.</li>
 <li>Some CDNs have multiple mid-tiers (regional) between edge and shield.</li>
 </ul>
+<pre># enable a shield PoP near the origin
+origin:
+  shield: "iad"        # US-East, next to the origin region
+
+# effect on a cold object requested from 40 PoPs at once:
+#   no shield:  up to 40 concurrent requests hit origin
+#   shield:     40 edges -> 1 shield -> request-collapsed -> 1 request to origin
+# cost: miss path is edge -> shield -> origin (one extra ~5-20ms hop)</pre>
 
 <h3>Origin protection</h3>
 <ul>
@@ -33552,6 +33733,16 @@ No &mdash; only versioned URLs or short browser TTLs address that.
 <li>Don't expose the origin hostname/IP publicly (no DNS record, or a different name); watch for leaks via headers, error pages, certificates (SNI/SAN), and historical DNS.</li>
 <li>Rate-limit and WAF at the edge so bad traffic never reaches origin.</li>
 </ul>
+<pre># origin only accepts CDN traffic:
+# 1. firewall: allow only the CDN's published egress ranges
+iptables -A INPUT -p tcp --dport 443 -s 151.101.0.0/16 -j ACCEPT
+iptables -A INPUT -p tcp --dport 443 -j DROP
+
+# 2. AND a shared secret the CDN injects, checked at origin
+#    edge adds:  X-Origin-Auth: <long-random>
+if ($http_x_origin_auth != "s3cr3t-...") { return 403; }    # nginx
+
+# 3. best: mTLS (authenticated origin pull) - origin requires the CDN's client cert</pre>
 
 <h3>Health checks &amp; failover</h3>
 <ul>
@@ -33561,6 +33752,18 @@ No &mdash; only versioned URLs or short browser TTLs address that.
 <li><strong>Serve stale on origin failure</strong>: <code>stale-if-error</code> (and CDN "serve stale on error" settings) keep serving the last-good cached copy when all origins are unreachable &mdash; often the difference between "degraded" and "down".</li>
 <li>Multi-region origins: geo-route edges to the nearest healthy origin; keep data replication in mind for write paths.</li>
 </ul>
+<pre>origin_group:
+  members:
+    - { origin: origin-primary, priority: 1 }
+    - { origin: origin-backup,  priority: 2 }
+  health_check:
+    path: /healthz
+    interval: 10s
+    healthy_threshold: 2
+    unhealthy_threshold: 3
+  failover_on: [ connect_error, timeout, "502", "503", "504" ]
+  retry: { attempts: 2, scope: per_request }     # transparent retry to backup
+# plus: Cache-Control ... stale-if-error=604800  -> serve last-good when BOTH are down</pre>
 
 <h3>Failure modes to design for</h3>
 <ul>
@@ -33569,6 +33772,14 @@ No &mdash; only versioned URLs or short browser TTLs address that.
 <li>Shield PoP outage &mdash; CDN should fail the shield over to another PoP or bypass to origin.</li>
 <li>DNS for the origin fails &mdash; pin origin by IP where possible, or use multiple resolvers.</li>
 </ul>
+<pre># origin SLOW (not down): cap the wait, break the circuit, serve stale
+read_timeout: 10s
+circuit_breaker: { error_rate: 0.5, window: 30s, open_for: 60s }  # stop calling a sick origin
+Cache-Control: ... stale-if-error=604800
+
+# bad deploy cached everywhere: don't let it stick
+negative_ttl: { "5xx": 0, "404": 60 }      # never cache 5xx; short-cache 404
+#   response tagged  Surrogate-Key: release-2.4.1  -> one purge undoes the whole deploy</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -33644,6 +33855,14 @@ IP-allowlist the CDN's egress ranges (or require a secret header, or use mTLS).
 <tr><td><strong>Edge compute</strong></td><td>Run your code (JS/WASM) at the PoP on each request/response: rewrite, route, personalize, auth, A/B bucket, do small API calls, assemble responses, cache programmatically.</td></tr>
 <tr><td><strong>Edge rendering / SSR at edge</strong></td><td>Render pages (often with a framework's edge runtime) close to users, pulling data from regional stores or origin APIs.</td></tr>
 </table>
+<pre># cheapest: don't cache, just proxy (still faster than raw internet)
+GET /api/orders          -> Cache-Control: private, no-store        # dynamic acceleration
+
+# micro-cache: 1s TTL turns 5000 req/s into ~1 origin req/s
+GET /api/trending        -> Cache-Control: public, s-maxage=1, stale-while-revalidate=30
+
+# fragment: shell long, personalised box short
+GET /                     -> Cache-Control: public, s-maxage=3600    # + &lt;esi:include&gt; for the box</pre>
 
 <h3>ESI (Edge Side Includes)</h3>
 <pre>&lt;esi:include src="/header" /&gt;
@@ -33661,6 +33880,19 @@ IP-allowlist the CDN's egress ranges (or require a secret header, or use mTLS).
 <li><strong>Limits</strong>: small CPU-time budgets (sub-ms to tens of ms), limited memory, restricted APIs, cold-start considerations (isolates ~0, containers more), no local disk, careful with outbound fetches (each adds latency and can defeat the point).</li>
 <li><strong>State</strong>: edge KV stores (eventually consistent, read-optimized), durable objects / edge databases (stronger consistency, regional), config/secret stores. Don't assume a local cache persists.</li>
 </ul>
+<pre>// Cloudflare Worker: VIEWER request hook - runs on every request, no origin
+export default {
+  async fetch(req, env) {
+    const url = new URL(req.url);
+    // auth gate before the request ever reaches origin
+    if (url.pathname.startsWith("/app") &amp;&amp; !valid(req.headers.get("Cookie"))) {
+      return Response.redirect(`${url.origin}/login`, 302);
+    }
+    // normalise the cache key programmatically
+    url.searchParams.forEach((_, k) =&gt; { if (!["page","lang"].includes(k)) url.searchParams.delete(k); });
+    return fetch(new Request(url, req));   // CPU budget here is sub-ms..tens of ms
+  }
+}</pre>
 
 <h3>Common edge-compute uses</h3>
 <ul>
@@ -33671,6 +33903,17 @@ IP-allowlist the CDN's egress ranges (or require a secret header, or use mTLS).
 <li>Security: bot checks, request signing/verification, header sanitization, rate limiting.</li>
 <li>Serve a maintenance/fallback page or synthetic response when origin is down.</li>
 </ul>
+<pre>// personalise a CACHED shell without making it uncacheable
+async fetch(req, env) {
+  const page = await caches.default.match(req) || await fetch(req);  // cached HTML shell
+  const uid = readSignedCookie(req);
+  if (!uid) return page;
+  const html = await page.text();
+  const cart = await env.KV.get(`cart:${uid}`) || "0";               // one cheap KV read
+  return new Response(html.replace("{{cart}}", cart),
+                      { headers: page.headers });
+}
+// the shell stays public+cacheable; only the crumb is per-user</pre>
 
 <h3>Design guidance</h3>
 <ul>
@@ -33680,6 +33923,13 @@ IP-allowlist the CDN's egress ranges (or require a secret header, or use mTLS).
 <li>Watch cold starts, CPU limits, and per-request cost at scale; test the p99, not just the average.</li>
 <li>Edge code is still code &mdash; version it, test it, stage it, and be able to roll back fast (a bad edge function breaks every request).</li>
 </ul>
+<pre># reach for the cheapest tool that works:
+need low latency, response is uncacheable      -> dynamic acceleration (no code)
+hot endpoint, seconds of staleness OK           -> micro-cache + SWR   (headers only)
+static shell + 1 personalised box               -> ESI or a small edge function
+route/auth/rewrite/personalise-crumb            -> edge compute (viewer hook)
+full page render near the user                   -> edge SSR
+# and: an edge function is on the critical path of EVERY request - stage + fast rollback</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -33756,12 +34006,27 @@ The origin request/response function.
 <li><strong>OCSP stapling</strong>: the edge attaches the cert's revocation proof so the client doesn't make its own OCSP call.</li>
 <li><strong>ALPN</strong> negotiates the protocol (h2, http/1.1) during the TLS handshake.</li>
 </ul>
+<pre>$ openssl s_client -connect cdn.example:443 -servername cdn.example &lt;/dev/null 2&gt;/dev/null \
+  | grep -E "Protocol|Cipher|ALPN|Verify"
+Protocol  : TLSv1.3
+Cipher    : TLS_AES_128_GCM_SHA256
+ALPN protocol: h2
+Verify return code: 0 (ok)
+# handshake happens against the nearest PoP (~10ms), not the origin (~150ms)
+# edge -> origin is a SEPARATE TLS connection; lock it with mTLS</pre>
 
 <h3>TLS 1.3</h3>
 <ul>
 <li>1-RTT handshake (vs 2 for 1.2); <strong>0-RTT</strong> resumption sends early data with the first packet &mdash; faster, but early data is <em>replayable</em>, so only use it for idempotent requests (GET), never for state-changing ones.</li>
 <li>Removed weak ciphers/kex; forward secrecy is mandatory.</li>
 </ul>
+<pre># 1.2: 2-RTT handshake     1.3: 1-RTT     1.3 resumption: 0-RTT (early data)
+ClientHello (+ key share, + early data on resume)
+                              ServerHello, Finished     <- 1 RTT, then app data flows
+
+# 0-RTT early data is REPLAYABLE -> only for idempotent requests
+GET /catalog        -> OK to send as 0-RTT
+POST /orders        -> NEVER as 0-RTT (an attacker replay = duplicate order)</pre>
 
 <h3>HTTP/2</h3>
 <ul>
@@ -33769,6 +34034,15 @@ The origin request/response function.
 <li><strong>Header compression</strong> (HPACK), stream prioritization, server push (now deprecated/removed in practice).</li>
 <li><strong>Remaining problem</strong>: TCP-level head-of-line blocking &mdash; one lost packet stalls <em>all</em> streams on that connection until retransmit.</li>
 </ul>
+<pre># HTTP/1.1: browser opens ~6 TCP conns, requests queue behind each other
+# HTTP/2:   ONE conn, many multiplexed streams
+$ curl -sI --http2 https://cdn.example/ | head -1
+HTTP/2 200
+
+:method: GET   :path: /a.js      stream 1  \
+:method: GET   :path: /b.css     stream 3   } all in flight on one connection
+:method: GET   :path: /c.png     stream 5  /
+# but: 1 lost TCP packet -> ALL streams wait for the retransmit (transport-level HOL)</pre>
 
 <h3>HTTP/3 &amp; QUIC</h3>
 <ul>
@@ -33777,6 +34051,14 @@ The origin request/response function.
 <li><strong>Connection migration</strong>: a connection ID survives the client's IP changing (Wi-Fi &harr; cellular) &mdash; no re-handshake.</li>
 <li>Advertised via the <code>Alt-Svc</code> header (or HTTPS DNS record); the client upgrades on the next visit. UDP may be blocked on some networks &rarr; fall back to h2.</li>
 </ul>
+<pre># first response advertises h3; client switches on the NEXT request
+HTTP/2 200
+alt-svc: h3=":443"; ma=86400
+
+$ curl -sI --http3 https://cdn.example/ | head -1
+HTTP/3 200
+# QUIC (UDP) + TLS 1.3 built in: 1-RTT setup, per-stream loss recovery,
+# connection-id survives Wi-Fi -> cellular (no re-handshake). UDP blocked -> falls back to h2.</pre>
 
 <h3>Edge &harr; origin efficiency</h3>
 <ul>
@@ -33784,6 +34066,14 @@ The origin request/response function.
 <li>Often HTTP/1.1 or h2 to origin; connection reuse and pipelining matter more than the version here.</li>
 <li>Tune origin keep-alive timeouts to match the CDN's, or you get churn.</li>
 </ul>
+<pre># origin (nginx): keep connections to the CDN warm so a miss reuses one
+keepalive_timeout   75s;      # must be &gt;= the CDN's edge keepalive, or you get churn
+keepalive_requests  1000;
+
+http {
+  upstream app { server 127.0.0.1:8080; keepalive 64; }   # pool to the app too
+}
+# result: cache miss = 1 HTTP request over an existing conn, no TCP+TLS setup</pre>
 
 <h3>Practical checklist</h3>
 <ul>
@@ -33793,6 +34083,15 @@ The origin request/response function.
 <li>Automate cert issuance/renewal (ACME); monitor expiry.</li>
 <li>mTLS / authenticated origin pull; verify origin certs; strong min version to origin.</li>
 </ul>
+<pre># verify what clients actually get
+$ curl -sI https://cdn.example/ | grep -iE "alt-svc|strict-transport"
+alt-svc: h3=":443"; ma=86400
+strict-transport-security: max-age=63072000; includeSubDomains; preload
+
+$ nmap --script ssl-enum-ciphers -p 443 cdn.example | grep -E "TLSv1|SSLv"
+|   TLSv1.2:  (only)
+|   TLSv1.3:  (only)          # no 1.0/1.1, no weak ciphers
+# ACME auto-renew: certbot renew --dry-run   (alert if &lt; 21 days to expiry)</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -33867,6 +34166,15 @@ Idempotent ones (GET) &mdash; never state-changing requests, because early data 
 <li><strong>Cache-busting attacks</strong> append random query strings to force misses &rarr; normalize the cache key (ignore unknown params) so the flood still hits cache.</li>
 <li>Keep origin locked to the CDN, or attackers hit it directly and bypass all of this.</li>
 </ul>
+<pre># L7 rate limit: cap per-client request rate at the edge
+rate_limit:
+  key:       client_ip           # or a fingerprint / API key
+  threshold: 100 / 10s
+  action:    challenge           # then block on repeat
+
+# cache-busting flood: ?_=<random> forces MISS -> normalise it away
+cache_key.query_string.include = ["page","lang"]   # unknown params (incl. _) ignored
+# -> the flood now hits the edge cache, origin stays flat</pre>
 
 <h3>WAF (Web Application Firewall)</h3>
 <ul>
@@ -33876,6 +34184,17 @@ Idempotent ones (GET) &mdash; never state-changing requests, because early data 
 <li><strong>Positive vs negative security</strong>: negative = block known-bad signatures (CRS); positive = allow only known-good (schema/allowlist) &mdash; stronger, higher maintenance, used for APIs.</li>
 <li><strong>Virtual patching</strong>: a WAF rule to block exploitation of a specific vuln while you fix the code.</li>
 </ul>
+<pre># managed baseline + custom rule, log-only first
+waf:
+  managed_rulesets: [ owasp-crs ]
+  mode: detect            # <- run in LOG-ONLY, tune false positives, THEN set to "block"
+  custom_rules:
+    - name: block-admin-from-abroad
+      expr: 'http.request.uri.path matches "^/admin" and ip.geoip.country ne "US"'
+      action: block
+    - name: virtual-patch-CVE-2026-1234
+      expr: 'http.request.body contains "__proto__"'
+      action: block        # holds the line until the code fix ships</pre>
 
 <h3>Bot management</h3>
 <ul>
@@ -33883,6 +34202,14 @@ Idempotent ones (GET) &mdash; never state-changing requests, because early data 
 <li>Signals: request rate/patterns, TLS/HTTP fingerprint (JA3/JA4), header order, browser challenges (JS execution, proof-of-work), behavioral analysis, known-bot IP lists, and device/browser attestation.</li>
 <li>Actions: allow, challenge, throttle, serve alternate content, or block. Beware blocking legit crawlers or accessibility tools.</li>
 </ul>
+<pre># edge decision on a request's bot score
+if (bot.score &lt; 30 &amp;&amp; !bot.verified)     -> block          # likely bad
+elif (bot.score &lt; 60)                    -> managed_challenge  # JS / proof-of-work
+elif (bot.verified_crawler)              -> allow          # Googlebot etc. (verified by rDNS)
+else                                     -> allow
+
+# verify a claimed crawler instead of trusting the UA string:
+#   reverse-DNS the IP -> must resolve under googlebot.com, then forward-confirm</pre>
 
 <h3>Access control &amp; token auth</h3>
 <ul>
@@ -33891,6 +34218,15 @@ Idempotent ones (GET) &mdash; never state-changing requests, because early data 
 <li><strong>mTLS at the edge</strong> for API clients; <strong>API key / JWT validation</strong> in an edge function.</li>
 <li><strong>Basic auth</strong> / IP allowlist for staging environments.</li>
 </ul>
+<pre># app mints a signed URL; edge validates HMAC + expiry, no origin call
+exp=$(($(date +%s) + 3600))
+sig=$(printf '%s' "/videos/ep1.m3u8$exp" | openssl dgst -sha256 -hmac "$SECRET" -binary | base64 -w0)
+url="https://cdn.example/videos/ep1.m3u8?exp=$exp&sig=$sig"
+
+# edge check (pseudo):
+expected = base64(hmac_sha256(SECRET, path + query.exp))
+if (query.sig != expected || now() > query.exp) return 403
+# optionally bind to client IP:  hmac over  path + exp + client_ip</pre>
 
 <h3>Headers &amp; hardening</h3>
 <ul>
@@ -33898,6 +34234,15 @@ Idempotent ones (GET) &mdash; never state-changing requests, because early data 
 <li>Sanitize inbound: strip/normalize forwarding &amp; debug headers (<code>X-Forwarded-Host</code>, <code>X-Original-URL</code>) to prevent cache poisoning and host-header attacks.</li>
 <li>Strip response headers that leak origin details (server version, internal hostnames, stack traces).</li>
 </ul>
+<pre># add on responses at the edge
+Strict-Transport-Security: max-age=63072000; includeSubDomains; preload
+Content-Security-Policy: default-src 'self'; script-src 'self'
+X-Content-Type-Options: nosniff
+Referrer-Policy: strict-origin-when-cross-origin
+
+# sanitise inbound (cache-poisoning / host-header defence) + strip leaks outbound
+unset req.http.X-Forwarded-Host;  unset req.http.X-Original-URL;
+unset beresp.http.Server;         unset beresp.http.X-Powered-By;</pre>
 
 <h3>Operational notes</h3>
 <ul>
@@ -33906,6 +34251,13 @@ Idempotent ones (GET) &mdash; never state-changing requests, because early data 
 <li>Test WAF changes in staging; a bad rule can block all legit traffic.</li>
 <li>The CDN protects inbound; you still need origin-side auth/validation (defense in depth &mdash; never trust the edge alone).</li>
 </ul>
+<pre># break-glass: one toggle raises the whole perimeter during an incident
+$ cdnctl set security.mode under_attack        # challenge every browser
+$ cdnctl waf set mode block                     # flip WAF from detect -> block
+$ cdnctl ratelimit set /api 20/10s
+
+# ship WAF changes like code: staging -> canary -> prod, with a fast rollback
+$ cdnctl waf deploy --env staging && run-synthetics && cdnctl waf promote prod</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -33982,6 +34334,14 @@ Access to private/paid content &mdash; the edge checks an HMAC signature and exp
 <tr><td><strong>Error rates</strong></td><td>Edge 5xx, origin 5xx, timeouts &mdash; by PoP and by status.</td></tr>
 <tr><td><strong>Bandwidth &amp; request volume</strong></td><td>By PoP/region, for cost and capacity.</td></tr>
 </table>
+<pre># from CDN log analytics
+hit_ratio_req  = sum(status="HIT") / count(*)                 # e.g. 0.97
+hit_ratio_byte = sum(bytes where status="HIT") / sum(bytes)  # e.g. 0.82  (big files miss)
+origin_offload = 1 - (count(origin_request) / count(*))       # 0.96
+
+edge_ttfb_p50_hit  =  8ms
+edge_ttfb_p50_miss = 140ms      # miss = a trip to origin -> caching / closer origin helps
+error_rate_by_pop  =  ...        # a single PoP spiking = peering issue -> CDN ticket</pre>
 
 <h3>RUM vs synthetic</h3>
 <ul>
@@ -33989,6 +34349,15 @@ Access to private/paid content &mdash; the edge checks an HMAC signature and exp
 <li><strong>Synthetic</strong>: scripted probes from fixed locations on a schedule. Reproducible, good for regression detection, alerting, and comparing providers/config &mdash; but a fixed set of clean nodes isn't your user population.</li>
 <li>Use both: synthetic for control and alerting, RUM for truth about user experience and geo breakdown.</li>
 </ul>
+<pre>// RUM: collect real users' timings from the browser
+const [nav] = performance.getEntriesByType("navigation");
+new PerformanceObserver(l =&gt; {
+  for (const e of l.getEntries()) beacon({ metric: e.name, value: e.value, geo: navigator.language });
+}).observe({ type: "largest-contentful-paint", buffered: true });
+beacon({ ttfb: nav.responseStart - nav.requestStart });   // truth, but noisy, needs volume
+
+# synthetic: scripted, from fixed nodes, on a schedule -> reproducible, for alerting
+$ webpagetest test https://shop.example --location "London:Chrome" --runs 5</pre>
 
 <h3>Levers to improve it</h3>
 <ul>
@@ -33999,6 +34368,17 @@ Access to private/paid content &mdash; the edge checks an HMAC signature and exp
 <li><strong>Prioritization &amp; hints</strong>: <code>Link: rel=preconnect/preload</code>, <code>103 Early Hints</code> (edge can send them), correct resource priorities.</li>
 <li><strong>Fewer round trips</strong>: bundle critical CSS, avoid redirect chains (each redirect = a round trip; do redirects at the edge, not origin), consolidate domains to reuse connections.</li>
 </ul>
+<pre># raise hit ratio
+Cache-Control: public, max-age=31536000, immutable   # hashed assets
+cache_key.query_string.include = ["page","lang"]      # strip utm_*/fbclid
+unset beresp.http.Set-Cookie for /static/*
+
+# reduce bytes: precompress at build, negotiate image format
+$ brotli -q 11 -k dist/*.js dist/*.css                # serve .br, fall back to gzip
+Accept: image/avif -> serve .avif  (else .webp, else .jpg)
+
+# fewer round trips: redirect AT THE EDGE, not origin (saves a full RTT)
+if (req.url == "/old") return 301 "/new";</pre>
 
 <h3>Diagnosing</h3>
 <ul>
@@ -34008,11 +34388,30 @@ Access to private/paid content &mdash; the edge checks an HMAC signature and exp
 <li>Correlate origin RPS spikes with deploys/purges (offload drops).</li>
 <li>Per-PoP latency outliers &rarr; routing/peering issue &rarr; CDN ticket.</li>
 </ul>
+<pre># hit ratio by content type -> find the bucket dragging it down
+SELECT content_type, count(*) t, sum(cache_status='HIT')/count(*) hit_ratio
+FROM cdn_logs GROUP BY 1 ORDER BY t DESC
+#   text/css   0.99      <- fine
+#   text/html  0.41      <- the problem: TTL too short, or Set-Cookie, or Vary
+
+# check a real response's cache state
+$ curl -sI https://cdn.example/page | grep -iE "x-cache|cache-status|age|vary"
+x-cache: MISS
+cache-status: "edge"; fwd=miss; key=...     # RFC 9211 Cache-Status
+vary: cookie                                 # <- there's the reuse killer</pre>
 
 <h3>Cost angle</h3>
 <p>CDN pricing is usually <strong>egress bytes + requests</strong> (sometimes per region tier, plus
 purges, edge-compute invocations, TLS, WAF). Higher hit ratio and smaller payloads cut both
 the CDN bill and origin egress. Watch region mix (some regions cost multiples of others).</p>
+<pre># monthly bill drivers
+egress_bytes  = sum(response_bytes)                 # x $/GB, tiered by region
+requests      = count(*)                            # x $/10k
+origin_egress = sum(bytes where cache_status!='HIT') # what still leaves YOUR cloud
+
+# a 0.82 -> 0.92 byte-hit-ratio improvement on 100 TB/mo:
+#   origin egress: 18 TB -> 8 TB  (~$900/mo saved at $0.09/GB)  + faster users
+# APAC/LatAm egress can be 2-4x US/EU -> route + cache harder there</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -34088,6 +34487,13 @@ Brotli (especially precompressed at max level for static files).
 <li><strong>Capacity / negotiation</strong>: spread load, avoid per-provider commit overages, use volume for pricing leverage.</li>
 <li><strong>Regional coverage</strong>: some providers have far better presence in specific markets (e.g. China needs a provider with ICP-licensed PoPs).</li>
 </ul>
+<pre># RUM data that justifies the split (p75 TTFB by CDN by region)
+region   cdn_a   cdn_b
+NA        22ms    31ms      -> route NA to A
+EU        18ms    19ms      -> either
+APAC      140ms   45ms      -> route APAC to B
+SA        90ms    60ms      -> route SA to B
+# single provider = you eat the worst column somewhere; multi-CDN picks the min per row</pre>
 
 <h3>Steering mechanisms</h3>
 <table>
@@ -34098,6 +34504,19 @@ Brotli (especially precompressed at max level for static files).
 <tr><td><strong>Anycast in front</strong> / a routing layer</td><td>Your own edge (or a cloud LB) routes to a CDN</td><td>Adds a hop; rare.</td></tr>
 <tr><td><strong>302 redirect steering</strong></td><td>A lightweight decision endpoint redirects to the chosen CDN</td><td>Adds a round trip; used for large downloads/video where the redirect cost is amortized.</td></tr>
 </table>
+<pre># DNS-based steering: cdn.example is a CNAME the traffic manager rewrites
+cdn.example.  30  IN  CNAME  cdn.example.a-cdn.net.     # APAC resolvers get b-cdn
+#   TTL 30s -> failover is ~30-60s, not instant; keep TTL low, resolvers matter
+
+# 302 steering for a big download (redirect cost amortised over a 2 GB file)
+GET /download/app.dmg
+  -> 302 Location: https://dl.b-cdn.net/download/app.dmg   # decision endpoint picks per client
+
+# client-side manifest lists multiple CDNs for per-segment failover (video)
+#EXT-X-STREAM-INF:...
+https://a-cdn.example/720p.m3u8
+#EXT-X-STREAM-INF:...
+https://b-cdn.example/720p.m3u8</pre>
 
 <h3>The config-parity problem</h3>
 <ul>
@@ -34108,6 +34527,16 @@ Brotli (especially precompressed at max level for static files).
 <li><strong>Edge compute</strong>: portable logic (or duplicated per runtime) &mdash; or keep edge logic minimal and provider-agnostic.</li>
 <li><strong>Certificates</strong>: each CDN needs a valid cert for your hostname &mdash; more issuance/renewal to automate.</li>
 </ul>
+<pre># manage BOTH providers from one repo so config never drifts
+resource "fastly_service_vcl"      "site" { ... cache key, TTLs, headers ... }
+resource "cloudflare_ruleset"      "site" { ... same intent, different model ... }
+# CI: apply to both, then run parity tests
+$ for h in a-cdn b-cdn; do
+    curl -sI https://$h.example/page | grep -iE "cache-control|vary|x-cache"
+  done   # assert identical caching behaviour
+
+# purge must fan out to every CDN, behind one abstraction
+$ purgectl key prod-123     # -> Fastly purge + Cloudflare purge + ...</pre>
 
 <h3>Health checking &amp; failover</h3>
 <ul>
@@ -34115,6 +34544,17 @@ Brotli (especially precompressed at max level for static files).
 <li>Distinguish "CDN is down" from "origin is down" (both CDNs will fail if origin is down &mdash; don't flap between them).</li>
 <li>Keep a <strong>tested runbook</strong>: force all traffic to one CDN, or bypass to origin, quickly.</li>
 </ul>
+<pre># steering probes a canary per CDN from many locations
+GET https://a-cdn.example/__canary   -> expect 200, body "ok", &lt; 500ms
+GET https://b-cdn.example/__canary   -> ...
+
+# CDN-down vs origin-down: if BOTH canaries fail the same way -> origin issue, DON'T flap
+if a_fail and b_fail:  page("origin"); hold steering
+elif a_fail:           shift 100% -> B    (within DNS TTL)
+
+# break-glass
+$ steerctl pin --cdn b        # force everything to B
+$ steerctl bypass --origin    # skip CDNs entirely</pre>
 
 <h3>Cost model</h3>
 <ul>
@@ -34122,6 +34562,17 @@ Brotli (especially precompressed at max level for static files).
 <li>Multi-CDN lets you route volume regions to the cheaper provider there, and use commits/minimums across providers &mdash; but you now pay two platform minimums and double the ops.</li>
 <li>Model total cost of ownership: bytes &times; per-region rate per provider + request costs + steering-service cost + engineering time for parity. Multi-CDN pays off for high volume, strict availability SLAs, or poor single-provider coverage in key markets; it's overhead for a small site.</li>
 </ul>
+<pre># route volume by CHEAPEST provider per region, but mind the platform minimums
+region  bytes/mo   a $/GB   b $/GB   -> route
+NA      400 TB     0.02     0.03        A
+EU      300 TB     0.02     0.02        split (fill both commits)
+APAC    150 TB     0.12     0.08        B
+
+tco = sum(region_bytes * chosen_rate)
+    + a_platform_min + b_platform_min        # you now pay TWO
+    + steering_service_fee
+    + eng_time_for_config_parity
+# break-even: only above ~tens of TB/mo, or when an SLA / market coverage forces it</pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
