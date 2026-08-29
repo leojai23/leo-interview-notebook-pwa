@@ -23754,6 +23754,13 @@ Work in small, safe steps under a growing test net &mdash; the "strangler fig" a
 <li><strong>Deep dive (10 min)</strong> &mdash; the interviewer picks 1&ndash;2 areas; go deep: sharding key, cache invalidation, fan-out, consistency.</li>
 <li><strong>Bottlenecks &amp; wrap (5 min)</strong> &mdash; single points of failure, hot spots, what breaks at 10&times; scale, monitoring.</li>
 </ol>
+<pre><code><span class="c"># API sketch produced in step 3 &mdash; a few endpoints, explicit shapes</span>
+POST /v1/urls        {url}            -&gt; 201 {shortCode}
+GET  /{shortCode}                     -&gt; 302 Location: &lt;long url&gt;
+GET  /v1/urls/{code}/stats            -&gt; 200 {clicks, createdAt}
+
+<span class="c"># step 4: pick storage FROM the access pattern, not by habit</span>
+<span class="c">#   lookup is by exact key, read-heavy, tiny values -&gt; KV store (not a JOIN-y RDBMS)</span></code></pre>
 
 <h3>Latency numbers to know (order of magnitude)</h3>
 <table>
@@ -23768,6 +23775,11 @@ Work in small, safe steps under a growing test net &mdash; the "strangler fig" a
 <tr><td>Disk seek (HDD)</td><td>~5&ndash;10&thinsp;ms</td></tr>
 <tr><td>Cross-continent round trip</td><td>~100&ndash;150&thinsp;ms</td></tr>
 </table>
+<pre><code><span class="c"># Use them to reason about a design, e.g. "render needs 30 sequential DB reads":</span>
+<span class="c">#   30 x 0.5 ms datacenter RTT      = 15 ms   -&gt; fine</span>
+<span class="c">#   30 x 100 ms cross-continent RTT = 3 s     -&gt; must co-locate or batch</span>
+<span class="c"># and "serve 1 MB image from disk vs memory":</span>
+<span class="c">#   SSD seq read ~100 us  vs  RAM ~100x faster -&gt; cache hot objects in RAM/CDN</span></code></pre>
 
 <h3>Estimation shortcuts</h3>
 <ul>
@@ -23776,6 +23788,12 @@ Work in small, safe steps under a growing test net &mdash; the "strangler fig" a
 <li>Storage/year = writes/sec &times; bytes/write &times; 3&times;10&#8311; s.</li>
 <li>A modern server: ~tens of thousands of simple QPS, ~64&ndash;256 GB RAM, ~10&ndash;40 TB SSD, ~10&ndash;25 Gbps NIC.</li>
 </ul>
+<pre><code><span class="c"># Worked example: Twitter-scale timeline</span>
+writes  = 500e6 tweets/day / 86400        <span class="c"># ~5,800 tweet writes/sec avg</span>
+peak_w  = writes * 3                       <span class="c"># ~17k/sec</span>
+reads   = 200e9 timeline views/day / 86400 <span class="c"># ~2.3M reads/sec  -&gt; read:write ~400:1</span>
+storage = 500e6 * 300 * 365 * 3            <span class="c"># bytes/yr = count x size x days x replicas</span>
+        <span class="c"># ~= 164 TB/yr  -&gt; does NOT fit one box -&gt; shard + blob store for media</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -23875,6 +23893,16 @@ Compare your estimated working set and throughput against a single modern server
 <tr><td>Cost / features</td><td>fast, cheap, protocol-agnostic</td><td>retries, rewrites, path routing, WAF, canary &mdash; more CPU</td></tr>
 <tr><td>Examples</td><td>AWS NLB, IPVS, hardware LBs</td><td>nginx, HAProxy, Envoy, ALB</td></tr>
 </table>
+<pre><code><span class="c"># L7 (nginx): route by path, terminate TLS, retry idempotent failures</span>
+upstream api  { server 10.0.1.11:8080; server 10.0.1.12:8080; }
+server {
+    listen 443 ssl;
+    location /api/ {
+        proxy_pass http://api;
+        proxy_next_upstream error timeout http_502;   <span class="c"># retry a dead backend</span>
+    }
+    location /static/ { root /var/www; }              <span class="c"># L7 can branch on the URL; L4 cannot</span>
+}</code></pre>
 
 <h3>Algorithms</h3>
 <ul>
@@ -23883,6 +23911,14 @@ Compare your estimated working set and throughput against a single modern server
 <li><strong>Consistent hashing</strong> &mdash; same key &rarr; same backend (cache affinity, sticky routing) with minimal remap on membership change.</li>
 <li><strong>IP hash</strong> &mdash; cheap client&rarr;backend stickiness.</li>
 </ul>
+<pre><code><span class="c"># Consistent hashing: key -&gt; point on a ring -&gt; next node clockwise.</span>
+<span class="c"># Adding/removing 1 of N nodes remaps only ~1/N of keys (vs nearly all with key % N).</span>
+ring = sorted(hash(f<span class="s">"{node}#{v}"</span>) <span class="k">for</span> node <span class="k">in</span> nodes <span class="k">for</span> v <span class="k">in</span> range(<span class="n">150</span>))  <span class="c"># 150 vnodes/node = balance</span>
+
+<span class="k">def</span> route(key):
+    h = hash(key)
+    i = bisect.bisect(ring, h) % len(ring)
+    <span class="k">return</span> owner[ring[i]]                 <span class="c"># same key -&gt; same backend -&gt; cache stays warm</span></code></pre>
 
 <h3>Health checks &amp; failure</h3>
 <ul>
@@ -23890,16 +23926,35 @@ Compare your estimated working set and throughput against a single modern server
 <li>Distinguish "liveness" (process up) from "readiness" (can serve &mdash; DB connected, caches warm). Drain connections gracefully on deploy.</li>
 <li>The LB is a SPOF &rarr; run it redundantly: a VIP with failover (keepalived/VRRP), an anycast address, or a managed LB across AZs. Global traffic uses DNS/GeoDNS/anycast to pick a region, then a regional LB.</li>
 </ul>
+<pre><code><span class="c"># Two probe endpoints with different meaning:</span>
+GET /livez   -&gt; 200 <span class="k">if</span> the process is running          <span class="c"># fail =&gt; restart the pod</span>
+GET /readyz  -&gt; 200 <span class="k">only if</span> DB reachable AND caches warm  <span class="c"># fail =&gt; pull from LB, don't restart</span>
+
+<span class="c"># HAProxy: eject after 3 failed checks, re-add after 2 good ones</span>
+server s1 10.0.1.11:8080 check inter 2s fall 3 rise 2</code></pre>
 
 <h3>Sticky sessions</h3>
 <p>Pin a client to one backend (cookie or IP hash). Needed only if the backend holds per-session
 state &mdash; the better fix is stateless backends (session in Redis / signed token) so any request
 can go anywhere, enabling free scaling and deploys.</p>
+<pre><code><span class="c">// Stateful backend NEEDS stickiness (fragile):</span>
+Cookie: SRVID=server2            <span class="c">// server2 dies -&gt; that user's session is gone</span>
+
+<span class="c">// Better: stateless backend, session lives in shared store -&gt; no stickiness needed</span>
+session = redis.get(<span class="s">"sess:"</span> + cookie.sid)   <span class="c">// any backend can serve any request</span>
+<span class="c">// or a signed token the client carries: JWT / cookie with HMAC, server keeps nothing</span></code></pre>
 
 <h3>Autoscaling</h3>
 <p>Scale the backend pool on a signal (CPU, request rate, queue depth, p99 latency). Scale out
 fast, in slowly (avoid flapping). Pre-warm for known spikes. The LB must pick up new instances
 automatically (service discovery / target groups).</p>
+<pre><code><span class="c"># Kubernetes HPA: scale on CPU, out fast / in slow to avoid flapping</span>
+metrics:
+  - type: Resource
+    resource: { name: cpu, target: { type: Utilization, averageUtilization: <span class="n">60</span> } }
+behavior:
+  scaleUp:   { stabilizationWindowSeconds: <span class="n">0</span>,   policies: [{ type: Percent, value: <span class="n">100</span>, periodSeconds: <span class="n">30</span> }] }
+  scaleDown: { stabilizationWindowSeconds: <span class="n">300</span>, policies: [{ type: Pods,    value: <span class="n">1</span>,   periodSeconds: <span class="n">60</span> }] }</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -23978,6 +24033,12 @@ Classic least-connections works well only when every backend is identical and ev
 <p>Client / browser &rarr; CDN edge &rarr; API gateway &rarr; in-process (per app instance) &rarr; distributed
 (Redis/Memcached) &rarr; database buffer pool. Cache as close to the client as the freshness
 requirement allows.</p>
+<pre><code><span class="c"># Same value, cached at every layer &mdash; each with a shorter reach + its own TTL</span>
+Browser:  Cache-Control: private, max-age=<span class="n">60</span>        <span class="c"># 1 user, 60 s</span>
+CDN edge: Cache-Control: public,  s-maxage=<span class="n">300</span>       <span class="c"># all users in a region, 5 min</span>
+App L1:   Caffeine maxSize=<span class="n">10_000</span>, expireAfterWrite=<span class="n">5s</span>  <span class="c"># per instance, tiny + short</span>
+Redis L2: SET post:42 &lt;json&gt; EX <span class="n">3600</span>                 <span class="c"># shared across instances, 1 h</span>
+<span class="c"># rule: cache as close to the client as the freshness requirement allows</span></code></pre>
 
 <figure class="diagram">
 <svg viewBox="0 0 520 106" role="img" aria-labelledby="d-sdcache-t">
@@ -24000,6 +24061,15 @@ requirement allows.</p>
 <tr><td><strong>Cache-aside</strong> (lazy)</td><td>app checks cache; on miss, reads DB, populates cache. Most common; cache only holds what's asked for.</td></tr>
 <tr><td><strong>Read-through</strong></td><td>app asks the cache; the cache library fetches from DB on miss. Same effect, logic in the cache layer.</td></tr>
 </table>
+<pre><code><span class="c"># Cache-aside read: the app owns the miss path</span>
+<span class="k">def</span> get_post(pid):
+    key = f<span class="s">"post:{pid}"</span>
+    v = redis.get(key)
+    <span class="k">if</span> v <span class="k">is not</span> <span class="k">None</span>:
+        <span class="k">return</span> json.loads(v)            <span class="c"># hit</span>
+    row = db.query(<span class="s">"SELECT * FROM posts WHERE id=%s"</span>, pid)   <span class="c"># miss -&gt; source of truth</span>
+    redis.set(key, json.dumps(row), ex=<span class="n">3600</span>)               <span class="c"># fill, always with a TTL</span>
+    <span class="k">return</span> row</code></pre>
 
 <h3>Write patterns</h3>
 <table>
@@ -24011,6 +24081,11 @@ requirement allows.</p>
 <p>Common combo: <strong>cache-aside reads + write-through-or-invalidate on writes</strong>. On a write,
 either update the cache entry or (safer) delete it so the next read repopulates &mdash; avoids
 stale-write races.</p>
+<pre><code><span class="k">def</span> update_post(pid, patch):
+    db.execute(<span class="s">"UPDATE posts SET ... WHERE id=%s"</span>, pid)  <span class="c"># 1. source of truth first</span>
+    redis.delete(f<span class="s">"post:{pid}"</span>)                        <span class="c"># 2. delete, don't set</span>
+    <span class="c"># why delete not set: two concurrent writers that each SET can interleave and</span>
+    <span class="c"># leave the OLDER value in cache. delete -&gt; next read reloads the committed row.</span></code></pre>
 
 <h3>The hard problems</h3>
 <ul>
@@ -24019,6 +24094,17 @@ stale-write races.</p>
 <li><strong>Hot key</strong>: one key hotter than a single cache node can serve &mdash; replicate it to multiple nodes, or add a tiny local L1 with a 1&ndash;5 s TTL.</li>
 <li><strong>Thundering herd on cold start</strong>: a fresh/flushed cache means every request misses &mdash; warm it, or ramp traffic.</li>
 </ul>
+<pre><code><span class="c"># Stampede fix: only ONE caller recomputes a hot expired key; the rest serve stale</span>
+<span class="k">def</span> get(key, ttl, recompute):
+    v, exp = redis.hmget(key, <span class="s">"v"</span>, <span class="s">"exp"</span>)
+    <span class="k">if</span> v <span class="k">and</span> time.time() &lt; float(exp):
+        <span class="k">return</span> v                                   <span class="c"># fresh</span>
+    <span class="k">if</span> redis.set(key + <span class="s">":lock"</span>, <span class="n">1</span>, nx=<span class="k">True</span>, ex=<span class="n">10</span>):  <span class="c"># won the lock -&gt; refresh</span>
+        nv = recompute()
+        redis.hset(key, mapping={<span class="s">"v"</span>: nv, <span class="s">"exp"</span>: time.time() + ttl})
+        redis.delete(key + <span class="s">":lock"</span>)
+        <span class="k">return</span> nv
+    <span class="k">return</span> v <span class="k">or</span> recompute()                       <span class="c"># others: serve slightly stale, no DB pile-up</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -24104,6 +24190,12 @@ Point invalidation from the write path won't scale &mdash; the writer would have
 <li><strong>Functional partitioning</strong>: split by feature (users DB, orders DB, analytics DB).</li>
 <li><strong>Sharding</strong>: horizontally split one dataset across many primaries by a shard key. Last resort &mdash; big complexity jump.</li>
 </ol>
+<pre><code><span class="c">-- Rungs 1-2 first: an index often beats a bigger box</span>
+<span class="k">EXPLAIN</span> <span class="k">ANALYZE</span> <span class="k">SELECT</span> * <span class="k">FROM</span> orders <span class="k">WHERE</span> user_id = <span class="n">42</span> <span class="k">ORDER BY</span> created_at <span class="k">DESC</span> <span class="k">LIMIT</span> <span class="n">20</span>;
+<span class="c">-- Seq Scan ... rows=2,000,000  (cost=0..48000)   <-- reads the whole table</span>
+
+<span class="k">CREATE INDEX</span> idx_orders_user_time <span class="k">ON</span> orders (user_id, created_at <span class="k">DESC</span>);
+<span class="c">-- Index Scan ... rows=20  (cost=0..1.2)          <-- now O(log n) + 20 rows</span></code></pre>
 
 <h3>Replication</h3>
 <ul>
@@ -24111,6 +24203,13 @@ Point invalidation from the write path won't scale &mdash; the writer would have
 <li><strong>Sync / semi-sync</strong>: primary waits for &ge;1 replica to ack &mdash; no data loss on primary failure, higher write latency.</li>
 <li><strong>Failover</strong>: promote a replica when the primary dies (automatic with a coordinator; watch for split-brain &mdash; fence the old primary).</li>
 </ul>
+<pre><code><span class="c"># Route reads to replicas, writes to primary &mdash; but read-your-writes for the author</span>
+<span class="k">def</span> route(query, user):
+    <span class="k">if</span> query.is_write:
+        <span class="k">return</span> primary
+    <span class="k">if</span> now() - last_write_time[user] &lt; <span class="n">2.0</span>:   <span class="c"># wrote in the last 2 s</span>
+        <span class="k">return</span> primary                          <span class="c"># avoid showing them stale data</span>
+    <span class="k">return</span> least_lagged(replicas)               <span class="c"># everyone else: replica (skip if lag &gt; 1 s)</span></code></pre>
 
 <h3>Sharding</h3>
 <ul>
@@ -24119,6 +24218,14 @@ Point invalidation from the write path won't scale &mdash; the writer would have
 <li><strong>Cross-shard queries &amp; transactions</strong> are expensive (scatter-gather, 2PC/saga). Design so the common queries hit one shard.</li>
 <li><strong>Resharding</strong> (adding shards) is painful &mdash; use consistent hashing / virtual buckets from the start so you move ~1/N of data, and build it online (dual-write + backfill + cutover).</li>
 </ul>
+<pre><code><span class="c"># Fixed virtual buckets decouple key placement from physical shard count</span>
+BUCKETS = <span class="n">4096</span>
+<span class="k">def</span> shard_for(key):
+    b = crc32(key) % BUCKETS
+    <span class="k">return</span> bucket_map[b]        <span class="c"># {0..4095} -&gt; physical shard; only this map changes on reshard</span>
+
+<span class="c"># co-locate a conversation's messages: shard by conversation_id, NOT message_id</span>
+<span class="c">#   shard_for(msg.conversation_id)   -&gt; whole thread on one shard, single-shard reads</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -24218,6 +24325,15 @@ partition, you can have both.</p>
 <li><strong>AP</strong>: keep serving, reconcile later (eventual consistency) &mdash; Cassandra, DynamoDB, Riak.</li>
 <li><strong>PACELC</strong>: extends it &mdash; <em>if</em> Partition then A or C; <em>else</em> trade Latency vs Consistency.</li>
 </ul>
+<pre><code><span class="c"># Same request, two designs, during a partition of the replica set:</span>
+
+<span class="c"># CP store (etcd): write to the minority side is REJECTED</span>
+$ etcdctl put /lock/x <span class="s">"held"</span>
+Error: context deadline exceeded        <span class="c"># no quorum -&gt; refuse -&gt; caller must handle it</span>
+
+<span class="c"># AP store (Cassandra CL=ONE): write is ACCEPTED on whatever node is reachable</span>
+cqlsh&gt; INSERT INTO cart (id, items) VALUES (<span class="n">42</span>, [...]);   <span class="c"># succeeds, converges later</span>
+<span class="c">#   risk: a concurrent write on the other side -&gt; conflict to reconcile (LWW / CRDT)</span></code></pre>
 
 <h3>Consistency models (strongest &rarr; weakest)</h3>
 <table>
@@ -24229,6 +24345,11 @@ partition, you can have both.</p>
 <tr><td><strong>Monotonic reads</strong></td><td>you never see time go backwards on successive reads.</td></tr>
 <tr><td><strong>Eventual</strong></td><td>if writes stop, all replicas converge&hellip; eventually. Reads may be stale/out of order meanwhile.</td></tr>
 </table>
+<pre><code><span class="c">// What each model rules out for the same history: write x=1, then write x=2</span>
+<span class="c">// linearizable : after the x=2 write returns, NO client can read x=1</span>
+<span class="c">// read-your-writes: the writer never reads x=1 again; another client still might</span>
+<span class="c">// monotonic reads : if you saw x=2 once, you never see x=1 afterwards</span>
+<span class="c">// eventual        : any client may read 1, 2, or (briefly) nothing, in any order</span></code></pre>
 
 <h3>Quorums (Dynamo-style)</h3>
 <p>N replicas; a write waits for <code>W</code> acks, a read queries <code>R</code>. If
@@ -24236,11 +24357,27 @@ partition, you can have both.</p>
 operation: <code>W=N, R=1</code> (fast reads, slow/fragile writes), <code>W=1, R=N</code> (fast writes,
 slow reads), <code>W=R=(N/2)+1</code> (balanced, majority). Doesn't give linearizability on its own
 (needs read-repair + anti-entropy, and it's still subject to concurrent-write conflicts).</p>
+<pre><code><span class="c"># N = 3 replicas</span>
+W = <span class="n">2</span>; R = <span class="n">2</span>          <span class="c"># W + R = 4 &gt; N = 3  -&gt; read set and write set always overlap</span>
+                    <span class="c"># =&gt; a quorum read sees the latest quorum-acked write</span>
+
+W = <span class="n">1</span>; R = <span class="n">1</span>          <span class="c"># W + R = 2 &lt; 3  -&gt; fast, but a read can miss the newest write (stale)</span>
+W = <span class="n">3</span>; R = <span class="n">1</span>          <span class="c"># fast reads, but any one replica down -&gt; writes fail</span></code></pre>
 
 <h3>Choosing</h3>
 <p>Money, inventory, uniqueness &rarr; strong/linearizable (accept lower availability / higher latency).
 Feeds, likes, presence, analytics &rarr; eventual is fine (favour availability + latency). Often
 <em>per-operation</em>: strong for "reserve seat", eventual for "show seat map".</p>
+<pre><code><span class="c"># Same feature, two consistency choices &mdash; pick per operation, not per system</span>
+
+<span class="c"># show the seat map: stale-by-a-few-seconds is fine -&gt; eventual, hit a replica/cache</span>
+GET  /events/42/seats        -&gt; replica read, Cache-Control: max-age=5
+
+<span class="c"># reserve seat 12A: double-booking is unacceptable -&gt; linearizable</span>
+POST /events/42/seats/12A/hold
+   BEGIN; SELECT ... FOR UPDATE;                 <span class="c"># serialise on the leader</span>
+   INSERT hold WHERE NOT EXISTS(active hold);    <span class="c"># unique/conditional -&gt; exactly one winner</span>
+   COMMIT;</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -24324,6 +24461,17 @@ Spanner doesn't beat CAP &mdash; it's a <strong>CP</strong> system that chooses 
 <li><strong>Retry &amp; durability</strong> &mdash; a failed message is redelivered; survives a consumer crash.</li>
 <li><strong>Fan-out</strong> &mdash; one event, many independent consumers (pub/sub).</li>
 </ul>
+<pre><code><span class="c"># Synchronous: the request blocks on slow work (email + thumbnail + index)</span>
+<span class="k">def</span> upload(file):
+    save(file)
+    send_email(...)          <span class="c"># 400 ms</span>
+    make_thumbnail(file)     <span class="c"># 900 ms   -&gt; user waits ~1.4 s, fails if SMTP is down</span>
+
+<span class="c"># Decoupled: enqueue and return; workers do the rest at their own pace</span>
+<span class="k">def</span> upload(file):
+    save(file)
+    queue.publish(<span class="s">"media.uploaded"</span>, {<span class="s">"id"</span>: file.id})   <span class="c"># ~2 ms, returns 202</span>
+    <span class="c"># email-worker and thumb-worker consume independently; a spike just grows the backlog</span></code></pre>
 
 <h3>Delivery semantics</h3>
 <table>
@@ -24332,12 +24480,27 @@ Spanner doesn't beat CAP &mdash; it's a <strong>CP</strong> system that chooses 
 <tr><td><strong>At-least-once</strong></td><td>redelivered until acked &mdash; may be <em>duplicated</em>. The common default; consumers must be idempotent.</td></tr>
 <tr><td><strong>Exactly-once</strong></td><td>no loss, no dup. Only achievable end-to-end with idempotency/dedup or transactional processing (Kafka EOS within Kafka). Usually you engineer "effectively once" = at-least-once + idempotent consumer.</td></tr>
 </table>
+<pre><code><span class="c"># "Effectively once" = at-least-once delivery + an idempotent consumer</span>
+<span class="k">def</span> handle(msg):
+    <span class="k">if</span> seen.add(msg.id) <span class="k">is</span> <span class="k">False</span>:      <span class="c"># msg.id already processed</span>
+        <span class="k">return</span> ack(msg)                  <span class="c"># dedup: no-op, just ack the redelivery</span>
+    <span class="k">with</span> db.transaction():
+        apply(msg)                       <span class="c"># the actual effect</span>
+        db.insert(<span class="s">"processed"</span>, msg.id)     <span class="c"># commit effect + marker atomically</span>
+    ack(msg)                             <span class="c"># crash before ack -&gt; redelivered -&gt; marker catches it</span></code></pre>
 
 <h3>Ordering</h3>
 <p>Global order is expensive/unavailable at scale. Most systems give <strong>per-partition (per-key)
 order</strong>: messages with the same key (userId, orderId) go to the same partition and are
 processed in order; different keys are unordered relative to each other. Choose the partition key
 so "must be ordered together" data shares one.</p>
+<pre><code><span class="c">// Kafka: the partition key decides ordering scope</span>
+producer.send(<span class="k">new</span> ProducerRecord&lt;&gt;(<span class="s">"orders"</span>, order.userId(), event));
+<span class="c">// all events for one userId -&gt; same partition -&gt; consumed in send order</span>
+<span class="c">// different users -&gt; different partitions -&gt; processed in parallel, no cross-user order</span>
+
+<span class="c">// WRONG key if per-user order matters:</span>
+producer.send(<span class="k">new</span> ProducerRecord&lt;&gt;(<span class="s">"orders"</span>, event.uuid(), event)); <span class="c">// scatters a user's events</span></code></pre>
 
 <h3>Failure handling</h3>
 <ul>
@@ -24346,12 +24509,31 @@ so "must be ordered together" data shares one.</p>
 <li><strong>Poison message</strong>: one message that always fails can stall a partition &mdash; DLQ it.</li>
 <li><strong>Consumer lag</strong> is the key metric: rising lag = consumers can't keep up (scale out, or the messages are too expensive).</li>
 </ul>
+<pre><code><span class="k">def</span> consume(msg):
+    <span class="k">try</span>:
+        process(msg)
+        msg.ack()
+    <span class="k">except</span> TransientError:
+        delay = min(<span class="n">2</span> ** msg.attempts + random.random(), <span class="n">300</span>)  <span class="c"># exp backoff + jitter, cap 5 min</span>
+        msg.retry(after=delay)
+        <span class="k">if</span> msg.attempts &gt;= <span class="n">5</span>:
+            dlq.send(msg)          <span class="c"># poison message -&gt; set aside, inspect/replay later</span>
+            msg.ack()             <span class="c"># stop it blocking the partition</span></code></pre>
 
 <h3>Kafka vs SQS/RabbitMQ (rough)</h3>
 <p><strong>Kafka</strong>: partitioned log, high throughput, replayable (offset-based), ordered per partition,
 consumers track their own offset. Great for event streaming, CDC, fan-out to many consumer
 groups. <strong>SQS / RabbitMQ</strong>: classic queue, per-message ack/delete, easy autoscaling of
 consumers, built-in DLQ/visibility timeout, no replay. Good for task/job processing.</p>
+<pre><code><span class="c"># Kafka: offset-based, REPLAYABLE, order per partition, N consumer groups read independently</span>
+$ kafka-consumer-groups --describe --group billing
+  TOPIC   PARTITION  CURRENT-OFFSET  LOG-END-OFFSET  LAG
+  orders  0          1_240_991       1_241_005       <span class="n">14</span>
+$ ... --reset-offsets --to-datetime 2026-08-29T00:00:00 --execute   <span class="c"># reprocess a day</span>
+
+<span class="c"># SQS: no offsets &mdash; per-message delete + visibility timeout, no replay</span>
+aws sqs receive-message --queue-url $Q --visibility-timeout <span class="n">30</span>   <span class="c"># hidden 30 s while you work</span>
+aws sqs delete-message  --queue-url $Q --receipt-handle $RH        <span class="c"># ack = delete</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -24431,6 +24613,16 @@ Kafka EOS has three pieces: (1) <strong>Idempotent producer</strong> &mdash; eac
 <p>A client sends "charge $50", gets no response (timeout, dropped connection), and retries. Did the
 first one succeed? The client can't tell. Without protection you double-charge. <strong>Idempotency</strong>
 means processing the same logical request N times has the same effect as once.</p>
+<pre><code><span class="c"># NOT idempotent: each retry moves money again</span>
+<span class="k">def</span> charge(acct, amount):
+    acct.balance -= amount          <span class="c"># timeout -&gt; client retries -&gt; charged twice</span>
+
+<span class="c"># idempotent: the operation carries its own identity, second apply is a no-op</span>
+<span class="k">def</span> charge(acct, amount, op_id):
+    <span class="k">if</span> db.exists(<span class="s">"charges"</span>, op_id): <span class="k">return</span> db.get(<span class="s">"charges"</span>, op_id)
+    <span class="k">with</span> db.transaction():
+        acct.balance -= amount
+        db.insert(<span class="s">"charges"</span>, op_id, result)</code></pre>
 
 <h3>Idempotency keys</h3>
 <ul>
@@ -24438,6 +24630,16 @@ means processing the same logical request N times has the same effect as once.</
 <li>The server, on first receipt, records <code>(key &rarr; in-progress)</code> atomically; does the work; stores <code>(key &rarr; result)</code>. A retry with the same key returns the stored result without re-doing the work. A retry while still in-progress waits or returns 409.</li>
 <li>Keys expire after a window (24h) &mdash; long enough to cover retries, short enough to bound storage.</li>
 </ul>
+<pre><code>POST /v1/payments HTTP/1.1
+Idempotency-Key: 9f1c2b7a-...-e4       <span class="c"># client generates once, reuses on every retry</span>
+{ "amount": 5000, "currency": "usd" }
+
+<span class="c"># server:</span>
+row = db.upsert_if_absent(<span class="s">"idem"</span>, key, status=<span class="s">"IN_PROGRESS"</span>)   <span class="c"># atomic claim</span>
+<span class="k">if</span> row.existed:
+    <span class="k">return</span> row.status == <span class="s">"DONE"</span> ? <span class="n">200</span>(row.response) : <span class="n">409</span>(<span class="s">"in progress"</span>)
+resp = do_charge(...)
+db.update(<span class="s">"idem"</span>, key, status=<span class="s">"DONE"</span>, response=resp, ttl=<span class="s">"24h"</span>)</code></pre>
 
 <h3>Naturally idempotent designs</h3>
 <ul>
@@ -24446,6 +24648,13 @@ means processing the same logical request N times has the same effect as once.</
 <li>Conditional writes: <code>UPDATE ... WHERE version = N</code> (optimistic concurrency &mdash; a stale retry does nothing).</li>
 <li>Dedup table: record processed request/message ids, skip seen ones (do the insert + the effect in one transaction).</li>
 </ul>
+<pre><code><span class="c">-- SET, not increment: replaying the same message lands on the same value</span>
+<span class="k">UPDATE</span> inventory <span class="k">SET</span> qty = <span class="n">7</span>          <span class="k">WHERE</span> sku = <span class="s">'A1'</span>;   <span class="c">-- idempotent</span>
+<span class="k">UPDATE</span> inventory <span class="k">SET</span> qty = qty - <span class="n">1</span>     <span class="k">WHERE</span> sku = <span class="s">'A1'</span>;   <span class="c">-- NOT: double-apply undercounts</span>
+
+<span class="c">-- optimistic concurrency: a stale retry updates 0 rows and is safely ignored</span>
+<span class="k">UPDATE</span> orders <span class="k">SET</span> status=<span class="s">'PAID'</span>, version=version+<span class="n">1</span>
+<span class="k">WHERE</span> id=<span class="n">42</span> <span class="k">AND</span> version=<span class="n">3</span>;                        <span class="c">-- rowcount 0 =&gt; someone already advanced it</span></code></pre>
 
 <h3>Retry hygiene</h3>
 <ul>
@@ -24454,12 +24663,29 @@ means processing the same logical request N times has the same effect as once.</
 <li>Only retry idempotent / safe operations, or ones with an idempotency key. Retry on transient errors (timeout, 503, connection reset), not on 400/401/404.</li>
 <li><strong>Circuit breaker</strong>: after a failure threshold, stop calling a dead dependency for a cool-off, then probe.</li>
 </ul>
+<pre><code><span class="k">def</span> call_with_retry(fn):
+    <span class="k">for</span> attempt <span class="k">in</span> range(<span class="n">4</span>):                       <span class="c"># capped attempts</span>
+        <span class="k">try</span>:
+            <span class="k">return</span> fn()
+        <span class="k">except</span> (Timeout, Http503, ConnReset):    <span class="c"># transient only; NOT 400/404</span>
+            <span class="k">if</span> attempt == <span class="n">3</span>: <span class="k">raise</span>
+            sleep(min(<span class="n">2</span> ** attempt, <span class="n">10</span>) * (<span class="n">0.5</span> + random.random()))  <span class="c"># backoff + jitter</span>
+<span class="c"># retry at ONE layer only &mdash; client OR gateway OR service, never all three (2*2*2 = 8x load)</span></code></pre>
 
 <h3>The transactional outbox</h3>
 <p>To reliably "update the DB <em>and</em> publish an event", write the event to an <code>outbox</code> table
 in the same transaction as the business change; a separate poller/CDC publishes outbox rows to
 the queue and marks them sent. No lost events, no phantom events, and the queue consumer's
 idempotency handles the at-least-once delivery.</p>
+<pre><code><span class="c">-- One transaction: business change + the event to publish</span>
+<span class="k">BEGIN</span>;
+  <span class="k">INSERT INTO</span> orders(id, status) <span class="k">VALUES</span>(<span class="n">42</span>, <span class="s">'PLACED'</span>);
+  <span class="k">INSERT INTO</span> outbox(id, topic, payload, sent)
+         <span class="k">VALUES</span>(gen_uuid(), <span class="s">'order.placed'</span>, <span class="s">'{"id":42}'</span>, <span class="k">false</span>);
+<span class="k">COMMIT</span>;                       <span class="c">-- both commit or neither: no DB/queue divergence</span>
+
+<span class="c"># poller: SELECT * FROM outbox WHERE NOT sent -> publish -> UPDATE sent = true</span>
+<span class="c"># crash between publish and update -> re-published -> consumer dedup absorbs it</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -24542,6 +24768,13 @@ Transactional outbox: in the same DB transaction as the update, insert a row int
 <li><strong>Presigned URLs</strong>: your backend signs a time-limited URL granting <code>PUT</code> (upload) or <code>GET</code> (download) directly to the object store &mdash; the large bytes never transit your servers. The client uploads straight to S3; your API just issues the URL and later records the metadata.</li>
 <li>Lifecycle rules: auto-transition old objects to colder/cheaper tiers, expire after N days.</li>
 </ul>
+<pre><code><span class="c"># Direct-to-S3 upload: the bytes never touch your API</span>
+<span class="c"># 1) client asks your backend for a signed PUT</span>
+url = s3.generate_presigned_url(<span class="s">"put_object"</span>,
+        Params={<span class="s">"Bucket"</span>: <span class="s">"uploads"</span>, <span class="s">"Key"</span>: f<span class="s">"u/{uid}/{uuid4()}.jpg"</span>},
+        ExpiresIn=<span class="n">900</span>)                         <span class="c"># 15-min window</span>
+<span class="c"># 2) client: curl -X PUT --upload-file photo.jpg "$url"   -> straight to S3</span>
+<span class="c"># 3) S3 event -> your service records {key, owner, size} in the DB</span></code></pre>
 
 <h3>CDN</h3>
 <ul>
@@ -24551,12 +24784,28 @@ Transactional outbox: in the same DB transaction as the update, insert a row int
 <li><strong>Purge / invalidation</strong>: explicit for content that changes at a stable URL; surrogate keys / cache tags let one call purge all related objects. Purges take seconds&ndash;minutes to propagate.</li>
 <li>Also provides: TLS termination, compression, HTTP/2-3, DDoS absorption, edge compute, and <strong>origin shielding</strong> (one mid-tier cache all edges fetch through, so the origin sees ~1 request per object).</li>
 </ul>
+<pre><code><span class="c"># Immutable asset: cache "forever", new build = new URL (no purge call ever)</span>
+GET /static/app.9f3a2c.js
+Cache-Control: public, max-age=<span class="n">31536000</span>, immutable
+
+<span class="c"># Mutable at a stable URL: revalidate + tag it so one call purges related objects</span>
+GET /api/products/42
+Cache-Control: public, s-maxage=<span class="n">60</span>, stale-while-revalidate=<span class="n">300</span>
+Surrogate-Key: product-42 catalog          <span class="c"># later: PURGE by key "product-42"</span></code></pre>
 
 <h3>Hot objects &amp; media</h3>
 <p>A viral video: the CDN absorbs it (that's the point). Within the CDN, popular objects are
 replicated across a PoP's servers. For live video / large VOD: chunked adaptive streaming
 (HLS/DASH) &mdash; segments are just cacheable static files; the manifest lists bitrates and the
 player picks based on bandwidth.</p>
+<pre><code><span class="c"># HLS manifest: bitrate ladder; player picks a rendition, then fetches .ts segments</span>
+#EXTM3U
+#EXT-X-STREAM-INF:BANDWIDTH=800000,RESOLUTION=640x360
+360p/index.m3u8
+#EXT-X-STREAM-INF:BANDWIDTH=2800000,RESOLUTION=1280x720
+720p/index.m3u8
+<span class="c"># 720p/index.m3u8 -> seg_000.ts, seg_001.ts, ...  each a plain cacheable file</span>
+<span class="c"># a viral view spike = many GETs for the SAME segment keys -> CDN serves from edge, origin idle</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -24639,6 +24888,11 @@ The core tension: a CDN caches responses by URL and serves them to anyone who re
 <li>Scale example: 100M new links/month &asymp; ~40 writes/s; read:write ~100:1 &rarr; ~4000 redirects/s (peak &times;several). 5 years &rarr; ~6B links.</li>
 <li>Storage: ~6B &times; (short code + long URL + metadata) &asymp; a few hundred GB &mdash; fits comfortably; the challenge is <em>redirect latency and QPS</em>, not size.</li>
 </ul>
+<pre><code><span class="c"># Back-of-envelope that drives the design</span>
+writes  = 100e6 / (30 * 86400)     <span class="c"># ~39 links/sec  -&gt; trivial</span>
+reads   = writes * 100             <span class="c"># ~3,900 redirects/sec avg, ~x5 peak ~20k/sec</span>
+rows_5y = 100e6 * 12 * 5           <span class="c"># 6e9 rows x ~500 B ~= 3 TB  -&gt; one sharded table is fine</span>
+<span class="c"># conclusion: optimise the READ path (cache + cheap KV), not storage</span></code></pre>
 
 <h3>Short code generation</h3>
 <table>
@@ -24648,6 +24902,17 @@ The core tension: a CDN caches responses by URL and serves them to anyone who re
 <tr><td>Hash(url) &rarr; take first N chars</td><td>same URL &rarr; same code (dedup for free), but collisions between <em>different</em> URLs must be handled (append a disambiguator).</td></tr>
 <tr><td>Offline key pool</td><td>a "key generation service" pre-generates unique codes into a table; the write path just pops one. Removes collision handling from the hot path.</td></tr>
 </table>
+<pre><code>ALPHABET = <span class="s">"0123..9a..zA..Z"</span>          <span class="c"># 62 symbols</span>
+<span class="k">def</span> encode(n):                        <span class="c"># base62 of a unique counter id</span>
+    s = <span class="s">""</span>
+    <span class="k">while</span> n:
+        n, r = divmod(n, <span class="n">62</span>)
+        s = ALPHABET[r] + s
+    <span class="k">return</span> s.rjust(<span class="n">7</span>, <span class="s">"0"</span>)              <span class="c"># id 1_000_000_000 -&gt; "15ftgG"</span>
+
+<span class="c"># random alternative: unguessable, no global counter</span>
+code = <span class="s">""</span>.join(secrets.choice(ALPHABET) <span class="k">for</span> _ <span class="k">in</span> range(<span class="n">7</span>))
+db.execute(<span class="s">"INSERT INTO urls(code,url) VALUES(%s,%s)"</span>, code, url)  <span class="c"># UNIQUE(code) -&gt; retry on dup</span></code></pre>
 
 <h3>Storage &amp; the read path</h3>
 <ul>
@@ -24655,6 +24920,14 @@ The core tension: a CDN caches responses by URL and serves them to anyone who re
 <li><strong>Redirect path must be fast</strong>: <code>GET /{code}</code> &rarr; cache lookup (Redis / in-process LRU) &rarr; on miss, DB &rarr; cache it &rarr; return <code>301</code> (permanent, cacheable by browsers/proxies) or <code>302</code> (if you need to count every click / change targets). Most links are hit hard right after creation then decay &mdash; caching gives &gt;95% hit rate.</li>
 <li>Put the whole thing behind a CDN for the redirect (301s are cacheable) if analytics allow.</li>
 </ul>
+<pre><code><span class="k">def</span> redirect(code):
+    url = local_lru.get(code) <span class="k">or</span> redis.get(code)     <span class="c"># &gt;95% stop here</span>
+    <span class="k">if</span> url <span class="k">is</span> <span class="k">None</span>:
+        url = db.get(<span class="s">"urls"</span>, code)                     <span class="c"># cold miss</span>
+        <span class="k">if</span> url <span class="k">is</span> <span class="k">None</span>: <span class="k">return</span> <span class="n">404</span>
+        redis.set(code, url, ex=<span class="n">86400</span>)
+    queue.publish(<span class="s">"click"</span>, {<span class="s">"code"</span>: code, <span class="s">"ts"</span>: now(), <span class="s">"ref"</span>: req.referrer})  <span class="c"># async, off critical path</span>
+    <span class="k">return</span> <span class="n">302</span>, {<span class="s">"Location"</span>: url}                   <span class="c"># 302: every hit reaches us so we can count</span></code></pre>
 
 <h3>Analytics &amp; extras</h3>
 <p>Emit a click event (code, timestamp, referrer, geo from IP, UA) to a queue &rarr; async aggregation
@@ -24662,6 +24935,15 @@ The core tension: a CDN caches responses by URL and serves them to anyone who re
 Custom aliases: reserve the code with a unique constraint; validate charset/length; block
 profanity/reserved words. Expiry: store <code>expires_at</code>, check on read, lazy-delete +
 background sweep.</p>
+<pre><code><span class="c">-- click events land raw, then a job rolls them up (never query raw on the hot path)</span>
+<span class="k">INSERT INTO</span> clicks_raw(code, ts, country, referrer) <span class="k">VALUES</span> (...);
+
+<span class="c">-- hourly aggregation job</span>
+<span class="k">INSERT INTO</span> clicks_daily (code, day, country, n)
+<span class="k">SELECT</span> code, date_trunc(<span class="s">'day'</span>, ts), country, <span class="k">count</span>(*)
+<span class="k">FROM</span> clicks_raw <span class="k">WHERE</span> ts &gt;= now() - interval <span class="s">'1 hour'</span>
+<span class="k">GROUP BY</span> <span class="n">1</span>, <span class="n">2</span>, <span class="n">3</span>
+<span class="k">ON CONFLICT</span> (code, day, country) <span class="k">DO UPDATE SET</span> n = clicks_daily.n + <span class="k">EXCLUDED</span>.n;</code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
@@ -24748,6 +25030,18 @@ Shorteners hide the destination, which attackers love. Layered defences: (1) <st
 <p><strong>Hybrid</strong> (what Twitter/Instagram do): push for normal accounts; for a followed
 <em>celebrity</em>, don't fan out &mdash; pull their recent posts at read time and merge into the
 pushed feed. Threshold on follower count.</p>
+<pre><code><span class="k">def</span> on_post(author, post_id):
+    <span class="k">if</span> author.follower_count &lt; <span class="n">100_000</span>:            <span class="c"># normal: fan-out on write</span>
+        <span class="k">for</span> f <span class="k">in</span> followers(author):
+            redis.lpush(f<span class="s">"feed:{f}"</span>, post_id)
+            redis.ltrim(f<span class="s">"feed:{f}"</span>, <span class="n">0</span>, <span class="n">799</span>)
+    <span class="c"># else celebrity: write nothing; readers pull at load time</span>
+
+<span class="k">def</span> load_feed(user):
+    ids = redis.lrange(f<span class="s">"feed:{user}"</span>, <span class="n">0</span>, <span class="n">49</span>)          <span class="c"># pushed part, O(1)</span>
+    <span class="k">for</span> c <span class="k">in</span> celebrities_followed(user):
+        ids += recent_posts(c, <span class="n">10</span>)                     <span class="c"># pull + merge</span>
+    <span class="k">return</span> hydrate(sorted(set(ids), reverse=<span class="k">True</span>)[:<span class="n">50</span>])</code></pre>
 
 <h3>Feed storage &amp; ranking</h3>
 <ul>
@@ -24755,6 +25049,12 @@ pushed feed. Threshold on follower count.</p>
 <li>Chronological is simplest; ranked feeds add a scoring service (recency, affinity, engagement prediction) applied at read time over a candidate set.</li>
 <li>New follower / cache miss: regenerate the timeline by pulling from followees (the pull path is the fallback).</li>
 </ul>
+<pre><code><span class="c"># Ranked feed: cheap candidate gen, then score a bounded set at read time</span>
+candidates = pushed_ids(user, <span class="n">300</span>) + pulled_ids(user, <span class="n">100</span>)   <span class="c"># ~400 items max</span>
+<span class="k">def</span> score(p):
+    age_h = (now() - p.ts) / <span class="n">3600</span>
+    <span class="k">return</span> (<span class="n">1</span> / (age_h + <span class="n">2</span>)) * affinity(user, p.author) * predicted_engagement(user, p)
+feed = sorted(candidates, key=score, reverse=<span class="k">True</span>)[:<span class="n">50</span>]   <span class="c"># only 400 scored, not the whole graph</span></code></pre>
 
 <h3>Chat: the core question is delivery</h3>
 <ul>
@@ -24765,6 +25065,14 @@ pushed feed. Threshold on follower count.</p>
 <li><strong>Group chat</strong>: fan out the message to each member's delivery path; large groups have the same celebrity-style amplification problem &mdash; cap group size or pull for huge groups.</li>
 <li><strong>Presence</strong>: heartbeats to the gateway; publish online/offline transitions; presence is best-effort and eventually consistent.</li>
 </ul>
+<pre><code><span class="c"># send a message: server assigns the order, routes to the recipient's gateway node</span>
+<span class="k">def</span> send(conv_id, sender, body):
+    seq = redis.incr(f<span class="s">"conv:{conv_id}:seq"</span>)          <span class="c"># server sequence, NOT client clock</span>
+    db.insert(<span class="s">"messages"</span>, conv_id=conv_id, seq=seq, sender=sender, body=body)
+    <span class="k">for</span> uid <span class="k">in</span> members(conv_id):
+        node = redis.get(f<span class="s">"conn:{uid}"</span>)             <span class="c"># userId -&gt; gateway node</span>
+        <span class="k">if</span> node: rpc(node).push(uid, {<span class="s">"conv"</span>: conv_id, <span class="s">"seq"</span>: seq, <span class="s">"body"</span>: body})
+        <span class="k">else</span>:    push_notification(uid)          <span class="c"># offline -&gt; stored; client syncs from last seq</span></code></pre>
 </div></details>
 
 <details class="section"><summary>Cheat Sheet</summary><div class="section-body">
