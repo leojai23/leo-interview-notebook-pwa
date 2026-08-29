@@ -8,6 +8,7 @@
 <link rel="icon" href="icon-192.png">
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Leo Interview Preparation Notebook</title>
+<script>try{var _t=localStorage.getItem('leo-theme');if(_t&&_t!=='day')document.documentElement.setAttribute('data-theme',_t);}catch(e){}</script>
 <style>
 :root {
   --bg: #f4f5f8;
@@ -21,38 +22,63 @@
   --code-bg: #ecedf5;
   --shadow: 0 1px 3px rgba(31,34,48,0.09);
   --maxw: 960px;
+  --mix-base: #ffffff;        /* colour the accent tints blend toward (page tint) */
+  --header-bg: #2f3457;       /* header bar; overridden per reading theme */
+}
+
+/* ---- reading themes (set on <html data-theme=...>; "day" = no attribute) ---- */
+:root[data-theme="sepia"] {
+  --bg: #ece3d2; --bg-panel: #f6efe0; --text: #3a3226; --text-soft: #6b5f4c;
+  --border: #d9ccb4; --shadow: 0 1px 3px rgba(80,60,30,0.14);
+  --mix-base: #f6efe0; --header-bg: #4a4132;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #15171c; --bg-panel: #1e2128; --text: #dfe3ec; --text-soft: #99a1b3;
+  --border: #31353f; --shadow: 0 1px 3px rgba(0,0,0,0.45);
+  --mix-base: #1e2128; --header-bg: #20242c;
+}
+:root[data-theme="night"] {
+  color-scheme: dark;
+  --bg: #0f0d0b; --bg-panel: #17140f; --text: #c9b89c; --text-soft: #8f8069;
+  --border: #2a251d; --shadow: 0 1px 3px rgba(0,0,0,0.55);
+  --mix-base: #17140f; --header-bg: #1c1712;
 }
 /* per-skill palettes: each sets only --accent; the soft tints are derived below */
-.theme-home        { --accent:#2f3457; }
-.theme-c           { --accent:#2f5b8a; }
-.theme-shell       { --accent:#2f6b4a; }
-.theme-cpp         { --accent:#5a3f8f; }
-.theme-oops        { --accent:#1f6f74; }
-.theme-ds          { --accent:#9a5a1e; }
-.theme-algo        { --accent:#a3384c; }
-.theme-db          { --accent:#3f4fa0; }
-.theme-net         { --accent:#1c6f8c; }
-.theme-os          { --accent:#6a3fa0; }
-.theme-concurrency { --accent:#b05a20; }
-.theme-linux       { --accent:#45526e; }
-.theme-arch        { --accent:#7a5230; }
-.theme-build       { --accent:#5f6a2c; }
-.theme-lld         { --accent:#93466e; }
-.theme-sysd        { --accent:#2b6b57; }
-.theme-git         { --accent:#b34733; }
-.theme-grafana     { --accent:#c9741c; }
-.theme-splunk      { --accent:#5c8a2f; }
-.theme-monitor     { --accent:#4a5db0; }
-.theme-jira        { --accent:#2058c8; }
-.theme-cdn         { --accent:#0f7a86; }
-.theme-containers  { --accent:#2a8f8f; }
-.theme-docker      { --accent:#1d74c4; }
-.theme-k8s         { --accent:#3f5ecc; }
+.theme-home        { --accent-raw:#2f3457; }
+.theme-c           { --accent-raw:#2f5b8a; }
+.theme-shell       { --accent-raw:#2f6b4a; }
+.theme-cpp         { --accent-raw:#5a3f8f; }
+.theme-oops        { --accent-raw:#1f6f74; }
+.theme-ds          { --accent-raw:#9a5a1e; }
+.theme-algo        { --accent-raw:#a3384c; }
+.theme-db          { --accent-raw:#3f4fa0; }
+.theme-net         { --accent-raw:#1c6f8c; }
+.theme-os          { --accent-raw:#6a3fa0; }
+.theme-concurrency { --accent-raw:#b05a20; }
+.theme-linux       { --accent-raw:#45526e; }
+.theme-arch        { --accent-raw:#7a5230; }
+.theme-build       { --accent-raw:#5f6a2c; }
+.theme-lld         { --accent-raw:#93466e; }
+.theme-sysd        { --accent-raw:#2b6b57; }
+.theme-git         { --accent-raw:#b34733; }
+.theme-grafana     { --accent-raw:#c9741c; }
+.theme-splunk      { --accent-raw:#5c8a2f; }
+.theme-monitor     { --accent-raw:#4a5db0; }
+.theme-jira        { --accent-raw:#2058c8; }
+.theme-cdn         { --accent-raw:#0f7a86; }
+.theme-containers  { --accent-raw:#2a8f8f; }
+.theme-docker      { --accent-raw:#1d74c4; }
+.theme-k8s         { --accent-raw:#3f5ecc; }
 [class*="theme-"] {
-  --accent-soft: color-mix(in srgb, var(--accent) 20%, #ffffff);
-  --highlight:   color-mix(in srgb, var(--accent) 9%, #ffffff);
-  --code-bg:     color-mix(in srgb, var(--accent) 9%, #ffffff);
+  --accent:      var(--accent-raw);
+  --accent-soft: color-mix(in srgb, var(--accent) 20%, var(--mix-base));
+  --highlight:   color-mix(in srgb, var(--accent) 9%, var(--mix-base));
+  --code-bg:     color-mix(in srgb, var(--accent) 9%, var(--mix-base));
 }
+/* dark reading themes: lift the per-skill accent so headings/links stay legible */
+:root[data-theme="dark"] [class*="theme-"] { --accent: color-mix(in srgb, var(--accent-raw) 45%, #dfe6f5); }
+:root[data-theme="night"] [class*="theme-"] { --accent: color-mix(in srgb, var(--accent-raw) 42%, #e9d7b2); }
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -70,7 +96,7 @@ a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
 .site-header {
-  background: var(--accent);
+  background: var(--header-bg);
   color: #fff;
   padding: 1rem 1.25rem;
 }
@@ -84,6 +110,21 @@ a:hover { text-decoration: underline; }
   gap: 0.4rem 1rem;
 }
 .site-header a { color: #fff; }
+.theme-picker { margin-left: auto; display: flex; align-self: center; }
+.theme-picker button {
+  font: 600 0.7rem/1 Arial, sans-serif; letter-spacing: 0.04em; text-transform: uppercase;
+  color: #fff; background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.28); border-right-width: 0;
+  padding: 0.34rem 0.55rem; cursor: pointer;
+}
+.theme-picker button:first-child { border-radius: 4px 0 0 4px; }
+.theme-picker button:last-child  { border-radius: 0 4px 4px 0; border-right-width: 1px; }
+.theme-picker button:hover { background: rgba(255,255,255,0.22); }
+.theme-picker button[aria-pressed="true"] { background: #fff; color: var(--header-bg); border-color: #fff; }
+@media (max-width: 560px) {
+  .theme-picker { width: 100%; margin-left: 0; }
+  .theme-picker button { flex: 1; padding: 0.32rem 0.3rem; font-size: 0.62rem; }
+}
 .site-header .brand { font-size: 1.1rem; font-weight: bold; letter-spacing: 0.02em; }
 @media (max-width: 480px) { .site-header .brand { font-size: 1rem; } .crumbs { font-size: 0.78rem; } }
 .site-header .brand .sub { display:block; font-family: Arial, sans-serif; font-size: 0.72rem; font-weight: normal; opacity: 0.82; margin-top: 0.12rem; }
@@ -131,7 +172,7 @@ p { margin: 0.7rem 0; }
 .skill-grid a.skill-link { font-size: 1.08rem; font-weight: bold; }
 .skill-grid p { margin: 0.35rem 0 0; font-size: 0.88rem; color: var(--text-soft); font-family: Arial, sans-serif; }
 .skill-grid .status { display: inline-block; margin-top: 0.6rem; font-size: 0.72rem; font-family: Arial, sans-serif; font-weight: bold; text-transform: uppercase; letter-spacing: 0.05em; padding: 0.16rem 0.5rem; border-radius: 999px; background: var(--accent-soft); color: var(--accent); }
-.skill-grid .status.soon { background: #ececf0; color: var(--text-soft); }
+.skill-grid .status.soon { background: var(--highlight); color: var(--text-soft); }
 .group-h { font-family: Arial, sans-serif; font-size: 0.8rem; font-weight: bold; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-soft); border: none; padding: 0; margin: 2.2rem 0 0.5rem; }
 #home-groups > .group-h:first-child { margin-top: 1.4rem; }
 .planned-list { margin: 1rem 0 0; padding-left: 1.35rem; }
@@ -309,6 +350,12 @@ footer.site-footer { text-align: center; font-family: Arial, sans-serif; font-si
   <div class="header-inner">
     <a href="#/" class="brand">Leo Interview Preparation Notebook<span class="sub">Languages &middot; CS fundamentals &middot; Systems &middot; Design</span></a>
     <nav class="crumbs" id="crumbs"></nav>
+    <div class="theme-picker" id="theme-picker" role="group" aria-label="Reading theme">
+      <button type="button" data-set-theme="day">Day</button>
+      <button type="button" data-set-theme="sepia">Sepia</button>
+      <button type="button" data-set-theme="dark">Dark</button>
+      <button type="button" data-set-theme="night">Night</button>
+    </div>
   </div>
 </header>
 
@@ -35130,7 +35177,7 @@ $ docker run --cpus 1.5 --memory 512m --memory-swap 512m \
 
 # Kubernetes -> cgroup files
 resources:
-  requests: { cpu: "250m", memory: "256Mi" }   # 250m -> cpu.weight ~= 25 ; scheduling
+  requests: { cpu: "250m", memory: "256Mi" }   # 250m -> cpu.weight ~= 10 ; scheduling
   limits:   { cpu: "1",    memory: "512Mi" }    # -> cpu.max "100000 100000", memory.max 512Mi</pre>
 
 <h3>OOM and CPU throttling &mdash; the two things that bite</h3>
@@ -40454,6 +40501,41 @@ Revert the commit in git (<code>git revert</code>); the GitOps controller reconc
 
   window.addEventListener("hashchange", router);
   router();
+
+  // ---- reading-theme switcher (Day / Sepia / Dark / Night) ----
+  (function themeSwitcher() {
+    var KEY = "leo-theme";
+    var VALID = ["day", "sepia", "dark", "night"];
+    var META = { day: "#2f3457", sepia: "#4a4132", dark: "#20242c", night: "#1c1712" };
+    var metaEl = document.querySelector('meta[name="theme-color"]');
+    var picker = document.getElementById("theme-picker");
+
+    function apply(t) {
+      if (VALID.indexOf(t) < 0) t = "day";
+      if (t === "day") document.documentElement.removeAttribute("data-theme");
+      else document.documentElement.setAttribute("data-theme", t);
+      if (metaEl) metaEl.setAttribute("content", META[t]);
+      if (picker) {
+        var btns = picker.getElementsByTagName("button");
+        for (var i = 0; i < btns.length; i++) {
+          btns[i].setAttribute("aria-pressed", btns[i].getAttribute("data-set-theme") === t ? "true" : "false");
+        }
+      }
+      try { localStorage.setItem(KEY, t); } catch (e) {}
+    }
+
+    var saved = "day";
+    try { saved = localStorage.getItem(KEY) || "day"; } catch (e) {}
+    apply(saved);
+
+    if (picker) {
+      picker.addEventListener("click", function (e) {
+        var b = e.target;
+        while (b && b !== picker && !b.getAttribute("data-set-theme")) b = b.parentNode;
+        if (b && b.getAttribute("data-set-theme")) apply(b.getAttribute("data-set-theme"));
+      });
+    }
+  })();
 
   // ---- service worker (no-op on file://) ----
   if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
