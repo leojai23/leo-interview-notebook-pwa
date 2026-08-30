@@ -24749,6 +24749,8 @@ Several effects: (1) <strong>Frequency throttling</strong> &mdash; on many Intel
 <p class="subtitle">Four stages from <code>.c</code> to executable &mdash; and what you can inspect at each.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Turning source into a runnable program is four distinct stages, and knowing which one an error comes from is half of debugging a build. This page covers <strong>preprocess</strong> (<code>-E</code>: expand <code>#include</code>/<code>#define</code>/<code>#if</code> into one text stream), <strong>compile</strong> (<code>-S</code>: that stream &rarr; assembly for one translation unit), <strong>assemble</strong> (<code>-c</code>: assembly &rarr; a binary <code>.o</code> object file with machine code and a symbol table), and <strong>link</strong> (combine objects and libraries, resolve symbols, lay out sections &rarr; an executable or shared library). It covers what each stage consumes and emits and the flags that stop the driver after each.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 96" role="img" aria-labelledby="d-bdpipe-t">
 <title id="d-bdpipe-t">The four build stages and what each consumes and emits</title>
@@ -24878,6 +24880,26 @@ Headers are a <em>textual</em> mechanism: every <code>#include</code> pastes the
 <p class="subtitle">What "one file compiles independently" really means, and the One Definition Rule.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The compiler never sees your project &mdash; it sees one <strong>translation unit</strong> at a time: a single <code>.c</code>/<code>.cpp</code> file with every <code>#include</code> textually pasted in and all preprocessing done. This page covers that model and its consequences: why headers need <strong>include guards</strong> / <code>#pragma once</code>, the <strong>One Definition Rule</strong> (a type/inline/template may be defined once <em>per</em> TU and all definitions must match; a non-inline function/global exactly once <em>across</em> the program), <strong>forward declarations</strong> to break include cycles and cut build time, and why a macro defined in one TU is invisible to another.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 155" role="img" aria-labelledby="d-buildtu-t">
+<title id="d-buildtu-t">The preprocessor flattens one .cpp plus all its includes into a single translation unit the compiler sees</title>
+<rect class="d-box" x="14" y="26" width="80" height="16"/><text class="d-t-mono d-t-sm" x="20" y="38">main.cpp</text>
+<rect class="d-box-soft" x="14" y="46" width="80" height="16"/><text class="d-t-mono d-t-sm" x="20" y="58">#include a.h</text>
+<rect class="d-box-soft" x="14" y="66" width="80" height="16"/><text class="d-t-mono d-t-sm" x="20" y="78">#include &lt;vector&gt;</text>
+<path class="d-line" d="M98 50 L150 60" marker-end="url(#buildtu-ah)"/><text class="d-t-sm" x="102" y="44">preprocess</text>
+<rect class="d-box-alt" x="154" y="30" width="150" height="70" rx="4"/><text class="d-t-b" x="229" y="46" text-anchor="middle">one translation unit</text>
+<text class="d-t-sm" x="160" y="62">a.h + vector pasted in,</text><text class="d-t-sm" x="160" y="76">macros expanded, #if resolved</text><text class="d-t-sm" x="160" y="90">= a single text stream</text>
+<path class="d-line" d="M304 65 L356 65" marker-end="url(#buildtu-ah)"/><text class="d-t-sm" x="308" y="58">compile</text>
+<rect class="d-box" x="360" y="55" width="90" height="20"/><text class="d-t-mono d-t-sm" x="405" y="69" text-anchor="middle">main.o</text>
+<defs><marker id="buildtu-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="122">Each .cpp &rarr; its own TU &rarr; its own .o. A header with no guard included twice in one TU = duplicate definitions (ODR).</text>
+<text class="d-t-sm" x="14" y="142">A <tspan class="d-t-mono">#define</tspan> or <tspan class="d-t-mono">static</tspan> in one TU is invisible to the others &mdash; they are compiled completely separately, then linked.</text>
+</svg>
+<figcaption>The compiler&rsquo;s unit of work is the fully-preprocessed single file. Include guards, the ODR, and forward declarations all follow from this.</figcaption>
+</figure>
+
+
 <h3>Translation unit</h3>
 <p>A single <code>.c</code>/<code>.cpp</code> plus every header it <code>#include</code>s (recursively), after
 preprocessing. The compiler sees exactly this and nothing else &mdash; it has no knowledge of other
@@ -25012,6 +25034,8 @@ The standard grants them an explicit ODR exemption (multiple definitions allowed
 <p class="subtitle">What's inside a <code>.o</code>, and the vocabulary linker errors use.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">An <strong>object file</strong> (ELF <code>.o</code>) is machine code plus bookkeeping the linker needs: <strong>sections</strong> (<code>.text</code> code, <code>.data</code> initialised globals, <code>.bss</code> zero-initialised, <code>.rodata</code>), a <strong>symbol table</strong> (each name marked <em>defined</em> here or <em>undefined</em> / needed-from-elsewhere, plus <em>weak</em> vs strong), and <strong>relocations</strong> &mdash; placeholders saying &ldquo;patch this address once you know where the symbol lands.&rdquo; This page covers reading them with <code>nm</code>, <code>objdump</code>, and <code>readelf</code>, and how they explain &ldquo;undefined reference&rdquo; and &ldquo;multiple definition&rdquo; errors.</p>
+
 <h3>ELF sections</h3>
 <table>
 <tr><th>Section</th><th>Holds</th></tr>
@@ -25142,6 +25166,8 @@ Normally the compiler puts all functions from a TU into one <code>.text</code> s
 <p class="subtitle">Why link order matters, and how "undefined reference" and "multiple definition" happen.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>linker</strong> takes many object files and libraries and produces one image: it <strong>resolves</strong> every undefined symbol to exactly one definition, concatenates and lays out sections, applies relocations, and writes the headers the loader needs. This page covers symbol resolution rules, why <strong>link order matters</strong> for static libraries (a <code>.a</code> is scanned once, left to right, pulling in only objects that satisfy a currently-undefined symbol) and the <code>--start-group</code> fix for cycles, one-definition-rule violations at link time, <strong>LTO</strong>, and <code>--gc-sections</code> for dead-code stripping.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 118" role="img" aria-labelledby="d-bdlink-t">
 <title id="d-bdlink-t">The linker matches undefined symbols to definitions, left to right</title>
@@ -25288,6 +25314,8 @@ Single-pass left-to-right resolution keeps a running "undefined set". Say <code>
 <p class="subtitle">Copy the code in at build time, or load it at run time &mdash; and everything that follows.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A library is bundled into your program either at build time or at run time, and the choice affects size, deployment, updates, and performance. This page covers <strong>static</strong> libraries (<code>.a</code> &mdash; an archive of <code>.o</code> files; matching objects are copied into the executable, no runtime dependency) vs <strong>shared</strong> libraries (<code>.so</code>/<code>.dll</code> &mdash; loaded and linked at program start, shared between processes, updatable independently), <strong>position-independent code</strong> and the PLT/GOT, <code>soname</code> versioning and symbol versioning, <code>dlopen</code> for explicit runtime loading, and symbol interposition / <code>LD_PRELOAD</code>.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 110" role="img" aria-labelledby="d-bdsd-t">
 <title id="d-bdsd-t">Static linking copies library code in; dynamic resolves it at load time</title>
@@ -25437,6 +25465,8 @@ Instead of bumping the SONAME every time a function's behaviour changes, glibc a
 <p class="subtitle">The contract two separately-compiled pieces of code must agree on to call each other.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>ABI</strong> (Application Binary Interface) is the set of machine-level contracts that let separately-compiled code interoperate: how arguments are passed (registers vs stack, the calling convention), how structs are laid out, how names are encoded in symbols. This page covers C++ <strong>name mangling</strong> (why <code>void f(int)</code> and <code>void f(double)</code> become distinct symbols, and why you get demangling tools), <code>extern &quot;C&quot;</code> to opt a declaration out of mangling for C interop, what constitutes an <strong>ABI break</strong> (adding a virtual, reordering members, changing an inline), and library ABI versioning strategies.</p>
+
 <h3>What an ABI covers</h3>
 <ul>
 <li><strong>Calling convention</strong>: which registers/stack slots pass arguments and return values, who cleans up, caller- vs callee-saved registers, stack alignment.</li>
@@ -25563,6 +25593,25 @@ For <code>void f(){ static Heavy h(args); ... }</code>, C++11 requires <code>h</
 <p class="subtitle">A dependency graph + timestamps &mdash; the model under every build system.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>make</strong> builds a <strong>dependency graph</strong> of files and rebuilds a target only when a prerequisite is newer than it &mdash; the original incremental build tool. This page covers rules (<code>target: prereqs</code> + recipe), how <strong>timestamps</strong> drive the decision, <code>.PHONY</code> for non-file targets, automatically generating <strong>header dependencies</strong> (<code>-MMD -MP</code>) so editing a header rebuilds the right objects, parallel builds with <code>-j</code> and why missing deps cause race bugs there, pattern rules and automatic variables, and why <strong>recursive make</strong> is considered harmful.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-buildmk-t">
+<title id="d-buildmk-t">make walks the dependency DAG and rebuilds a node only if a prerequisite is newer than the target</title>
+<rect class="d-box-alt" x="220" y="18" width="80" height="18"/><text class="d-t-mono d-t-sm" x="260" y="31" text-anchor="middle">app</text>
+<rect class="d-box" x="120" y="60" width="80" height="18"/><text class="d-t-mono d-t-sm" x="160" y="73" text-anchor="middle">main.o</text>
+<rect class="d-box" x="320" y="60" width="80" height="18"/><text class="d-t-mono d-t-sm" x="360" y="73" text-anchor="middle">util.o</text>
+<rect class="d-box-soft" x="60" y="104" width="80" height="16"/><text class="d-t-mono d-t-sm" x="100" y="116" text-anchor="middle">main.c</text>
+<rect class="d-box-soft" x="160" y="104" width="80" height="16"/><text class="d-t-mono d-t-sm" x="200" y="116" text-anchor="middle">util.h</text>
+<rect class="d-box-soft" x="320" y="104" width="80" height="16"/><text class="d-t-mono d-t-sm" x="360" y="116" text-anchor="middle">util.c</text>
+<path class="d-line-soft" d="M240 36 L170 60"/><path class="d-line-soft" d="M280 36 L360 60"/>
+<path class="d-line-soft" d="M150 78 L100 104"/><path class="d-line-soft" d="M170 78 L200 104"/><path class="d-line-soft" d="M360 78 L360 104"/>
+<text class="d-t-accent" x="14" y="140">edit util.h &rarr; util.h newer than main.o &rarr; rebuild main.o &rarr; now newer than app &rarr; relink app.  util.o untouched.</text>
+<text class="d-t-sm" x="14" y="156">Missing a prereq (forgot util.h) &rarr; stale build. Under <tspan class="d-t-mono">-j</tspan> a missing edge &rarr; race / nondeterministic failure. Use <tspan class="d-t-mono">-MMD -MP</tspan> auto-deps.</text>
+</svg>
+<figcaption><code>make</code>&rsquo;s whole model is a file DAG plus mtime comparison. Its correctness depends entirely on the dependency edges you declared being complete.</figcaption>
+</figure>
+
+
 <h3>The core model</h3>
 <pre><code>target: prereq1 prereq2      <span class="c"># target depends on these</span>
 &lt;TAB&gt; recipe                 <span class="c"># shell commands to (re)build target</span></code></pre>
@@ -25707,6 +25756,27 @@ mtime is a proxy for "did the input change" that's wrong in many ways: <code>git
 <p class="subtitle">A meta-build system: describe targets and their requirements; it generates the real build.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>CMake</strong> is a build-system <em>generator</em>: you describe your project once in <code>CMakeLists.txt</code> and it emits native build files (Makefiles, Ninja, Visual Studio, Xcode). This page covers the modern <strong>target-centric</strong> model &mdash; a target (library/executable) carries its own include dirs, compile options, and link dependencies, propagated to consumers via <strong><code>PUBLIC</code></strong> / <strong><code>PRIVATE</code></strong> / <strong><code>INTERFACE</code></strong> &mdash; plus generators, <code>find_package</code> and imported targets, strictly out-of-source builds, <code>CMakePresets.json</code>, and why old-style <code>include_directories</code>/global-flag CMake causes trouble.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-buildcm-t">
+<title id="d-buildcm-t">CMake generates a native build; a target's PUBLIC requirements propagate to consumers, PRIVATE do not</title>
+<rect class="d-box" x="14" y="20" width="130" height="18"/><text class="d-t-mono d-t-sm" x="20" y="33">CMakeLists.txt</text>
+<path class="d-line" d="M144 29 L184 29" marker-end="url(#buildcm-ah)"/><text class="d-t-sm" x="148" y="22">configure</text>
+<rect class="d-box-soft" x="188" y="20" width="120" height="18"/><text class="d-t-sm" x="248" y="33" text-anchor="middle">Ninja / Makefiles</text>
+<path class="d-line" d="M308 29 L348 29" marker-end="url(#buildcm-ah)"/><text class="d-t-sm" x="352" y="33">build</text>
+<rect class="d-box-alt" x="14" y="62" width="110" height="50" rx="4"/><text class="d-t-b" x="69" y="78" text-anchor="middle">target mylib</text>
+<text class="d-t-sm" x="20" y="92">PUBLIC  include/</text>
+<text class="d-t-sm" x="20" y="105">PRIVATE src/, fmt(priv)</text>
+<rect class="d-box-alt" x="200" y="62" width="110" height="50" rx="4"/><text class="d-t-b" x="255" y="78" text-anchor="middle">target app</text>
+<text class="d-t-sm" x="206" y="95">links mylib &rarr; gets</text><text class="d-t-sm" x="206" y="108">include/ automatically</text>
+<path class="d-line" d="M124 87 L198 87" marker-end="url(#buildcm-ah)"/><text class="d-t-sm" x="128" y="80">PUBLIC only</text>
+<defs><marker id="buildcm-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="134"><tspan class="d-t-mono">PRIVATE</tspan> = build me only &middot; <tspan class="d-t-mono">PUBLIC</tspan> = me + consumers (it&rsquo;s in my headers) &middot; <tspan class="d-t-mono">INTERFACE</tspan> = consumers only (header-only lib).</text>
+</svg>
+<figcaption>Modern CMake attaches include dirs, defines and link deps to <em>targets</em>; linking a target automatically pulls its <code>PUBLIC</code>/<code>INTERFACE</code> requirements &mdash; no manual path juggling.</figcaption>
+</figure>
+
+
 <h3>Model: targets carry their requirements</h3>
 <pre><code>add_library(mylib src/a.cpp src/b.cpp)
 target_include_directories(mylib PUBLIC  include
@@ -25737,6 +25807,28 @@ cmake --install build --prefix /opt/app</code></pre>
 <li><strong>Generators</strong>: Ninja (fast, recommended), Unix Makefiles, Visual Studio, Xcode.</li>
 <li><strong><code>find_package(Foo)</code></strong> locates dependencies (config-mode preferred, providing imported targets like <code>Foo::Foo</code>). <code>FetchContent</code> / vcpkg / Conan for fetching deps.</li>
 <li><strong>Presets</strong> (<code>CMakePresets.json</code>) capture configure/build/test option sets so everyone (and CI) builds identically.</li>
+</ul>
+
+<h3>Structuring a multi-target project</h3>
+<pre><code>project(myapp CXX)
+add_subdirectory(libs/core)      <span class="c"># each dir has its own CMakeLists.txt</span>
+add_subdirectory(libs/net)
+add_subdirectory(app)
+enable_testing()
+add_subdirectory(tests)</code></pre>
+<ul>
+<li><strong>One <code>CMakeLists.txt</code> per component</strong>, each defining its own targets; the top file just sets project-wide policy (C++ standard, <code>CMAKE_EXPORT_COMPILE_COMMANDS ON</code> for tooling) and pulls in subdirectories.</li>
+<li>Reference other components by <strong>target name</strong> (<code>target_link_libraries(app PRIVATE core net)</code>), never by relative path &mdash; the usage requirements carry the include dirs.</li>
+<li>Namespace your own libraries with an <code>ALIAS</code> (<code>add_library(myproj::core ALIAS core)</code>) so in-tree use matches how an installed consumer would write it.</li>
+</ul>
+
+<h3>Common pitfalls</h3>
+<ul>
+<li><strong>Empty <code>CMAKE_BUILD_TYPE</code></strong> on single-config generators means <em>no</em> optimisation and no <code>-g</code> &mdash; not &ldquo;Release&rdquo;. Set a default in the top-level file if not provided.</li>
+<li><strong>Globbing sources</strong> (<code>file(GLOB ...)</code>) &mdash; CMake won&rsquo;t notice a new file until you re-run configure; list sources explicitly or use <code>CONFIGURE_DEPENDS</code> (still imperfect).</li>
+<li><strong>Modifying <code>CMAKE_CXX_FLAGS</code></strong> globally instead of per-target options &mdash; leaks into every target including third-party subdirectories.</li>
+<li><strong>Testing without <code>enable_testing()</code></strong> in the top-level file &mdash; <code>ctest</code> then finds nothing.</li>
+<li><strong>Not marking a dependency <code>PUBLIC</code></strong> when it appears in your public headers &mdash; your library builds, consumers don&rsquo;t.</li>
 </ul>
 </div></details>
 
@@ -25814,6 +25906,8 @@ Each target stores its requirements as properties: <code>INTERFACE_INCLUDE_DIREC
 <p class="subtitle">What <code>-O2</code>, <code>-g</code>, <code>NDEBUG</code>, and friends actually change.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Compiler flags decide the trade-off between debuggability, speed, size, and portability of the output. This page covers the <strong>optimisation levels</strong> (<code>-O0</code> predictable and fast-to-build, <code>-O1/-O2</code> the usual release choice, <code>-O3</code> aggressive/sometimes larger, <code>-Os</code>/<code>-Oz</code> for size), <strong><code>-g</code></strong> debug info (independent of <code>-O</code>), <code>NDEBUG</code> and <code>assert</code>, <strong><code>-march</code>/<code>-mtune</code></strong> and the portability cost of targeting your build machine&rsquo;s CPU, <strong>LTO</strong>, <code>-fno-omit-frame-pointer</code> for profileability, and stripping symbols for release.</p>
+
 <h3>Optimisation levels</h3>
 <table>
 <tr><th>Flag</th><th>Effect</th></tr>
@@ -25949,6 +26043,8 @@ Compilers guess which branches are hot, which functions to inline, and how to la
 <p class="subtitle">Catching memory bugs, UB, and races automatically &mdash; before they reach production.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the automated checks that catch bugs a compile doesn&rsquo;t. <strong>Sanitizers</strong> are compiler instrumentation that trap undefined or unsafe behaviour at runtime: <strong>ASan</strong> (buffer overflows, use-after-free), <strong>UBSan</strong> (signed overflow, bad shifts, misaligned access), <strong>TSan</strong> (data races), <strong>MSan</strong> (reads of uninitialised memory) &mdash; run your test suite under them. It also covers <strong>static analysis</strong> (<code>clang-tidy</code>, <code>cppcheck</code>, the compiler&rsquo;s own <code>-Wall -Wextra</code>), treating <strong>warnings as errors</strong> as a CI gate, and reproducible-build hygiene.</p>
+
 <h3>The sanitizers (compile-time instrumentation)</h3>
 <table>
 <tr><th>Flag</th><th>Catches</th><th>Overhead</th></tr>
