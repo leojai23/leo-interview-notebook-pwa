@@ -15532,6 +15532,8 @@ NoSQL stores are <em>schema-flexible at write time</em> (the engine won't reject
 <p class="subtitle">A mental map for "which layer is this problem at?"</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>network model</strong> is a layered decomposition of &ldquo;get bytes from this app to that app across the world&rdquo; into independent stages &mdash; physical signalling, framing, addressing/routing, end-to-end delivery, application semantics &mdash; each depending only on the layer below. This page covers the seven-layer <strong>OSI</strong> reference model and the four-layer <strong>TCP/IP</strong> model that&rsquo;s what the internet actually runs, <strong>encapsulation</strong> (each layer wraps the one above in its own header), and <em>why</em> layering matters: you can swap Wi-Fi for Ethernet, or HTTP/1 for HTTP/3, without touching the other layers.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 148" role="img" aria-labelledby="d-ntmod-t">
 <title id="d-ntmod-t">Each layer wraps the one above in its own header (encapsulation)</title>
@@ -15660,6 +15662,124 @@ Saltzer, Reed &amp; Clark (1984): a function (reliability, security, ordering) s
 </section>
 <!-- /TOPIC:net:models -->
 
+<!-- TOPIC:net:ethernet-arp -->
+<section class="view topic" id="v-net-ethernet-arp" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>Ethernet, MAC Addresses, Switching &amp; ARP</h1>
+<p class="subtitle">IP says &ldquo;send to 10.0.0.5&rdquo;; the layer below actually puts the bits on the wire to the right nearby machine.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This is the layer directly beneath IP on a local network &mdash; the part that turns &ldquo;deliver to that host&rdquo; into &ldquo;send this frame out this port to that MAC address&rdquo;. It has three pieces: <strong>Ethernet</strong> (framing and 48-bit MAC addressing), the <strong>switch</strong> (a device that learns which MAC is on which port and forwards accordingly), and <strong>ARP</strong> (broadcast to discover the MAC that owns a given IP on the local subnet). This page covers the Ethernet frame and MTU, how switches learn and flood, collision vs broadcast domains and VLANs, the ARP request/reply cycle and cache, gratuitous ARP, and ARP spoofing.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-net-l2-t">
+<title id="d-net-l2-t">ARP: broadcast "who has 10.0.0.5?", unicast reply; the switch learns each MAC from the source of frames it sees</title>
+<rect class="d-box" x="14" y="24" width="90" height="26" rx="4"/><text class="d-t-sm" x="59" y="41" text-anchor="middle">Host A</text><text class="d-t-mono" x="14" y="64">10.0.0.1  aa:aa</text>
+<rect class="d-box-alt" x="210" y="20" width="100" height="34" rx="4"/><text class="d-t-b" x="260" y="34" text-anchor="middle">switch</text><text class="d-t-sm" x="260" y="48" text-anchor="middle">MAC table</text>
+<rect class="d-box" x="416" y="24" width="90" height="26" rx="4"/><text class="d-t-sm" x="461" y="41" text-anchor="middle">Host B</text><text class="d-t-mono" x="416" y="64">10.0.0.5  bb:bb</text>
+<path class="d-line" d="M104 32 L208 32" marker-end="url(#net-l2-ah)"/><text class="d-t-sm" x="110" y="24">1 ARP req &rarr; ff:ff (flooded to all ports)</text>
+<path class="d-line" d="M310 40 L414 40" marker-end="url(#net-l2-ah)"/><text class="d-t-accent" x="316" y="34">2 reply: 10.0.0.5 is bb:bb (unicast)</text>
+<text class="d-t-sm" x="14" y="96">The switch <tspan class="d-t-b">learns</tspan>: &ldquo;aa:aa on port 1&rdquo; from the request, &ldquo;bb:bb on port 3&rdquo; from the reply.</text>
+<text class="d-t-sm" x="14" y="114">Now A caches 10.0.0.5&rarr;bb:bb, and the switch forwards A&harr;B frames only between ports 1 and 3.</text>
+<text class="d-t-sm" x="14" y="136">Different subnet? ARP resolves the <tspan class="d-t-b">default gateway&rsquo;s</tspan> MAC, not the destination&rsquo;s &mdash; the router takes it from there.</text>
+<text class="d-t-sm" x="14" y="158">Unknown/broadcast dest &rarr; the switch <tspan class="d-t-b">floods</tspan> to every other port; every port = its own collision domain, all share one broadcast domain (or per-VLAN).</text>
+<defs><marker id="net-l2-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Switches make forwarding decisions on the destination <em>MAC</em>; routers on the destination <em>IP</em>. ARP is the glue that lets an IP host find the MAC to put in the frame.</figcaption>
+</figure>
+
+<h3>The Ethernet frame</h3>
+<pre><code>| dest MAC (6) | src MAC (6) | EtherType (2) | payload (46-1500) | FCS/CRC (4) |
+  EtherType:  0x0800 IPv4   0x0806 ARP   0x86DD IPv6   0x8100 802.1Q VLAN tag</code></pre>
+<ul>
+<li><strong>MAC address</strong>: 48 bits, written <code>aa:bb:cc:dd:ee:ff</code>. Top 24 bits = OUI (vendor). <code>ff:ff:ff:ff:ff:ff</code> = broadcast; the low bit of the first byte set = multicast.</li>
+<li><strong>MTU</strong>: the standard Ethernet payload maximum is <strong>1500 bytes</strong>. <strong>Jumbo frames</strong> (9000) improve throughput but every device on the path (and both hosts) must agree, or frames are silently dropped. Tunnels (VPN, VXLAN) eat into the 1500 &mdash; a classic cause of &ldquo;small requests work, large ones hang&rdquo;.</li>
+</ul>
+
+<h3>Switches: learn, then forward or flood</h3>
+<p><strong>How.</strong> A switch keeps a <strong>MAC address table</strong> (CAM): <code>MAC &rarr; port</code>. For every incoming frame: (1) <strong>learn</strong> &mdash; record &ldquo;source MAC is on this port&rdquo;; (2) <strong>forward</strong> &mdash; if the destination MAC is in the table, send the frame out <em>only</em> that port; if it&rsquo;s unknown, or a broadcast/multicast, <strong>flood</strong> it out every port except the one it came in on. Table entries age out (typically ~5 minutes).</p>
+<ul>
+<li>Each switch port is its own <strong>collision domain</strong> (full-duplex, no collisions on modern switched Ethernet) &mdash; this is why a switch beats a hub.</li>
+<li>All ports form one <strong>broadcast domain</strong>: an ARP request or DHCP discover reaches every host. Too many hosts &rarr; broadcast noise.</li>
+<li><strong>VLAN</strong> (802.1Q): partitions one switch into several isolated broadcast domains, each tagged with a 12-bit VLAN ID. A <strong>trunk</strong> port carries multiple tagged VLANs between switches; an <strong>access</strong> port belongs to one (untagged). Traffic <em>between</em> VLANs must be routed (L3 switch or router).</li>
+<li><strong>Spanning Tree Protocol</strong> disables redundant links to prevent a loop (a broadcast storm), re-enabling them if the active path fails.</li>
+</ul>
+
+<h3>ARP: IP &rarr; MAC on the local subnet</h3>
+<p><strong>How.</strong> Host A wants to send an IP packet to <code>10.0.0.5</code> on its own subnet. It checks its ARP cache; on a miss it <strong>broadcasts</strong> an ARP request (&ldquo;who has 10.0.0.5? tell 10.0.0.1&rdquo;) to <code>ff:ff:ff:ff:ff:ff</code>. The host that owns <code>10.0.0.5</code> <strong>unicasts</strong> a reply (&ldquo;10.0.0.5 is at bb:bb:bb:bb:bb:bb&rdquo;). A caches the mapping (with a timeout) and sends the frame.</p>
+<pre><code>$ ip neigh        # (or: arp -a)
+10.0.0.5 dev eth0 lladdr bb:bb:bb:bb:bb:bb REACHABLE
+10.0.0.1 dev eth0 lladdr 11:22:33:44:55:66 STALE          # the default gateway
+
+# For a destination OUTSIDE the subnet, the host ARPs for the GATEWAY's MAC and
+# sends the frame there with the gateway MAC but the remote host's IP.</code></pre>
+<ul>
+<li><strong>Gratuitous ARP</strong>: a host announces its own IP&rarr;MAC mapping unsolicited &mdash; used on failover / virtual-IP takeover so every neighbour updates its cache to the new MAC.</li>
+<li>IPv6 replaces ARP with <strong>Neighbor Discovery</strong> (NDP) over ICMPv6, plus SLAAC for autoconfiguration.</li>
+</ul>
+
+<h3>ARP spoofing</h3>
+<p><strong>What / why it works.</strong> ARP has no authentication &mdash; any host can send a reply claiming any IP. An attacker on the LAN sends forged replies mapping the <em>gateway&rsquo;s</em> IP to the <em>attacker&rsquo;s</em> MAC (and the victim&rsquo;s IP to the attacker&rsquo;s MAC), so both sides send their traffic through the attacker &mdash; a man-in-the-middle who can read, modify, or drop it. <strong>Defences</strong>: <strong>Dynamic ARP Inspection</strong> (the switch validates ARP against a DHCP-snooping table of legitimate IP&harr;MAC&harr;port bindings and drops mismatches), static ARP entries for critical hosts, 802.1X port authentication, and encrypting the traffic (TLS) so MITM yields ciphertext.</p>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Ethernet frame</strong>: dest MAC | src MAC | EtherType (0x0800 IPv4, 0x0806 ARP, 0x8100 VLAN) | payload (46&ndash;1500, the MTU) | FCS. MAC = 48-bit; <code>ff:ff:ff:ff:ff:ff</code> = broadcast.</li>
+<li><strong>Switch</strong>: learns <code>src MAC &rarr; in-port</code>; forwards to the known port, else <strong>floods</strong>. Entries age out (~5 min). Each port = own collision domain; all ports = one broadcast domain.</li>
+<li><strong>VLAN</strong> (802.1Q tag): splits a switch into isolated broadcast domains; trunk ports carry many, inter-VLAN needs a router. STP kills loops.</li>
+<li><strong>ARP</strong>: broadcast &ldquo;who has IP X?&rdquo; &rarr; unicast &ldquo;X is at MAC Y&rdquo;; cache with timeout (<code>ip neigh</code> / <code>arp -a</code>). Off-subnet &rarr; ARP for the <strong>gateway&rsquo;s</strong> MAC.</li>
+<li><strong>Gratuitous ARP</strong>: unsolicited announcement &mdash; used on failover/VIP takeover. IPv6 uses NDP instead.</li>
+<li><strong>ARP spoofing</strong>: no auth &rarr; forged replies &rarr; MITM. Defend with Dynamic ARP Inspection (+ DHCP snooping), static entries, 802.1X, and TLS on the traffic.</li>
+<li><strong>MTU</strong>: 1500 standard; jumbo (9000) must match end to end; tunnels shrink the usable MTU &rarr; large packets hang if PMTUD is broken.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>How does a switch decide where to send a frame, and what does it do when it doesn&rsquo;t know?</dt>
+<dd>It looks up the destination MAC in its address table (learned from the source MAC of every frame it has seen, with the port it arrived on). If the destination MAC is known, it forwards the frame out only that one port. If the destination MAC is unknown &mdash; or it&rsquo;s the broadcast address or a multicast &mdash; it <strong>floods</strong> the frame out every port except the ingress port. The destination host replies, the switch learns its MAC and port from that reply, and subsequent frames between the two are forwarded directly rather than flooded.</dd>
+<dt>You&rsquo;re on 10.0.0.1/24 and send a packet to 8.8.8.8. Whose MAC address goes in the Ethernet frame?</dt>
+<dd>The <strong>default gateway&rsquo;s</strong> MAC. Your host compares the destination IP against its own subnet mask, sees that 8.8.8.8 is not local, and therefore sends the frame to the gateway: it ARPs for the gateway&rsquo;s IP (e.g. 10.0.0.254) to get that MAC, and builds a frame with <code>dest MAC = gateway&rsquo;s MAC</code> but <code>dest IP = 8.8.8.8</code>. The gateway (a router) receives the frame because it&rsquo;s addressed to its MAC, strips the Ethernet header, looks at the IP, and forwards toward 8.8.8.8 &mdash; rewriting the L2 addresses at each hop while the L3 addresses stay the same (unless NAT).</dd>
+<dt>What is a broadcast domain, and how does a VLAN change it?</dt>
+<dd>A broadcast domain is the set of devices that will all receive a broadcast frame (like an ARP request or DHCP discover). By default, every port on a switch &mdash; and every switch chained together &mdash; is in one broadcast domain, so broadcast traffic reaches everyone and grows with the number of hosts. A <strong>VLAN</strong> logically partitions the switch(es) into several separate broadcast domains identified by a tag: a broadcast in VLAN 10 reaches only VLAN 10 ports. This limits broadcast noise, isolates traffic for security/segmentation, and lets one physical switch serve multiple logical networks. Communication between VLANs must go through a router or L3 switch, which is also where you enforce policy between them.</dd>
+<dt>What is gratuitous ARP used for?</dt>
+<dd>A host sends an ARP announcement for its <em>own</em> IP without anyone asking, so that all neighbours (and the switch) refresh their caches. The main use is <strong>IP failover</strong>: when a virtual IP moves from a failed server to a standby (or from one NIC to another), the new owner has a different MAC. It broadcasts a gratuitous ARP so that every host&rsquo;s ARP cache is updated immediately to the new MAC, rather than sending traffic to the dead server until the stale entry times out. It&rsquo;s also used to detect IP address conflicts at startup (&ldquo;does anyone already have this IP?&rdquo;).</dd>
+<dt>Why is ARP spoofing possible, and how do you defend against it?</dt>
+<dd>ARP has no authentication or state: a host accepts any ARP reply and updates its cache, even for a request it never sent, and even overwriting an existing entry. So an attacker on the same LAN can send forged replies binding the gateway&rsquo;s IP (and the victim&rsquo;s IP) to the attacker&rsquo;s MAC, inserting themselves as a man-in-the-middle for the traffic between the victim and the rest of the network. Defences, layered: (1) <strong>Dynamic ARP Inspection</strong> on managed switches &mdash; the switch keeps a table of legitimate IP&harr;MAC&harr;port bindings (from DHCP snooping or static config) and drops ARP packets that don&rsquo;t match; (2) static ARP entries for critical hosts like the gateway; (3) <strong>802.1X</strong> so only authenticated devices can join the port at all; (4) segment the network so an attacker is in a small VLAN; (5) assume the LAN can be MITM&rsquo;d and use <strong>TLS</strong> everywhere so intercepted traffic is just ciphertext. Host-based ARP-watch tools can alert on a MAC suddenly changing for a known IP.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does ARP resolve, and how?</summary><div class="answer-box">
+It maps an IP address to the MAC address that owns it on the local subnet. The requester broadcasts &ldquo;who has IP X?&rdquo; and the owner replies (unicast) &ldquo;X is at MAC Y&rdquo;; the answer is cached with a timeout.
+</div></details>
+<details class="answer-reveal"><summary>What&rsquo;s the difference between a switch and a router in one sentence each?</summary><div class="answer-box">
+A <strong>switch</strong> forwards Ethernet frames within a LAN based on destination MAC address (layer 2). A <strong>router</strong> forwards IP packets between networks based on destination IP address and a routing table (layer 3), rewriting the layer-2 addresses at each hop.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A user reports that small web pages load fine but large file downloads and some HTTPS sites hang after the connection is established. What layer-2/MTU issue would you suspect?</summary><div class="answer-box">
+A <strong>path MTU / fragmentation black hole</strong>, usually from a tunnel (VPN, PPPoE, VXLAN, an overlay) somewhere on the path that reduces the usable MTU below 1500, combined with <strong>Path MTU Discovery being broken</strong> because a firewall drops the ICMP &ldquo;fragmentation needed&rdquo; messages. Small responses fit in one small packet and work. Large transfers send full-size 1500-byte packets with the Don&rsquo;t-Fragment bit set (as TCP does); a device on the path can&rsquo;t forward them and would normally send back ICMP type 3 code 4 telling the sender to use a smaller MTU &mdash; but that ICMP is filtered, so the sender keeps retransmitting the too-big packet forever and the connection stalls after the handshake. The TLS handshake often completes (small records) and then the first large record hangs, which matches &ldquo;some HTTPS sites hang.&rdquo; Diagnosis: <code>ping -M do -s 1472 host</code> (and smaller) to find the real MTU; <code>tracepath</code>; a packet capture showing retransmits of the same large segment. Fixes: allow ICMP &ldquo;fragmentation needed&rdquo; through firewalls; lower the interface MTU or use TCP <strong>MSS clamping</strong> on the tunnel/router (<code>iptables ... TCPMSS --clamp-mss-to-pmtu</code>) so both ends negotiate a segment size that fits; or enable MTU probing (<code>net.ipv4.tcp_mtu_probing</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the layer-2 architecture for a mid-size office / small datacentre: segmentation, redundancy, loop prevention, and hardening against L2 attacks.</summary><div class="answer-box">
+<strong>Segmentation with VLANs</strong>: separate broadcast domains per function &mdash; e.g. <code>employees</code>, <code>voip</code>, <code>guests</code>, <code>iot</code>, <code>servers</code>, <code>management</code>, <code>dmz</code>. Access ports assigned to one VLAN (with a voice VLAN for phones); trunk ports between switches carry the needed tagged VLANs; prune unused VLANs off each trunk. Keep the <strong>management VLAN</strong> separate and not routable from user VLANs. Inter-VLAN routing and policy on a pair of L3 switches / firewalls with default-deny ACLs between segments (guests &rarr; internet only; iot &rarr; its controllers only; users &rarr; servers on specific ports). <strong>Redundancy without loops</strong>: dual-home each access switch to two distribution switches; run <strong>MST/RSTP</strong> (fast convergence) as the safety net, but prefer a loop-free active/active design &mdash; a <strong>multi-chassis link aggregation</strong> (MLAG / vPC / stacking) so the two uplinks form one logical LAG with no blocked port and sub-second failover. On pure-STP designs, set the root bridge deterministically (low priority on the core), enable <strong>BPDU Guard</strong> + <strong>PortFast/edge</strong> on access ports (a port that receives a BPDU is err-disabled &mdash; stops a rogue switch or a loop from a mis-cabled desk), <strong>Root Guard</strong> on ports facing downstream, and <strong>Loop Guard</strong> / UDLD on fiber. <strong>L2 hardening</strong>: (1) <strong>DHCP snooping</strong> per VLAN &mdash; only the real DHCP server&rsquo;s ports are &ldquo;trusted&rdquo;; drops rogue DHCP and builds the binding table. (2) <strong>Dynamic ARP Inspection</strong> using that table &mdash; drops forged ARP (anti-MITM). (3) <strong>IP Source Guard</strong> &mdash; drops packets whose source IP/MAC doesn&rsquo;t match the binding (anti-spoofing). (4) <strong>Port security</strong> &mdash; limit MACs per access port (stops MAC flooding that would overflow the CAM table and turn the switch into a hub) and optionally pin to a known MAC. (5) <strong>802.1X</strong> (or MAB for legacy devices) so a port stays in an unauthorised/guest VLAN until the device authenticates &mdash; the strongest control; dynamic VLAN assignment from RADIUS. (6) Disable unused ports and put them in an unused VLAN; disable DTP (no dynamic trunk negotiation) and set trunk mode explicitly (prevents VLAN-hopping via switch-spoofing); set the native VLAN on trunks to an unused ID and tag it (prevents double-tagging VLAN hop). (7) Rate-limit broadcast/multicast/unknown-unicast (storm control) so a loop or flood degrades gracefully. (8) Control-plane policing on the switches; management over SSH from the management VLAN only, with AAA. <strong>Datacentre servers</strong>: NIC bonding (LACP to an MLAG pair), jumbo frames end-to-end on the storage/east-west VLANs (consistently), and keep the L2 domain small &mdash; route as close to the host as practical (L3-to-the-access / leaf-spine) so a broadcast storm or STP event can&rsquo;t take down everything. <strong>Observability</strong>: monitor CAM table utilisation, STP topology-change counts (frequent TCs = a flapping link), err-disabled ports, DAI/DHCP-snoop drop counters, and per-port broadcast rates; alert on any of them. Net: VLAN-segment by function with default-deny routing between, MLAG for loop-free redundancy with RSTP+BPDU/Root/Loop Guard as backstops, and the DHCP-snooping / DAI / IP Source Guard / port-security / 802.1X stack plus trunk hardening to close the classic L2 attack surface.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:ethernet-arp -->
+
+
 <!-- TOPIC:net:ip-routing -->
 <section class="view topic" id="v-net-ip-routing" data-skill="net">
 <div class="layout">
@@ -15669,6 +15789,8 @@ Saltzer, Reed &amp; Clark (1984): a function (reliability, security, ordering) s
 <p class="subtitle">How a packet finds its way from your laptop to a server across the world.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>IP</strong> gives every interface an address and defines how a packet is forwarded, hop by hop, toward its destination &mdash; each router looking only at the destination address and its own routing table. This page covers IPv4 and IPv6 addressing, <strong>subnets and CIDR</strong> (how a mask splits an address into network + host and how routers pick the most specific match), public vs private ranges, how a host decides &ldquo;local delivery vs send to the gateway&rdquo;, routing tables and the protocols that fill them (static, OSPF, BGP), and <strong>NAT</strong>.</p>
+
 <h3>Addresses</h3>
 <ul>
 <li><strong>IPv4</strong>: 32 bits, dotted quad (<code>192.0.2.10</code>). ~4.3B addresses &mdash; exhausted, hence NAT + IPv6.</li>
@@ -15828,6 +15950,8 @@ CGNAT puts a second NAT layer at the ISP, so many customers share one public IPv
 <p class="subtitle">How TCP turns unreliable IP into an ordered, reliable, self-throttling byte stream.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>TCP</strong> turns IP&rsquo;s unreliable, unordered packets into a reliable, ordered, flow-controlled byte stream between two endpoints. This page covers the three-way handshake and connection teardown, how sequence and acknowledgement numbers give reliability and ordering (retransmission on loss), <strong>flow control</strong> (the receive window &mdash; don&rsquo;t overrun a slow receiver), <strong>congestion control</strong> (slow start, congestion avoidance, fast recovery &mdash; don&rsquo;t overrun the network), and the small-packet optimisations (Nagle&rsquo;s algorithm, delayed ACK) and how they can interact badly.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 138" role="img" aria-labelledby="d-nttcp-t">
 <title id="d-nttcp-t">TCP three-way handshake to open, four-way to close</title>
@@ -15983,6 +16107,8 @@ TCP delivers bytes strictly in order. If segment N is lost, segments N+1, N+2&he
 <p class="subtitle">A thin wrapper over IP: ports and a checksum, nothing else &mdash; and why that's sometimes exactly right.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>UDP</strong> is the thin option: it adds ports and a checksum to IP and nothing else &mdash; no connection, no handshake, no reliability, no ordering, no congestion control. That&rsquo;s a feature when you want the lowest latency and are willing to handle loss yourself. This page covers exactly what UDP does and doesn&rsquo;t give you, when it&rsquo;s the right choice (DNS, real-time media, gaming, QUIC), how protocols build reliability and ordering back on top of it selectively, and the gotchas (fragmentation, no built-in congestion control, amplification attacks).</p>
+
 <h3>What UDP is (and isn't)</h3>
 <ul>
 <li>Adds to IP: source/destination <strong>port</strong>, length, checksum. 8-byte header (vs TCP's 20+).</li>
@@ -16112,6 +16238,8 @@ Use a proven layer rather than hand-rolling: <strong>QUIC</strong> streams (reli
 <p class="subtitle">Turning <code>api.example.com</code> into an IP &mdash; the distributed, cached lookup that precedes almost every connection.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>DNS</strong> is the distributed database that turns names like <code>example.com</code> into IP addresses (and much more). A lookup walks a hierarchy &mdash; root servers, then the TLD servers, then the domain&rsquo;s authoritative servers &mdash; usually via a caching recursive resolver that does the walking for you. This page covers the hierarchy and the recursive-vs-iterative distinction, the steps of a resolution, the common record types (A/AAAA, CNAME, MX, TXT, NS, SOA), how <strong>caching and TTLs</strong> work (and why &ldquo;DNS propagation&rdquo; is really cache expiry), and modern additions (DNSSEC, DoH/DoT, anycast).</p>
+
 <h3>The hierarchy</h3>
 <p>The namespace is a tree: root (<code>.</code>) &rarr; TLD (<code>.com</code>, <code>.org</code>, <code>.io</code>) &rarr;
 authoritative servers for a domain (<code>example.com</code>). No single server has everything;
@@ -16273,6 +16401,27 @@ When a very popular record's TTL expires, every cache miss at a busy resolver tr
 <p class="subtitle">Same semantics, three very different wire protocols &mdash; and the head-of-line problem driving the evolution.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>HTTP</strong> is the request/response protocol of the web: a client sends a method + URL + headers (+ body); the server replies with a status code + headers (+ body). The <em>semantics</em> (methods, status codes, headers, caching, content negotiation) have been stable for decades; what changed across HTTP/1.1, HTTP/2, and HTTP/3 is the <em>wire format</em> &mdash; each version attacking a different form of head-of-line blocking. This page covers the stable semantics and then what each version does differently and why (keep-alive, multiplexing, HPACK, QUIC over UDP).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 175" role="img" aria-labelledby="d-net-http-t">
+<title id="d-net-http-t">Head-of-line blocking: HTTP/1.1 serialises per connection, HTTP/2 multiplexes streams, HTTP/3 removes TCP HOL</title>
+<text class="d-t-b" x="14" y="16">HTTP/1.1: one request at a time per connection (or 6 parallel connections)</text>
+<rect class="d-box" x="14" y="22" width="60" height="16"/><rect class="d-box" x="76" y="22" width="90" height="16"/><rect class="d-box" x="168" y="22" width="50" height="16"/>
+<text class="d-t-sm" x="220" y="34">a slow response blocks the ones queued behind it</text>
+<text class="d-t-b" x="14" y="58">HTTP/2: many streams multiplexed over ONE TCP connection (HPACK header compression)</text>
+<rect class="d-box-soft" x="14" y="64" width="40" height="14"/><rect class="d-box-soft" x="58" y="64" width="40" height="14"/><rect class="d-box-soft" x="102" y="64" width="40" height="14"/><rect class="d-box-soft" x="146" y="64" width="40" height="14"/>
+<text class="d-t-sm" x="200" y="75">but one lost TCP segment stalls ALL streams (TCP head-of-line blocking)</text>
+<text class="d-t-b" x="14" y="100">HTTP/3: QUIC over UDP &mdash; independent streams, loss on one doesn&rsquo;t stall the others</text>
+<rect class="d-box-alt" x="14" y="106" width="40" height="14"/><rect class="d-box-alt" x="58" y="106" width="40" height="14"/><rect class="d-box" x="102" y="106" width="40" height="14"/><rect class="d-box-alt" x="146" y="106" width="40" height="14"/>
+<text class="d-t-sm" x="200" y="117">+ 0/1-RTT handshake (TLS 1.3 built in), connection migration across IP changes</text>
+<text class="d-t-sm" x="14" y="146">Semantics (methods, status codes, headers, caching) are identical across all three &mdash; only the wire format changed.</text>
+<text class="d-t-sm" x="14" y="166">The evolution is one long attack on head-of-line blocking: at the connection, then at TCP, then removed.</text>
+<defs><marker id="net-http-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Same request/response semantics throughout; each version changes only <em>how bytes are framed on the wire</em> to reduce the latency cost of loss and of many small resources.</figcaption>
+</figure>
+
+
 <h3>Semantics (stable across versions)</h3>
 <ul>
 <li><strong>Methods:</strong> <code>GET</code> (safe, cacheable), <code>HEAD</code>, <code>POST</code>, <code>PUT</code> (idempotent), <code>PATCH</code>, <code>DELETE</code> (idempotent), <code>OPTIONS</code>. Safe = no side effects; idempotent = repeating has the same effect as once.</li>
@@ -16397,6 +16546,8 @@ HTTP/2 headers repeat massively across requests (cookies, user-agent, accept). S
 <p class="subtitle">Authenticated, confidential, tamper-evident channels &mdash; and how the keys get agreed.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>TLS</strong> is the layer that makes HTTP into HTTPS: it authenticates the server (via a certificate signed by a trusted CA), negotiates keys, and then encrypts and integrity-protects everything. This page covers what TLS actually provides (confidentiality, integrity, authentication), the split between slow asymmetric crypto (used once, to agree a key) and fast symmetric crypto (used for the bulk data), certificates and the chain of trust, the streamlined TLS 1.3 one-round-trip handshake, and <strong>forward secrecy</strong> (a stolen server key can&rsquo;t decrypt past traffic).</p>
+
 <h3>What TLS provides</h3>
 <ul>
 <li><strong>Confidentiality</strong> &mdash; traffic is encrypted (symmetric cipher, e.g. AES-GCM, ChaCha20-Poly1305).</li>
@@ -16549,6 +16700,32 @@ CT requires CAs to publish every certificate they issue to public, append-only, 
 <p class="subtitle">The system-call sequence behind every network server.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>socket</strong> is the OS handle for one end of a network connection &mdash; the API your program uses to actually send and receive. This page covers the call sequence for both sides (<code>socket</code> / <code>bind</code> / <code>listen</code> / <code>accept</code> on the server, <code>socket</code> / <code>connect</code> on the client, then <code>read</code>/<code>write</code>), how ports and the 4-tuple identify a connection, blocking vs non-blocking I/O and why servers use <code>epoll</code>/<code>kqueue</code>, and the operational issues everyone hits (<code>TIME_WAIT</code>, <code>EADDRINUSE</code>, partial reads/writes, half-open connections).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-net-sock-t">
+<title id="d-net-sock-t">Server: socket, bind, listen, accept loop; client: socket, connect; then read/write both ways</title>
+<text class="d-t-b" x="14" y="16">server</text>
+<rect class="d-box" x="14" y="22" width="70" height="18"/><text class="d-t-sm" x="49" y="35" text-anchor="middle">socket()</text>
+<rect class="d-box" x="90" y="22" width="70" height="18"/><text class="d-t-sm" x="125" y="35" text-anchor="middle">bind()</text>
+<rect class="d-box" x="166" y="22" width="70" height="18"/><text class="d-t-sm" x="201" y="35" text-anchor="middle">listen()</text>
+<rect class="d-box-soft" x="242" y="22" width="80" height="18"/><text class="d-t-sm" x="282" y="35" text-anchor="middle">accept()</text>
+<rect class="d-box-alt" x="330" y="22" width="120" height="18"/><text class="d-t-sm" x="390" y="35" text-anchor="middle">read()/write()</text>
+<path class="d-line" d="M84 31 L88 31" marker-end="url(#net-sock-ah)"/><path class="d-line" d="M160 31 L164 31" marker-end="url(#net-sock-ah)"/><path class="d-line" d="M236 31 L240 31" marker-end="url(#net-sock-ah)"/><path class="d-line" d="M322 31 L328 31" marker-end="url(#net-sock-ah)"/>
+<text class="d-t-b" x="14" y="66">client</text>
+<rect class="d-box" x="14" y="72" width="70" height="18"/><text class="d-t-sm" x="49" y="85" text-anchor="middle">socket()</text>
+<rect class="d-box-soft" x="90" y="72" width="80" height="18"/><text class="d-t-sm" x="130" y="85" text-anchor="middle">connect()</text>
+<rect class="d-box-alt" x="176" y="72" width="120" height="18"/><text class="d-t-sm" x="236" y="85" text-anchor="middle">write()/read()</text>
+<path class="d-line" d="M84 81 L88 81" marker-end="url(#net-sock-ah)"/><path class="d-line" d="M170 81 L174 81" marker-end="url(#net-sock-ah)"/>
+<path class="d-line" d="M130 70 C 200 50, 260 45, 282 42" marker-end="url(#net-sock-ah)"/><text class="d-t-accent" x="150" y="58">connect() &rarr; 3-way handshake &rarr; accept() returns a NEW fd</text>
+<defs><marker id="net-sock-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="116">A connection is identified by the 4-tuple: (src IP, src port, dst IP, dst port). <tspan class="d-t-mono">accept()</tspan> returns one fd per client.</text>
+<text class="d-t-sm" x="14" y="136"><tspan class="d-t-b">TIME_WAIT</tspan> (~2&times;MSL) on the side that closes first holds the tuple so late/duplicate segments can&rsquo;t confuse a new connection.</text>
+<text class="d-t-sm" x="14" y="156">Servers use <tspan class="d-t-mono">SO_REUSEADDR</tspan> to rebind through TIME_WAIT, and <tspan class="d-t-mono">epoll</tspan>/<tspan class="d-t-mono">kqueue</tspan> to handle thousands of fds in one thread.</text>
+</svg>
+<figcaption>The listening socket only accepts; each accepted client gets its own socket fd. Reads and writes can return fewer bytes than asked &mdash; always loop.</figcaption>
+</figure>
+
+
 <h3>The call sequence</h3>
 <pre><code>SERVER                         CLIENT
 socket()                       socket()
@@ -16688,6 +16865,27 @@ Traditionally all worker processes/threads share one listening fd and race in <c
 <p class="subtitle">The boxes between the client and your server, and what each one does to a request.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Between a browser and an application server sit a stack of intermediaries that the app usually can&rsquo;t see: proxies, load balancers, and CDNs. This page covers <strong>forward vs reverse proxies</strong> (who they act on behalf of), <strong>load balancers</strong> at L4 (connection-level, fast, opaque) vs L7 (request-level, content-aware, can do TLS termination, routing, retries), health checks and sticky sessions, and <strong>CDNs</strong> &mdash; edge caches near users, fronted by <strong>anycast</strong> so the same IP routes each client to its nearest point of presence.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-net-wi-t">
+<title id="d-net-wi-t">Client to CDN edge to L7 load balancer to backend pool; L4 vs L7 balancing</title>
+<rect class="d-box" x="14" y="30" width="70" height="24" rx="4"/><text class="d-t-sm" x="49" y="46" text-anchor="middle">client</text>
+<rect class="d-box-alt" x="120" y="26" width="90" height="32" rx="4"/><text class="d-t-b" x="165" y="42" text-anchor="middle">CDN edge</text><text class="d-t-sm" x="165" y="54" text-anchor="middle">cache + anycast</text>
+<rect class="d-box-soft" x="246" y="26" width="90" height="32" rx="4"/><text class="d-t-b" x="291" y="42" text-anchor="middle">L7 LB</text><text class="d-t-sm" x="291" y="54" text-anchor="middle">TLS, routing</text>
+<rect class="d-box" x="380" y="14" width="120" height="16"/><rect class="d-box" x="380" y="34" width="120" height="16"/><rect class="d-box" x="380" y="54" width="120" height="16"/>
+<text class="d-t-sm" x="386" y="26">backend 1</text><text class="d-t-sm" x="386" y="46">backend 2</text><text class="d-t-sm" x="386" y="66">backend 3</text>
+<path class="d-line" d="M84 42 L118 42" marker-end="url(#net-wi-ah)"/><path class="d-line" d="M210 42 L244 42" marker-end="url(#net-wi-ah)"/><text class="d-t-accent" x="150" y="20">cache miss &rarr;</text>
+<path class="d-line" d="M336 40 L378 22" marker-end="url(#net-wi-ah)"/><path class="d-line" d="M336 42 L378 42" marker-end="url(#net-wi-ah)"/><path class="d-line" d="M336 44 L378 62" marker-end="url(#net-wi-ah)"/>
+<defs><marker id="net-wi-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="100"><tspan class="d-t-b">L4 LB</tspan>: balances TCP/UDP connections by 4-tuple &mdash; fast, protocol-agnostic, no visibility into the request.</text>
+<text class="d-t-sm" x="14" y="120"><tspan class="d-t-b">L7 LB</tspan>: parses HTTP &mdash; route by host/path/header, terminate TLS, retry, rewrite, per-request load balancing.</text>
+<text class="d-t-sm" x="14" y="142"><tspan class="d-t-b">Forward proxy</tspan> acts for the client (egress control); <tspan class="d-t-b">reverse proxy</tspan> acts for the server (the LB/CDN is one).</text>
+<text class="d-t-sm" x="14" y="162"><tspan class="d-t-b">Anycast</tspan>: the same IP is announced from many PoPs; routing sends each client to the nearest.</text>
+</svg>
+<figcaption>Between a browser and the app sit several reverse proxies the app never sees &mdash; each adds caching, TLS, routing, or resilience. L4 trades visibility for speed; L7 trades speed for control.</figcaption>
+</figure>
+
+
 <h3>Proxies</h3>
 <table>
 <tr><th></th><th>Forward proxy</th><th>Reverse proxy</th></tr>
@@ -16815,6 +17013,139 @@ Without shielding, every CDN edge POP that has a cache miss goes straight to you
 </section>
 <!-- /TOPIC:net:web-infra -->
 
+<!-- TOPIC:net:firewalls-nat -->
+<section class="view topic" id="v-net-firewalls-nat" data-skill="net">
+<div class="layout">
+<nav class="sidebar" data-sidebar="net"></nav>
+<div class="topic-body">
+<h1>Firewalls, NAT &amp; Packet Filtering</h1>
+<p class="subtitle">Deciding which packets are allowed, and letting many private hosts share one public address &mdash; two stateful middleboxes on every real network path.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Two related jobs sit on the packet path of almost every network. A <strong>firewall</strong> decides which packets are allowed through, based on rules matching addresses, ports, protocol, and &mdash; if it&rsquo;s <em>stateful</em> &mdash; whether the packet belongs to a connection it already permitted. <strong>NAT</strong> rewrites addresses and ports so that many hosts behind one public IP can reach the internet (and, with port forwarding, so external clients can reach a chosen internal host). This page covers stateless vs stateful filtering and the Linux netfilter model, SNAT/PAT and DNAT, why NAT breaks peer-to-peer and how STUN/TURN/ICE work around it, CGNAT and IPv6, and firewall types from packet filter to WAF.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 170" role="img" aria-labelledby="d-net-nat-t">
+<title id="d-net-nat-t">NAT rewrites the private source IP:port to the public one and keeps a mapping to reverse the return traffic</title>
+<rect class="d-box" x="14" y="24" width="110" height="26" rx="4"/><text class="d-t-sm" x="69" y="41" text-anchor="middle">192.168.1.5</text>
+<rect class="d-box-alt" x="190" y="18" width="150" height="40" rx="4"/><text class="d-t-b" x="265" y="34" text-anchor="middle">NAT router</text><text class="d-t-sm" x="265" y="50" text-anchor="middle">public 203.0.113.1</text>
+<rect class="d-box" x="406" y="24" width="100" height="26" rx="4"/><text class="d-t-sm" x="456" y="41" text-anchor="middle">server :443</text>
+<path class="d-line" d="M124 32 L188 32" marker-end="url(#net-nat-ah)"/><text class="d-t-mono" x="120" y="24">src 192.168.1.5:51000</text>
+<path class="d-line" d="M340 32 L404 32" marker-end="url(#net-nat-ah)"/><text class="d-t-mono" x="344" y="24">src 203.0.113.1:40001</text>
+<path class="d-line" d="M404 52 L340 52" marker-end="url(#net-nat-ah)"/><text class="d-t-mono" x="330" y="66">dst 203.0.113.1:40001</text>
+<path class="d-line" d="M188 52 L126 52" marker-end="url(#net-nat-ah)"/><text class="d-t-mono" x="120" y="66">dst 192.168.1.5:51000</text>
+<text class="d-t-accent" x="14" y="96">mapping table: 192.168.1.5:51000  &harr;  203.0.113.1:40001  (per connection)</text>
+<text class="d-t-sm" x="14" y="120"><tspan class="d-t-b">Stateful filter</tspan>: allow the first outbound packet &rarr; conntrack records the flow &rarr; the return packet matches ESTABLISHED &rarr; allowed automatically.</text>
+<text class="d-t-sm" x="14" y="142"><tspan class="d-t-b">DNAT / port forward</tspan>: a rule rewrites <tspan class="d-t-mono">public:8080</tspan> &rarr; <tspan class="d-t-mono">192.168.1.10:80</tspan> so outside clients can reach an inside host.</text>
+<text class="d-t-sm" x="14" y="164">An unsolicited inbound packet has <tspan class="d-t-b">no mapping</tspan> &rarr; dropped &mdash; which is why P2P needs NAT traversal (STUN/TURN/hole punching).</text>
+<defs><marker id="net-nat-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>NAT is really &ldquo;connection tracking + address rewriting&rdquo;. The same connection table is what a stateful firewall uses to allow return traffic without an explicit inbound rule.</figcaption>
+</figure>
+
+<h3>Packet filtering: stateless vs stateful</h3>
+<ul>
+<li><strong>Stateless</strong>: each packet is judged alone against rules matching the 5-tuple (src IP, dst IP, src port, dst port, protocol) plus interface/flags. To allow a TCP conversation you must permit <em>both</em> directions explicitly (e.g. <code>allow out dst 443</code> AND <code>allow in src 443</code>) &mdash; brittle and over-permissive.</li>
+<li><strong>Stateful</strong>: the firewall tracks connections in a <strong>conntrack</strong> table. You allow the <em>first</em> packet of a permitted flow; the return traffic is then matched as <code>ESTABLISHED</code> (or <code>RELATED</code> for things like FTP data / ICMP errors) and allowed automatically. This is the default everywhere now (Linux netfilter, cloud security groups, host firewalls).</li>
+<li><strong>DROP vs REJECT</strong>: <em>drop</em> silently discards (a black hole &mdash; slows port scanners, hides the host); <em>reject</em> sends back an ICMP &ldquo;administratively prohibited&rdquo; or a TCP RST (faster failures for legitimate clients). Most perimeters drop; internal segments often reject.</li>
+</ul>
+
+<h3>The Linux model (netfilter / iptables &rarr; nftables)</h3>
+<pre><code># hooks a packet passes through:
+  PREROUTING &rarr; [routing decision] &rarr; INPUT (to local) | FORWARD (through) &rarr; POSTROUTING
+                                        OUTPUT (from local) &rarr; POSTROUTING
+# tables: filter (accept/drop), nat (SNAT/DNAT), mangle (edit fields), raw (skip conntrack)
+
+# a minimal stateful host firewall (nftables idea)
+default policy: INPUT drop, FORWARD drop, OUTPUT accept
+accept  ct state established,related
+accept  iif lo
+accept  ip protocol icmp
+accept  tcp dport { 22, 443 } ct state new
+# everything else on INPUT is dropped</code></pre>
+
+<h3>NAT: SNAT / PAT and DNAT</h3>
+<ul>
+<li><strong>SNAT (source NAT)</strong> / <strong>MASQUERADE</strong>: rewrite the private source <code>IP:port</code> to the router&rsquo;s public <code>IP:port</code> on egress; store the mapping; reverse it on the return. <strong>PAT / NAPT (&ldquo;overloading&rdquo;)</strong>: many internal hosts share <em>one</em> public IP, disambiguated by the translated source port. This is what every home router does.</li>
+<li><strong>DNAT (destination NAT)</strong>: rewrite the destination. <strong>Port forwarding</strong> (<code>203.0.113.1:8080 &rarr; 192.168.1.10:80</code>) exposes one inside service; load balancers use DNAT to spread connections across a pool. <strong>1:1 / static NAT</strong> maps a whole public IP to a private one. <strong>Hairpin NAT</strong> lets inside hosts reach the inside server via its public IP.</li>
+<li>NAT breaks anything that embeds addresses in the payload (old FTP, SIP) &mdash; needs an ALG (application-layer gateway) or a NAT-aware protocol.</li>
+</ul>
+
+<h3>NAT traversal for peer-to-peer</h3>
+<p><strong>The problem.</strong> A NATed host has no inbound mapping until it sends out first, so two NATed peers can&rsquo;t directly connect. <strong>The toolkit</strong> (used by WebRTC, VoIP, games):</p>
+<ul>
+<li><strong>STUN</strong>: the peer asks a public STUN server &ldquo;what source IP:port do you see from me?&rdquo; &mdash; learning its <em>public</em> mapping to advertise.</li>
+<li><strong>UDP hole punching</strong>: both peers send packets to each other&rsquo;s public mapping <em>at the same time</em>; each outbound packet creates a return mapping, so the next inbound packet gets through. Works for full-cone / address-restricted NATs; fails for symmetric NAT (a different mapping per destination).</li>
+<li><strong>TURN</strong>: when direct fails, both peers relay through a public TURN server &mdash; always works, costs bandwidth and latency.</li>
+<li><strong>ICE</strong>: gather all candidate paths (host, STUN-reflexive, TURN-relayed), try them in priority order, use the first that connects.</li>
+</ul>
+
+<h3>Firewall types, CGNAT, and IPv6</h3>
+<ul>
+<li>Layers of firewall: <strong>packet filter</strong> (5-tuple) &rarr; <strong>stateful</strong> (connections) &rarr; <strong>application-layer / proxy / WAF</strong> (understands HTTP &mdash; blocks SQLi/XSS, rate-limits, inspects TLS after terminating it) &rarr; <strong>next-gen</strong> (app identification, IDS/IPS, threat intel).</li>
+<li>Deployment: network firewall at the perimeter/between segments; <strong>host firewall</strong> on the machine; <strong>cloud security group</strong> (stateful, default-deny, attached to an instance/ENI) and network ACLs (stateless, subnet-level).</li>
+<li><strong>CGNAT</strong> (carrier-grade NAT): ISPs put many customers behind one IPv4 &mdash; saves addresses but exhausts ports, breaks inbound connections and geolocation, and creates a logging/abuse-attribution burden.</li>
+<li><strong>IPv6</strong> gives every device a globally routable address, so NAT is unnecessary &mdash; but a stateful firewall (default-deny inbound) is still essential; the address is reachable, the policy is what protects it.</li>
+<li><strong>DDoS-relevant</strong>: SYN floods &rarr; SYN cookies (don&rsquo;t allocate state until the handshake completes); connection-rate limiting; and note the conntrack table itself is a finite resource an attacker can try to exhaust.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Stateless</strong> filter: judge each packet on the 5-tuple; must allow both directions. <strong>Stateful</strong>: allow the first packet, conntrack auto-allows the <code>ESTABLISHED,RELATED</code> return. Default: stateful, default-deny inbound.</li>
+<li><strong>DROP</strong> = silent black hole (stealth, slows scanners); <strong>REJECT</strong> = ICMP/RST (fast failure). Perimeter drops, internal often rejects.</li>
+<li><strong>Linux</strong>: netfilter hooks PREROUTING/INPUT/FORWARD/OUTPUT/POSTROUTING; tables filter/nat/mangle/raw; iptables or nftables; conntrack table.</li>
+<li><strong>SNAT/MASQUERADE</strong> = rewrite private src&rarr;public on egress; <strong>PAT/NAPT</strong> = many hosts share one IP by port. <strong>DNAT</strong> = rewrite dst = <strong>port forwarding</strong> / LB.</li>
+<li>Unsolicited inbound has no NAT mapping &rarr; dropped. P2P traversal: <strong>STUN</strong> (learn your public mapping), <strong>hole punching</strong> (both send out at once), <strong>TURN</strong> (relay), <strong>ICE</strong> (try all candidates). Symmetric NAT defeats hole punching.</li>
+<li>Firewall layers: packet filter &rarr; stateful &rarr; app-layer/WAF (HTTP-aware, TLS-terminating) &rarr; NGFW (IDS/IPS). Deploy as perimeter / host / cloud security group (stateful) + network ACL (stateless).</li>
+<li><strong>CGNAT</strong>: ISP shares one IPv4 across customers &mdash; port exhaustion, no inbound, attribution pain. <strong>IPv6</strong>: no NAT needed, still needs a default-deny stateful firewall.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What does &ldquo;stateful&rdquo; mean for a firewall, and why is it better than stateless?</dt>
+<dd>A stateful firewall tracks connections in a table (conntrack): when it permits the first packet of an allowed flow, it records the flow, and thereafter it recognises the return packets as belonging to that established connection and allows them without a separate rule. A <strong>stateless</strong> firewall judges every packet in isolation, so to permit a simple outbound HTTPS request you&rsquo;d need a rule allowing outbound to port 443 <em>and</em> a rule allowing inbound from port 443 &mdash; the second rule is broad (any host, any time) and easy to abuse, and it can&rsquo;t distinguish a real reply from an unsolicited packet that just has source port 443. Stateful is both tighter (return traffic only for connections you actually initiated) and simpler to write.</dd>
+<dt>Explain SNAT vs DNAT with a concrete example of each.</dt>
+<dd><strong>SNAT (source NAT)</strong>: your laptop at <code>192.168.1.20:52000</code> connects to a web server. The home router rewrites the packet&rsquo;s source to <code>&lt;public IP&gt;:41000</code>, remembers the mapping, and forwards it. The server replies to <code>&lt;public IP&gt;:41000</code>; the router looks up the mapping and rewrites the destination back to <code>192.168.1.20:52000</code>. This is how many devices share one public address (with port overloading, it&rsquo;s PAT). <strong>DNAT (destination NAT)</strong>: you run a game server on <code>192.168.1.50:25565</code> and want friends to reach it. You add a port-forward rule: packets arriving at <code>&lt;public IP&gt;:25565</code> have their destination rewritten to <code>192.168.1.50:25565</code> and are forwarded inside; replies are un-NATed on the way out. Load balancers do the same thing, rewriting the destination to whichever backend they pick.</dd>
+<dt>Why can&rsquo;t two computers behind different home routers connect directly, and how does WebRTC solve it?</dt>
+<dd>Each is behind NAT with default-deny inbound: there is no port mapping for an unsolicited incoming connection, so a packet from the other peer is dropped. WebRTC uses <strong>ICE</strong> to work around it. Each peer uses <strong>STUN</strong> to learn the public <code>IP:port</code> its NAT assigns to an outbound flow (its &ldquo;server-reflexive candidate&rdquo;) and exchanges all its candidate addresses with the other peer via the signalling channel. Then both peers simultaneously send packets to each other&rsquo;s public candidates &mdash; <strong>UDP hole punching</strong>: each outbound packet opens a return path in that peer&rsquo;s NAT, so the incoming packet from the other side now matches an existing mapping and gets through, establishing a direct path. If the NATs are <strong>symmetric</strong> (a different external port per destination, so the STUN-learned mapping doesn&rsquo;t match what the peer will hit) or otherwise uncooperative, ICE falls back to a <strong>TURN</strong> relay: both peers connect out to a public server that forwards packets between them &mdash; always works, at the cost of that server&rsquo;s bandwidth and added latency.</dd>
+<dt>If IPv6 doesn&rsquo;t need NAT, does that mean IPv6 hosts are less secure?</dt>
+<dd>Not inherently. NAT was never designed as a security control &mdash; its &ldquo;protection&rdquo; is a side effect of there being no inbound mapping by default. With IPv6, every host has a globally routable address, so the <em>address</em> is reachable, but a properly configured <strong>stateful firewall with a default-deny inbound policy</strong> (on the CPE / host / cloud security group) provides exactly the same &ldquo;only return traffic and explicitly-allowed services get in&rdquo; behaviour &mdash; and does it as an explicit, auditable policy rather than an accident of address translation. IPv6 also removes NAT&rsquo;s downsides (broken P2P, ALG hacks, port exhaustion, ambiguous logging). The security requirement is the same on both: run a stateful firewall; don&rsquo;t rely on NAT.</dd>
+<dt>What&rsquo;s the difference between a cloud &ldquo;security group&rdquo; and a &ldquo;network ACL&rdquo;?</dt>
+<dd>A <strong>security group</strong> is <em>stateful</em> and attached to an instance/interface: you typically write only allow rules for inbound (and often for outbound), and return traffic for an allowed connection is permitted automatically; it&rsquo;s default-deny. A <strong>network ACL</strong> is <em>stateless</em> and attached to a subnet: it evaluates each packet independently (so you must allow ephemeral return ports explicitly), supports both allow and deny rules evaluated in order, and applies to all traffic crossing the subnet boundary. Best practice is to do the fine-grained per-service policy in stateful security groups and use network ACLs sparingly as a coarse subnet-level guardrail (e.g. block a bad CIDR).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does NAT let you do?</summary><div class="answer-box">
+Let many hosts on a private network share a single public IP address for outbound internet access (source NAT / PAT), and expose a chosen internal service to the outside via port forwarding (destination NAT).
+</div></details>
+<details class="answer-reveal"><summary>In a stateful firewall, what rule allows the response to an outbound request?</summary><div class="answer-box">
+A rule that accepts packets matching connection state <code>ESTABLISHED</code> (and usually <code>RELATED</code>). You only need an explicit rule for the <em>first</em>, <code>NEW</code> packet of an allowed connection; the return path is then automatic.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Write the rule set (conceptually) for a public web server: SSH from the office only, HTTP/HTTPS from anywhere, everything else denied, and it can reach a database on a private subnet.</summary><div class="answer-box">
+<strong>Default policy</strong>: <code>INPUT drop</code>, <code>FORWARD drop</code>, <code>OUTPUT accept</code> (or also restrict OUTPUT for a hardened box). <strong>INPUT chain</strong>, in order: (1) <code>accept ct state established,related</code> &mdash; return traffic for anything the server initiated (DNS, package updates, DB replies). (2) <code>accept iif lo</code> &mdash; loopback. (3) <code>accept ip protocol icmp icmp type { echo-request, dest-unreachable, time-exceeded }</code> &mdash; ping and, importantly, Path-MTU ICMP. (4) <code>accept tcp dport 22 ip saddr &lt;office CIDR&gt; ct state new</code> &mdash; SSH only from the office; optionally rate-limit new SSH (<code>limit rate 6/minute</code>) to blunt brute force. (5) <code>accept tcp dport { 80, 443 } ct state new</code> &mdash; web from anywhere. (6) everything else falls through to the default <code>drop</code> (silent, so scanners get no feedback). <strong>OUTPUT</strong> (if restricting): <code>accept</code> to the DB subnet on the DB port, to DNS resolvers on 53, to the package mirrors / update endpoints on 443, plus <code>established,related</code> and <code>lo</code>; drop the rest. <strong>Reaching the private DB</strong>: this is normal <em>outbound</em> traffic from the web server to <code>10.0.2.0/24:5432</code> &mdash; allowed by the OUTPUT rule (or by default-accept OUTPUT), and the DB&rsquo;s own firewall / security group should <code>accept tcp dport 5432</code> only from the web server&rsquo;s IP (and <code>established,related</code>). No inbound rule is needed on the web server for the DB; the replies match <code>established</code>. <strong>Extras</strong>: log-and-drop the final catch-all at a low rate for visibility; use <code>fail2ban</code>/CrowdSec on the SSH and web logs; and if it&rsquo;s behind a cloud LB, the &ldquo;from anywhere&rdquo; for 80/443 becomes &ldquo;from the LB&rsquo;s security group / health-check ranges&rdquo; instead.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the perimeter for a multi-tier web application in the cloud: segmentation, north-south and east-west controls, NAT for egress, and DDoS considerations.</summary><div class="answer-box">
+<strong>Segmentation</strong>: a VPC with subnets per tier and per AZ &mdash; public (load balancers, NAT gateways), app-private (web/API instances), data-private (databases, caches), and a management subnet. Only the public subnet has a route to an internet gateway; private subnets route egress through a <strong>NAT gateway</strong> in the public subnet (so instances have no public IP and can&rsquo;t receive unsolicited inbound, but can pull updates / call third-party APIs). Data subnet has <em>no</em> egress route at all if possible (or egress only to specific endpoints via a proxy / VPC endpoints). <strong>North-south (inbound)</strong>: everything public enters through a managed edge &mdash; a CDN + WAF in front, then an L7 load balancer. The WAF does app-layer filtering (OWASP rules, bot management, per-IP/token rate limits, geo rules), request-size limits, and TLS termination. The LB&rsquo;s security group allows 443 from the CDN/WAF egress ranges only (not <code>0.0.0.0/0</code>), and health-check ranges. The web tier&rsquo;s security group allows its app port only from the LB&rsquo;s security group. <strong>East-west (between tiers)</strong>: security groups reference each other by ID, not CIDR &mdash; app SG allows the DB port <em>from</em> the web SG; DB SG allows only that; cache SG allows only the app SG. Default-deny everywhere; no tier can reach another except on the one required port. A stateless network ACL per subnet as a coarse backstop (e.g. deny known-bad CIDRs, deny inter-AZ management traffic). Optionally a firewall appliance / cloud network firewall for centralised egress filtering and IDS/IPS on the inspection path. <strong>Egress control</strong>: route all outbound through the NAT gateway <em>and</em> an egress filtering proxy or DNS/domain allow-list so a compromised instance can&rsquo;t exfiltrate to arbitrary hosts or pull C2; block the cloud metadata IP (169.254.169.254) except where an instance legitimately needs a scoped role, and use IMDSv2. Use VPC endpoints (private links) for cloud services so that traffic never traverses the internet or the NAT gateway. <strong>Management</strong>: no direct SSH from the internet &mdash; a bastion / SSM Session Manager / VPN into the management subnet, MFA, short-lived credentials, all access logged. <strong>DDoS</strong>: volumetric absorption at the CDN/edge (the provider&rsquo;s anycast scrubbing network) so raw floods never reach the VPC; the L7 LB + WAF handle L7 floods (slowloris, HTTP request floods) with connection limits, timeouts, and rate limiting keyed by IP/ASN/token; SYN-flood protection is built into the managed LB; autoscaling with sane max limits and per-client quotas so a flash crowd or attack degrades rather than collapses, and circuit breakers so the app sheds load before the DB does. Watch the conntrack/flow-table and NAT-gateway port limits as finite resources. <strong>Observability</strong>: VPC flow logs to a SIEM (alert on unexpected east-west flows, egress to new destinations, spikes in denied traffic), WAF and LB logs, and per-security-group change alerts. Net: private-by-default subnets with egress via NAT + filtering proxy, all inbound through CDN/WAF/L7-LB with SG-to-SG references enforcing least-privilege east-west, no public IPs on workloads, bastion-only management, VPC endpoints for cloud services, and layered DDoS handling from edge scrubbing down to app-level rate limits &mdash; with flow logs feeding detection.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:net:firewalls-nat -->
+
+
 <!-- TOPIC:net:web-app -->
 <section class="view topic" id="v-net-web-app" data-skill="net">
 <div class="layout">
@@ -16824,6 +17155,8 @@ Without shielding, every CDN edge POP that has a cache miss goes straight to you
 <p class="subtitle">The browser-side mechanics of stateful, cross-origin, real-time web apps.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the browser-side plumbing that web applications depend on. <strong>Cookies</strong> and their security attributes (<code>HttpOnly</code>, <code>Secure</code>, <code>SameSite</code>) and how they enable <strong>sessions</strong> &mdash; contrasted with stateless <strong>token</strong> (JWT) auth. The <strong>same-origin policy</strong> and how <strong>CORS</strong> deliberately relaxes it (simple requests vs preflight). And <strong>real-time</strong> delivery: the progression from polling to long-polling to Server-Sent Events to <strong>WebSockets</strong> (the HTTP Upgrade handshake to a full-duplex connection).</p>
+
 <h3>Cookies</h3>
 <p>Small key/value pairs the server sets via <code>Set-Cookie</code>; the browser attaches them to
 matching future requests automatically. Attributes:</p>
@@ -44589,6 +44922,7 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
     ],
     net: [
       ["models",        "OSI & TCP/IP Models",                 "7 layers vs 4, encapsulation, what lives where, PDUs, why layering."],
+      ["ethernet-arp",  "Ethernet, MAC Addresses, Switching & ARP", "Ethernet frame & MTU, switch learn/flood, collision vs broadcast domains, VLANs & STP, ARP request/reply & cache, gratuitous ARP, ARP spoofing & DAI."],
       ["ip-routing",    "IP Addressing, Subnets & Routing",    "IPv4/IPv6, CIDR, subnet masks, public vs private, ARP, routing tables, NAT."],
       ["tcp",           "TCP: Handshake, Flow & Congestion",   "3-way handshake, seq/ack, sliding window, slow start, congestion avoidance, teardown."],
       ["udp",           "UDP & When to Use It",                "Connectionless, no reliability/ordering, low overhead, DNS/QUIC/media, app-level reliability."],
@@ -44597,6 +44931,7 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["tls",           "HTTPS & the TLS Handshake",          "Symmetric vs asymmetric, certificates & CAs, TLS 1.3 handshake, forward secrecy."],
       ["sockets",       "Sockets & the Client/Server Lifecycle","socket/bind/listen/accept/connect, blocking vs non-blocking, TIME_WAIT, ports."],
       ["web-infra",     "NAT, Proxies, Load Balancers & CDNs", "Forward vs reverse proxy, L4 vs L7 LB, health checks, sticky sessions, CDN edge caching."],
+      ["firewalls-nat", "Firewalls, NAT & Packet Filtering",   "Stateless vs stateful filtering & conntrack, netfilter hooks, SNAT/PAT & DNAT/port-forwarding, NAT traversal (STUN/TURN/ICE/hole punching), CGNAT, IPv6, WAF/NGFW."],
       ["web-app",       "Cookies, Sessions, CORS & WebSockets","Cookie attributes, session vs token auth, same-origin policy, CORS preflight, WS upgrade, polling."]
     ],
     os: [
