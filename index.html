@@ -39637,6 +39637,8 @@ Config parity &mdash; keeping cache/WAF/purge/edge behavior identical across pro
 <p class="subtitle">A VM virtualizes the hardware and runs a whole guest OS; a container virtualizes the OS and shares the host kernel.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Both <strong>virtual machines</strong> and <strong>containers</strong> run isolated workloads on one physical host, but at different layers. A VM virtualises <em>hardware</em>: a <strong>hypervisor</strong> (Type-1 bare-metal like ESXi/KVM, or Type-2 hosted like VirtualBox) gives each guest its own kernel and emulated devices &mdash; strong isolation, but gigabytes of RAM and tens of seconds to boot. A container virtualises the <em>operating system</em>: processes share the host kernel and are isolated by namespaces + cgroups &mdash; megabytes and milliseconds, at the cost of a weaker (kernel-shared) boundary. This page covers the trade-off and when each fits.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 190" role="img" aria-labelledby="d-cvmc-t">
 <title id="d-cvmc-t">VM stack runs N guest kernels on a hypervisor; container stack shares one host kernel</title>
@@ -39788,6 +39790,8 @@ Plain containers are not enough &mdash; a single kernel LPE escapes to the host 
 <p class="subtitle">There is no "container" object in the Linux kernel &mdash; it's an ordinary process with a private view of the system and its privileges trimmed.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">There is no &ldquo;container&rdquo; object in the Linux kernel. A container is just an ordinary <strong>process</strong> (or process tree) that the kernel has been asked to isolate: it runs in its own set of <strong>namespaces</strong> (so it sees its own PID 1, network, mounts, hostname), is constrained by a <strong>cgroup</strong> (CPU/memory/IO limits), has a private <strong>root filesystem</strong> (via <code>pivot_root</code> onto an image), and usually has <strong>dropped capabilities</strong> + a seccomp filter. This page covers that composition &mdash; the &ldquo;container&rdquo; is the sum of those kernel features applied to a normal process.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-cwic-t">
 <title id="d-cwic-t">A container = a process plus namespaces, cgroups, a root filesystem and dropped privileges</title>
@@ -39924,6 +39928,8 @@ Treat it as a process plus namespaces. (1) <strong>Find the PID</strong>: <code>
 <p class="subtitle">Each namespace gives a process a private copy of one global kernel resource &mdash; the process tree, the network stack, the mount table, and so on.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Namespaces</strong> are the kernel feature that gives a process its own private view of a global resource. This page covers the eight kinds &mdash; <strong>mnt</strong> (mount table / filesystem view), <strong>pid</strong> (process IDs; the first process becomes PID 1), <strong>net</strong> (interfaces, routes, ports), <strong>uts</strong> (hostname), <strong>ipc</strong> (System V IPC, POSIX queues), <strong>user</strong> (UID/GID mapping &mdash; the basis of rootless), <strong>cgroup</strong> (cgroup root), <strong>time</strong> (clock offsets) &mdash; the syscalls that create and join them (<code>clone</code>, <code>unshare</code>, <code>setns</code>), and why the user namespace is the one that lets an unprivileged user create the rest.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 160" role="img" aria-labelledby="d-cns-t">
 <title id="d-cns-t">The seven namespace types and what each one isolates</title>
@@ -40068,6 +40074,8 @@ They share a network namespace (set up on the pod's "pause"/sandbox container), 
 <p class="subtitle">Namespaces decide what a process can see; cgroups decide how much CPU, memory, IO and how many processes it can use.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Control groups</strong> (this page covers <strong>cgroups v2</strong>, the unified hierarchy) are how the kernel <em>limits, accounts for, and isolates</em> a group of processes&rsquo; resource usage. It covers the single tree of cgroups, the <strong>controllers</strong> (<code>cpu</code> weight/max, <code>memory</code> high/max, <code>io</code>, <code>pids</code>), the difference between a soft <strong>request</strong>/weight and a hard <strong>limit</strong>, what happens at the limit (CPU <strong>throttling</strong>, memory <strong>OOM kill</strong>), reading it all through <code>cgroupfs</code> under <code>/sys/fs/cgroup</code>, and <strong>delegation</strong> so an unprivileged manager can create sub-cgroups.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-ccg-t">
 <title id="d-ccg-t">cgroup v2 unified hierarchy: one tree, controllers enabled per node</title>
@@ -40214,6 +40222,8 @@ If the host has swap and <code>--memory-swap</code> isn't set equal to <code>--m
 <p class="subtitle">An image is a stack of read-only tarballs; a running container adds one thin writable layer on top, merged into a single view by a union filesystem.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A container image is a stack of read-only <strong>layers</strong>; the running container adds one writable layer on top, combined into a single view by a <strong>union filesystem</strong> &mdash; usually <strong>OverlayFS</strong>. This page covers OverlayFS&rsquo;s <strong>lower</strong> (image layers), <strong>upper</strong> (the container&rsquo;s writes), and <strong>work</strong> dirs, <strong>copy-up</strong> (modifying a file from a lower layer copies it to the upper layer first), <strong>whiteouts</strong> (how a deletion is recorded), and why content-addressable layers are <strong>shared and cached</strong> across images &mdash; ten images from the same base store that base once.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 160" role="img" aria-labelledby="d-clay-t">
 <title id="d-clay-t">OverlayFS merges read-only lower layers with one writable upper layer</title>
@@ -40356,6 +40366,8 @@ That "config file" is probably large (a model file, a bundled dataset, a databas
 <p class="subtitle">Open standards let any tool build an image any runtime can run, and let Kubernetes talk to any runtime through one interface.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The container ecosystem is standardised by the <strong>OCI</strong> (Open Container Initiative). This page covers the two specs &mdash; the <strong>image spec</strong> (how layers + config are packaged and content-addressed) and the <strong>runtime spec</strong> (a <em>bundle</em>: a root filesystem + a <code>config.json</code> describing namespaces, cgroups, caps, mounts) &mdash; and the tools that consume them: <strong>runc</strong> (the low-level runtime that actually calls <code>clone</code>/<code>pivot_root</code>), <strong>containerd</strong> + its <strong>shim</strong> (lifecycle management), and the <strong>CRI</strong> that lets Kubernetes talk to containerd or CRI-O.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-coci-t">
 <title id="d-coci-t">From kubelet down to a running process: CRI, containerd, shim, runc</title>
@@ -40497,6 +40509,8 @@ Without a shim, the container-manager daemon (dockerd/containerd) would be the d
 <p class="subtitle">Namespaces and cgroups isolate and limit; this layer decides how much a container is actually <em>allowed to do</em> to the shared kernel.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A container&rsquo;s isolation is only as strong as the restrictions layered on the process, because it shares the host kernel. This page covers those layers: <strong>dropping Linux capabilities</strong> (a container almost never needs <code>CAP_SYS_ADMIN</code>), <strong>seccomp</strong> profiles (allowlist the ~40&ndash;300 syscalls the workload actually uses, blocking the rest of the kernel&rsquo;s attack surface), <strong>LSMs</strong> (AppArmor / SELinux mandatory access control), <strong>no-new-privileges</strong> (no setuid escalation), and <strong>rootless</strong> containers where the user namespace maps container-root to an unprivileged host UID so a breakout lands as nobody.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-csec-t">
 <title id="d-csec-t">Layered restrictions between a container process and the kernel</title>
@@ -40660,6 +40674,8 @@ They restrict different things and overlap only partially, so yes, use all three
 <p class="subtitle">A fresh network namespace has nothing but a down loopback; a veth pair, a bridge and a NAT rule turn it into a container that can reach the world.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">By default a new network namespace has only a <strong>loopback</strong> interface &mdash; it can talk to itself and nothing else. This page covers how connectivity is built up: a <strong>veth pair</strong> (a virtual cable) with one end in the container and the other on a host <strong>bridge</strong>; the bridge routing between containers; <strong>NAT / masquerade</strong> (iptables/nftables) so containers reach the internet through the host IP; <strong>port forwarding</strong> (publish) so the outside reaches a container; DNS; and how a <strong>CNI</strong> plugin automates exactly this wiring for every pod in Kubernetes.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 160" role="img" aria-labelledby="d-cnet-t">
 <title id="d-cnet-t">veth pair links the container netns to a host bridge; NAT gives it egress</title>
@@ -40809,6 +40825,8 @@ Containers in a pod share one network namespace (set up on the pod's pause/sandb
 <p class="subtitle">Assemble a working container from a rootfs, <code>unshare</code>, <code>pivot_root</code>, a cgroup and <code>capsh</code> &mdash; no Docker, no runtime, just the kernel features.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page assembles a container from primitives with no Docker &mdash; the best way to prove a container is just a configured process. Starting from a <strong>busybox root filesystem</strong> in a directory, it uses <code>unshare</code> to create new mount/PID/UTS/net/IPC/user namespaces, <code>pivot_root</code> (or <code>chroot</code>) to switch to the new root, mounts a fresh <code>/proc</code>, places the process in a <strong>cgroup</strong> with CPU/memory limits, <strong>drops capabilities</strong> and sets <code>no_new_privs</code>, and <code>exec</code>s a shell &mdash; a working &ldquo;container&rdquo; in a dozen commands.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-cbh-t">
 <title id="d-cbh-t">Six steps: rootfs, namespaces, pivot_root, mounts, cgroup, drop privileges, exec</title>
