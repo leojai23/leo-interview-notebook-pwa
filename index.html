@@ -46242,6 +46242,8 @@ Two passes. <strong>Pass 1 &mdash; discovery</strong>: <code>nmap -sn -n -PE -PS
 <p class="subtitle">Map the attack surface before touching it: which hosts are up, which ports are open, what is listening, and what version it is &mdash; on scope you are authorised to test.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Reconnaissance</strong> is the first phase of an authorised penetration test: build an accurate picture of what&rsquo;s reachable before touching anything. This page covers the standard workflow &mdash; host discovery, then port scanning, then service/version enumeration &mdash; and the tools for each: <strong>masscan</strong> for a fast first sweep of large ranges, <strong>nmap</strong> for detailed follow-up (scan types, <code>-sV</code>, NSE scripts), and <strong>netcat</strong> for grabbing a banner or opening a raw connection. It leads with the non-negotiable: written <strong>scope and authorisation</strong> first, stay inside it, and log everything. The defensive mirror is attack-surface management and egress/ingress firewall verification.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 155" role="img" aria-labelledby="d-pt-recon-t">
 <title id="d-pt-recon-t">Recon pipeline: authorise scope, sweep fast with masscan, enumerate with nmap, probe with netcat</title>
@@ -46383,6 +46385,8 @@ Written authorisation defining the scope (IP ranges/domains, timing, exclusions)
 <p class="subtitle">Metasploit turns "known vulnerability" into a repeatable module workflow; sqlmap automates finding and pulling data through SQL-injection flaws &mdash; both only against systems you are authorised to test.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers two widely-used frameworks in an <strong>authorised engagement or CTF</strong> context, plus their defensive counterparts. <strong>Metasploit</strong> (<code>msfconsole</code>) provides a search/select/configure/run workflow over a large module library, payloads including <strong>Meterpreter</strong>, <code>msfvenom</code> for standalone payloads, and a database + workspaces to track findings. <strong>sqlmap</strong> automates detecting and exploiting SQL injection &mdash; enumerating databases, dumping tables &mdash; with <code>--level</code>/<code>--risk</code> tuning. The point of covering these is understanding <em>what defenders are up against</em>: the mitigations are patching, parameterised queries, least-privilege DB accounts, WAF, and egress filtering to break callbacks.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-pt-expl-t">
 <title id="d-pt-expl-t">Metasploit module workflow and sqlmap injection workflow</title>
@@ -46533,6 +46537,8 @@ Confirm the injectable parameter &rarr; <code>--dbs</code> (list databases) &rar
 <p class="subtitle">Two different jobs: <strong>hydra</strong> guesses logins against a live service; <strong>john</strong> and <strong>hashcat</strong> crack password hashes offline. Only against your own systems, a lab, a CTF, or hashes in an authorised engagement.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers password attacks in a lab / CTF / own-systems context and, more importantly, why modern defences beat them. <strong>hydra</strong> does <em>online</em> brute-forcing (guessing against a live login &mdash; slow, noisy, easily locked out). <strong>john</strong> and <strong>hashcat</strong> do <em>offline</em> cracking of a stolen hash dump &mdash; hashcat using the GPU with wordlists, rules, and masks. The defensive takeaways run throughout: slow adaptive hashes (bcrypt/scrypt/Argon2) make offline cracking impractical, rate limiting + lockout stop online attacks, and <strong>MFA</strong> makes a cracked password insufficient on its own. Use only hashes you own or are authorised to test.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-pt-crack-t">
 <title id="d-pt-crack-t">Online brute-force (hydra, network-bound) vs offline hash cracking (john/hashcat, compute-bound)</title>
@@ -46671,6 +46677,8 @@ $ hashcat --show -m 1000 hashes.txt ; hashcat --restore       # results / resume
 <p class="subtitle">Assess the security of a wireless network <strong>you own or are authorised to test</strong>: put the card in monitor mode, capture the WPA handshake, and try to crack the passphrase offline &mdash; or test WPS with reaver.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers assessing the security of a <strong>Wi-Fi network you own or are explicitly authorised to test</strong>. It covers putting an adapter into <strong>monitor mode</strong>, capturing with <code>airodump-ng</code>, sending a <strong>deauthentication</strong> frame to force a client to reconnect so the WPA/WPA2 4-way <strong>handshake</strong> can be captured, then attempting an offline <strong>dictionary</strong> crack of that handshake with <code>aircrack-ng</code>; and <strong>reaver</strong> against the WPS PIN. Every section pairs with the defence: <strong>WPA3</strong> (SAE resists offline cracking), <strong>disable WPS</strong>, a long random passphrase, and 802.1X/enterprise auth for organisations.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 155" role="img" aria-labelledby="d-pt-wifi-t">
 <title id="d-pt-wifi-t">Monitor mode, capture the 4-way handshake (optionally forced by a deauth), crack offline</title>
@@ -46800,6 +46808,8 @@ Whether the passphrase is in your wordlist (or matches your mask). It's a pure o
 <p class="subtitle">Capture packets off the wire with a BPF filter, save to pcap, then slice and analyse &mdash; the same skill for debugging an outage and for understanding traffic during an authorised assessment.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Packet capture is both a penetration-testing technique and a core operations/debugging skill. This page covers <strong>tcpdump</strong> (BPF <strong>capture filters</strong> to record only what you need, ring buffers for long runs, writing and reading <code>pcap</code> files) and <strong>tshark</strong> / Wireshark (rich <strong>display filters</strong>, follow-stream to reassemble a conversation, <code>-z</code> statistics). It covers <em>where</em> you can capture (your own host easily; other hosts&rsquo; traffic needs a SPAN port, a tap, or a shared segment), and the hard limit that <strong>TLS</strong> payloads are encrypted &mdash; you see metadata, not contents, without the keys.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-pt-sniff-t">
 <title id="d-pt-sniff-t">NIC to kernel capture (BPF) to pcap file to analysis with tcpdump / tshark / Wireshark</title>
@@ -46931,6 +46941,8 @@ Berkeley Packet Filter &mdash; the filter language for <em>capture</em> filters.
 <p class="subtitle">You have a shell on an authorised target. Before anything else, answer: <em>who am I, what can I do, what is this box, what can it reach</em> &mdash; using built-in commands, quietly. Every enumeration step has a hardening mirror.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers <strong>enumeration after gaining a shell</strong> on a machine during an authorised test &mdash; establishing who you are and what the host offers, before deciding next steps. It walks the standard checks: identity and privileges (<code>whoami</code>, <code>id</code>, <code>sudo -l</code>), system and kernel (<code>uname -a</code>), listening services and connections (<code>ss</code>, <code>lsof -i</code>), scheduled jobs (<code>crontab</code>), <strong>SUID</strong> binaries and file <strong>capabilities</strong>, and secrets in environment variables and shell history. Every item has a <strong>defensive mirror</strong>: least privilege, minimal SUID set, no secrets in env/history, egress filtering, and host monitoring that would flag exactly this activity.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-pt-post-t">
 <title id="d-pt-post-t">Enumeration order: identity, privileges, system, network, credentials, then decide</title>
@@ -47076,6 +47088,8 @@ $ getent passwd ; ls -la /home/*                                                
 <p class="subtitle">Purely cosmetic screen effects &mdash; fake "hacker" dashboards and Matrix rain. Fun for a demo or a screensaver; they do nothing, and running one is not "hacking".</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page is a deliberate palate-cleanser: <strong>hollywood</strong> and <strong>cmatrix</strong> are purely <strong>cosmetic</strong> terminal programs &mdash; a fake &ldquo;busy hacker&rdquo; multi-pane dashboard and Matrix-style falling characters. They do nothing to any system, scan nothing, and exploit nothing. It covers what they actually are, how to run and quit them, and why they&rsquo;re included here only to make the point clearly: real security work is the methodical, authorised, well-documented process in the other topics &mdash; not screensavers that look like movie &ldquo;hacking.&rdquo;</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-pt-toys-t">
 <title id="d-pt-toys-t">These render animation to the terminal and consume input to quit; no network, no target</title>
