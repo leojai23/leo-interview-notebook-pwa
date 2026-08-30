@@ -12485,6 +12485,28 @@ State = a subset of up to ~20 items encoded as an integer bitmask, plus maybe a 
 <p class="subtitle">Turning "T(n) = 2T(n/2) + n" into "&Theta;(n log n)" without hand-waving.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>recurrence</strong> expresses an algorithm&rsquo;s running time in terms of its cost on smaller inputs &mdash; e.g. merge sort is <code>T(n) = 2T(n/2) + &Theta;(n)</code>. Solving it turns that self-reference into a closed-form growth rate so you can compare algorithms. This page covers where recurrences come from (divide-and-conquer, recursive definitions), the <strong>Master Theorem</strong> and its three cases for <code>T(n) = aT(n/b) + f(n)</code>, the recursion-tree method for building intuition, and the common recurrences that don&rsquo;t fit the Master Theorem (uneven splits, subtract-and-conquer, the Akra&ndash;Bazzi cases).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 175" role="img" aria-labelledby="d-algo-rec-t">
+<title id="d-algo-rec-t">Recursion tree for T(n) = 2T(n/2) + n: n work at every level, log n levels, n log n total</title>
+<rect class="d-box" x="220" y="14" width="80" height="18"/><text class="d-t-sm" x="260" y="27" text-anchor="middle">n</text>
+<rect class="d-box" x="120" y="46" width="80" height="18"/><text class="d-t-sm" x="160" y="59" text-anchor="middle">n/2</text>
+<rect class="d-box" x="320" y="46" width="80" height="18"/><text class="d-t-sm" x="360" y="59" text-anchor="middle">n/2</text>
+<rect class="d-box" x="70" y="78" width="60" height="16"/><rect class="d-box" x="170" y="78" width="60" height="16"/><rect class="d-box" x="290" y="78" width="60" height="16"/><rect class="d-box" x="390" y="78" width="60" height="16"/>
+<text class="d-t-sm" x="100" y="90" text-anchor="middle">n/4</text><text class="d-t-sm" x="200" y="90" text-anchor="middle">n/4</text><text class="d-t-sm" x="320" y="90" text-anchor="middle">n/4</text><text class="d-t-sm" x="420" y="90" text-anchor="middle">n/4</text>
+<path class="d-line" d="M255 32 L165 44" marker-end="url(#algo-rec-ah)"/><path class="d-line" d="M265 32 L355 44" marker-end="url(#algo-rec-ah)"/>
+<path class="d-line" d="M150 64 L110 76" marker-end="url(#algo-rec-ah)"/><path class="d-line" d="M170 64 L195 76" marker-end="url(#algo-rec-ah)"/>
+<path class="d-line" d="M350 64 L325 76" marker-end="url(#algo-rec-ah)"/><path class="d-line" d="M370 64 L415 76" marker-end="url(#algo-rec-ah)"/>
+<defs><marker id="algo-rec-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-accent" x="466" y="27">= n</text><text class="d-t-accent" x="466" y="59">= n</text><text class="d-t-accent" x="466" y="90">= n</text>
+<text class="d-t-sm" x="14" y="122">Work per level is n (the subproblem sizes always sum to n). There are 1 + log&#8322; n levels.</text>
+<text class="d-t-sm" x="14" y="142">Total = n &middot; (log n + 1) = &Theta;(n log n)  &mdash;  Master Theorem case 2 (a = b^d).</text>
+<text class="d-t-sm" x="14" y="164">Case 1 (leaves dominate): T = &Theta;(n^log_b a).  Case 3 (root dominates): T = &Theta;(f(n)).</text>
+</svg>
+<figcaption>The recursion tree makes the three Master-Theorem cases concrete: compare the work at the root (<code>f(n)</code>) with the work at the leaves (<code>n^log_b a</code>) &mdash; whichever grows faster dominates; a tie multiplies by a log factor.</figcaption>
+</figure>
+
+
 <h3>Where recurrences come from</h3>
 <p>A divide-and-conquer algorithm that makes <code>a</code> recursive calls on inputs of size <code>n/b</code>,
 plus <code>f(n)</code> non-recursive work, has running time <code>T(n) = a&middot;T(n/b) + f(n)</code>.</p>
@@ -12598,6 +12620,8 @@ For <code>T(n) = &sum; a_i T(b_i n + h_i(n)) + g(n)</code> with <code>0 &lt; b_i
 <p class="subtitle">The algorithm everyone "knows" and half get wrong &mdash; plus its most powerful use.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Binary search</strong> finds a target in a sorted range in O(log n) by repeatedly halving the search interval. Its real power in interviews is <strong>&ldquo;search on the answer&rdquo;</strong>: if you can write a monotonic yes/no predicate over a numeric range (&ldquo;can we do it with budget x?&rdquo;), binary search finds the boundary even when there&rsquo;s no array to search. This page covers a correct, off-by-one-free template, the <code>lower_bound</code>/<code>upper_bound</code> primitives and what they return, and the parametric-search pattern with worked examples.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 128" role="img" aria-labelledby="d-albs-t">
 <title id="d-albs-t">Binary search halves the search interval each step</title>
@@ -12727,6 +12751,8 @@ For continuous optimisation with a monotone feasibility test &mdash; minimum rad
 <p class="subtitle">Turning nested loops into a single linear pass over an array or string.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>two-pointer</strong> technique walks two indices through a sequence &mdash; from opposite ends, or one chasing the other &mdash; to solve in O(n) problems that look like they need O(n&sup2;) nested loops. The <strong>sliding window</strong> is the &ldquo;fast/slow, same direction&rdquo; variant for &ldquo;best/longest/shortest contiguous subarray with property P&rdquo;. This page covers the standard forms (opposite ends on a sorted array, fast/slow for cycle detection, fixed and variable windows), the invariant you maintain, and the conditions that make the technique valid (usually monotonicity or a sorted input).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-altp-t">
 <title id="d-altp-t">Opposite-ends two pointers and an expanding/contracting sliding window</title>
@@ -12858,6 +12884,8 @@ A sliding window naturally counts subarrays with <em>at most</em> K distinct (ex
 <p class="subtitle">Take the best-looking option now &mdash; and be able to prove that never regrets.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>greedy algorithm</strong> builds a solution by repeatedly taking the choice that looks best right now, never reconsidering. It&rsquo;s fast and simple when it works &mdash; but it only produces the optimum for problems with the right structure, and it&rsquo;s wrong (sometimes subtly) for the rest. This page covers the idea and the risk, how to <em>prove</em> a greedy choice is safe (the exchange/&ldquo;stay ahead&rdquo; arguments), the classic problems where greedy is provably optimal (activity selection, Huffman coding, fractional knapsack), and cautionary cases where it fails (0/1 knapsack, general coin change).</p>
+
 <h3>The idea &amp; the risk</h3>
 <p>Build a solution by repeatedly making the locally optimal choice, never reconsidering. Fast and
 simple &mdash; but only <em>correct</em> if the problem has the <strong>greedy-choice property</strong> (a
@@ -12995,6 +13023,8 @@ A matroid is a set system <code>(E, I)</code> where <code>I</code> (the "indepen
 <p class="subtitle">Split into independent subproblems, solve each, combine &mdash; and analyse with a recurrence.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Divide and conquer</strong> solves a problem by splitting it into smaller independent subproblems, solving those recursively, and combining the results. It&rsquo;s the pattern behind merge sort, quickselect, fast multiplication, and closest-pair, and its running time is analysed with a recurrence. This page covers the split/solve/combine template, the canonical algorithms and where the work happens (in the split, or in the combine), and how divide-and-conquer differs from dynamic programming &mdash; the subproblems here don&rsquo;t overlap.</p>
+
 <h3>The pattern</h3>
 <ol>
 <li><strong>Divide</strong> the problem into <code>a</code> subproblems of size <code>n/b</code>.</li>
@@ -13132,6 +13162,172 @@ It broke the "obvious" &Theta;(n&sup3;) barrier for matrix multiplication in 196
 </section>
 <!-- /TOPIC:algo:divide-conquer -->
 
+<!-- TOPIC:algo:math-number-theory -->
+<section class="view topic" id="v-algo-math-number-theory" data-skill="algo">
+<div class="layout">
+<nav class="sidebar" data-sidebar="algo"></nav>
+<div class="topic-body">
+<h1>Number Theory &amp; Modular Arithmetic</h1>
+<p class="subtitle">GCD, primes, and doing arithmetic &ldquo;mod 1e9+7&rdquo; without overflowing &mdash; the toolkit behind counting problems, hashing, and combinatorics.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A recurring class of problems needs a small set of number-theory tools: the <strong>greatest common divisor</strong>, listing or testing <strong>primes</strong>, and doing arithmetic <strong>modulo a large prime</strong> (usually <code>1_000_000_007</code>) so answers stay in range &mdash; &ldquo;count the arrangements, modulo M&rdquo;, string hashing, modular inverses for combinations, cryptography-adjacent puzzles. This page covers Euclid&rsquo;s GCD and its extended form, safe modular add/subtract/multiply and the overflow trap, <strong>fast (binary) exponentiation</strong>, <strong>modular inverse</strong> (Fermat and extended-Euclid), the <strong>Sieve of Eratosthenes</strong> and fast factorisation, and computing <code>nCr mod p</code> with precomputed factorials.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-algo-nt-t">
+<title id="d-algo-nt-t">Fast exponentiation: square-and-multiply using the binary digits of the exponent</title>
+<text class="d-t-b" x="14" y="16">a^13 mod m,  13 = 1101&#8322;</text>
+<rect class="d-box" x="14" y="26" width="90" height="20"/><text class="d-t-sm" x="59" y="40" text-anchor="middle">bit 1: &times;a</text>
+<rect class="d-box-soft" x="110" y="26" width="90" height="20"/><text class="d-t-sm" x="155" y="40" text-anchor="middle">bit 0: skip</text>
+<rect class="d-box" x="206" y="26" width="90" height="20"/><text class="d-t-sm" x="251" y="40" text-anchor="middle">bit 1: &times;a</text>
+<rect class="d-box" x="302" y="26" width="90" height="20"/><text class="d-t-sm" x="347" y="40" text-anchor="middle">bit 1: &times;a</text>
+<text class="d-t-sm" x="14" y="70">each step also squares the running base:  a &rarr; a&sup2; &rarr; a&#8308; &rarr; a&#8312; &hellip;  (mod m)</text>
+<text class="d-t-accent" x="14" y="92">result = a&#8312; &middot; a&#8308; &middot; a&#185;  =  a^13    &mdash;  O(log b) multiplies instead of b</text>
+<text class="d-t-sm" x="14" y="118">Take the mod after <tspan class="d-t-b">every</tspan> multiply. Use 64-bit (or bigger) for the product:</text>
+<text class="d-t-mono" x="14" y="136">(long long)a * b % m        // int * int overflows long before 1e9+7</text>
+<text class="d-t-sm" x="14" y="158">Same square-and-multiply gives modular inverse via Fermat: a&#8315;&sup1; &equiv; a^(p&minus;2) (mod p), p prime.</text>
+<defs><marker id="algo-nt-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Binary exponentiation is the primitive almost everything else here is built on: modular inverse, <code>nCr mod p</code>, matrix-power recurrences, and Miller&ndash;Rabin primality.</figcaption>
+</figure>
+
+<h3>GCD, LCM, and extended Euclid</h3>
+<p><strong>What / why.</strong> <code>gcd(a, b)</code> is the largest integer dividing both; Euclid&rsquo;s algorithm computes it in O(log min(a, b)). The <em>extended</em> version also returns coefficients <code>x, y</code> with <code>ax + by = gcd(a, b)</code> &mdash; the basis of the modular inverse and the Chinese Remainder Theorem.</p>
+<pre><code><span class="k">def</span> gcd(a, b):
+    <span class="k">while</span> b: a, b = b, a % b
+    <span class="k">return</span> a
+
+<span class="k">def</span> lcm(a, b):
+    <span class="k">return</span> a // gcd(a, b) * b          <span class="c"># divide FIRST to avoid overflow</span>
+
+<span class="k">def</span> ext_gcd(a, b):                     <span class="c"># returns (g, x, y) with a*x + b*y = g</span>
+    <span class="k">if</span> b == <span class="n">0</span>: <span class="k">return</span> (a, <span class="n">1</span>, <span class="n">0</span>)
+    g, x1, y1 = ext_gcd(b, a % b)
+    <span class="k">return</span> (g, y1, x1 - (a // b) * y1)</code></pre>
+
+<h3>Modular arithmetic &mdash; the overflow trap</h3>
+<ul>
+<li>Add / multiply then take <code>% m</code>. For subtraction, use <code>(a - b + m) % m</code> so the result is never negative (in C/C++/Java <code>%</code> can return a negative value for negative operands).</li>
+<li><strong>The #1 bug</strong>: <code>a * b</code> where <code>a, b</code> are near <code>1e9</code> overflows a 32-bit <code>int</code> long before you get to take the mod. Cast one operand to 64-bit: <code>(long long)a * b % m</code>. If <code>m</code> itself can be ~<code>1e18</code>, you need <code>__int128</code> or a mulmod routine.</li>
+<li>Division is not <code>/</code> under a modulus &mdash; it&rsquo;s multiplication by the <strong>modular inverse</strong>.</li>
+</ul>
+<pre><code>add = (a + b) % m
+sub = (a - b % m + m) % m
+mul = a * b % m                    <span class="c"># in C: (int64_t)a * b % m</span>
+<span class="c"># "a / b mod m"  ==  a * inv(b) mod m   (requires gcd(b, m) == 1)</span></code></pre>
+
+<h3>Fast exponentiation &amp; modular inverse</h3>
+<pre><code><span class="k">def</span> power(a, b, m):                   <span class="c"># a^b mod m in O(log b)</span>
+    a %= m; res = <span class="n">1</span>
+    <span class="k">while</span> b:
+        <span class="k">if</span> b &amp; <span class="n">1</span>: res = res * a % m
+        a = a * a % m
+        b &gt;&gt;= <span class="n">1</span>
+    <span class="k">return</span> res
+
+<span class="k">def</span> inv(a, p):                        <span class="c"># p PRIME:  Fermat's little theorem</span>
+    <span class="k">return</span> power(a, p - <span class="n">2</span>, p)
+
+<span class="k">def</span> inv_general(a, m):                <span class="c"># any m with gcd(a, m) == 1</span>
+    g, x, _ = ext_gcd(a % m, m)
+    <span class="k">return</span> x % m                       <span class="c"># (assert g == 1)</span>
+
+<span class="c"># inverses of 1..n in O(n):  inv[1] = 1;  inv[i] = -(m // i) * inv[m % i] % m</span></code></pre>
+
+<h3>Primes: sieve and factorisation</h3>
+<pre><code><span class="k">def</span> sieve(n):                         <span class="c"># all primes &le; n, O(n log log n)</span>
+    is_p = bytearray([<span class="n">1</span>]) * (n + <span class="n">1</span>); is_p[<span class="n">0</span>] = is_p[<span class="n">1</span>] = <span class="n">0</span>
+    <span class="k">for</span> i <span class="k">in</span> range(<span class="n">2</span>, int(n**<span class="n">0.5</span>) + <span class="n">1</span>):
+        <span class="k">if</span> is_p[i]:
+            is_p[i*i :: i] = bytearray(len(is_p[i*i :: i]))
+    <span class="k">return</span> [i <span class="k">for</span> i <span class="k">in</span> range(n + <span class="n">1</span>) <span class="k">if</span> is_p[i]]
+
+<span class="c"># smallest-prime-factor sieve -&gt; factorise any x &le; n in O(log x):</span>
+<span class="c">#   spf[i] set during a linear sieve; then repeatedly divide x by spf[x].</span>
+
+<span class="k">def</span> factorise(x):                     <span class="c"># trial division, O(sqrt x), no precompute</span>
+    f = {}
+    d = <span class="n">2</span>
+    <span class="k">while</span> d * d &lt;= x:
+        <span class="k">while</span> x % d == <span class="n">0</span>: f[d] = f.get(d, <span class="n">0</span>) + <span class="n">1</span>; x //= d
+        d += <span class="n">1</span>
+    <span class="k">if</span> x &gt; <span class="n">1</span>: f[x] = f.get(x, <span class="n">0</span>) + <span class="n">1</span>
+    <span class="k">return</span> f</code></pre>
+<p>For primality of a single large number use <strong>Miller&ndash;Rabin</strong> (deterministic for 64-bit with a fixed base set); for factoring a large number use <strong>Pollard&rsquo;s rho</strong>.</p>
+
+<h3>Combinations modulo a prime</h3>
+<p><strong>What / why.</strong> &ldquo;How many ways &hellip; mod 1e9+7&rdquo; almost always reduces to binomial coefficients. Precompute factorials and inverse factorials once; each <code>nCr</code> is then O(1).</p>
+<pre><code>MOD = <span class="n">10</span>**<span class="n">9</span> + <span class="n">7</span>
+N = <span class="n">200_005</span>
+fact = [<span class="n">1</span>] * N
+<span class="k">for</span> i <span class="k">in</span> range(<span class="n">1</span>, N): fact[i] = fact[i-<span class="n">1</span>] * i % MOD
+inv_fact = [<span class="n">1</span>] * N
+inv_fact[N-<span class="n">1</span>] = power(fact[N-<span class="n">1</span>], MOD-<span class="n">2</span>, MOD)
+<span class="k">for</span> i <span class="k">in</span> range(N-<span class="n">2</span>, -<span class="n">1</span>, -<span class="n">1</span>): inv_fact[i] = inv_fact[i+<span class="n">1</span>] * (i+<span class="n">1</span>) % MOD
+
+<span class="k">def</span> nCr(n, r):
+    <span class="k">if</span> r &lt; <span class="n">0</span> <span class="k">or</span> r &gt; n: <span class="k">return</span> <span class="n">0</span>
+    <span class="k">return</span> fact[n] * inv_fact[r] % MOD * inv_fact[n-r] % MOD
+<span class="c"># n huge, p small -&gt; Lucas' theorem: nCr(n,r) mod p = prod of nCr(n_i, r_i) over base-p digits</span></code></pre>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>GCD</strong>: <code>gcd(a,b)=gcd(b,a%b)</code>, O(log). <strong>LCM</strong>: <code>a//gcd*b</code> (divide first). <strong>ext_gcd</strong> &rarr; <code>x,y</code> with <code>ax+by=g</code> &rarr; inverse + CRT.</li>
+<li><strong>Modular</strong>: add/mul then <code>%m</code>; subtract via <code>(a-b+m)%m</code>. <code>%</code> can be negative in C/Java. <code>a/b mod m = a*inv(b) mod m</code>.</li>
+<li><strong>Overflow</strong>: <code>(int64_t)a * b % m</code> &mdash; <code>int*int</code> overflows well before 1e9+7. <code>m ~ 1e18</code> &rarr; <code>__int128</code> / mulmod.</li>
+<li><strong>Fast pow</strong>: square-and-multiply, O(log b). Powers modular inverse (Fermat, <code>a^(p-2) mod p</code>), <code>nCr</code>, matrix power, Miller&ndash;Rabin.</li>
+<li><strong>Modular inverse</strong>: exists iff <code>gcd(a,m)=1</code>. <code>m</code> prime &rarr; <code>a^(m-2)</code>. General &rarr; ext_gcd. Inverses <code>1..n</code> in O(n).</li>
+<li><strong>Sieve</strong> of Eratosthenes: primes &le; n in O(n log log n); SPF sieve &rarr; O(log x) factorisation. Trial division to <code>sqrt(x)</code> otherwise. Big single number &rarr; Miller&ndash;Rabin / Pollard rho.</li>
+<li><strong>nCr mod p</strong>: precompute <code>fact[]</code> and <code>inv_fact[]</code>, then O(1) per query. <code>n</code> huge, <code>p</code> small &rarr; Lucas.</li>
+<li>Also handy: Euler totient <code>&phi;(n)</code>, CRT, base conversion, digit DP.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why can&rsquo;t you just write <code>(a / b) % m</code>?</dt>
+<dd>Integer division discards the remainder, and there&rsquo;s no reason <code>b</code> divides <code>a</code> exactly &mdash; and even if it did, <code>(a/b) % m</code> isn&rsquo;t generally equal to the modular result you want. Under a modulus, &ldquo;divide by <code>b</code>&rdquo; means &ldquo;multiply by the <strong>modular inverse</strong> of <code>b</code>&rdquo; &mdash; the value <code>b&#8315;&sup1;</code> such that <code>b &middot; b&#8315;&sup1; &equiv; 1 (mod m)</code>. It exists iff <code>gcd(b, m) = 1</code>. If <code>m</code> is prime you get it from Fermat (<code>b^(m-2) mod m</code>); otherwise from the extended Euclidean algorithm.</dd>
+<dt>What&rsquo;s the classic overflow bug in modular multiplication and how do you fix it?</dt>
+<dd>Computing <code>a * b % m</code> where <code>a</code> and <code>b</code> are 32-bit integers near <code>1e9</code>: the product <code>a * b</code> can be ~<code>1e18</code>, which overflows a 32-bit <code>int</code> (max ~<code>2.1e9</code>) <em>before</em> the <code>% m</code> is applied &mdash; so you take the mod of a garbage value. Fix: promote one operand to 64-bit so the multiplication happens in 64-bit: <code>(long long)a * b % m</code> in C/C++, <code>(long) a * b % m</code> in Java. If <code>m</code> itself is up to ~<code>1e18</code>, even 64-bit overflows and you need <code>__int128</code>, a <code>mulmod</code> via <code>__int128</code>/long double, or Python&rsquo;s arbitrary precision.</dd>
+<dt>How does fast exponentiation compute <code>a^b mod m</code> in O(log b)?</dt>
+<dd>Write <code>b</code> in binary. Maintain a running <code>base</code> that you square each step (so it becomes <code>a, a&sup2;, a&#8308;, a&#8312;, &hellip;</code> mod <code>m</code>) and a <code>result</code> that you multiply by the current <code>base</code> whenever the corresponding bit of <code>b</code> is 1. Since <code>a^b</code> is the product of <code>a^(2&#8305;)</code> over the set bits <code>i</code> of <code>b</code>, and there are at most ⌈log&#8322; b⌉ bits, you do O(log b) multiplications instead of <code>b</code>. Every multiply is followed by <code>% m</code>.</dd>
+<dt>When would you use a sieve versus trial division for factorisation?</dt>
+<dd>Use <strong>trial division</strong> (up to <code>&radic;x</code>) when you need to factor a <em>few</em> numbers, or numbers too large to sieve &mdash; it&rsquo;s O(&radic;x) per number, no preprocessing. Use a <strong>Sieve of Eratosthenes</strong> (or a smallest-prime-factor linear sieve) when you&rsquo;ll test primality or factor <em>many</em> numbers all bounded by some <code>n</code> &mdash; O(n log log n) once, then O(1) primality checks and O(log x) factorisation per number. For a single very large number (say 10&sup1;&#8312;), neither is practical: use Miller&ndash;Rabin for primality and Pollard&rsquo;s rho for factoring.</dd>
+<dt>You need <code>nCr mod 1e9+7</code> for up to <code>n = 2&times;10&#8309;</code>, called a million times. What&rsquo;s the setup?</dt>
+<dd>Precompute, once, <code>fact[i] = i! mod p</code> for <code>i</code> up to the max <code>n</code> (O(n)), then <code>inv_fact[maxN] = power(fact[maxN], p-2, p)</code> via Fermat, and fill <code>inv_fact</code> downward with <code>inv_fact[i] = inv_fact[i+1] * (i+1) % p</code> (O(n), one modpow total). Then each query is <code>nCr(n, r) = fact[n] * inv_fact[r] % p * inv_fact[n-r] % p</code> in O(1), with a guard returning 0 for <code>r &lt; 0</code> or <code>r &gt; n</code>. Total: O(n) preprocessing + O(1) per query. (If <code>n</code> could exceed the precompute bound but <code>r</code> is small, compute the falling factorial <code>n&middot;(n-1)&hellip;(n-r+1)</code> directly times <code>inv_fact[r]</code>.)</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does the extended Euclidean algorithm return that plain <code>gcd</code> doesn&rsquo;t?</summary><div class="answer-box">
+Coefficients <code>x</code> and <code>y</code> such that <code>a&middot;x + b&middot;y = gcd(a, b)</code> (B&eacute;zout&rsquo;s identity). These give the modular inverse of <code>a</code> mod <code>b</code> (when <code>gcd = 1</code>, <code>x</code> is the inverse) and are used in the Chinese Remainder Theorem.
+</div></details>
+<details class="answer-reveal"><summary>Under a modulus <code>m</code>, how do you compute &ldquo;<code>a</code> divided by <code>b</code>&rdquo;?</summary><div class="answer-box">
+Multiply <code>a</code> by the modular inverse of <code>b</code>: <code>a &middot; b&#8315;&sup1; mod m</code>, valid when <code>gcd(b, m) = 1</code>. For prime <code>m</code>, <code>b&#8315;&sup1; = b^(m-2) mod m</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Count the number of paths from the top-left to the bottom-right of an <code>m&times;n</code> grid moving only right/down, modulo 1e9+7. Derive the formula and the implementation.</summary><div class="answer-box">
+Any such path makes exactly <code>(m-1)</code> down-moves and <code>(n-1)</code> right-moves in some order &mdash; a sequence of <code>(m-1)+(n-1)</code> moves, and the path is determined by <em>which</em> positions are the down-moves. So the count is <code>C(m+n-2, m-1)</code>. Modulo a prime <code>p = 1e9+7</code>: precompute <code>fact[k] = k! mod p</code> for <code>k</code> up to <code>m+n</code>, compute <code>inv_fact</code> via one Fermat modpow of the largest factorial and a downward sweep, then return <code>fact[m+n-2] * inv_fact[m-1] % p * inv_fact[n-1] % p</code>. Total O(m+n) preprocessing, O(1) to answer. Watch: take the mod after every multiplication (three multiplies here), and use 64-bit for the products. If there were blocked cells you&rsquo;d instead do an O(mn) DP with <code>dp[i][j] = (dp[i-1][j] + dp[i][j-1]) % p</code>; the closed form only works for a clear grid.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a fast, collision-resistant string-hashing scheme for a system that does millions of substring-equality checks (e.g. a plagiarism / near-duplicate detector). Cover the maths and the failure modes.</summary><div class="answer-box">
+<strong>Polynomial rolling hash</strong>: treat a string <code>s</code> as the polynomial <code>&sum; s[i]&middot;B^(L-1-i)</code> evaluated modulo a large prime <code>M</code>, for a random base <code>B</code> in <code>[2, M-1]</code>. Precompute prefix hashes <code>h[i]</code> and powers <code>B^i mod M</code>; then the hash of any substring <code>s[l..r]</code> is <code>(h[r+1] - h[l]&middot;B^(r-l+1)) mod M</code> in O(1) &mdash; the core primitive for the millions of equality checks. Comparing two substrings by hash is O(1). <strong>Modular arithmetic details</strong>: do the subtraction as <code>(h[r+1] - h[l]*pw % M + M) % M</code> to avoid negatives; compute <code>h[l]*pw</code> in 64-bit (<code>(int64)h[l] * pw % M</code>) &mdash; the classic overflow trap. Choose <code>M</code> a prime near <code>2^61</code> (so products fit in <code>__int128</code>) or use two independent 32-bit primes. Precompute powers with a loop, not <code>pow</code> per query. <strong>Collision analysis</strong>: for a single random base mod one prime <code>M</code>, two distinct strings collide with probability &asymp; <code>L / M</code> per comparison (birthday-style over the number of comparisons <code>Q</code>: expected collisions &asymp; <code>Q&sup2; / (2M)</code>). With <code>Q = 10^6</code> comparisons and <code>M &asymp; 10^9</code>, that&rsquo;s ~500 expected collisions &mdash; unacceptable. Fixes: (a) <strong>double hashing</strong> &mdash; two primes / two bases, treat strings as equal only if both hashes match; collision probability multiplies to ~<code>L&sup2;/(M&#8321;M&#8322;)</code>, negligible; (b) use a 61-bit Mersenne prime so <code>M</code> alone is huge; (c) on a hash match, do a real character comparison to confirm (turns collisions from silent errors into a rare slow path &mdash; the safe default for a correctness-sensitive tool). <strong>Adversarial failure</strong>: if <code>B</code> and <code>M</code> are fixed and public, an attacker can construct colliding inputs (Thue&ndash;Morse-style, or by solving the polynomial equation). For anything facing untrusted input, pick <code>B</code> (and ideally <code>M</code> from a small set) <strong>randomly at run time</strong> per process, and still verify matches. <strong>Other failure modes</strong>: base <code>B &le; alphabet size</code> or <code>B</code> not coprime to <code>M</code> (weak mixing); using <code>char</code> values that can be negative (add an offset so digits are in <code>[1, ...]</code> &mdash; and never let a digit be 0, or leading zeros make <code>"a"</code> and <code>"aa"</code> collide depending on convention); forgetting that hash equality is necessary but not sufficient. <strong>System design</strong>: build a hash of every document&rsquo;s k-gram (shingling), store <code>(hash, doc, pos)</code> in an index; near-duplicate detection then compares shingle-hash sets (Jaccard via MinHash on top of these hashes, or LSH banding) &mdash; the rolling hash is the cheap primitive that makes generating billions of shingle hashes feasible, and MinHash/LSH is the layer that turns exact-substring hashes into similarity. Net: prefix + power arrays for O(1) substring hashes, <strong>two</strong> large primes (or one 61-bit prime) with a randomised base, verify on match, offset the alphabet, and layer MinHash/LSH for the actual similarity search.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:algo:math-number-theory -->
+
+
 <!-- TOPIC:algo:dp-patterns -->
 <section class="view topic" id="v-algo-dp-patterns" data-skill="algo">
 <div class="layout">
@@ -13141,6 +13337,8 @@ It broke the "obvious" &Theta;(n&sup3;) barrier for matrix multiplication in 196
 <p class="subtitle">The recurring shapes: knapsack, subsequences, intervals, grids, trees, bitmask.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Dynamic programming</strong> applies when a problem has <em>optimal substructure</em> (the answer is built from answers to subproblems) and <em>overlapping subproblems</em> (the same subproblem recurs), so caching subproblem answers turns exponential recursion into polynomial time. This page covers the workflow for deriving a DP (define the state, the transition, the base case, and the evaluation order), a catalogue of recurring patterns &mdash; 0/1 and unbounded knapsack, LCS / edit distance, LIS, interval DP, DP on trees, bitmask DP &mdash; and how to reason about and reduce the time and space.</p>
+
 <h3>The workflow</h3>
 <p>Define the <strong>state</strong> (what parameters identify a subproblem), write the
 <strong>transition</strong> (recurrence relating a state to smaller ones), fix <strong>base cases</strong>,
@@ -13292,6 +13490,8 @@ Process the number left to right, digit position by position. State: <code>(pos,
 <p class="subtitle">What you can actually do once you can BFS and DFS a graph.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the algorithms that fall straight out of a BFS or DFS once you see a problem as a graph: <strong>flood fill</strong> and grid traversal, finding <strong>connected components</strong>, testing whether a graph is <strong>bipartite</strong>, detecting <strong>cycles</strong> in directed and undirected graphs, and using the DFS tree (discovery/finish times, back edges) to find <strong>bridges</strong> and <strong>articulation points</strong>. It&rsquo;s about recognising the graph hiding in a problem and picking the right traversal.</p>
+
 <h3>Flood fill / grid as graph</h3>
 <p>Treat a grid cell as a node with up-to-4 (or 8) neighbours. BFS/DFS from a cell to fill a
 region, count islands, find the shortest path in a maze (BFS), or expand from multiple sources
@@ -13441,6 +13641,8 @@ A 2-SAT formula (clauses of &le; 2 literals) is satisfiable iff no variable <cod
 <p class="subtitle">Pick the algorithm by edge weights: unweighted, non-negative, negative, or all-pairs.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>shortest-path</strong> problem &mdash; least-cost route between vertices &mdash; has a different right answer depending on the graph: unweighted, non-negative weights, negative weights, or all-pairs. This page covers the decision table and then each algorithm: <strong>BFS</strong> (unweighted), <strong>Dijkstra</strong> (non-negative, with a priority queue), <strong>Bellman&ndash;Ford</strong> (handles negative edges, detects negative cycles), <strong>Floyd&ndash;Warshall</strong> (all pairs, O(V&sup3;)), and <strong>A*</strong> (Dijkstra guided by a heuristic). It covers why Dijkstra breaks on negative edges and how each one relaxes edges.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-alsp-t">
 <title id="d-alsp-t">Choosing a shortest-path algorithm by graph properties</title>
@@ -13609,6 +13811,29 @@ Invariant: when a node <code>u</code> is popped/finalised, <code>dist[u]</code> 
 <p class="subtitle">Cheapest connecting tree, and ordering a dependency graph.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Two classic graph results. A <strong>minimum spanning tree</strong> is the cheapest set of edges connecting every vertex of a weighted undirected graph; <strong>Kruskal&rsquo;s</strong> (sort edges + union-find) and <strong>Prim&rsquo;s</strong> (grow a tree with a heap) both find one, justified by the cut property. A <strong>topological sort</strong> is a linear ordering of a DAG&rsquo;s vertices so every edge points forward &mdash; the basis of build systems, task scheduling, and dependency resolution. This page covers both algorithms for each, and how to detect that no topological order exists (a cycle).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 175" role="img" aria-labelledby="d-algo-mst-t">
+<title id="d-algo-mst-t">Kruskal builds an MST by adding cheapest edges that do not form a cycle; Kahn peels sources for a topo order</title>
+<text class="d-t-b" x="14" y="16">MST (Kruskal): sort edges, add if it joins two different components</text>
+<circle cx="60" cy="55" r="12" class="d-box"/><text class="d-t-sm" x="60" y="59" text-anchor="middle">A</text>
+<circle cx="150" cy="35" r="12" class="d-box"/><text class="d-t-sm" x="150" y="39" text-anchor="middle">B</text>
+<circle cx="150" cy="90" r="12" class="d-box"/><text class="d-t-sm" x="150" y="94" text-anchor="middle">C</text>
+<circle cx="240" cy="55" r="12" class="d-box"/><text class="d-t-sm" x="240" y="59" text-anchor="middle">D</text>
+<line x1="72" y1="52" x2="139" y2="38" class="d-line"/><text class="d-t-accent" x="98" y="38">1 pick</text>
+<line x1="72" y1="58" x2="139" y2="88" class="d-line"/><text class="d-t-accent" x="92" y="82">2 pick</text>
+<line x1="150" y1="47" x2="150" y2="78" class="d-dash"/><text class="d-t-sm" x="156" y="66">5 skip (cycle)</text>
+<line x1="161" y1="86" x2="229" y2="60" class="d-line"/><text class="d-t-accent" x="190" y="82">3 pick</text>
+<text class="d-t-sm" x="270" y="45">picked: A-B(1), A-C(2), C-D(3)</text><text class="d-t-sm" x="270" y="62">skipped B-C(5): both already joined</text><text class="d-t-sm" x="270" y="79">total weight 6, exactly V-1 = 3 edges</text>
+<text class="d-t-b" x="14" y="120">Topological sort (Kahn): repeatedly remove a vertex with in-degree 0</text>
+<text class="d-t-sm" x="14" y="140">start the queue with every in-degree-0 vertex; removing one decrements its neighbours in-degrees.</text>
+<text class="d-t-sm" x="14" y="160">if fewer than V vertices come out &rarr; the graph has a cycle (no topological order exists).</text>
+<defs><marker id="algo-mst-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Kruskal&rsquo;s correctness is the <strong>cut property</strong>: the lightest edge crossing any partition of the vertices is in some MST. Union-Find is what makes the &ldquo;different components?&rdquo; test O(&alpha;(n)).</figcaption>
+</figure>
+
+
 <h3>Minimum Spanning Tree</h3>
 <p>A subset of edges connecting all <code>V</code> vertices with no cycle and minimum total weight
 (exactly <code>V - 1</code> edges). Both standard algorithms are greedy, justified by the
@@ -13742,6 +13967,24 @@ Loop invariant: the set of edges chosen so far, <code>A</code>, is a subset of s
 <p class="subtitle">Finding a pattern in text faster than the O(nm) nested loop.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>String matching</strong> is finding all occurrences of a pattern <code>P</code> (length m) inside a text <code>T</code> (length n). The naive method is O(nm); the classic algorithms get to O(n + m) by never re-examining text characters they&rsquo;ve already ruled out. This page covers <strong>Rabin&ndash;Karp</strong> (rolling hash &mdash; great for multiple patterns), <strong>KMP</strong> (the prefix/failure function that says how far to shift after a mismatch), and the <strong>Z-algorithm</strong> (Z-array of longest prefix-matches), with the preprocessing each one does and when to reach for it.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-algo-sm-t">
+<title id="d-algo-sm-t">KMP: on a mismatch, the failure function slides the pattern without re-reading matched text</title>
+<text class="d-t-b" x="14" y="16">pattern P = A B A B C   with prefix-function (failure) values</text>
+<rect class="d-box" x="60" y="24" width="34" height="20"/><rect class="d-box" x="94" y="24" width="34" height="20"/><rect class="d-box" x="128" y="24" width="34" height="20"/><rect class="d-box" x="162" y="24" width="34" height="20"/><rect class="d-box" x="196" y="24" width="34" height="20"/>
+<text class="d-t-sm" x="77" y="38" text-anchor="middle">A</text><text class="d-t-sm" x="111" y="38" text-anchor="middle">B</text><text class="d-t-sm" x="145" y="38" text-anchor="middle">A</text><text class="d-t-sm" x="179" y="38" text-anchor="middle">B</text><text class="d-t-sm" x="213" y="38" text-anchor="middle">C</text>
+<text class="d-t-accent" x="77" y="58" text-anchor="middle">0</text><text class="d-t-accent" x="111" y="58" text-anchor="middle">0</text><text class="d-t-accent" x="145" y="58" text-anchor="middle">1</text><text class="d-t-accent" x="179" y="58" text-anchor="middle">2</text><text class="d-t-accent" x="213" y="58" text-anchor="middle">0</text>
+<text class="d-t-sm" x="14" y="86">text  ... A B A B <tspan class="d-t-b">A</tspan> ...   matched "ABAB", then text has A where P wants C (mismatch at P[4])</text>
+<text class="d-t-sm" x="14" y="108">failure[3] = 2  &rarr;  realign so P[0..1]="AB" sits under the "AB" already matched; resume comparing at P[2]</text>
+<text class="d-t-sm" x="14" y="128">no character of the text is ever re-examined &rarr; total O(n + m).</text>
+<text class="d-t-sm" x="14" y="150">Rabin-Karp instead hashes each length-m window (rolling hash, O(1) update) and verifies on a hash hit.</text>
+<defs><marker id="algo-sm-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>The failure function <code>&pi;[i]</code> = length of the longest proper prefix of <code>P[0..i]</code> that is also a suffix &mdash; it tells KMP exactly how much of the partial match it can keep after a mismatch.</figcaption>
+</figure>
+
+
 <h3>Naive</h3>
 <p>For each of the <code>n - m + 1</code> alignments, compare up to <code>m</code> characters. O(nm) worst case
 (e.g. text <code>aaaa&hellip;a</code>, pattern <code>aaa&hellip;ab</code>). Fine for short patterns / small text.</p>
@@ -43636,6 +43879,7 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["two-pointers",    "Two Pointers & Sliding Window",           "Opposite ends, fast/slow, fixed & variable windows, when it applies."],
       ["greedy",          "Greedy Algorithms",                       "Exchange argument, when greedy is provably optimal, activity selection, Huffman."],
       ["divide-conquer",  "Divide & Conquer",                        "Split/solve/combine, merge sort, quickselect, closest pair, Karatsuba."],
+      ["math-number-theory", "Number Theory & Modular Arithmetic",   "GCD/LCM & extended Euclid, safe modular add/mul (overflow), fast exponentiation, modular inverse (Fermat/ext-Euclid), Sieve of Eratosthenes, factorisation, nCr mod p."],
       ["dp-patterns",     "Dynamic Programming Patterns",            "Knapsack, LCS/edit distance, LIS, interval DP, DP on trees & bitmask."],
       ["graph-algos",     "Graph Traversal Applications",            "Flood fill, connected components, bipartite, cycle detect, bridges."],
       ["shortest-paths",  "Shortest Paths",                          "BFS, Dijkstra, Bellman-Ford (neg edges), Floyd-Warshall (all pairs), A*."],
