@@ -27877,6 +27877,8 @@ Work in small, safe steps under a growing test net &mdash; the "strangler fig" a
 <p class="subtitle">A repeatable structure for the 45 minutes, and the numbers to do capacity math in your head.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A system-design interview rewards a <strong>structured approach</strong> over raw knowledge dumps. This page lays out the standard progression: <strong>clarify</strong> requirements and scope (functional + non-functional: scale, latency, consistency, availability), <strong>estimate</strong> load (QPS, storage, bandwidth &mdash; back-of-envelope with the &ldquo;latency numbers every engineer should know&rdquo;), sketch the <strong>API</strong>, design the <strong>data model</strong>, draw a <strong>high-level architecture</strong>, then <strong>deep-dive</strong> one or two components and discuss <strong>bottlenecks</strong> and trade-offs. It also covers the capacity-math shortcuts (seconds/day &asymp; 86k, the read:write ratio, the 80/20 rule).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 78" role="img" aria-labelledby="d-sdfw-t">
 <title id="d-sdfw-t">The system-design interview flow</title>
@@ -28017,6 +28019,8 @@ Compare your estimated working set and throughput against a single modern server
 <p class="subtitle">Spreading traffic across servers, removing dead ones, and where the LB itself can fail.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>load balancer</strong> spreads incoming requests across a pool of servers so no one instance is overwhelmed, and routes around failures. This page covers <strong>L4</strong> (transport-level &mdash; forwards TCP/UDP by connection, fast, protocol-blind) vs <strong>L7</strong> (application-level &mdash; parses HTTP, can route by path/header, terminate TLS, retry), the balancing <strong>algorithms</strong> (round-robin, least-connections, weighted, consistent hashing, EWMA), <strong>health checks</strong> (active vs passive) and how they eject bad hosts, <strong>sticky sessions</strong> and why to avoid needing them, and DNS/anycast load distribution above the LB tier.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 108" role="img" aria-labelledby="d-sdlb-t">
 <title id="d-sdlb-t">A load balancer spreads requests across a pool with health checks</title>
@@ -28177,6 +28181,8 @@ Classic least-connections works well only when every backend is identical and ev
 <p class="subtitle">Where to cache, which read/write pattern, and the two hard problems: invalidation and stampede.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>cache</strong> stores the result of expensive work close to where it&rsquo;s needed so most requests skip the work. This page covers the placement patterns &mdash; <strong>cache-aside</strong> (app checks cache, loads on miss, most common), <strong>read-through</strong> / <strong>write-through</strong> / <strong>write-back</strong> / <strong>write-around</strong> &mdash; and their consistency and durability trade-offs; <strong>eviction</strong> (LRU/LFU/TTL) and sizing; and the hard part, <strong>invalidation</strong>: keeping the cache from serving stale data, plus the failure modes &mdash; cache <strong>stampede</strong>/thundering herd, hot keys, and the penetration/avalanche problems &mdash; with their mitigations.</p>
+
 <h3>Where</h3>
 <p>Client / browser &rarr; CDN edge &rarr; API gateway &rarr; in-process (per app instance) &rarr; distributed
 (Redis/Memcached) &rarr; database buffer pool. Cache as close to the client as the freshness
@@ -28329,6 +28335,30 @@ Point invalidation from the write path won't scale &mdash; the writer would have
 <p class="subtitle">Scale reads with replicas, scale writes with shards &mdash; and pay for both in complexity.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">When one database can&rsquo;t keep up, you scale it along two axes. <strong>Replication</strong> adds read-only copies fed from a primary&rsquo;s change log &mdash; scales reads and adds availability, at the cost of <strong>replication lag</strong> and read-your-writes anomalies. <strong>Sharding</strong> (horizontal partitioning) splits the data across independent databases by a <strong>shard key</strong> &mdash; scales writes and storage, at the cost of cross-shard joins/transactions, hotspots from a skewed key, and painful <strong>resharding</strong>. This page covers both, choosing a shard key, consistent-hashing / virtual buckets for rebalancing, and functional partitioning (federation) as the cheaper first step.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-sysdbs-t">
+<title id="d-sysdbs-t">Two scaling axes: replication copies data for read scaling; sharding splits data by key for write scaling</title>
+<text class="d-t-b" x="14" y="14">replication (scale reads + HA)</text>
+<rect class="d-box-alt" x="14" y="20" width="90" height="20"/><text class="d-t-sm" x="59" y="33" text-anchor="middle">primary (W)</text>
+<rect class="d-box-soft" x="140" y="14" width="80" height="16"/><rect class="d-box-soft" x="140" y="34" width="80" height="16"/>
+<text class="d-t-sm" x="180" y="26" text-anchor="middle">replica (R)</text><text class="d-t-sm" x="180" y="46" text-anchor="middle">replica (R)</text>
+<path class="d-line" d="M104 28 L138 22" marker-end="url(#sysdbs-ah)"/><path class="d-line" d="M104 34 L138 42" marker-end="url(#sysdbs-ah)"/>
+<text class="d-t-sm" x="230" y="34">async log stream &rarr; lag &rarr; read-your-writes care</text>
+<text class="d-t-b" x="14" y="86">sharding (scale writes + storage)</text>
+<rect class="d-box" x="14" y="92" width="140" height="18"/><text class="d-t-sm" x="20" y="105">route by shard key = hash(user_id)</text>
+<rect class="d-box-soft" x="14" y="118" width="70" height="18"/><rect class="d-box-soft" x="94" y="118" width="70" height="18"/><rect class="d-box-soft" x="174" y="118" width="70" height="18"/>
+<text class="d-t-sm" x="49" y="131" text-anchor="middle">shard 0</text><text class="d-t-sm" x="129" y="131" text-anchor="middle">shard 1</text><text class="d-t-sm" x="209" y="131" text-anchor="middle">shard 2</text>
+<path class="d-line" d="M84 110 L84 116" marker-end="url(#sysdbs-ah)"/><path class="d-line" d="M120 110 L129 116" marker-end="url(#sysdbs-ah)"/>
+<defs><marker id="sysdbs-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="270" y="105">no cross-shard joins/txns; skewed key = hot shard;</text>
+<text class="d-t-sm" x="270" y="122">rebalance via virtual buckets / consistent hashing.</text>
+<text class="d-t-sm" x="14" y="158">Order to reach for scale: index &amp; tune &rarr; read replicas &rarr; cache &rarr; vertical &rarr; functional split &rarr; shard.</text>
+</svg>
+<figcaption>Replicas multiply <em>copies</em> (reads, availability); shards divide the <em>data</em> (writes, storage). Big systems do both: N shards, each a replicated primary.</figcaption>
+</figure>
+
+
 <h3>The ladder (do these in order)</h3>
 <ol>
 <li><strong>Optimise</strong>: indexes, query rewrites, connection pooling, schema fixes. Buys a lot.</li>
@@ -28450,6 +28480,8 @@ A hot shard receives disproportionate load, becoming the bottleneck while others
 <p class="subtitle">What you give up during a partition, and the spectrum of "how fresh must a read be".</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>CAP theorem</strong> says that when a network <strong>partition</strong> happens, a distributed store must choose between <strong>consistency</strong> (every read sees the latest write) and <strong>availability</strong> (every request gets a non-error response). This page covers what CP and AP actually mean in practice, the spectrum of <strong>consistency models</strong> between &ldquo;strong&rdquo; and &ldquo;eventual&rdquo; (read-your-writes, monotonic reads, causal, bounded-staleness), how <strong>quorums</strong> (R + W &gt; N) tune the trade-off, and <strong>PACELC</strong> &mdash; the extension noting that even without a partition you trade latency against consistency.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 110" role="img" aria-labelledby="d-sdcap-t">
 <title id="d-sdcap-t">During a network partition you must choose consistency or availability</title>
@@ -28602,6 +28634,26 @@ Spanner doesn't beat CAP &mdash; it's a <strong>CP</strong> system that chooses 
 <p class="subtitle">Decouple producers from consumers &mdash; and the delivery, ordering, and failure guarantees that follow.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>message queue</strong> decouples a producer from a consumer: the producer hands off work and moves on, the consumer processes at its own pace. This page covers what that buys you (load levelling / <strong>backpressure</strong>, resilience to consumer downtime, fan-out), the <strong>delivery guarantees</strong> (at-most-once, at-least-once, and why &ldquo;exactly-once&rdquo; is really at-least-once + idempotent consumers), <strong>ordering</strong> guarantees and partitioning, <strong>dead-letter queues</strong> for poison messages, consumer groups, and the differences between a log (Kafka) and a queue (SQS/RabbitMQ).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-sysdq-t">
+<title id="d-sysdq-t">Producers enqueue; the queue buffers; a consumer group processes at its own rate; poison messages go to a DLQ</title>
+<rect class="d-box" x="14" y="30" width="80" height="20"/><text class="d-t-sm" x="54" y="43" text-anchor="middle">producers</text>
+<rect class="d-box-alt" x="150" y="24" width="150" height="32" rx="4"/><text class="d-t-b" x="225" y="38" text-anchor="middle">queue / log</text><text class="d-t-sm" x="225" y="50" text-anchor="middle">buffer, partitions, retention</text>
+<rect class="d-box" x="360" y="20" width="90" height="16"/><rect class="d-box" x="360" y="40" width="90" height="16"/>
+<text class="d-t-sm" x="405" y="32" text-anchor="middle">consumer</text><text class="d-t-sm" x="405" y="52" text-anchor="middle">consumer</text>
+<path class="d-line" d="M94 40 L148 40" marker-end="url(#sysdq-ah)"/><path class="d-line" d="M300 40 L358 28" marker-end="url(#sysdq-ah)"/><path class="d-line" d="M300 40 L358 48" marker-end="url(#sysdq-ah)"/>
+<rect class="d-box-soft" x="360" y="72" width="90" height="18"/><text class="d-t-sm" x="405" y="85" text-anchor="middle">DLQ</text>
+<path class="d-line d-dash" d="M405 56 L405 70" marker-end="url(#sysdq-ah)"/><text class="d-t-sm" x="415" y="84">N failed retries</text>
+<defs><marker id="sysdq-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="112"><tspan class="d-t-b">At-least-once</tspan> is the norm (redeliver on no-ack) &rarr; consumers must be <tspan class="d-t-b">idempotent</tspan>. Ordering only within a partition/key.</text>
+<text class="d-t-sm" x="14" y="132"><tspan class="d-t-b">Backpressure</tspan>: a slow consumer makes the queue grow, not the producer&rsquo;s callers stall &mdash; bounded retention + lag alerts.</text>
+<text class="d-t-sm" x="14" y="152">Log (Kafka): retained, replayable, consumer tracks offset. Queue (SQS/Rabbit): message deleted on ack.</text>
+</svg>
+<figcaption>The queue absorbs bursts and consumer downtime; delivery is at-least-once so consumers dedupe; a dead-letter queue quarantines messages that keep failing.</figcaption>
+</figure>
+
+
 <h3>What a queue buys you</h3>
 <ul>
 <li><strong>Decoupling</strong> &mdash; producer doesn't know or wait for consumers.</li>
@@ -28757,6 +28809,25 @@ Kafka EOS has three pieces: (1) <strong>Idempotent producer</strong> &mdash; eac
 <p class="subtitle">Networks fail mid-request, so everything gets retried &mdash; make the retry safe.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">An operation is <strong>idempotent</strong> if doing it twice has the same effect as doing it once &mdash; the property that makes <strong>retries safe</strong> in an unreliable network. This page covers why retries are unavoidable (timeouts don&rsquo;t tell you if the request succeeded), <strong>idempotency keys</strong> and server-side dedup tables, making writes naturally idempotent (upserts, conditional updates, set-don&rsquo;t-increment), <strong>retry storms</strong> and the backoff-plus-jitter and circuit-breaker patterns that prevent them, and the <strong>transactional outbox</strong> pattern for getting a database write and a message publish to happen together.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-sysdid-t">
+<title id="d-sysdid-t">A timeout hides whether the write happened; the client retries with the same key and the server dedupes</title>
+<rect class="d-box" x="14" y="24" width="70" height="20"/><text class="d-t-sm" x="49" y="37" text-anchor="middle">client</text>
+<rect class="d-box-alt" x="200" y="24" width="90" height="20"/><text class="d-t-sm" x="245" y="37" text-anchor="middle">server</text>
+<path class="d-line" d="M84 30 L198 30" marker-end="url(#sysdid-ah)"/><text class="d-t-sm" x="90" y="24">POST /charge  Idempotency-Key: K</text>
+<path class="d-line d-dash" d="M198 44 L84 44"/><text class="d-t-sm" x="90" y="56">response lost (timeout) &mdash; did it charge? unknown</text>
+<path class="d-line" d="M84 74 L198 74" marker-end="url(#sysdid-ah)"/><text class="d-t-sm" x="90" y="68">retry: same key K</text>
+<rect class="d-box-soft" x="300" y="60" width="200" height="30" rx="4"/><text class="d-t-sm" x="400" y="74" text-anchor="middle">key K seen? &rarr; return stored response</text><text class="d-t-sm" x="400" y="86" text-anchor="middle">(no second charge)</text>
+<path class="d-line" d="M290 74 L298 74" marker-end="url(#sysdid-ah)"/>
+<defs><marker id="sysdid-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="118">Store <tspan class="d-t-mono">key &rarr; response</tspan> in the same transaction as the effect, unique-constrained, scoped to caller+endpoint, expired after ~24&ndash;72h.</text>
+<text class="d-t-sm" x="14" y="138">Retry policy: only idempotent calls, exponential backoff + jitter, a retry budget &mdash; or a downstream blip becomes a retry storm.</text>
+</svg>
+<figcaption>A network timeout is ambiguous, so retries are inevitable. An idempotency key lets the server recognise the duplicate and replay the original outcome instead of repeating the effect.</figcaption>
+</figure>
+
+
 <h3>Why it matters</h3>
 <p>A client sends "charge $50", gets no response (timeout, dropped connection), and retries. Did the
 first one succeed? The client can't tell. Without protection you double-charge. <strong>Idempotency</strong>
@@ -28899,6 +28970,136 @@ Transactional outbox: in the same DB transaction as the update, insert a row int
 </div></div>
 </section>
 <!-- /TOPIC:sysd:idempotency -->
+<!-- TOPIC:sysd:api-design -->
+<section class="view topic" id="v-sysd-api-design" data-skill="sysd">
+<div class="layout">
+<nav class="sidebar" data-sidebar="sysd"></nav>
+<div class="topic-body">
+<h1>API Design: REST, gRPC, Pagination &amp; Versioning</h1>
+<p class="subtitle">The contract between services is the part of a design that&rsquo;s hardest to change later &mdash; so it&rsquo;s worth getting the shape right.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">In a system-design answer, the API is where you make the abstract concrete: it pins down what each service does, what data crosses the boundary, and what guarantees callers can rely on. This page covers choosing a <strong>style</strong> (REST over HTTP/JSON, <strong>gRPC</strong> over HTTP/2 + protobuf, GraphQL, and when a plain async message is better than any request/response), designing <strong>resources and methods</strong> (nouns, HTTP verbs, status codes, idempotency), <strong>pagination</strong> (offset vs cursor and why cursor wins at scale), <strong>versioning</strong> and backward compatibility, <strong>filtering / partial responses / bulk operations</strong>, and the cross-cutting concerns every API needs &mdash; auth, rate limits, errors, timeouts/retries, and idempotency keys for writes.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-sysdapi-t">
+<title id="d-sysdapi-t">Offset pagination re-scans skipped rows and drifts on insert; cursor pagination seeks from a stable key</title>
+<text class="d-t-b" x="14" y="14">offset:  GET /items?limit=20&amp;offset=40</text>
+<rect class="d-line-soft" x="14" y="22" width="180" height="16"/><text class="d-t-sm" x="20" y="34">scan + discard rows 1..40</text>
+<rect class="d-box" x="198" y="22" width="90" height="16"/><text class="d-t-sm" x="243" y="34" text-anchor="middle">return 41..60</text>
+<text class="d-t-sm" x="300" y="34">cost grows with offset; a new row shifts everything &rarr; dupes/skips</text>
+<text class="d-t-b" x="14" y="66">cursor:  GET /items?limit=20&amp;after=eyJpZCI6NjB9</text>
+<rect class="d-box-alt" x="14" y="74" width="180" height="16"/><text class="d-t-sm" x="20" y="86">WHERE (sort_key) &gt; cursor  (indexed seek)</text>
+<rect class="d-box" x="198" y="74" width="90" height="16"/><text class="d-t-sm" x="243" y="86" text-anchor="middle">return next 20</text>
+<text class="d-t-sm" x="300" y="86">O(limit) regardless of depth; stable under inserts</text>
+<path class="d-line" d="M288 30 L360 30" marker-end="url(#sysdapi-ah)"/><path class="d-line" d="M288 82 L360 82" marker-end="url(#sysdapi-ah)"/>
+<defs><marker id="sysdapi-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="118">Cursor = an opaque, encoded pointer to &ldquo;the last item you saw&rdquo; (usually the sort key + tiebreak id). The client passes it back verbatim.</text>
+<text class="d-t-sm" x="14" y="140">Always paginate list endpoints. Return <tspan class="d-t-mono">next_cursor</tspan> (null at end); cap <tspan class="d-t-mono">limit</tspan>; keep the sort stable with a unique tiebreak.</text>
+<text class="d-t-sm" x="14" y="158">Offset is fine for small, bounded lists (a dropdown); never for deep or fast-changing data.</text>
+</svg>
+<figcaption>Offset pagination re-reads everything it skips and gives inconsistent pages when the underlying data changes; cursor pagination is a bounded indexed seek from a stable position.</figcaption>
+</figure>
+
+<h3>Choosing a style</h3>
+<table>
+<tr><th></th><th>REST / JSON</th><th>gRPC / protobuf</th><th>GraphQL</th></tr>
+<tr><td>Transport</td><td>HTTP/1.1 or 2</td><td>HTTP/2 (streaming)</td><td>HTTP, single endpoint</td></tr>
+<tr><td>Best for</td><td>public APIs, CRUD, browser</td><td>internal service-to-service, low latency, streaming</td><td>client-driven aggregation, many screens</td></tr>
+<tr><td>Schema</td><td>OpenAPI (optional)</td><td>.proto (required, codegen)</td><td>SDL (required)</td></tr>
+<tr><td>Cost</td><td>verbose, over/under-fetch</td><td>binary (needs tooling), less browser-native</td><td>server complexity, caching &amp; N+1 hard</td></tr>
+</table>
+<p>Rule of thumb: <strong>REST</strong> for a public or browser-facing API, <strong>gRPC</strong> between your own services (typed contract, fast, bidi streaming), <strong>GraphQL</strong> when many different clients need different slices of the same graph. And if the caller doesn&rsquo;t need a synchronous answer, an <strong>event/message</strong> beats any RPC.</p>
+
+<h3>Resource &amp; method design (REST)</h3>
+<ul>
+<li><strong>Nouns, not verbs</strong>, in paths: <code>/orders/{id}/items</code>, not <code>/getOrderItems</code>. Verbs are the HTTP methods.</li>
+<li><strong>GET</strong> safe + idempotent (cacheable, no side effects). <strong>PUT</strong> / <strong>DELETE</strong> idempotent. <strong>POST</strong> not idempotent (creates) &mdash; so <em>POST needs an idempotency key</em> for safe retries. <strong>PATCH</strong> for partial update.</li>
+<li><strong>Status codes</strong>: 200/201/204 success; 400 malformed; 401 unauthenticated; 403 authenticated-but-forbidden; 404; 409 conflict (e.g. version mismatch); 422 semantic validation; 429 rate-limited (+ <code>Retry-After</code>); 5xx server. Be consistent.</li>
+<li><strong>Error body</strong>: a stable machine-readable <code>code</code>, a human <code>message</code>, a <code>request_id</code>, and field-level details for validation. Don&rsquo;t leak stack traces.</li>
+<li><strong>Consistency of shape</strong>: same casing, same date format (RFC 3339 UTC), same envelope, IDs as strings (opaque), timestamps server-generated.</li>
+</ul>
+
+<h3>Pagination, filtering, bulk</h3>
+<ul>
+<li><strong>Cursor pagination</strong> for anything large or changing (see diagram): return <code>{ data: [...], next_cursor }</code>; client echoes the cursor; cap <code>limit</code> server-side.</li>
+<li><strong>Filtering / sorting</strong>: documented query params (<code>?status=open&amp;sort=-created_at</code>); avoid ad-hoc query languages in a public API.</li>
+<li><strong>Partial responses</strong>: <code>?fields=id,name</code> or GraphQL &mdash; useful when payloads are large and clients vary.</li>
+<li><strong>Bulk</strong>: a <code>POST /items:batchCreate</code> with a list, returning per-item results (some may fail) &mdash; better than N round trips; define the partial-failure semantics.</li>
+</ul>
+
+<h3>Versioning &amp; compatibility</h3>
+<ul>
+<li><strong>Prefer never breaking.</strong> Additive changes are safe: new optional fields, new endpoints, new enum values (clients must tolerate unknown values). Breaking: removing/renaming a field, changing a type, making an optional field required, changing defaults or error codes.</li>
+<li>When you must break: <strong>URL version</strong> (<code>/v2/...</code> &mdash; simple, coarse), <strong>header version</strong> (<code>Accept: application/vnd.acme.v2+json</code> &mdash; cleaner URLs, more caching gotchas), or per-resource versioning. Pick one and apply it consistently.</li>
+<li>Run <strong>N and N-1 together</strong>; announce deprecation with a sunset date and a <code>Deprecation</code>/<code>Sunset</code> header; track per-version usage before removing.</li>
+<li>gRPC/protobuf: keep field numbers stable, only add fields, never reuse a tag, use <code>reserved</code> for removed ones.</li>
+</ul>
+
+<h3>Cross-cutting</h3>
+<ul>
+<li><strong>Auth</strong>: bearer tokens (OAuth2/JWT) or mTLS between services; scopes/permissions per endpoint.</li>
+<li><strong>Rate limiting</strong>: per API key/user; return <code>429</code> + <code>X-RateLimit-*</code> + <code>Retry-After</code>.</li>
+<li><strong>Idempotency</strong>: accept an <code>Idempotency-Key</code> header on POST; store key &rarr; response for a window so retries return the original result.</li>
+<li><strong>Timeouts &amp; retries</strong>: every client call has a timeout; retry only idempotent calls, with exponential backoff + jitter and a budget; propagate a deadline.</li>
+<li><strong>Observability</strong>: a <code>request_id</code> / trace header in and out; structured access logs; latency and error SLOs per endpoint.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>REST</strong> for public/browser, <strong>gRPC</strong> for internal service-to-service, <strong>GraphQL</strong> for client-driven aggregation, <strong>events</strong> when no sync answer is needed.</li>
+<li>Paths = nouns; verbs = HTTP methods. GET safe+idempotent; PUT/DELETE idempotent; POST not (needs <code>Idempotency-Key</code>).</li>
+<li>Status codes: 201 created, 204 no content, 400 vs 401 vs 403 vs 404 vs 409 vs 422 vs 429, 5xx. Stable error body: <code>code</code> + <code>message</code> + <code>request_id</code>.</li>
+<li><strong>Cursor pagination</strong> (not offset) for large/changing lists: return <code>next_cursor</code>, cap <code>limit</code>, stable sort + tiebreak.</li>
+<li>Additive changes safe; removing/renaming/retyping fields = breaking. Version via <code>/v2</code> or <code>Accept</code> header; run N and N-1; deprecate with a sunset date.</li>
+<li>protobuf: only add fields, never reuse tag numbers, <code>reserved</code> for removed.</li>
+<li>Every endpoint: auth + scope, rate limit (429 + Retry-After), timeout, retry only if idempotent (backoff+jitter+budget), trace/request id.</li>
+<li>Bulk endpoint returns per-item results; define partial-failure semantics.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is cursor pagination preferred over <code>offset</code>/<code>limit</code> for large datasets?</dt>
+<dd>Two reasons. <strong>Performance</strong>: <code>OFFSET 100000 LIMIT 20</code> makes the database read and discard 100,000 rows every page &mdash; cost grows linearly with depth. A cursor is a <code>WHERE sort_key &gt; :cursor ORDER BY sort_key LIMIT 20</code>, an indexed seek that&rsquo;s O(limit) no matter how deep you are. <strong>Correctness</strong>: with offset, if rows are inserted or deleted while a client paginates, the window shifts &mdash; the client sees duplicates or misses rows. A cursor pins to a stable position (&ldquo;everything after item X&rdquo;), so concurrent inserts before X don&rsquo;t disturb the sequence. The cursor should encode the sort key plus a unique tiebreaker (e.g. <code>(created_at, id)</code>) so ordering is total. Offset is acceptable only for small, bounded, mostly-static lists where jump-to-page-N is a real requirement.</dd>
+<dt>Which API changes are backward compatible and which aren&rsquo;t?</dt>
+<dd><strong>Compatible (additive)</strong>: adding a new endpoint; adding a new <em>optional</em> request field with a sensible default; adding a new field to a response (clients must ignore unknown fields); adding a new value to an enum <em>if</em> clients were told to tolerate unknowns; loosening a validation rule. <strong>Breaking</strong>: removing or renaming any field; changing a field&rsquo;s type or format; making an optional field required; changing the meaning or default of a field; removing an enum value; changing error codes/status for an existing condition; tightening validation; changing pagination or auth behaviour. The safe design habit is &ldquo;only ever add,&rdquo; make clients tolerant of unknown fields/enum values, and when a true break is unavoidable, ship it as a new version running alongside the old one.</dd>
+<dt>When would you choose gRPC over REST?</dt>
+<dd>For <strong>internal service-to-service</strong> calls where you control both ends: you get a strongly-typed contract (<code>.proto</code>) with generated clients/servers in every language, compact binary framing over HTTP/2 with multiplexing, first-class streaming (server-, client-, and bidirectional), and lower latency and CPU than JSON. Downsides that make it a poor <em>public</em> API: not natively callable from a browser without a proxy (grpc-web), binary payloads are hard to eyeball/curl, and it needs codegen tooling in every consumer. So: gRPC inside the mesh, REST (or GraphQL) at the edge. GraphQL specifically when diverse clients each need a different subset of a rich data graph and you want to avoid many bespoke REST endpoints or over-fetching.</dd>
+<dt>How do you make a <code>POST /payments</code> endpoint safe to retry?</dt>
+<dd>Accept an <code>Idempotency-Key</code> header (a client-generated UUID for that logical operation). On the server, in the same transaction as creating the payment, insert the key into a <code>idempotency_keys</code> table with a unique constraint and store the response (status + body). If the key already exists, return the stored response instead of creating a second payment. Scope the key to the endpoint + authenticated caller, and expire it after a window (24&ndash;72h). The client retries the exact same request with the same key on timeout or 5xx. Combine with a backoff+jitter retry policy and a retry budget so a downstream outage doesn&rsquo;t cause a retry storm. This turns a non-idempotent operation into an effectively-once one from the client&rsquo;s perspective.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Which HTTP methods are idempotent, and why does it matter?</summary><div class="answer-box">
+GET, PUT, DELETE (and HEAD/OPTIONS) are idempotent &mdash; repeating the call has the same effect as making it once. POST is not (it typically creates a new resource each time). It matters because clients and proxies may safely retry idempotent calls after a timeout, whereas a retried POST can double-charge / double-create unless you add an idempotency key.
+</div></details>
+<details class="answer-reveal"><summary>What&rsquo;s the difference between 401 and 403?</summary><div class="answer-box">
+401 Unauthorized = &ldquo;I don&rsquo;t know who you are&rdquo; (missing/invalid credentials) &mdash; re-authenticate. 403 Forbidden = &ldquo;I know who you are, and you&rsquo;re not allowed to do this&rdquo; &mdash; re-authenticating won&rsquo;t help.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Design the API for a &ldquo;comments on a post&rdquo; feature: list, create, edit, delete, with nesting and moderation. Sketch the endpoints and key decisions.</summary><div class="answer-box">
+<strong>Endpoints</strong>: <code>GET /posts/{postId}/comments?after=&amp;limit=&amp;sort=-created_at</code> (cursor-paginated, returns top-level comments with a <code>reply_count</code> and maybe the first few replies embedded); <code>GET /comments/{id}/replies?after=&amp;limit=</code> (paginated children &mdash; don&rsquo;t deep-nest in one response, cap depth, let the client expand); <code>POST /posts/{postId}/comments</code> body <code>{ text, parent_id? }</code> with an <code>Idempotency-Key</code> header, returns 201 + the created comment; <code>PATCH /comments/{id}</code> <code>{ text }</code> (author only, within an edit window, returns 200 with <code>edited_at</code>); <code>DELETE /comments/{id}</code> (author or moderator; soft-delete &mdash; keep the node so replies aren&rsquo;t orphaned, blank the body, set <code>deleted: true</code>, 204); <code>POST /comments/{id}/reports</code> for moderation, and a moderator-only <code>POST /comments/{id}:hide</code> / <code>:unhide</code>. <strong>Decisions</strong>: cursor pagination on <code>(created_at, id)</code>; limit nesting to 1&ndash;2 levels in the API and load deeper on demand; soft-delete for tree integrity; optimistic concurrency on edit via <code>If-Match</code>/<code>version</code> returning 409 on conflict; rate-limit <code>POST</code> per user (429 + Retry-Under); auth scopes: any authed user can create, author can edit/delete own, moderators can hide/delete any; error body with <code>code</code> (e.g. <code>comment_too_long</code>, <code>edit_window_expired</code>) + <code>request_id</code>; consistent field shapes (<code>id</code> string, <code>created_at</code> RFC3339 UTC, <code>author</code> as a nested user object or id + expand param). Additive-only evolution: adding <code>reactions</code> later is a new field + new endpoint, no version bump.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Your company is splitting a monolith into services. Design the API strategy: internal vs external contracts, evolution, compatibility testing, and how clients discover and depend on APIs.</summary><div class="answer-box">
+<strong>Two tiers, different rules.</strong> <em>External</em> (partners, mobile, web): REST/JSON at a gateway, OpenAPI-specified, versioned conservatively (<code>/v1</code>, breaking changes are rare and cost a new version running alongside for a long deprecation window with usage tracking and <code>Sunset</code> headers), strict backward-compat, generous input tolerance. <em>Internal</em> (service-to-service): gRPC with <code>.proto</code> contracts in a shared schema repo, evolved additively (new fields only, stable tag numbers, <code>reserved</code> for removals), no URL versioning &mdash; the proto compatibility rules <em>are</em> the version policy. The gateway/BFF layer translates external REST into internal gRPC and shields external clients from internal churn. <strong>Contract ownership &amp; discovery</strong>: each service owns its schema, published to a central registry (schema repo + generated docs + a service catalog listing endpoints, owners, SLOs, and consumers). Consumers depend on generated client libraries pinned by version, not hand-rolled calls. <strong>Compatibility testing in CI</strong>: (1) a schema linter enforces the additive-only rules and naming conventions on every proto/OpenAPI change; (2) <strong>consumer-driven contract tests</strong> (Pact-style) &mdash; each consumer publishes the subset of the API it actually uses; the provider&rsquo;s CI replays all consumers&rsquo; contracts and fails the build if a change would break any of them; (3) a stored corpus of real requests replayed against the new version (shadow/regression); (4) for protobuf, `buf breaking` (or equivalent) against the previous published schema. <strong>Runtime safety</strong>: every call has a timeout and a deadline propagated downstream; retries only on idempotent methods with backoff+jitter and a budget; circuit breakers; all writes carry idempotency keys; a trace id flows through every hop. <strong>Rollout</strong>: providers deploy new (compatible) versions first; consumers migrate on their own schedule; removing an old field waits until the registry shows zero usage for N weeks. <strong>Governance</strong>: a lightweight API review for new external endpoints and any breaking internal change, checking resource modelling, pagination, error shape, auth scopes, and PII handling against a written style guide. Net: internal contracts evolve fast under machine-checked additive rules and consumer contract tests; external contracts evolve slowly under human review and long deprecations; a translation layer decouples the two so internal refactoring never forces an external version bump.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:sysd:api-design -->
+
 
 <!-- TOPIC:sysd:cdn-storage -->
 <section class="view topic" id="v-sysd-cdn-storage" data-skill="sysd">
@@ -28909,6 +29110,24 @@ Transactional outbox: in the same DB transaction as the update, insert a row int
 <p class="subtitle">Serving files and media at scale &mdash; edge caching, object stores, and presigned uploads.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers serving large and static content cheaply and fast. A <strong>CDN</strong> caches content at <strong>edge</strong> locations near users, cutting latency and origin load; it covers cache keys, TTLs and <code>Cache-Control</code>, purging/invalidation, and origin shielding. <strong>Blob / object storage</strong> (S3 and friends) holds unstructured data as objects in buckets with HTTP access &mdash; covered here: the flat key namespace, <strong>presigned URLs</strong> for direct client upload/download without proxying through your servers, storage classes, and handling <strong>hot objects</strong>. Together they keep bytes off your application tier.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 140" role="img" aria-labelledby="d-sysdcs-t">
+<title id="d-sysdcs-t">Client hits the nearest CDN edge; a miss goes to origin shield then origin; uploads go direct to blob storage via presigned URL</title>
+<rect class="d-box" x="14" y="28" width="60" height="20"/><text class="d-t-sm" x="44" y="41" text-anchor="middle">client</text>
+<rect class="d-box-alt" x="110" y="24" width="80" height="28" rx="4"/><text class="d-t-b" x="150" y="42" text-anchor="middle">edge PoP</text>
+<rect class="d-box-soft" x="230" y="24" width="80" height="28" rx="4"/><text class="d-t-sm" x="270" y="42" text-anchor="middle">shield</text>
+<rect class="d-box" x="350" y="24" width="90" height="28" rx="4"/><text class="d-t-sm" x="395" y="42" text-anchor="middle">origin / blob</text>
+<path class="d-line" d="M74 38 L108 38" marker-end="url(#sysdcs-ah)"/><text class="d-t-sm" x="80" y="30">anycast &rarr; nearest</text>
+<path class="d-line d-dash" d="M190 38 L228 38" marker-end="url(#sysdcs-ah)"/><path class="d-line d-dash" d="M310 38 L348 38" marker-end="url(#sysdcs-ah)"/><text class="d-t-sm" x="200" y="30">miss</text>
+<path class="d-line" d="M44 48 C 44 110, 395 110, 395 54" marker-end="url(#sysdcs-ah)"/><text class="d-t-sm" x="120" y="106">upload/download direct via presigned URL (bypasses app tier)</text>
+<defs><marker id="sysdcs-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="130">Cache key = host + path + selected headers/params. TTL via <tspan class="d-t-mono">Cache-Control</tspan>; change the URL (fingerprint) instead of purging.</text>
+</svg>
+<figcaption>The edge serves most reads; a shield collapses misses so origin sees few requests; large uploads/downloads go straight to object storage via a presigned URL, never through your servers.</figcaption>
+</figure>
+
+
 <h3>Object / blob storage (S3, GCS, Azure Blob)</h3>
 <ul>
 <li>Flat key&rarr;object store (the "folders" are just key prefixes). Massive scale, ~11 nines durability (erasure-coded across facilities), cheap, but higher per-request latency than a disk and eventual-ish listing.</li>
@@ -29030,6 +29249,29 @@ The core tension: a CDN caches responses by URL and serves them to anyone who re
 <p class="subtitle">The classic warm-up &mdash; key generation, the read-heavy redirect path, and scale.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">&ldquo;Design a URL shortener&rdquo; (TinyURL/bit.ly) is a compact system-design problem that exercises key generation, storage choice, and read-path optimisation. This page works it end to end: the <strong>API</strong> (create, redirect, stats), <strong>key generation</strong> strategies (hash-and-truncate with collision retry, a counter in base62, pre-generated key pool, per-host ranges), the <strong>storage</strong> (a simple KV lookup, heavily read-skewed so cache-friendly), the <strong>redirect</strong> path (301 vs 302 and the analytics implication), custom aliases, expiry, and scaling the ~100:1 read/write ratio.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-sysdus-t">
+<title id="d-sysdus-t">Write path generates a short key and stores the mapping; read path looks it up and 301/302 redirects</title>
+<text class="d-t-b" x="14" y="14">create (rare)</text>
+<rect class="d-box" x="14" y="20" width="80" height="18"/><text class="d-t-sm" x="54" y="33" text-anchor="middle">POST /url</text>
+<rect class="d-box-soft" x="110" y="20" width="130" height="18"/><text class="d-t-sm" x="175" y="33" text-anchor="middle">key = base62(counter)</text>
+<rect class="d-box-alt" x="256" y="20" width="150" height="18"/><text class="d-t-sm" x="331" y="33" text-anchor="middle">KV: key &rarr; long URL</text>
+<path class="d-line" d="M94 29 L108 29" marker-end="url(#sysdus-ah)"/><path class="d-line" d="M240 29 L254 29" marker-end="url(#sysdus-ah)"/>
+<text class="d-t-b" x="14" y="66">redirect (~100x more)</text>
+<rect class="d-box" x="14" y="72" width="90" height="18"/><text class="d-t-sm" x="59" y="85" text-anchor="middle">GET /abc123</text>
+<rect class="d-box-soft" x="120" y="72" width="90" height="18"/><text class="d-t-sm" x="165" y="85" text-anchor="middle">cache hit?</text>
+<rect class="d-box-alt" x="226" y="72" width="120" height="18"/><text class="d-t-sm" x="286" y="85" text-anchor="middle">KV lookup on miss</text>
+<rect class="d-box" x="362" y="72" width="140" height="18"/><text class="d-t-sm" x="432" y="85" text-anchor="middle">301/302 &rarr; Location</text>
+<path class="d-line" d="M104 81 L118 81" marker-end="url(#sysdus-ah)"/><path class="d-line" d="M210 81 L224 81" marker-end="url(#sysdus-ah)"/><path class="d-line" d="M346 81 L360 81" marker-end="url(#sysdus-ah)"/>
+<defs><marker id="sysdus-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="118"><tspan class="d-t-b">301</tspan> (permanent) = browsers/proxies cache it &rarr; fewer hits but no per-click analytics. <tspan class="d-t-b">302</tspan> = every click reaches you (count it) at more load.</text>
+<text class="d-t-sm" x="14" y="138">Key gen: counter&rarr;base62 (dense, guessable), hash+truncate (retry on collision), or a pre-filled key pool.</text>
+</svg>
+<figcaption>Heavily read-skewed and a pure key&rarr;value lookup, so the redirect path is cache-friendly; the design choices are the key-generation scheme and 301 vs 302.</figcaption>
+</figure>
+
+
 <h3>Requirements &amp; estimate</h3>
 <ul>
 <li>Functional: <code>POST /shorten {url}</code> &rarr; short code; <code>GET /{code}</code> &rarr; 301/302 redirect. Optional: custom alias, expiry, click analytics, user accounts.</li>
@@ -29167,6 +29409,30 @@ Shorteners hide the destination, which attackers love. Layered defences: (1) <st
 <p class="subtitle">Fan-out on write vs read, delivery, ordering, and the celebrity problem.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">News feeds and chat systems both come down to one question: when A produces content, how does it reach A&rsquo;s followers/recipients? This page covers <strong>fan-out on write</strong> (push into every follower&rsquo;s timeline at post time &mdash; fast reads, expensive for users with millions of followers) vs <strong>fan-out on read</strong> (assemble the feed by querying followees at read time &mdash; cheap writes, expensive reads) and the <strong>hybrid</strong> that most real systems use, plus the <strong>celebrity problem</strong>, timeline storage, delivery (long-poll / WebSocket / push), presence, ordering, and read receipts.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-sysdcf-t">
+<title id="d-sysdcf-t">Fan-out on write pushes a post into every follower timeline; fan-out on read gathers followees at read time</title>
+<text class="d-t-b" x="14" y="14">fan-out on write (push)</text>
+<rect class="d-box" x="14" y="20" width="70" height="18"/><text class="d-t-sm" x="49" y="33" text-anchor="middle">A posts</text>
+<rect class="d-box-alt" x="120" y="12" width="90" height="14"/><rect class="d-box-alt" x="120" y="28" width="90" height="14"/><rect class="d-box-alt" x="120" y="44" width="90" height="14"/>
+<text class="d-t-sm" x="165" y="23" text-anchor="middle">follower timeline</text><text class="d-t-sm" x="165" y="39" text-anchor="middle">follower timeline</text><text class="d-t-sm" x="165" y="55" text-anchor="middle">follower timeline</text>
+<path class="d-line" d="M84 29 L118 20" marker-end="url(#sysdcf-ah)"/><path class="d-line" d="M84 29 L118 35" marker-end="url(#sysdcf-ah)"/><path class="d-line" d="M84 29 L118 50" marker-end="url(#sysdcf-ah)"/>
+<text class="d-t-sm" x="230" y="30">read = O(1): pre-built. Write = O(followers).</text>
+<text class="d-t-sm" x="230" y="46">bad for celebrities (millions of writes/post).</text>
+<text class="d-t-b" x="14" y="90">fan-out on read (pull)</text>
+<rect class="d-box" x="14" y="96" width="90" height="18"/><text class="d-t-sm" x="59" y="109" text-anchor="middle">B opens feed</text>
+<rect class="d-box-soft" x="140" y="96" width="150" height="18"/><text class="d-t-sm" x="215" y="109" text-anchor="middle">query each followee, merge, sort</text>
+<path class="d-line" d="M104 105 L138 105" marker-end="url(#sysdcf-ah)"/>
+<defs><marker id="sysdcf-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="300" y="109">write = O(1). read = O(followees). slow feed.</text>
+<text class="d-t-sm" x="14" y="140"><tspan class="d-t-b">Hybrid</tspan>: fan-out on write for normal users; pull-and-merge for the few high-fan-out accounts you follow. Best of both.</text>
+<text class="d-t-sm" x="14" y="158">Timeline stored per user (Redis list / wide-column row); delivery via WebSocket/push; order by (timestamp, id).</text>
+</svg>
+<figcaption>The core trade-off: pay at write time (push into every timeline, fast reads) or at read time (gather from every followee, cheap writes). Real systems hybridise around the celebrity problem.</figcaption>
+</figure>
+
+
 <h3>News feed: the core question is fan-out</h3>
 <table>
 <tr><th></th><th>Fan-out on write (push)</th><th>Fan-out on read (pull)</th></tr>
@@ -46496,6 +46762,7 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["cap-consistency", "CAP & Consistency Models",            "CP vs AP, strong/eventual/causal/read-your-writes, quorums, PACELC, tunable consistency."],
       ["queues",          "Message Queues & Async Processing",   "Decoupling, at-least/at-most/exactly-once, ordering, DLQ, backpressure, Kafka vs SQS."],
       ["idempotency",     "Idempotency, Retries & Exactly-Once", "Idempotency keys, dedup, retry storms, outbox pattern, effectively-once."],
+      ["api-design",      "API Design: REST, gRPC, Pagination & Versioning", "REST vs gRPC vs GraphQL, resources & status codes, cursor pagination, backward-compatible evolution, versioning, idempotency keys."],
       ["cdn-storage",     "CDNs, Blob Storage & Static Content", "Edge caching, cache keys, purge, object storage, presigned URLs, hot objects."],
       ["url-shortener",   "Design a URL Shortener",              "API, key generation, storage, redirect path, analytics, custom aliases, scale."],
       ["chat-feed",       "Design a News Feed / Chat System",    "Fan-out on write vs read, timeline, delivery, presence, ordering, celebrity problem."]
