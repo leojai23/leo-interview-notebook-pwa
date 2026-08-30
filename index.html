@@ -4159,6 +4159,8 @@ The MMU maps <em>virtual</em> pages to <em>physical</em> frames, and the kernel 
 <p class="subtitle">What actually happens between pressing Enter and the command running.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>shell</strong> is both an interactive command interpreter and a scripting language: it reads lines, expands them (variables, globs, substitutions), and runs the result as programs or built-ins. This page covers the execution model &mdash; the difference between <code>sh</code> (the POSIX standard) and <code>bash</code> (a superset with extras), <strong>running</strong> a script in a child process vs <strong>sourcing</strong> it into the current shell, the <code>#!</code> <strong>shebang</strong> line and why <code>#!/usr/bin/env bash</code> is preferred, how the shell finds a command (built-in &rarr; function &rarr; <code>$PATH</code> search), and <code>$?</code>, the exit status of the last command.</p>
+
 <h3>What a shell is</h3>
 <p>A shell is both an interactive command interpreter and a programming language. Common ones:
 <code>bash</code> (the usual Linux default), <code>dash</code> (a small, fast POSIX <code>sh</code> &mdash; often
@@ -4359,6 +4361,8 @@ cron runs a minimal non-interactive, non-login shell with a bare <code>PATH</cod
 <p class="subtitle">Ninety percent of shell bugs are a missing pair of double quotes.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Almost every shell bug is a <strong>quoting</strong> bug. The shell performs a fixed sequence of expansions on each word &mdash; parameter/variable expansion, command substitution, arithmetic, then <strong>word splitting</strong> (on <code>$IFS</code>) and <strong>pathname expansion</strong> (globbing) &mdash; and quoting is how you control which steps happen. This page covers single quotes (literal, no expansion) vs double quotes (expand, but no splitting/globbing), <code>$VAR</code> vs <code>${VAR}</code>, the <code>${VAR:-default}</code> / <code>${VAR:?err}</code> / <code>${VAR:+alt}</code> family, and why you almost always want <code>"$VAR"</code> and <code>"$@"</code> in double quotes.</p>
+
 <h3>Variables</h3>
 <p>No spaces around <code>=</code>: <code>name=value</code> (a space makes the shell try to run <code>name</code> as a
 command). Everything is a string. Read with <code>$name</code> or <code>${name}</code>; use braces when the
@@ -4533,6 +4537,28 @@ Unquoted, both expand and then word-split, so they behave similarly (and unsafel
 <p class="subtitle">Three test syntaxes, one of which you should almost always use.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Shell conditionals branch on a command&rsquo;s <strong>exit status</strong> (0 = true/success, non-zero = false), not on a boolean type. This page covers the three test constructs &mdash; the <code>test</code> / <code>[ ]</code> POSIX builtin, bash&rsquo;s <code>[[ ]]</code> (no word-splitting, <code>=~</code> regex, <code>&amp;&amp;</code>/<code>||</code> inside), and arithmetic <code>(( ))</code> &mdash; the string, numeric, and file-test operators, short-circuit <code>&amp;&amp;</code> / <code>||</code> chaining, and <code>case</code> for pattern matching. It also covers the classic traps: unquoted variables in <code>[ ]</code>, <code>=</code> vs <code>-eq</code>, and <code>[ ]</code> vs <code>[[ ]]</code>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 175" role="img" aria-labelledby="d-shcond-t">
+<title id="d-shcond-t">Choosing between test/[ ], [[ ]] and (( )) and how &amp;&amp; / || short-circuit on exit status</title>
+<text class="d-t-b" x="14" y="16">which test construct?</text>
+<rect class="d-box" x="14" y="24" width="150" height="34"/><text class="d-t-sm" x="20" y="38">strings / files, POSIX sh</text><text class="d-t-mono d-t-sm" x="20" y="52">[ "$a" = "$b" ]</text>
+<rect class="d-box-soft" x="180" y="24" width="150" height="34"/><text class="d-t-sm" x="186" y="38">strings / files, bash</text><text class="d-t-mono d-t-sm" x="186" y="52">[[ $a == p* &amp;&amp; -f $f ]]</text>
+<rect class="d-box-alt" x="346" y="24" width="150" height="34"/><text class="d-t-sm" x="352" y="38">numbers</text><text class="d-t-mono d-t-sm" x="352" y="52">(( a &gt; b ))</text>
+<text class="d-t-sm" x="14" y="78">[[ ]] adds: no word-split / no glob on unquoted vars, <tspan class="d-t-mono">=~</tspan> regex, <tspan class="d-t-mono">&lt;</tspan> string compare, <tspan class="d-t-mono">&amp;&amp;</tspan>/<tspan class="d-t-mono">||</tspan> inside.</text>
+<text class="d-t-b" x="14" y="106">exit status IS the boolean (0 = true)</text>
+<rect class="d-box" x="14" y="114" width="90" height="22"/><text class="d-t-mono d-t-sm" x="59" y="128" text-anchor="middle">cmd1</text>
+<rect class="d-box" x="150" y="114" width="120" height="22"/><text class="d-t-mono d-t-sm" x="210" y="128" text-anchor="middle">&amp;&amp; cmd2</text>
+<rect class="d-box" x="316" y="114" width="120" height="22"/><text class="d-t-mono d-t-sm" x="376" y="128" text-anchor="middle">|| cmd3</text>
+<path class="d-line" d="M104 125 L148 125" marker-end="url(#shcond-ah)"/><text class="d-t-sm" x="104" y="150">runs only if cmd1 =0</text>
+<path class="d-line" d="M270 125 L314 125" marker-end="url(#shcond-ah)"/><text class="d-t-sm" x="270" y="150">runs only if the left side &ne;0</text>
+<defs><marker id="shcond-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="170">Trap: <tspan class="d-t-mono">a=$((x))</tspan> or <tspan class="d-t-mono">(( x ))</tspan> returns 1 when the value is 0 &mdash; can abort a <tspan class="d-t-mono">set -e</tspan> script.</text>
+</svg>
+<figcaption><code>[ ]</code> is a real command (POSIX, portable); <code>[[ ]]</code> is bash syntax (safer, more features); <code>(( ))</code> is for integer maths. Match the tool to the data.</figcaption>
+</figure>
+
+
 <h3><code>if</code> tests an exit status, not a boolean</h3>
 <pre><code><span class="k">if</span> command; <span class="k">then</span> ...; <span class="k">elif</span> other; <span class="k">then</span> ...; <span class="k">else</span> ...; <span class="k">fi</span></code></pre>
 <p><code>if</code> runs the command and branches on whether its exit status is <code>0</code>. <code>[</code> (a.k.a.
@@ -4687,6 +4713,8 @@ Quote every operand, and defend against operands that look like operators by pre
 <p class="subtitle">And the one correct way to loop over lines of a file.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Loops in the shell iterate over <strong>words</strong>, not lines by default &mdash; which is the source of most &ldquo;it broke on a filename with a space&rdquo; bugs. This page covers <code>for x in &hellip;</code> (and why <code>for f in *.txt</code> is safe but <code>for f in $(ls)</code> is not), C-style <code>for ((;;))</code>, <code>while</code> / <code>until</code>, the <code>while IFS= read -r line</code> idiom for reading a file or stream line by line, <code>break</code> / <code>continue</code> with levels, and piping into a loop vs the subshell-variable-scope gotcha it creates.</p>
+
 <h3><code>for</code></h3>
 <pre><code><span class="k">for</span> host <span class="k">in</span> web1 web2 db1; <span class="k">do</span> ssh <span class="s">"$host"</span> uptime; <span class="k">done</span>
 <span class="k">for</span> f <span class="k">in</span> *.log; <span class="k">do</span> gzip -- <span class="s">"$f"</span>; <span class="k">done</span>       <span class="c"># glob; handles spaces</span>
@@ -4861,6 +4889,8 @@ Or, more robustly, pipe the list into <code>xargs -P "$max" -n1</code> or GNU <c
 <p class="subtitle">Functions return an exit code, not a value &mdash; internalise that and the rest follows.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A shell <strong>function</strong> is a named block that receives <strong>positional parameters</strong> exactly like a script does &mdash; <code>$1</code>, <code>$2</code>, <code>$@</code>, <code>$#</code> &mdash; not a named-argument list. This page covers defining and calling functions, <code>"$@"</code> (each arg preserved) vs <code>"$*"</code> (all args joined) and why the quoting matters, <code>shift</code>, <code>local</code> variables (functions otherwise mutate globals), returning information via <strong>exit status</strong> (<code>return N</code>, 0&ndash;255) vs <strong>stdout</strong> (<code>echo</code> + command substitution), and recursion.</p>
+
 <h3>Defining and calling</h3>
 <pre><code>greet() {                 <span class="c"># POSIX form (preferred)</span>
     local name=<span class="s">"$1"</span>       <span class="c"># 'local' is bash/ksh, not POSIX</span>
@@ -5031,6 +5061,27 @@ Braces run the body in the <em>current</em> shell; parentheses run it in a <em>s
 <p class="subtitle">Real lists (not space-separated strings), and string surgery without <code>sed</code>.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Bash <strong>arrays</strong> and <strong>string operators</strong> let you avoid shelling out to <code>sed</code>/<code>cut</code>/<code>expr</code> for common manipulations. This page covers indexed arrays (<code>arr=(a b c)</code>, <code>"${arr[@]}"</code>, <code>"${#arr[@]}"</code>) and associative arrays (<code>declare -A</code>), and the parameter-expansion toolkit: length <code>${#x}</code>, substring <code>${x:off:len}</code>, prefix/suffix strip <code>${x#pat}</code> / <code>${x%pat}</code> (and <code>##</code> / <code>%%</code> greedy), substitution <code>${x/old/new}</code> / <code>${x//old/new}</code>, and case conversion <code>${x^^}</code> / <code>${x,,}</code>. All of it is builtin &mdash; no subprocess.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 170" role="img" aria-labelledby="d-sharr-t">
+<title id="d-sharr-t">Parameter-expansion operators for stripping, replacing and case-changing a variable</title>
+<text class="d-t-mono d-t-b" x="14" y="18">path="/var/log/app.log.1"</text>
+<rect class="d-box-soft" x="14" y="28" width="150" height="20"/><text class="d-t-mono d-t-sm" x="20" y="42">${path##*/}</text>
+<text class="d-t-sm" x="176" y="42">&rarr; app.log.1   (greedy strip longest prefix <tspan class="d-t-mono">*/</tspan>)</text>
+<rect class="d-box-soft" x="14" y="52" width="150" height="20"/><text class="d-t-mono d-t-sm" x="20" y="66">${path%/*}</text>
+<text class="d-t-sm" x="176" y="66">&rarr; /var/log     (strip shortest suffix <tspan class="d-t-mono">/*</tspan>)</text>
+<rect class="d-box-soft" x="14" y="76" width="150" height="20"/><text class="d-t-mono d-t-sm" x="20" y="90">${path%.*}</text>
+<text class="d-t-sm" x="176" y="90">&rarr; /var/log/app.log   (drop last extension)</text>
+<rect class="d-box-alt" x="14" y="100" width="150" height="20"/><text class="d-t-mono d-t-sm" x="20" y="114">${path//./_}</text>
+<text class="d-t-sm" x="176" y="114">&rarr; /var/log/app_log_1   (<tspan class="d-t-mono">//</tspan> = replace all; <tspan class="d-t-mono">/</tspan> = first)</text>
+<rect class="d-box-alt" x="14" y="124" width="150" height="20"/><text class="d-t-mono d-t-sm" x="20" y="138">${path:5:3}  ${#path}</text>
+<text class="d-t-sm" x="176" y="138">&rarr; substring off/len ; length in chars</text>
+<text class="d-t-sm" x="14" y="160"><tspan class="d-t-mono">#</tspan>/<tspan class="d-t-mono">%</tspan> = anchor at start/end &middot; double it = greedy &middot; <tspan class="d-t-mono">^^</tspan>/<tspan class="d-t-mono">,,</tspan> = upper/lower &middot; all builtin, no subprocess.</text>
+</svg>
+<figcaption>Memory hook: <code>#</code> is left of <code>$</code> on the keyboard so <code>${x#..}</code> trims the <em>left</em>; <code>%</code> is right-ish so <code>${x%..}</code> trims the <em>right</em>.</figcaption>
+</figure>
+
+
 <h3>Indexed arrays (bash)</h3>
 <pre><code>files=(a.txt b.txt <span class="s">"c d.txt"</span>)     <span class="c"># literal</span>
 files+=(e.txt)                    <span class="c"># append</span>
@@ -5172,6 +5223,8 @@ Bash associative arrays don't preserve order, so keep two structures: an indexed
 <p class="subtitle">Three fixed file descriptors, and the ordering rule that trips everyone up.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Every process starts with three open file descriptors &mdash; <strong>0 stdin, 1 stdout, 2 stderr</strong> &mdash; and redirection rewires them to files, devices, or pipes <em>before</em> the command runs. This page covers <code>&gt;</code> / <code>&gt;&gt;</code> / <code>&lt;</code>, redirecting stderr, the order-sensitive <code>2&gt;&amp;1</code> (&ldquo;make fd 2 a copy of wherever fd 1 points <em>now</em>&rdquo;), <code>/dev/null</code>, here-documents (<code>&lt;&lt;EOF</code>) and here-strings (<code>&lt;&lt;&lt;</code>), pipes and <code>tee</code>, and <strong>process substitution</strong> <code>&lt;(cmd)</code> which hands a command&rsquo;s output to something that expects a filename.</p>
+
 <h3>The standard descriptors</h3>
 <p><code>0</code> = stdin, <code>1</code> = stdout, <code>2</code> = stderr. Redirection rewires them for one command.</p>
 <table>
@@ -5347,6 +5400,8 @@ Identical unless <code>set -o noclobber</code> is active. With <code>noclobber</
 <p class="subtitle">Capturing output, doing maths, and not losing exit codes in the process.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Command substitution</strong> captures a command&rsquo;s stdout and splices it into the current command line; <strong>arithmetic expansion</strong> evaluates integer math. This page covers <code>$(cmd)</code> (nestable, clear) vs the legacy backtick form, why the result is subject to word-splitting unless quoted, how the exit status of <code>$(&hellip;)</code> propagates (and the <code>local x=$(cmd)</code> trap that hides it), <code>$(( expr ))</code> for arithmetic and the <code>(( expr ))</code> command form, <code>let</code>, and integer-only limitations (use <code>awk</code> or <code>bc</code> for floating point).</p>
+
 <h3>Command substitution</h3>
 <pre><code>now=$(date +%s)                 <span class="c"># preferred</span>
 now=`date +%s`                  <span class="c"># legacy backticks -- avoid</span>
@@ -5399,6 +5454,28 @@ echo $(( 8#17 ))         <span class="c"># 15  -- base#number</span>
 <li>A leading zero means <strong>octal</strong>: <code>$(( 08 ))</code> is an error. Strip it: <code>$(( 10#$var ))</code> forces base 10 &mdash; essential for values like <code>"09"</code> from <code>date</code>.</li>
 <li><code>(( expr ))</code> exit status is <code>1</code> when <code>expr</code> is <code>0</code> &mdash; can trip <code>set -e</code>.</li>
 <li>Undefined variables in arithmetic are treated as <code>0</code> (even under <code>set -u</code> for bare names inside <code>(( ))</code>).</li>
+</ul>
+
+<h3>Capturing structured output: read and mapfile</h3>
+<p><strong>What / why.</strong> Command substitution gives you one blob of text. When the command emits <em>fields</em> or <em>lines</em> you want as separate values, splitting that blob with <code>$IFS</code> is fragile (spaces in data, glob characters). <code>read</code> and <code>mapfile</code> parse the stream directly.</p>
+<pre><code><span class="c"># split one line into named fields (no subshell, no word-split surprises)</span>
+read -r year month day &lt;&lt;&lt; "$(date +'%Y %m %d')"
+
+<span class="c"># iterate lines safely: -r keeps backslashes, IFS= keeps leading/trailing spaces</span>
+while IFS= read -r line; do
+    printf 'got: %s\n' "$line"
+done &lt; file.txt
+
+<span class="c"># slurp all lines into an array, one element per line (bash 4+)</span>
+mapfile -t lines &lt; file.txt          <span class="c"># same as: readarray -t lines</span>
+printf '%s line(s)\n' "${#lines[@]}"
+
+<span class="c"># field-split a known-delimited record</span>
+IFS=':' read -r user _ uid _ &lt;&lt;&lt; "$(getent passwd \"$USER\")"</code></pre>
+<ul>
+<li><code>read</code> returns non-zero at EOF &mdash; that is how the <code>while read</code> loop terminates; do not treat it as an error.</li>
+<li>Piping into <code>while read</code> runs the loop in a <strong>subshell</strong>, so variables set inside are lost. Use <code>&lt; file</code> or <code>&lt; &lt;(cmd)</code> (process substitution) instead of <code>cmd | while &hellip;</code>.</li>
+<li><code>mapfile -t</code> strips the trailing newline from each element; without <code>-t</code> they are kept.</li>
 </ul>
 </div></details>
 
@@ -5491,6 +5568,8 @@ It's a bash special case for command substitution containing only an input redir
 <p class="subtitle">The "unofficial strict mode" &mdash; what it buys you, and where it bites.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Robust scripts fail loudly and clean up after themselves. This page covers the <strong><code>set</code> flags</strong> &mdash; <code>-e</code> (exit on any unchecked failure, plus its many surprising exceptions), <code>-u</code> (error on unset variables), <code>-o pipefail</code> (a pipeline fails if <em>any</em> stage fails, not just the last) &mdash; the common <code>set -euo pipefail</code> preamble and its caveats, and <code><strong>trap</strong></code> for running handlers on <code>EXIT</code> (guaranteed cleanup), <code>ERR</code>, and <code>INT</code>/<code>TERM</code>, typically paired with <code>mktemp</code> for safe temporary files.</p>
+
 <h3>The strict-mode header</h3>
 <pre><code>#!/usr/bin/env bash
 set -euo pipefail
@@ -5666,6 +5745,8 @@ For a whole tree, <code>kill -- -$$</code> (negative PID = process group) or sta
 <p class="subtitle">The classic pipeline toolkit &mdash; and when to reach for <code>awk</code> instead of chaining five tools.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The Unix philosophy is small tools composed by pipes over line-oriented text, and this page covers the core set. <strong>grep</strong> (filter lines by regex; <code>-E</code>, <code>-o</code>, <code>-v</code>, <code>-c</code>), <strong>sed</strong> (stream editor; <code>s/old/new/g</code>, address ranges, in-place), <strong>awk</strong> (field-aware mini-language; <code>$1</code>&hellip;<code>$NF</code>, patterns <code>{action}</code>, <code>BEGIN</code>/<code>END</code>, sums and lookups), and <strong>cut</strong> / <strong>sort</strong> / <strong>uniq</strong> / <strong>tr</strong> / <strong>wc</strong> / <strong>paste</strong>. The recurring idea: reach for <code>awk</code> when you need fields or accumulation, <code>sed</code> for straight substitution, <code>grep</code> to select.</p>
+
 <h3>The pipeline model</h3>
 <p>Each tool reads lines on stdin, transforms them, writes lines on stdout. A pipe chains them
 into a stream; stages run <em>concurrently</em>, not one-after-another.</p>
@@ -5841,6 +5922,8 @@ Sort order depends on the locale (<code>LC_COLLATE</code>): a UTF-8 locale uses 
 <p class="subtitle">Selecting files by any criterion, running commands over them safely, and controlling jobs.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers two related toolkits. <strong><code>find</code></strong> walks a directory tree and tests each entry (name, type, time, size, permissions) then acts &mdash; <code>-print</code>, <code>-exec &hellip; \;</code> (one process per file) vs <code>-exec &hellip; +</code> / <strong><code>xargs</code></strong> (batch), with <code>-print0</code> / <code>-0</code> to survive filenames containing spaces and newlines. Then <strong>process management</strong>: running jobs in the background with <code>&amp;</code>, <code>jobs</code> / <code>fg</code> / <code>bg</code>, <code>wait</code> (and <code>wait -n</code>), <code>kill</code> and the signal numbers, and how subshells and pipelines spawn processes.</p>
+
 <h3><code>find</code></h3>
 <pre><code>find . -type f -name <span class="s">'*.log'</span> -mtime +7 -size +1M
 find /var -type d -empty -delete
@@ -6028,6 +6111,26 @@ The trap just sets a flag; the loop checks it at a safe point rather than being 
 <p class="subtitle">Parsing options properly, finding bugs fast, and knowing what breaks under <code>/bin/sh</code>.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers making a script a well-behaved, portable program. <strong><code>getopts</code></strong> parses <code>-a -b value</code> style options in a loop (POSIX, single-letter; contrast the external <code>getopt</code> for long options). <strong>Debugging</strong>: <code>set -x</code> (trace every expanded command), <code>set -v</code>, <code>PS4</code> customisation, <code>bash -n</code> (syntax check without running), and <strong>ShellCheck</strong> as a linter. <strong>Portability</strong>: what is a <em>bashism</em> (<code>[[ ]]</code>, arrays, <code>local</code>, <code>&lt;&lt;&lt;</code>) vs POSIX <code>sh</code>, and how the shebang decides which rules apply.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-shopt-t">
+<title id="d-shopt-t">getopts loop: each call sets OPTARG/OPTIND and returns non-zero when options run out</title>
+<text class="d-t-mono d-t-sm d-t-b" x="14" y="16">while getopts ":hv o:" opt; do case $opt in ...</text>
+<rect class="d-box-soft" x="14" y="26" width="130" height="26"/><text class="d-t-sm" x="79" y="43" text-anchor="middle">getopts call</text>
+<rect class="d-box" x="180" y="20" width="150" height="18"/><text class="d-t-mono d-t-sm" x="186" y="33">opt=h  (flag)</text>
+<rect class="d-box" x="180" y="42" width="150" height="18"/><text class="d-t-mono d-t-sm" x="186" y="55">opt=o, OPTARG="file"</text>
+<rect class="d-box-alt" x="180" y="64" width="150" height="18"/><text class="d-t-mono d-t-sm" x="186" y="77">opt=? / :  (bad opt / missing arg)</text>
+<path class="d-line" d="M144 36 L178 29" marker-end="url(#shopt-ah)"/><path class="d-line" d="M144 40 L178 51" marker-end="url(#shopt-ah)"/><path class="d-line" d="M144 46 L178 73" marker-end="url(#shopt-ah)"/>
+<path class="d-line" d="M330 50 C 380 50, 380 39, 146 39" marker-end="url(#shopt-ah)"/><text class="d-t-sm" x="230" y="98">loop back until getopts returns non-zero</text>
+<defs><marker id="shopt-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="120">Leading <tspan class="d-t-mono">:</tspan> in the optstring = silent mode (you handle errors via <tspan class="d-t-mono">?</tspan>/<tspan class="d-t-mono">:</tspan>). After the loop: <tspan class="d-t-mono">shift $((OPTIND-1))</tspan> to drop parsed options.</text>
+<text class="d-t-sm" x="14" y="142">Debug: <tspan class="d-t-mono">set -x</tspan> traces expanded commands (tune <tspan class="d-t-mono">PS4</tspan>), <tspan class="d-t-mono">bash -n</tspan> checks syntax without running, <tspan class="d-t-mono">shellcheck</tspan> lints.</text>
+<text class="d-t-sm" x="14" y="160">getopts is POSIX &amp; single-letter only; for <tspan class="d-t-mono">--long</tspan> options use a manual <tspan class="d-t-mono">while/case</tspan> over <tspan class="d-t-mono">$1</tspan>.</text>
+</svg>
+<figcaption><code>getopts</code> is a builtin that walks <code>$@</code> one option per call, tracking position in <code>OPTIND</code> &mdash; not to be confused with the external <code>getopt(1)</code>.</figcaption>
+</figure>
+
+
 <h3>Option parsing with <code>getopts</code> (POSIX builtin)</h3>
 <pre><code>verbose=0 output=
 <span class="k">while</span> getopts <span class="s">":vo:h"</span> opt; <span class="k">do</span>
