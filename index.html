@@ -18758,6 +18758,8 @@ Both started with microkernel ambitions (XNU wraps the Mach microkernel; NT was 
 <p class="subtitle">Why <code>count++</code> from two threads loses increments &mdash; and the vocabulary for it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>race</strong> is when a program&rsquo;s result depends on the unpredictable timing of concurrent operations. This page distinguishes two things people conflate: a <strong>data race</strong> (two threads access the same memory, at least one writing, with no synchronization &mdash; undefined behaviour in C/C++/Java/Go) and a <strong>race condition</strong> (a logic bug where a correct-looking sequence can interleave badly). It covers the classic lost-update bug, the <strong>critical section</strong> (the code that must run atomically), TOCTOU (time-of-check to time-of-use) races, and why you reason in terms of the <em>invariant</em> that must always hold.</p>
+
 <h3>The classic bug</h3>
 <pre><code><span class="c">// two threads run this; count starts at 0, ends at... maybe 1, not 2</span>
 count = count + 1;
@@ -18907,6 +18909,8 @@ Sequential consistency (Lamport): the result of any execution is <em>as if</em> 
 <p class="subtitle">Locking correctly, and waiting for a condition without missing the wakeup.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>mutex</strong> enforces mutual exclusion &mdash; only one thread holds it at a time &mdash; so it protects a critical section. A <strong>condition variable</strong> lets a thread <em>wait</em> for a predicate to become true without spinning, and be woken when another thread changes the state. This page covers using a mutex correctly (RAII/scoped locking, always releasing on every path), lock granularity (coarse = simple but contended, fine = scalable but deadlock-prone), the wait/notify pattern and why you must re-check the predicate in a loop (spurious and stolen wakeups), and mutex reentrancy.</p>
+
 <h3>Using a mutex</h3>
 <ul>
 <li>Guard <em>every</em> access (read and write) to the shared state with the <em>same</em> mutex.</li>
@@ -19054,6 +19058,152 @@ An RW lock has more internal state (reader count + writer flag/queue) so its loc
 </section>
 <!-- /TOPIC:concurrency:mutex-condvar -->
 
+<!-- TOPIC:concurrency:rwlocks-rcu -->
+<section class="view topic" id="v-concurrency-rwlocks-rcu" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Read-Write Locks, RCU &amp; Seqlocks</h1>
+<p class="subtitle">Read-mostly data doesn&rsquo;t need a plain mutex serialising every reader &mdash; these primitives let readers run in parallel (or pay almost nothing) and only serialise writers.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A huge fraction of shared state is <strong>read-mostly</strong>: a config object, a routing table, a feature-flag map, a cache index &mdash; read thousands of times per write. A plain mutex forces those reads to happen one at a time for no reason. This page covers the read-optimised alternatives: the <strong>read-write lock</strong> (many concurrent readers <em>or</em> one writer), the <strong>optimistic read</strong> (StampedLock) that lets a reader validate afterwards instead of locking, the <strong>seqlock</strong> (a parity counter &mdash; writers never wait for readers), and <strong>RCU</strong> (readers pay essentially nothing; writers copy, swap a pointer, and defer freeing the old version past a grace period). It also covers the costs each one hides and how to choose.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 175" role="img" aria-labelledby="d-conc-rw-t">
+<title id="d-conc-rw-t">rwlock allows N readers in parallel or 1 writer; RCU swaps a pointer and frees the old copy after a grace period</title>
+<text class="d-t-b" x="14" y="16">read-write lock</text>
+<rect class="d-box-soft" x="14" y="22" width="60" height="18"/><rect class="d-box-soft" x="78" y="22" width="60" height="18"/><rect class="d-box-soft" x="142" y="22" width="60" height="18"/>
+<text class="d-t-sm" x="44" y="35" text-anchor="middle">reader</text><text class="d-t-sm" x="108" y="35" text-anchor="middle">reader</text><text class="d-t-sm" x="172" y="35" text-anchor="middle">reader</text>
+<text class="d-t-accent" x="220" y="35">in parallel</text>
+<rect class="d-box" x="14" y="46" width="188" height="18"/><text class="d-t-sm" x="108" y="59" text-anchor="middle">writer &mdash; exclusive, all readers wait</text>
+<text class="d-t-b" x="14" y="88">RCU</text>
+<rect class="d-box" x="14" y="94" width="90" height="20"/><text class="d-t-sm" x="59" y="108" text-anchor="middle">old version</text>
+<rect class="d-box-alt" x="140" y="94" width="90" height="20"/><text class="d-t-sm" x="185" y="108" text-anchor="middle">new copy</text>
+<path class="d-line" d="M104 104 L138 104" marker-end="url(#conc-rw-ah)"/><text class="d-t-accent" x="108" y="98">atomic ptr swap</text>
+<text class="d-t-sm" x="14" y="134">new readers see the new copy immediately; writers never blocked readers.</text>
+<text class="d-t-sm" x="14" y="152">the <tspan class="d-t-b">old</tspan> copy is freed only after a <tspan class="d-t-b">grace period</tspan> &mdash; when every reader that could still hold it has finished.</text>
+<defs><marker id="conc-rw-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>The spectrum runs from &ldquo;readers take a shared lock&rdquo; (rwlock) to &ldquo;readers write nothing and validate later&rdquo; (seqlock/optimistic) to &ldquo;readers do literally nothing, writers pay for reclamation&rdquo; (RCU).</figcaption>
+</figure>
+
+<h3>Read-write lock (shared / exclusive)</h3>
+<p><strong>What / why.</strong> <code>rdlock</code> can be held by many threads at once; <code>wrlock</code> is exclusive. Use it when reads dominate <em>and</em> the read critical section is long enough that running readers in parallel actually helps. <strong>Costs to know:</strong></p>
+<ul>
+<li>Acquiring a read lock still <em>writes</em> a shared reader-count word, so multiple readers bounce that cache line between cores &mdash; for a <em>tiny</em> critical section a plain mutex is often faster.</li>
+<li><strong>Writer starvation</strong>: a steady stream of readers can keep a writer waiting forever unless the lock is write-preferring or fair. Most production rwlocks let you choose.</li>
+<li>Not free of deadlock: a thread that holds a read lock and then tries to upgrade to a write lock can deadlock with another doing the same.</li>
+</ul>
+<pre><code>std::shared_mutex m;                       <span class="c">// C++17</span>
+{ std::shared_lock lk(m); read(data); }    <span class="c">// many of these run concurrently</span>
+{ std::unique_lock lk(m); write(data); }   <span class="c">// exclusive</span>
+<span class="c">// Java: ReentrantReadWriteLock, or StampedLock (below)</span>
+<span class="c">// pthread_rwlock_t with PTHREAD_RWLOCK_PREFER_WRITER_NONRECURSIVE_NP to avoid writer starvation</span></code></pre>
+
+<h3>Optimistic read (StampedLock)</h3>
+<p><strong>What / why.</strong> A reader takes a cheap <strong>stamp</strong>, reads the data <em>without any lock</em>, then asks &ldquo;did a writer run in the meantime?&rdquo;. If not, it did a genuinely contention-free read (no shared write at all). If yes, it retries or falls back to a real read lock. Best when writes are rare and the read is short and can be safely re-done.</p>
+<pre><code>StampedLock sl = <span class="k">new</span> StampedLock();
+<span class="k">long</span> stamp = sl.tryOptimisticRead();
+<span class="k">int</span> a = x, b = y;                 <span class="c">// read into locals</span>
+<span class="k">if</span> (!sl.validate(stamp)) {        <span class="c">// a writer intervened</span>
+    stamp = sl.readLock();
+    <span class="k">try</span> { a = x; b = y; } <span class="k">finally</span> { sl.unlockRead(stamp); }
+}
+use(a, b);
+<span class="c">// StampedLock is NOT reentrant and has no condition support -- know its limits.</span></code></pre>
+
+<h3>Seqlock (sequence lock)</h3>
+<p><strong>What / how.</strong> A version counter guards the data. The <strong>writer</strong>: increment the counter (now odd &rArr; &ldquo;write in progress&rdquo;), write the data, increment again (now even). The <strong>reader</strong>: read the counter (spin while it&rsquo;s odd), read the data, read the counter again &mdash; if it&rsquo;s unchanged (and even) the read was consistent; otherwise retry. Writers <em>never</em> block for readers; readers <em>never</em> block writers.</p>
+<pre><code><span class="c">// reader</span>
+<span class="k">do</span> {
+    seq = load_acquire(&amp;s.seq);
+    <span class="k">if</span> (seq &amp; <span class="n">1</span>) <span class="k">continue</span>;         <span class="c">// writer active</span>
+    x = s.x; y = s.y;                  <span class="c">// may be torn -- that's ok, we recheck</span>
+} <span class="k">while</span> (load_acquire(&amp;s.seq) != seq);   <span class="c">// changed? retry</span>
+
+<span class="c">// writer (needs its own mutex vs other writers)</span>
+s.seq++;  store_release;
+s.x = ...; s.y = ...;
+s.seq++;  store_release;</code></pre>
+<ul>
+<li>Perfect for small, hot, rarely-written data &mdash; the kernel uses it for <code>jiffies</code> and the timekeeping data behind <code>gettimeofday</code>/vDSO.</li>
+<li>Caveats: readers can observe a <strong>torn</strong> intermediate state, so the data must be safely re-readable &mdash; <em>no pointers you would dereference</em> mid-read. Not for large structures (the retry cost grows). Writer&ndash;writer still needs a real lock.</li>
+</ul>
+
+<h3>RCU (Read-Copy-Update)</h3>
+<p><strong>What / why.</strong> Readers pay <em>almost nothing</em> &mdash; no lock, no atomic RMW, no write; they just delimit a &ldquo;read-side critical section&rdquo; (in the classic kernel form this is little more than disabling preemption). A <strong>writer</strong> makes a private <strong>copy</strong> of the node to change, modifies the copy, then <strong>atomically swaps the pointer</strong> so new readers see the new version. Existing readers may still be traversing the <em>old</em> version, so the old node is freed only after a <strong>grace period</strong> &mdash; a point by which every read-side critical section that started before the swap has finished (<code>synchronize_rcu()</code> to wait, or <code>call_rcu(cb)</code> to defer the free).</p>
+<ul>
+<li>Ideal for <strong>read-mostly pointer-based</strong> structures: linked lists, hash tables, radix trees, routing tables &mdash; updates rare, reads on the hot path.</li>
+<li>The hard part is the reclamation infrastructure (grace-period detection, deferred callbacks). Userspace: <code>liburcu</code>. Related schemes: <strong>hazard pointers</strong> and <strong>epoch-based reclamation</strong> solve the same &ldquo;when is it safe to free&rdquo; problem for lock-free code.</li>
+<li>Not a fit when writes are frequent (copy + grace-period cost per update) or readers need a fully consistent multi-item snapshot.</li>
+</ul>
+
+<h3>Choosing</h3>
+<table>
+<tr><th>Situation</th><th>Use</th></tr>
+<tr><td>Tiny critical section, any read/write mix</td><td>plain <strong>mutex</strong> (rwlock overhead isn&rsquo;t worth it)</td></tr>
+<tr><td>Reads &raquo; writes, non-trivial read section</td><td><strong>rwlock</strong> (write-preferring) or <strong>StampedLock</strong> optimistic read</td></tr>
+<tr><td>Small POD struct, very hot reads, rare writes</td><td><strong>seqlock</strong></td></tr>
+<tr><td>Read-mostly pointer structure (list/tree/hash), rare updates</td><td><strong>RCU</strong> (or hazard pointers for lock-free)</td></tr>
+<tr><td>Counters / stats updated by many threads</td><td>per-CPU / <strong>sharded</strong> counters &mdash; avoid the shared line entirely</td></tr>
+</table>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>rwlock</strong> (<code>std::shared_mutex</code>, <code>ReentrantReadWriteLock</code>, <code>pthread_rwlock</code>): many readers <em>or</em> one writer. Reads still write a shared counter (cache-line bounce); risk of <strong>writer starvation</strong> &rarr; use write-preferring. Not worth it for tiny sections. Never upgrade a held read lock.</li>
+<li><strong>StampedLock optimistic read</strong>: <code>tryOptimisticRead()</code> &rarr; read into locals &rarr; <code>validate(stamp)</code>; on failure retry or take a real read lock. Contention-free when no writer ran. Not reentrant, no conditions.</li>
+<li><strong>seqlock</strong>: writer increments a counter to odd, writes, increments to even; reader reads counter (retry if odd), reads data, re-reads counter (retry if changed). Writers never wait for readers. Only for small re-readable POD; readers can see torn data; no pointers to deref mid-read; writer&ndash;writer needs its own lock. (kernel <code>jiffies</code>, vDSO time.)</li>
+<li><strong>RCU</strong>: readers do ~nothing (mark a read section); writer copies node, modifies, atomically swaps pointer; free the old copy only after a <strong>grace period</strong> (<code>synchronize_rcu</code>/<code>call_rcu</code>). Best for read-mostly pointer structures; bad when writes are frequent. <code>liburcu</code>; cousins = hazard pointers, epoch reclamation.</li>
+<li>Decision: tiny section &rarr; mutex; reads&raquo;writes + real work &rarr; rwlock/optimistic; hot small struct &rarr; seqlock; read-mostly list/tree &rarr; RCU; hot counters &rarr; shard per-CPU.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>You replaced a mutex with a read-write lock for a read-heavy structure and it got <em>slower</em>. Why is that possible?</dt>
+<dd>Two common reasons. (1) <strong>The critical section is tiny.</strong> Acquiring a read lock still performs an atomic read-modify-write on a shared reader-count word, so every reader on every core writes the same cache line and it ping-pongs between caches &mdash; more expensive than a short mutex acquire/release, and there was no real parallelism to gain because each reader was only in the section for a few nanoseconds. (2) <strong>Reader/writer bookkeeping and fairness logic</strong> in the rwlock implementation adds branches and, for fair/write-preferring modes, extra synchronization. Rwlocks pay off when readers genuinely overlap for a meaningful duration (holding the lock across a non-trivial computation or I/O). For hot, tiny reads, a plain mutex, a seqlock, RCU, or sharded/per-CPU data is usually faster.</dd>
+<dt>How does a seqlock let writers proceed without ever waiting for readers?</dt>
+<dd>The writer doesn&rsquo;t coordinate with readers at all &mdash; it just bumps a version counter to an odd value (signalling &ldquo;in progress&rdquo;), writes the data, and bumps it to the next even value. It never checks for or blocks on readers. The <em>reader</em> does all the work of detecting a conflict: it snapshots the counter, copies the data into locals, and re-reads the counter; if the counter is odd or has changed, a write overlapped its read, so the data it copied might be torn/inconsistent and it simply retries. This is only safe because the reader never <em>acts</em> on the possibly-torn data until it has confirmed consistency, and because the data is plain values it can harmlessly re-read (dereferencing a pointer read mid-write would already be a bug).</dd>
+<dt>What is a &ldquo;grace period&rdquo; in RCU and why is it necessary?</dt>
+<dd>When an RCU writer swaps the pointer to a new version of a node, threads that were already inside a read-side critical section may still be holding and dereferencing the <em>old</em> pointer. The writer therefore can&rsquo;t free the old node immediately. A <strong>grace period</strong> is an interval guaranteed to be long enough that every read-side critical section that was in progress at the moment of the swap has since completed &mdash; after which no thread can possibly still reference the old node, so it&rsquo;s safe to free. The writer either blocks in <code>synchronize_rcu()</code> until a grace period elapses, or registers a callback with <code>call_rcu()</code> that the RCU machinery invokes after one. Detecting grace periods cheaply (typically: every CPU has passed through a quiescent state such as a context switch) is the core of an RCU implementation.</dd>
+<dt>When is RCU the wrong choice?</dt>
+<dd>When writes are frequent: every update copies the node and incurs grace-period / deferred-free overhead, and a burst of writers can pile up pending callbacks (memory pressure) &mdash; a rwlock or fine-grained locking is better for balanced read/write. When readers need a <strong>consistent snapshot across multiple items</strong> (RCU gives you a consistent view of a single pointer dereference, not an atomic multi-node read) &mdash; you&rsquo;d need a seqlock-style version over the whole structure or an actual lock. When the data isn&rsquo;t naturally pointer-swappable (large in-place structures). And when the reclamation infrastructure isn&rsquo;t available or the added complexity isn&rsquo;t justified by the measured contention on a simpler lock.</dd>
+<dt>What&rsquo;s the risk of allowing a thread to upgrade a read lock to a write lock?</dt>
+<dd>Deadlock. If two threads each hold the read lock and each then requests an upgrade to write, neither can get exclusive access until the other releases its read lock &mdash; and neither will, because each is waiting for the upgrade. That&rsquo;s a classic circular wait. Most rwlock APIs therefore either forbid upgrades, or provide a single non-blocking <code>tryUpgrade</code> that fails (so you drop the read lock and re-acquire as a writer, re-validating state), or a dedicated &ldquo;upgradable read lock&rdquo; that only one thread may hold at a time.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does a read-write lock allow that a mutex doesn&rsquo;t?</summary><div class="answer-box">
+Multiple threads to hold the lock <em>for reading</em> at the same time (only writers are exclusive). A plain mutex serialises everything, readers included.
+</div></details>
+<details class="answer-reveal"><summary>In RCU, who pays the synchronization cost &mdash; readers or writers?</summary><div class="answer-box">
+Writers. Readers do essentially nothing (mark a read-side section, no locks or atomics). Writers copy, atomically swap a pointer, and defer freeing the old version until a grace period passes.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You have a routing table read on every packet (millions/sec) and updated a few times a minute. Compare mutex, rwlock, seqlock, and RCU for this.</summary><div class="answer-box">
+<strong>Plain mutex</strong>: every packet lookup serialises on one lock &mdash; the lock itself becomes the bottleneck at millions of ops/sec across cores (cache-line contention on the lock word). Unusable at this rate. <strong>rwlock</strong>: readers can overlap, but each still does an atomic RMW on the shared reader count, so that cache line ping-pongs across every core doing lookups &mdash; better than a mutex but still a scalability wall at high core counts, and the lookup section is short so the parallelism gain is small. <strong>seqlock</strong>: works if the routing entry you read is small POD you can copy and re-read; readers do no shared writes, writers never block. But a routing table is usually a <em>pointer</em>-based structure (trie / radix), and a seqlock reader mustn&rsquo;t dereference a pointer that could be freed mid-read &mdash; so a whole-table seqlock is awkward here. Fine for a single small fixed record, not a trie traversal. <strong>RCU</strong>: the right tool. Lookups enter an RCU read section (near-zero cost) and traverse the current trie via <code>rcu_dereference</code>; they never block and never write shared memory, so lookup throughput scales linearly with cores. An update builds the new/changed nodes, publishes them with an atomic pointer swap (<code>rcu_assign_pointer</code>), and frees the replaced nodes via <code>call_rcu</code> after a grace period &mdash; a few times a minute, so the copy/grace-period cost is irrelevant. This is exactly why the Linux kernel&rsquo;s routing and many lookup tables are RCU-protected. <strong>Answer</strong>: RCU (or an equivalent epoch/hazard-pointer scheme if you&rsquo;re in userspace without <code>liburcu</code>); mutex and rwlock don&rsquo;t scale to per-packet reads, and a plain seqlock doesn&rsquo;t suit pointer traversal.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the concurrency for a config store: a nested config object read on nearly every request, hot-reloaded occasionally from disk, needing a consistent snapshot per request. Cover the read path, the reload path, and reclamation.</summary><div class="answer-box">
+<strong>Model the whole config as one immutable value behind a single atomic pointer.</strong> The config is a deeply-immutable object graph (frozen maps/structs); nothing inside is ever mutated after construction. A global <code>atomic&lt;shared_ptr&lt;const Config&gt;&gt;</code> (C++), <code>AtomicReference&lt;Config&gt;</code> (Java), or <code>atomic.Value</code> / a pointer guarded by RCU (Go/kernel-style) holds the current version. <strong>Read path</strong>: at the start of handling a request, do <em>one</em> atomic load of the pointer into a local (<code>auto cfg = g_config.load()</code>). Use that local for the entire request. This gives a <strong>consistent snapshot for free</strong> &mdash; the request sees one coherent version even if a reload happens mid-request, because it holds its own reference to that immutable version. Cost is a single atomic load (and, with <code>shared_ptr</code>, one refcount increment) per request &mdash; effectively free, and fully parallel across cores. No rwlock, no seqlock retry, no per-field locking. <strong>Reload path</strong>: a background thread (triggered by a file watcher / SIGHUP / poll) reads the new config from disk, <em>fully constructs and validates</em> a new immutable <code>Config</code> object off to the side, and only on success does one atomic store to publish it (compare-and-set if you want to detect concurrent reloads). If parsing/validation fails, log and keep the old version live &mdash; readers never see a half-built config. Reloads are rare, so the full-rebuild cost is irrelevant; the atomic publish is a single instruction. <strong>Reclamation</strong>: this is the part the primitive choice decides. With <code>shared_ptr</code>/GC: automatic &mdash; the old <code>Config</code> is freed when the last in-flight request that captured it drops its reference; the only cost is the atomic refcount traffic on the control block (acceptable at request granularity; if it ever shows up in profiles, shard the pointer per-core or use <code>hazard_ptr</code>/RCU). With a raw pointer + RCU: readers take an RCU read-lock for the duration they use <code>cfg</code> (or just capture it and exit the section if the object is guaranteed alive via the scheme), and the reload thread frees the old object with <code>call_rcu</code> after a grace period &mdash; zero reader-side atomics, at the cost of the RCU infrastructure. With epoch-based reclamation: readers pin an epoch, the writer retires the old object, and it&rsquo;s freed once all readers have advanced past that epoch. <strong>Extras</strong>: expose a <code>getConfigSnapshot()</code> accessor so no code path forgets and re-loads the atomic mid-request (which would reintroduce inconsistency); version-stamp each Config and log &ldquo;now serving config v#N&rdquo; on publish for observability; if some subsystems need to react to changes (reopen a connection pool, resize a cache), fire change callbacks from the reload thread <em>after</em> the publish, passing old and new. <strong>Why not rwlock/seqlock</strong>: a rwlock read still contends a shared line on every request and doesn&rsquo;t give you a snapshot that survives a mid-request reload without holding the lock the whole request (blocking reloads); a seqlock can&rsquo;t protect a pointer-rich nested object a reader dereferences. The immutable-value-behind-an-atomic-pointer pattern (a.k.a. RCU-style publish) is the standard answer: near-free parallel reads, atomic publish, and snapshot consistency by construction.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:rwlocks-rcu -->
+
+
 <!-- TOPIC:concurrency:semaphores-classic -->
 <section class="view topic" id="v-concurrency-semaphores-classic" data-skill="concurrency">
 <div class="layout">
@@ -19063,6 +19213,8 @@ An RW lock has more internal state (reader count + writer flag/queue) so its loc
 <p class="subtitle">Counting resources, and the three textbook problems every interview draws from.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>semaphore</strong> is a counter with atomic <code>wait</code> (decrement, block at 0) and <code>signal</code> (increment, wake a waiter) &mdash; a binary semaphore acts like a lock, a counting semaphore limits concurrent access to N units of a resource. This page uses semaphores to solve the textbook synchronization problems that every real system is a variant of: the <strong>bounded-buffer producer&ndash;consumer</strong>, <strong>readers&ndash;writers</strong> (and its starvation trade-offs), and <strong>dining philosophers</strong> (deadlock and how to break it).</p>
+
 <h3>Semaphore</h3>
 <p>An integer with two atomic operations: <code>acquire</code>/<code>wait</code>/<code>P</code> (decrement; block if it
 would go negative) and <code>release</code>/<code>signal</code>/<code>V</code> (increment; wake a waiter).</p>
@@ -19189,6 +19341,140 @@ Use a single FIFO queue of waiters (a ticket lock / a <code>Semaphore</code> wit
 </section>
 <!-- /TOPIC:concurrency:semaphores-classic -->
 
+<!-- TOPIC:concurrency:message-passing -->
+<section class="view topic" id="v-concurrency-message-passing" data-skill="concurrency">
+<div class="layout">
+<nav class="sidebar" data-sidebar="concurrency"></nav>
+<div class="topic-body">
+<h1>Message Passing: Channels, CSP &amp; the Actor Model</h1>
+<p class="subtitle">Instead of sharing memory and guarding it with locks, threads communicate by sending messages &mdash; and whole classes of races simply can&rsquo;t occur.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The alternative to &ldquo;shared mutable state + locks&rdquo; is <strong>message passing</strong>: concurrent units keep their state private and coordinate by sending each other values. If nothing is shared, nothing can be raced on &mdash; the bug you fix isn&rsquo;t &ldquo;forgot a lock&rdquo; but &ldquo;designed the message flow wrong&rdquo;. This page covers the two main flavours: <strong>channels</strong> (the CSP model &mdash; a first-class typed conduit, buffered or unbuffered, with <code>select</code>) as in Go, and the <strong>actor model</strong> (isolated entities with a mailbox, processing one message at a time, with supervision) as in Erlang/Akka. It covers the trade-offs, the standard patterns (pipeline, fan-out/fan-in, request/reply), and how deadlock still shows up.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-conc-mp-t">
+<title id="d-conc-mp-t">An unbuffered channel is a rendezvous; an actor has a private mailbox it drains one message at a time</title>
+<text class="d-t-b" x="14" y="16">channel (CSP)</text>
+<rect class="d-box" x="14" y="24" width="90" height="26" rx="4"/><text class="d-t-sm" x="59" y="41" text-anchor="middle">goroutine A</text>
+<rect class="d-box" x="200" y="24" width="90" height="26" rx="4"/><text class="d-t-sm" x="245" y="41" text-anchor="middle">goroutine B</text>
+<path class="d-line" d="M104 37 L198 37" marker-end="url(#conc-mp-ah)"/><text class="d-t-accent" x="120" y="30">ch &lt;- v   (both block until the handoff)</text>
+<text class="d-t-sm" x="14" y="72">buffered channel = a bounded queue &rarr; sender blocks only when full (backpressure).</text>
+<text class="d-t-b" x="14" y="98">actor model</text>
+<rect class="d-box-alt" x="14" y="106" width="180" height="40" rx="6"/><text class="d-t-b" x="104" y="122" text-anchor="middle">actor: private state</text><text class="d-t-sm" x="104" y="138" text-anchor="middle">handles one msg at a time</text>
+<rect class="d-box-soft" x="210" y="112" width="120" height="28"/><text class="d-t-sm" x="270" y="130" text-anchor="middle">mailbox (queue)</text>
+<path class="d-line" d="M330 126 L196 126" marker-end="url(#conc-mp-ah)"/><text class="d-t-sm" x="340" y="118">sends from others</text>
+<defs><marker id="conc-mp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="162">Because the actor processes messages serially, its state needs <tspan class="d-t-b">no internal locking</tspan>.</text>
+</svg>
+<figcaption>Both push the same idea: no shared mutable memory. Channels give you a first-class conduit and <code>select</code>; actors bundle state + mailbox + behaviour behind an address.</figcaption>
+</figure>
+
+<h3>Channels (CSP)</h3>
+<p><strong>What / how.</strong> A channel is a typed pipe. A send blocks and a receive blocks according to the buffering:</p>
+<ul>
+<li><strong>Unbuffered</strong>: a <strong>rendezvous</strong> &mdash; the sender blocks until a receiver is ready and vice versa. Data transfer and synchronization happen together.</li>
+<li><strong>Buffered (capacity N)</strong>: a bounded FIFO &mdash; the sender blocks only when the buffer is full, the receiver only when empty. This <em>is</em> backpressure: a slow consumer eventually stalls a fast producer.</li>
+<li><code>select</code> waits on several channel operations at once and proceeds with whichever is ready (with an optional default for non-blocking).</li>
+<li>Closing a channel signals &ldquo;no more values&rdquo; to every receiver (a broadcast); receiving from a closed channel returns the zero value immediately.</li>
+</ul>
+<pre><code><span class="c">// Go: fan-out workers reading one channel, writing results to another</span>
+jobs := make(chan Job, <span class="n">100</span>)      <span class="c">// buffered: up to 100 queued</span>
+results := make(chan Result)
+
+<span class="k">for</span> i := <span class="n">0</span>; i &lt; <span class="n">8</span>; i++ {         <span class="c">// 8 workers</span>
+    <span class="k">go</span> <span class="k">func</span>() {
+        <span class="k">for</span> j := <span class="k">range</span> jobs {       <span class="c">// loop until jobs is closed and drained</span>
+            results &lt;- process(j)
+        }
+    }()
+}
+<span class="k">go</span> <span class="k">func</span>() { <span class="k">for</span> _, j := <span class="k">range</span> allJobs { jobs &lt;- j }; close(jobs) }()
+
+<span class="k">for</span> range allJobs { collect(&lt;-results) }   <span class="c">// gather</span>
+<span class="c">// request/reply: put a reply channel INSIDE the message</span>
+<span class="k">type</span> Ask <span class="k">struct</span>{ key string; reply chan Value }</code></pre>
+
+<h3>The actor model</h3>
+<p><strong>What / how.</strong> An <strong>actor</strong> is an object with (1) private state no one else can touch, (2) a <strong>mailbox</strong>, and (3) a behaviour that, for each received message, may: update its state, send messages to other actors (by address), spawn child actors, or change its behaviour for the next message. Because it handles messages <strong>one at a time</strong>, its state needs no locks. Actors are <strong>location-transparent</strong> &mdash; an address might be local or on another node &mdash; which is why the model underpins distributed frameworks. Erlang/OTP, Akka, Elixir, Microsoft Orleans, Ray.</p>
+<ul>
+<li><strong>Supervision</strong>: actors are arranged in trees; a parent supervises its children and, on a child crash, restarts it (or escalates). &ldquo;Let it crash&rdquo; &mdash; don&rsquo;t defensively handle every error inside the actor; let it die clean and be restarted to a known-good state.</li>
+<li><strong>No shared state</strong> means a message is (conceptually) copied; large payloads cost serialization, so you pass references/handles for big data.</li>
+</ul>
+
+<h3>Channels vs actors</h3>
+<table>
+<tr><th></th><th>Channels (CSP)</th><th>Actors</th></tr>
+<tr><td>The primitive</td><td>The <em>conduit</em> &mdash; first-class, many senders/receivers, <code>select</code></td><td>The <em>entity</em> &mdash; addressable identity, state + mailbox + behaviour</td></tr>
+<tr><td>Concurrency unit</td><td>Lightweight thread / goroutine (anonymous)</td><td>The actor (has a name/address)</td></tr>
+<tr><td>Natural fit</td><td>Data-flow pipelines, worker pools, coordination</td><td>Stateful entities, distributed systems, fault-tolerant services</td></tr>
+<tr><td>Failure model</td><td>You handle it (closed channels, contexts)</td><td>Built-in: supervision trees, restart strategies</td></tr>
+</table>
+
+<h3>Trade-offs &amp; the ways it still goes wrong</h3>
+<ul>
+<li><strong>Wins</strong>: no data races (nothing shared), local reasoning per unit, backpressure falls out of bounded buffers/mailboxes, the same model scales to multiple machines.</li>
+<li><strong>Costs</strong>: copying / serialization; you can just <em>relocate</em> the bug &mdash; deadlock becomes &ldquo;A waits for a message from B, B waits for a message from A&rdquo;; there is no global order across independent channels/actors; message-flow bugs are harder to see in a stack trace.</li>
+<li><strong>Unbounded mailboxes / channels</strong> are a memory-blowup risk under load &mdash; bound them and decide the policy when full (block = backpressure, drop, or fail).</li>
+<li><strong>Deadlock still happens</strong>: sending on an unbuffered channel with no receiver, cyclic channel dependencies, or every goroutine blocked (Go&rsquo;s runtime panics with &ldquo;all goroutines are asleep &mdash; deadlock!&rdquo; only when the <em>whole</em> program is stuck).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Idea: don&rsquo;t share memory and lock it &mdash; keep state private and <strong>send messages</strong>. No shared mutable state &rarr; no data races.</li>
+<li><strong>Channel</strong>: typed conduit. <em>Unbuffered</em> = rendezvous (both block until handoff). <em>Buffered(N)</em> = bounded queue = backpressure. <code>select</code> for multiway wait; <code>close</code> broadcasts &ldquo;done&rdquo;.</li>
+<li><strong>Actor</strong>: private state + mailbox + behaviour; processes <strong>one message at a time</strong> (no internal locks); addressable; location-transparent; supervision trees + &ldquo;let it crash&rdquo;.</li>
+<li>Channels = the conduit (Go, core.async, Rust mpsc/crossbeam). Actors = the entity (Erlang, Akka, Elixir, Orleans, Ray).</li>
+<li>Patterns: pipeline (stages + channels), fan-out/fan-in (worker pool), request/reply (embed a reply channel in the message), pub/sub, token-bucket rate limit.</li>
+<li>Still fails: cyclic waits (deadlock as &ldquo;everyone waiting for a message&rdquo;), no global ordering, unbounded mailbox &rarr; OOM. Bound queues and pick a full-policy.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>&ldquo;Don&rsquo;t communicate by sharing memory; share memory by communicating.&rdquo; What does that mean in practice?</dt>
+<dd>Instead of putting data in a shared variable and coordinating access with a mutex, you give ownership of the data to <em>one</em> goroutine/actor and pass it around via channels/messages. At any moment exactly one unit &ldquo;has&rdquo; the data and can mutate it freely with no lock; when it sends the data on, it conceptually gives up ownership. The synchronization is the message send/receive itself. This removes the entire category of &ldquo;forgot to lock&rdquo; / &ldquo;locked the wrong thing&rdquo; bugs, at the cost of designing the ownership/message flow deliberately.</dd>
+<dt>Unbuffered vs buffered channel &mdash; when do you want each?</dt>
+<dd><strong>Unbuffered</strong> when you need the send and receive to be a synchronization point &mdash; the sender must know the receiver actually took the value (handoff of ownership, a &ldquo;done&rdquo; signal, lock-step coordination). <strong>Buffered</strong> when you want to decouple producer and consumer speeds and get bounded queuing: a small buffer absorbs bursts, and a full buffer provides backpressure that stalls the producer instead of letting an unbounded queue grow. Size the buffer to the burst you want to absorb, not &ldquo;big enough that it never blocks&rdquo; &mdash; that just hides overload until you run out of memory.</dd>
+<dt>How can a message-passing program still deadlock?</dt>
+<dd>By constructing a cycle of waits with messages instead of locks: A does a blocking send to B and then waits for B&rsquo;s reply; B does a blocking send to A and waits for A&rsquo;s reply &mdash; neither can receive because both are blocked in send. Or: a single goroutine sends on an unbuffered channel with no other goroutine ever receiving. Or all workers are blocked receiving from a channel that will never get another value because the only producer already exited without closing it. The Coffman conditions still apply; you&rsquo;ve just changed &ldquo;resource&rdquo; from &ldquo;lock&rdquo; to &ldquo;channel operation&rdquo;. Fixes are analogous: avoid cyclic send dependencies, prefer <code>select</code> with timeouts/cancellation, close channels to release ranged receivers, and make at least one side non-blocking.</dd>
+<dt>What does &ldquo;let it crash&rdquo; mean and why is it considered good practice in the actor model?</dt>
+<dd>Rather than wrapping every operation in an actor in defensive error handling that tries to limp on in a possibly-corrupt state, you let the actor throw and die on an unexpected error. Its <strong>supervisor</strong> then restarts it &mdash; recreating it with fresh, known-good initial state &mdash; or escalates if restarts keep failing. This works because actors are isolated (one crashing doesn&rsquo;t corrupt others) and cheap to create, and because most transient failures (a bad message, a downstream blip) are cleared by a clean restart. The result is systems that self-heal from unanticipated faults, with error-handling logic concentrated in the supervision strategy instead of smeared through business code. It complements &mdash; doesn&rsquo;t replace &mdash; handling <em>expected</em> errors (validation, retries) explicitly.</dd>
+<dt>You have a worker pool reading jobs from a channel. How do you shut it down cleanly?</dt>
+<dd>The producer <code>close</code>s the jobs channel when there are no more jobs. Each worker&rsquo;s <code>for job := range jobs</code> loop then exits naturally once the channel is drained. To wait for all workers to finish, use a <code>sync.WaitGroup</code> (increment per worker, <code>Done</code> when its loop exits, <code>Wait</code> in the shutdown path), then close the results channel. For <em>early</em> cancellation (shutdown before jobs are exhausted), pass a <code>context.Context</code> and have workers <code>select</code> on both <code>ctx.Done()</code> and the jobs channel, returning promptly on cancellation. Don&rsquo;t close the jobs channel from a worker or from multiple places (closing a closed channel panics; the sender owns the close).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What&rsquo;s the core promise of message passing over shared-memory-plus-locks?</summary><div class="answer-box">
+No shared mutable state means no data races &mdash; there is nothing for two threads to concurrently read/write without synchronization, because the synchronization <em>is</em> the message send/receive.
+</div></details>
+<details class="answer-reveal"><summary>Why does an actor not need locks around its own state?</summary><div class="answer-box">
+It processes exactly one message at a time from its mailbox, so there is never concurrent access to its state &mdash; the serialization is built into the model.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Design a bounded, backpressured pipeline: stage A reads from a source, stage B transforms, stage C writes to a sink, each stage parallelised. How do channels give you flow control?</summary><div class="answer-box">
+Connect the stages with <strong>buffered channels of small capacity</strong>: <code>src&rarr;chAB (cap m)&rarr;B workers&rarr;chBC (cap n)&rarr;C workers&rarr;sink</code>. Each stage is a set of goroutines doing <code>for x := range inCh { out &lt;- f(x) }</code>. Flow control is automatic: if the sink (C) is slow, <code>chBC</code> fills, so B&rsquo;s workers block on <code>out &lt;- ...</code>, so they stop draining <code>chAB</code>, so it fills, so A blocks reading the source &mdash; the whole pipeline throttles to the slowest stage with a bounded amount of in-flight work (roughly the sum of the buffer capacities plus one item per worker). Choose buffer sizes to absorb short bursts (a few times the number of workers), not to &ldquo;never block&rdquo;. <strong>Shutdown</strong>: A closes <code>chAB</code> when the source is exhausted; B&rsquo;s workers exit their range loops, and a <code>WaitGroup</code> for stage B closes <code>chBC</code> after the last B worker returns; C&rsquo;s workers then drain and exit, and a WaitGroup for C signals &ldquo;pipeline done&rdquo;. <strong>Cancellation / errors</strong>: thread a <code>context.Context</code> through every stage; workers <code>select</code> on <code>ctx.Done()</code> alongside their channel ops so a failure anywhere (or a caller cancel) tears the whole pipeline down promptly without goroutine leaks; propagate the first error out on a dedicated 1-buffered error channel. This is the canonical Go pipeline pattern and it needs no mutexes at all.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Compare shared-memory + locks, CSP channels, and the actor model for building a concurrent in-memory key-value store with range queries and TTL expiry. Which would you pick and why?</summary><div class="answer-box">
+<strong>Shared-memory + locks</strong>: the store is a concurrent map (sharded, or a lock-free / RCU structure for reads) plus a background sweeper for TTL. Pros: lowest latency and highest throughput for point reads/writes &mdash; a read is a hash lookup under a read lock or lock-free; no message hop. Range queries need a sorted structure (skip list / B-tree) with its own concurrency scheme (fine-grained locks, optimistic, or RCU) &mdash; doable but this is exactly where locking gets subtle (iterator vs concurrent modification). TTL sweep is a scan under locks or per-shard. Cons: correctness burden is on you; range-scan-while-mutating and &ldquo;expire during read&rdquo; are classic race sources; scaling requires careful sharding to avoid a hot lock. <strong>CSP channels</strong>: a single owner goroutine holds the data structure; all operations are messages (<code>Get{key, reply}</code>, <code>Put</code>, <code>Range{lo, hi, reply}</code>, <code>tick</code> for expiry) on one request channel; the owner processes them serially, so no locks and trivially correct. Pros: dead simple to reason about, no data races, easy to add features (transactions = just don&rsquo;t yield between messages). Cons: that owner goroutine is a serialization bottleneck &mdash; every operation, including concurrent reads, queues behind it; a long range query blocks all other ops. Mitigate by sharding into many owner goroutines by key range (now range queries within a shard are fine, cross-shard need scatter-gather and lose snapshot consistency) &mdash; at which point you&rsquo;ve rebuilt sharded locking with channels and extra copying. <strong>Actor model</strong>: essentially the sharded-CSP design with identity and supervision &mdash; one actor per shard (or per key-range), a supervisor that restarts a shard actor on a bug, and the TTL sweeper as another actor sending expiry messages. Pros: the fault tolerance is free (a corrupt shard restarts from a snapshot/WAL), and it extends naturally to a <em>distributed</em> KV store (shard actors on different nodes, consistent hashing for placement) &mdash; this is basically how Orleans/Akka-based stores and Riak work. Cons: same serialization-per-shard bottleneck as CSP, plus mailbox/backpressure management, and range queries spanning shards are a distributed scatter-gather with weak consistency. <strong>Pick</strong>: if it must be a single-process, latency-critical cache &mdash; <strong>sharded shared-memory</strong> with a read-optimised structure (RCU/optimistic reads) for the point-lookup hot path and a concurrent sorted index for ranges; accept the complexity and lean on TSan + stress tests. If it needs to be <strong>fault-tolerant and/or distributed</strong>, or the team values obvious correctness over peak throughput &mdash; the <strong>actor-per-shard</strong> model, with a WAL/snapshot per shard for restart, consistent-hash placement, and range queries as bounded scatter-gather with documented consistency. CSP-with-one-owner is the right choice only for a small store or a prototype where simplicity dominates. A common real design is a hybrid: shared-memory lock-free reads for the hot point-lookup path, and an actor/channel control plane for expiry, rebalancing, and admin operations.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:concurrency:message-passing -->
+
+
 <!-- TOPIC:concurrency:deadlock-livelock -->
 <section class="view topic" id="v-concurrency-deadlock-livelock" data-skill="concurrency">
 <div class="layout">
@@ -19198,6 +19484,25 @@ Use a single FIFO queue of waiters (a ticket lock / a <code>Semaphore</code> wit
 <p class="subtitle">Three ways a concurrent system can stop making progress &mdash; and how to design them out.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the three ways concurrent progress can fail. <strong>Deadlock</strong>: threads each hold a resource the other needs and wait forever &mdash; it needs all four Coffman conditions, and lock ordering is the standard fix. <strong>Livelock</strong>: threads keep changing state in response to each other but make no progress (two people stepping aside in a corridor). <strong>Starvation</strong>: a thread is perpetually denied a resource it needs because others keep winning. It also covers <strong>priority inversion</strong> &mdash; a low-priority lock holder blocking a high-priority thread &mdash; and its fix, priority inheritance.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 155" role="img" aria-labelledby="d-conc-dl-t">
+<title id="d-conc-dl-t">Deadlock: two threads acquire two locks in opposite order and each waits on the other</title>
+<rect class="d-box-alt" x="30" y="24" width="150" height="24" rx="4"/><text class="d-t-sm" x="105" y="40" text-anchor="middle">T1: hold A, want B</text>
+<rect class="d-box-alt" x="330" y="24" width="150" height="24" rx="4"/><text class="d-t-sm" x="405" y="40" text-anchor="middle">T2: hold B, want A</text>
+<rect class="d-box" x="30" y="90" width="70" height="22"/><text class="d-t-sm" x="65" y="105" text-anchor="middle">lock A</text>
+<rect class="d-box" x="410" y="90" width="70" height="22"/><text class="d-t-sm" x="445" y="105" text-anchor="middle">lock B</text>
+<path class="d-line" d="M80 88 L95 50" marker-end="url(#conc-dl-ah)"/><text class="d-t-sm" x="40" y="74">held</text>
+<path class="d-line" d="M430 88 L410 50" marker-end="url(#conc-dl-ah)"/><text class="d-t-sm" x="452" y="74">held</text>
+<path class="d-line" d="M180 40 L408 96" marker-end="url(#conc-dl-ah)"/><text class="d-t-accent" x="230" y="58">T1 waits for B</text>
+<path class="d-line" d="M330 40 L100 96" marker-end="url(#conc-dl-ah)"/><text class="d-t-accent" x="230" y="132">T2 waits for A  &rarr;  cycle in the wait-for graph</text>
+<defs><marker id="conc-dl-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="150">Fix: a global <tspan class="d-t-b">lock order</tspan> (always A before B) breaks the cycle. Livelock = threads keep yielding to each other; add randomised backoff.</text>
+</svg>
+<figcaption>Deadlock is a cycle in the wait-for graph &mdash; break any one Coffman condition and it can&rsquo;t form. In practice: acquire locks in a fixed global order, or use <code>try_lock</code> with backoff.</figcaption>
+</figure>
+
+
 <h3>Deadlock</h3>
 <p>Threads permanently blocked, each waiting for a resource another holds (the four Coffman
 conditions: mutual exclusion, hold-and-wait, no preemption, circular wait &mdash; see the OS
@@ -19332,6 +19637,8 @@ When a high-priority thread H blocks trying to acquire a mutex held by low-prior
 <p class="subtitle">Lock-free updates built from one hardware primitive &mdash; and the ABA trap.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Atomic operations</strong> read-modify-write a single variable indivisibly, with no lock &mdash; <code>fetch_add</code>, <code>exchange</code>, and the fundamental one, <strong>compare-and-swap</strong> (CAS): &ldquo;if this location still holds <em>expected</em>, set it to <em>new</em>, atomically, and tell me if it worked.&rdquo; CAS in a retry loop is how you build lock-free counters, flags, and data structures. This page covers what hardware guarantees atomicity for, the CAS loop pattern, when atomics genuinely beat a mutex (and when they don&rsquo;t), and the <strong>ABA problem</strong> that bites naive lock-free code.</p>
+
 <h3>Atomic operations</h3>
 <p>An <strong>atomic</strong> read-modify-write completes indivisibly &mdash; no other thread sees a partial
 state. Hardware provides: atomic load/store, <code>fetch_add</code>/<code>fetch_sub</code>,
@@ -19472,6 +19779,24 @@ The core problem: in a lock-free pop, thread T1 reads pointer <code>p</code> to 
 <p class="subtitle">Why one thread's writes appear out of order to another &mdash; and how to pin the order down.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>memory model</strong> defines what one thread is guaranteed to observe about another thread&rsquo;s memory writes &mdash; because compilers and CPUs freely <strong>reorder</strong> operations, so &ldquo;the code runs top to bottom&rdquo; is only true for a single thread in isolation. This page covers the reorderings that happen, the <strong>happens-before</strong> relation that synchronization establishes, the C++/Java-style memory orders (<code>relaxed</code>, <code>acquire</code>/<code>release</code>, <code>seq_cst</code>) and what each buys you, why <code>volatile</code> is not a concurrency tool in C/C++, and where explicit fences fit.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-conc-mm-t">
+<title id="d-conc-mm-t">Without synchronization, thread 2 can see the writes of thread 1 in a different order</title>
+<rect class="d-box-alt" x="14" y="18" width="230" height="66" rx="4"/><text class="d-t-b" x="129" y="34" text-anchor="middle">thread 1 writes</text>
+<text class="d-t-mono" x="24" y="52">data = 42;</text><text class="d-t-mono" x="24" y="70">ready = true;</text>
+<rect class="d-box" x="276" y="18" width="230" height="66" rx="4"/><text class="d-t-b" x="391" y="34" text-anchor="middle">thread 2 may observe</text>
+<text class="d-t-mono" x="286" y="52">ready == true</text><text class="d-t-mono" x="286" y="70">but data still == 0  (!!)</text>
+<text class="d-t-sm" x="14" y="106">The compiler and the CPU may reorder independent stores/loads; each thread alone still looks correct.</text>
+<text class="d-t-sm" x="14" y="126"><tspan class="d-t-b">Fix</tspan>: a release store on <tspan class="d-t-mono">ready</tspan> paired with an acquire load establishes <tspan class="d-t-b">happens-before</tspan> &mdash;</text>
+<text class="d-t-sm" x="14" y="144">everything sequenced before the release is visible to a thread that sees the value via the acquire.</text>
+<text class="d-t-sm" x="14" y="162">Orders: <tspan class="d-t-mono">relaxed</tspan> (atomic only) &lt; <tspan class="d-t-mono">acquire/release</tspan> (pairwise) &lt; <tspan class="d-t-mono">seq_cst</tspan> (one global order). <tspan class="d-t-mono">volatile</tspan> &ne; atomic in C/C++.</text>
+<defs><marker id="conc-mm-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>&ldquo;The code runs top to bottom&rdquo; is guaranteed only within one thread. Cross-thread visibility exists only where synchronization creates a happens-before edge.</figcaption>
+</figure>
+
+
 <h3>Reordering</h3>
 <p>Compilers reorder independent memory operations for optimisation; CPUs reorder via store
 buffers and out-of-order execution. Within one thread this is invisible (program order is
@@ -19628,6 +19953,26 @@ Four threads: T1 does <code>x = 1</code>; T2 does <code>y = 1</code>; T3 reads <
 <p class="subtitle">Progress guarantees, a lock-free stack, and why it's usually not worth it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>lock-free</strong> algorithm guarantees that <em>some</em> thread always makes progress, even if others are suspended &mdash; no lock to hold, so no deadlock, no priority inversion, no &ldquo;holder got descheduled&rdquo; stall. This page covers the progress hierarchy (obstruction-free &lt; lock-free &lt; wait-free), builds a lock-free stack (Treiber&rsquo;s algorithm) with a CAS loop, explains the hard part &mdash; safe memory reclamation (hazard pointers, epochs) and the ABA problem &mdash; and, importantly, when a lock-free structure is <em>not</em> worth the complexity.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-conc-lf-t">
+<title id="d-conc-lf-t">A lock-free push retries a CAS loop: read head, build node, compare-and-swap, retry on failure</title>
+<rect class="d-box" x="14" y="20" width="130" height="20"/><text class="d-t-sm" x="20" y="34">old = head.load()</text>
+<rect class="d-box" x="160" y="20" width="150" height="20"/><text class="d-t-sm" x="166" y="34">new.next = old</text>
+<rect class="d-box-alt" x="326" y="20" width="180" height="20"/><text class="d-t-sm" x="332" y="34">CAS(&amp;head, old, new) ?</text>
+<path class="d-line" d="M144 30 L158 30" marker-end="url(#conc-lf-ah)"/><path class="d-line" d="M310 30 L324 30" marker-end="url(#conc-lf-ah)"/>
+<path class="d-line" d="M416 40 C 416 66, 79 66, 79 42" marker-end="url(#conc-lf-ah)"/><text class="d-t-accent" x="200" y="62">fail (someone else changed head) &rarr; reload old, retry</text>
+<text class="d-t-accent" x="332" y="56">success &rarr; done</text>
+<defs><marker id="conc-lf-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="96"><tspan class="d-t-b">Lock-free</tspan>: some thread always makes progress (a failed CAS means another thread succeeded).</text>
+<text class="d-t-sm" x="14" y="114">Hard parts: safe <tspan class="d-t-b">reclamation</tspan> (when can you free a popped node?) &rarr; hazard pointers / epochs;</text>
+<text class="d-t-sm" x="14" y="132">and the <tspan class="d-t-b">ABA problem</tspan>: head goes A &rarr; B &rarr; A, so the CAS wrongly succeeds &rarr; tagged pointers / 2-word CAS.</text>
+<text class="d-t-sm" x="14" y="152">Progress: obstruction-free &lt; lock-free &lt; wait-free (every thread finishes in bounded steps).</text>
+</svg>
+<figcaption>The CAS loop is the workhorse of lock-free code. The algorithm is usually the easy part; deciding when it&rsquo;s safe to free memory another thread might still touch is the hard part.</figcaption>
+</figure>
+
+
 <h3>Progress guarantees (weakest to strongest)</h3>
 <table>
 <tr><th>Property</th><th>Guarantee</th></tr>
@@ -19745,6 +20090,8 @@ Herlihy's consensus hierarchy ranks synchronisation primitives by the maximum nu
 <p class="subtitle">Reuse a fixed set of threads to run a stream of tasks &mdash; and size it right.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>thread pool</strong> keeps a fixed set of worker threads pulling tasks from a queue, so you pay thread-creation cost once and cap concurrency deliberately &mdash; instead of spawning a thread per task and letting the scheduler thrash. This page covers why pools exist, their anatomy (workers + a task queue + a submit/shutdown API), how to <strong>size</strong> the pool for CPU-bound vs I/O-bound work, <strong>work stealing</strong> (per-worker deques to cut contention), backpressure when the queue fills, and graceful shutdown that drains in-flight work.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 110" role="img" aria-labelledby="d-ccpool-t">
 <title id="d-ccpool-t">A thread pool: many tasks, a bounded queue, a fixed set of workers</title>
@@ -19904,6 +20251,8 @@ If task A, running on a pool thread, submits subtasks B and C to the <em>same</e
 <p class="subtitle">Representing "a value that isn't ready yet" and composing work without blocking a thread.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>future</strong> (or promise) is a handle to a value that isn&rsquo;t ready yet; <strong>async/await</strong> is syntax that lets you write sequential-looking code that actually suspends at each <code>await</code> and lets an <strong>event loop</strong> run other tasks meanwhile. This page covers the future/promise model and composition, how the single-threaded event loop achieves concurrency without threads, the cardinal sin of calling a blocking operation inside async code (it freezes every other task), and <strong>structured concurrency</strong> &mdash; scoping child tasks so they can&rsquo;t outlive or leak from their parent.</p>
+
 <h3>Future / Promise</h3>
 <ul>
 <li>A <strong>future</strong> is a read handle to a result that will exist later; a <strong>promise</strong> is the write handle the producer uses to fulfil it (or fail it with an exception).</li>
@@ -20038,6 +20387,8 @@ Cancellation is a <em>request</em>, not a forced stop: the runtime marks the tas
 <p class="subtitle">The failure patterns that recur, and how to actually find nondeterministic bugs.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Concurrency bugs are the ones that pass every test run and then fail in production once a year. This page is a catalogue of the recurring ones &mdash; data races, deadlocks, lost/spurious wakeups, check-then-act races, publishing an object before it&rsquo;s fully constructed, forgetting a memory barrier &mdash; plus <strong>double-checked locking</strong> done correctly, and the tools that actually find these bugs: thread/address sanitizers, stress and fuzz testing, deterministic replay, and model checkers.</p>
+
 <h3>The recurring bug catalogue</h3>
 <table>
 <tr><th>Bug</th><th>Signature</th></tr>
@@ -44265,7 +44616,9 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
     concurrency: [
       ["race-critical",     "Races & the Critical Section",         "Data race vs race condition, atomicity, interleavings, TOCTOU, invariants."],
       ["mutex-condvar",     "Mutexes & Condition Variables",        "Lock granularity, RAII locks, wait/notify, spurious wakeups, lost wakeups."],
+      ["rwlocks-rcu",       "Read-Write Locks, RCU & Seqlocks",     "Shared/exclusive locks & writer starvation, StampedLock optimistic reads, seqlock parity counters, RCU pointer swap + grace periods; choosing for read-mostly data."],
       ["semaphores-classic","Semaphores & Classic Problems",        "Counting vs binary, producer-consumer, readers-writers, dining philosophers."],
+      ["message-passing",   "Message Passing: Channels, CSP & Actors", "Share memory by communicating; buffered vs unbuffered channels, select, the actor model + mailboxes + supervision, pipeline/fan-out patterns, how deadlock still occurs."],
       ["deadlock-livelock", "Deadlock, Livelock & Starvation",      "Lock ordering, try-lock backoff, fairness, priority inversion, progress."],
       ["atomics-cas",       "Atomics & Compare-and-Swap",           "Read-modify-write, CAS loop, ABA problem, fetch_add, when atomics beat locks."],
       ["memory-model",      "Memory Models & Ordering",             "Reordering, happens-before, acquire/release/seq-cst, fences, volatile != atomic."],
