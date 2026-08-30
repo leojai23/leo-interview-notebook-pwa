@@ -45031,6 +45031,8 @@ Revert the commit in git (<code>git revert</code>); the GitOps controller reconc
 <p class="subtitle">Stop a program anywhere, inspect and change its state, and walk the call stack &mdash; on a running process or a core dump.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>gdb</strong> is an interactive debugger for compiled programs (C, C++, Rust, Go, and more): it lets you stop a program at a chosen point, inspect and change its state, and step through execution line by line or instruction by instruction. This page covers the core workflow &mdash; <strong>breakpoints</strong> / <strong>watchpoints</strong> (stop when a value changes) / <strong>catchpoints</strong> (stop on a signal or syscall), moving through <strong>frames</strong> and the call stack, <code>print</code> / <code>x</code> to examine variables and raw memory &mdash; plus post-mortem analysis of a <strong>core dump</strong>, <strong>attaching</strong> to a running process, remote debugging with <code>gdbserver</code>, thread and fork debugging, and scripting gdb in Python.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 170" role="img" aria-labelledby="d-dbg-gdb-t">
 <title id="d-dbg-gdb-t">gdb drives the inferior via ptrace; also attaches to a PID, a core file, or a remote gdbserver</title>
@@ -45226,6 +45228,8 @@ The probe changes timing, so lean on low-perturbation and record/replay tools. (
 <p class="subtitle">Runs your program on a synthetic CPU and checks every memory access &mdash; leaks, invalid reads/writes, use of uninitialised values, bad frees &mdash; with no recompilation.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Valgrind</strong> runs your program on a synthetic CPU and instruments every memory access and instruction, so it can catch bugs that don&rsquo;t crash. This page covers its tools: <strong>Memcheck</strong> (the default &mdash; memory leaks, invalid/out-of-bounds reads and writes, use of uninitialised values, use-after-free, double-free, bad <code>free</code>/<code>delete</code>), the options that matter (<code>--leak-check=full</code>, <code>--track-origins=yes</code>, suppression files), and the other tools &mdash; <strong>Cachegrind</strong>/<strong>Callgrind</strong> (cache &amp; call profiling), <strong>Massif</strong> (heap profiling), <strong>Helgrind</strong>/<strong>DRD</strong> (data races) &mdash; and when the faster compiler <strong>sanitizers</strong> (ASan/UBSan/TSan) are the better choice.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 160" role="img" aria-labelledby="d-dbg-val-t">
 <title id="d-dbg-val-t">Valgrind core JITs the program onto a synthetic CPU; a tool instruments every operation</title>
@@ -45389,6 +45393,8 @@ Valgrind only checks the code paths your run exercises, and only reports what's 
 <p class="subtitle">Shows every system call a process makes &mdash; the arguments, the return value, the errno &mdash; so you can see exactly where it talks to the kernel and where it fails.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>strace</strong> shows every <strong>system call</strong> a process makes &mdash; the exact boundary where your program asks the kernel to do something &mdash; with arguments, return values, and <code>errno</code>. It&rsquo;s the fastest way to answer &ldquo;<em>why</em> did it fail?&rdquo; (which <code>open</code> returned <code>ENOENT</code>, which <code>connect</code> was refused) and &ldquo;<em>why</em> is it slow?&rdquo; (blocked in a <code>read</code>, hammering <code>stat</code> in a loop). This page covers <code>-p</code> to attach, <code>-f</code> to follow forks, <code>-e trace=</code> filters, <code>-c</code> for a syscall summary/profile, <code>-T</code>/<code>-tt</code> for timing, <code>-y</code> to decode file descriptors, and <code>-k</code> for stack traces &mdash; plus its overhead cost.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbg-str-t">
 <title id="d-dbg-str-t">strace intercepts the user/kernel boundary via ptrace and logs each syscall</title>
@@ -45535,6 +45541,8 @@ Run <code>strace -f -T -tt -c -w -p PID</code> over a slow request (or wrap a si
 <p class="subtitle">Like strace, but one layer up: it logs the calls a program makes into shared libraries &mdash; <code>malloc</code>, <code>strcpy</code>, <code>getenv</code>, <code>SSL_read</code> &mdash; with their arguments and return values.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>ltrace</strong> is to <em>library</em> calls what strace is to system calls: it intercepts calls a program makes into shared libraries &mdash; <code>malloc</code>, <code>strcpy</code>, <code>getenv</code>, an app&rsquo;s calls into <code>libssl</code> &mdash; showing arguments and return values. This page covers using it to understand what a binary is doing without source, the filters (<code>-e</code> by function, <code>-l</code> by library), <code>-c</code> for a call-count summary, <code>-S</code> to also show syscalls, tracking <code>malloc</code>/<code>free</code> pairs, and its real limitations &mdash; it needs dynamic linking and symbols, and modern PIE / statically-linked / stripped binaries often defeat it.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbg-ltr-t">
 <title id="d-dbg-ltr-t">ltrace traps calls through the PLT into shared libraries; -S also shows syscalls</title>
@@ -45679,6 +45687,8 @@ Two complementary traces. <strong>ltrace</strong>: <code>ltrace -f -s 4096 -e 's
 <p class="subtitle">Samples the CPU thousands of times a second, or reads exact hardware counters, to show where cycles go &mdash; in your code and the kernel &mdash; with no recompilation.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>perf</strong> is the Linux kernel&rsquo;s sampling profiler, built on hardware performance counters and tracepoints &mdash; low overhead, whole-system. This page covers the sub-commands: <strong><code>perf stat</code></strong> (exact counts &mdash; cycles, instructions, IPC, cache misses, branch mispredicts for a command), <strong><code>perf record</code></strong> + <strong><code>perf report</code></strong> (sample the CPU and build a call graph &mdash; frame-pointer, DWARF, or LBR unwinding), <strong><code>perf top</code></strong> (live), <strong>flame graphs</strong>, and the specialised modes (<code>annotate</code>, <code>sched</code>, <code>lock</code>, <code>c2c</code> for cache contention, <code>probe</code> for dynamic tracepoints) &mdash; plus the <code>perf_event_paranoid</code> permission setup.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 165" role="img" aria-labelledby="d-dbg-perf-t">
 <title id="d-dbg-perf-t">perf front-ends feed the kernel perf_events subsystem, which reads the PMU and tracepoints into perf.data</title>
@@ -45881,6 +45891,8 @@ The sampling profile tells you <em>where</em> cycles are spent, not <em>why</em>
 <p class="subtitle">Compile with coverage instrumentation, run the program (or the test suite), then see exactly which lines and branches executed &mdash; and which never did.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>gcov</strong> measures <strong>code coverage</strong> &mdash; which lines and branches of your program actually ran during a test run. This page covers the flow: compile with <code>--coverage</code> (<code>-fprofile-arcs -ftest-coverage</code>), which emits <code>.gcno</code> notes files; run the program, which writes <code>.gcda</code> counts; then <code>gcov</code> (or <strong>lcov</strong> + <code>genhtml</code>, or <strong>gcovr</strong>) turns those into line- and branch-coverage reports. It covers reading the output, distinguishing line vs branch vs function coverage, wiring a <strong>coverage gate</strong> into CI, and <code>GCOV_PREFIX</code> for collecting data from a remote or embedded target.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbg-gcov-t">
 <title id="d-dbg-gcov-t">Build with --coverage produces .gcno; running produces .gcda; gcov merges them into annotated source</title>
@@ -46040,6 +46052,8 @@ The instrumentation is in the built binary already; only the <em>data files</em>
 <p class="subtitle">Discovers which hosts are up, which ports are open, what service and version is behind each, and (with scripts) known weaknesses &mdash; the standard tool for network inventory and connectivity debugging.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>nmap</strong> discovers hosts and services on a network: which IPs are up, which ports are open, and often what software and OS is behind them. This page covers <strong>host discovery</strong> (<code>-sn</code> ping sweep), the <strong>scan types</strong> (<code>-sS</code> SYN/half-open, <code>-sT</code> full connect, <code>-sU</code> UDP, <code>-sA</code> ACK for firewall mapping), port selection (<code>-p</code>, <code>--top-ports</code>), <strong>service/version</strong> detection (<code>-sV</code>) and <strong>OS</strong> detection (<code>-O</code>), timing templates (<code>-T0</code>&ndash;<code>-T5</code>), the <strong>NSE</strong> scripting engine, and output formats &mdash; framed throughout as <strong>authorised</strong> recon, asset inventory, and firewall-rule verification only.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbg-nmap-t">
 <title id="d-dbg-nmap-t">nmap phases: host discovery, port scan, version/OS detection, NSE scripts, output</title>
