@@ -31334,6 +31334,8 @@ Costs: (1) <strong>Loss of intra-PR commit granularity</strong> &mdash; a 15-com
 <p class="subtitle">Grafana stores almost nothing about your metrics &mdash; it queries other systems and draws the result.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Grafana</strong> is a <em>visualisation and alerting layer</em> &mdash; it stores no metrics or logs of its own. It connects to external <strong>data sources</strong> (Prometheus, Loki, InfluxDB, SQL, Elasticsearch, Tempo&hellip;) through plugins, sends each panel&rsquo;s query to the source, and renders the result. This page covers that separation of <strong>query</strong> (Grafana) from <strong>storage</strong> (the source), the two connection modes &mdash; <strong>proxy</strong> (browser &rarr; Grafana server &rarr; source, the default, keeps credentials server-side) vs <strong>direct/browser</strong> access &mdash; how Grafana itself stores dashboards/users/config in its own database, and running it highly available.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 96" role="img" aria-labelledby="d-grafarch-t">
 <title id="d-grafarch-t">Grafana queries data sources at render time; it stores almost nothing</title>
@@ -31500,6 +31502,8 @@ The shared SQL DB holds dashboards, users, data sources, API keys/service accoun
 <p class="subtitle">A panel is a query plus a visualization plus field config &mdash; know what each layer controls.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>panel</strong> is one visualisation of one or more queries. This page covers picking the right <strong>visualization</strong> for the data (time series for trends, stat/gauge for a single current value, table for detail, bar/histogram/heatmap for distributions), and the <strong>field config</strong> that shapes it: units, decimals, min/max, <strong>thresholds</strong> (colour by value), <strong>value mappings</strong> (0&rarr;&ldquo;down&rdquo;), <strong>overrides</strong> (per-series config), the legend, and calculations. Getting units and thresholds right is what turns a line into an at-a-glance signal.</p>
+
 <h3>The anatomy of a panel</h3>
 <ol>
 <li><strong>Queries</strong> &mdash; one or more, each with a ref id (A, B, &hellip;), against a data source.</li>
@@ -31663,6 +31667,27 @@ Grafana normalises every data source response into <strong>data frames</strong> 
 <p class="subtitle">Variables turn one dashboard into hundreds &mdash; per environment, per service, per pod.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Template variables</strong> turn a fixed dashboard into a reusable one: a dropdown for <code>$namespace</code> or <code>$instance</code> that rewrites every panel&rsquo;s query. This page covers the variable <strong>types</strong> (query &mdash; populated from a data-source query; custom; interval; datasource; textbox; constant), <strong>multi-value</strong> and <em>All</em>, <strong>chained variables</strong> (one variable&rsquo;s options depend on another&rsquo;s value), <strong>repeating</strong> panels/rows (one per selected value), and the built-in <code>$__</code> macros (<code>$__range</code>, <code>$__interval</code>, <code>$__rate_interval</code>) that adapt queries to the current time window.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-grafdv-t">
+<title id="d-grafdv-t">A template variable's selected value is substituted into every panel query; chained variables depend on each other</title>
+<rect class="d-box-alt" x="14" y="18" width="120" height="20"/><text class="d-t-sm" x="74" y="31" text-anchor="middle">$cluster = prod-eu</text>
+<rect class="d-box-alt" x="150" y="18" width="150" height="20"/><text class="d-t-sm" x="225" y="31" text-anchor="middle">$namespace  (options depend on $cluster)</text>
+<path class="d-line" d="M134 28 L148 28" marker-end="url(#grafdv-ah)"/><text class="d-t-sm" x="308" y="31">chained</text>
+<path class="d-line" d="M74 38 L74 60" marker-end="url(#grafdv-ah)"/><path class="d-line" d="M225 38 L225 60" marker-end="url(#grafdv-ah)"/>
+<rect class="d-box" x="14" y="62" width="230" height="30" rx="4"/><text class="d-t-mono d-t-sm" x="20" y="76">sum(rate(http_requests_total{</text><text class="d-t-mono d-t-sm" x="20" y="88">  cluster="$cluster", namespace="$namespace"}[5m]))</text>
+<rect class="d-box-soft" x="270" y="55" width="70" height="14"/><rect class="d-box-soft" x="270" y="72" width="70" height="14"/><rect class="d-box-soft" x="270" y="89" width="70" height="14"/>
+<text class="d-t-sm" x="305" y="66" text-anchor="middle">panel: api</text><text class="d-t-sm" x="305" y="83" text-anchor="middle">panel: web</text><text class="d-t-sm" x="305" y="100" text-anchor="middle">panel: worker</text>
+<path class="d-line" d="M244 77 L268 62" marker-end="url(#grafdv-ah)"/><path class="d-line" d="M244 78 L268 79" marker-end="url(#grafdv-ah)"/><path class="d-line" d="M244 79 L268 96" marker-end="url(#grafdv-ah)"/>
+<text class="d-t-sm" x="360" y="79">multi-value / repeat &rarr; one panel per selected value</text>
+<defs><marker id="grafdv-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="120">Types: query / custom / interval / datasource / textbox / constant. Macros: <tspan class="d-t-mono">$__range</tspan>, <tspan class="d-t-mono">$__interval</tspan>, <tspan class="d-t-mono">$__rate_interval</tspan>.</text>
+<text class="d-t-sm" x="14" y="140">Changing the dropdown re-runs every panel with the new substitution &mdash; one dashboard covers every cluster/namespace.</text>
+</svg>
+<figcaption>A variable is a named token; Grafana string-substitutes it into each panel query before sending. Chained variables scope one dropdown by another; repeat clones a panel per selected value.</figcaption>
+</figure>
+
+
 <h3>Dashboard structure</h3>
 <ul>
 <li>A dashboard = panels laid out on a 24-column grid, optionally grouped into <strong>rows</strong> (collapsible; can <em>repeat</em>).</li>
@@ -31826,6 +31851,8 @@ Variable state lives in the <strong>URL query string</strong> as <code>var-&lt;n
 <p class="subtitle">The most common Grafana pairing &mdash; and the place people most often write subtly wrong queries.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers writing Prometheus queries specifically inside Grafana panels. It covers <strong>instant vs range</strong> queries (a single value for a stat panel vs a series for a graph), the counter idiom <code>rate()</code>/<code>irate()</code>/<code>increase()</code> and why raw counters are never graphed directly, <strong>aggregation</strong> (<code>sum by (job)</code>, <code>histogram_quantile</code> for latency percentiles), Grafana&rsquo;s <code>$__rate_interval</code> (sized to be safe against the scrape interval and the panel resolution), the <strong>legend format</strong> <code>{{label}}</code>, min-step, and exemplars linking a point to a trace.</p>
+
 <h3>PromQL data types</h3>
 <ul>
 <li><strong>Instant vector</strong> &mdash; one sample per matching series at a single instant (<code>http_requests_total</code>).</li>
@@ -31985,6 +32012,25 @@ Sources of divergence: (1) <strong>Different evaluation model</strong> &mdash; a
 <p class="subtitle">"Prometheus for logs" &mdash; index only labels, grep the rest, and derive metrics from log lines.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Loki</strong> is &ldquo;Prometheus for logs&rdquo;: it indexes only a small set of <strong>labels</strong> per stream and stores the log lines themselves compressed and unindexed &mdash; cheap, but you must filter by label first. This page covers <strong>LogQL</strong>: the <strong>label selector</strong> <code>{app="api",env="prod"}</code> (required, picks the streams), then <strong>line filters</strong> (<code>|= "error"</code>, <code>!~</code> regex), <strong>parsers</strong> (<code>| json</code>, <code>| logfmt</code>, <code>| pattern</code>) that extract fields, <strong>label filters</strong> on those fields, and <strong>metric queries</strong> (<code>rate(...[5m])</code>, <code>count_over_time</code>) that turn logs into graphs.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 140" role="img" aria-labelledby="d-grafll-t">
+<title id="d-grafll-t">LogQL pipeline: pick streams by label, filter lines, parse fields, filter on fields, optionally aggregate to a metric</title>
+<rect class="d-box-alt" x="14" y="24" width="110" height="30" rx="4"/><text class="d-t-mono d-t-sm" x="20" y="38">{app="api",</text><text class="d-t-mono d-t-sm" x="20" y="50"> env="prod"}</text>
+<rect class="d-box" x="140" y="26" width="90" height="26"/><text class="d-t-mono d-t-sm" x="185" y="43" text-anchor="middle">|= "error"</text>
+<rect class="d-box" x="246" y="26" width="70" height="26"/><text class="d-t-mono d-t-sm" x="281" y="43" text-anchor="middle">| json</text>
+<rect class="d-box" x="332" y="26" width="120" height="26"/><text class="d-t-mono d-t-sm" x="392" y="43" text-anchor="middle">| status &gt;= 500</text>
+<path class="d-line" d="M124 39 L138 39" marker-end="url(#grafll-ah)"/><path class="d-line" d="M230 39 L244 39" marker-end="url(#grafll-ah)"/><path class="d-line" d="M316 39 L330 39" marker-end="url(#grafll-ah)"/>
+<text class="d-t-sm" x="18" y="72">pick streams</text><text class="d-t-sm" x="150" y="72">line filter</text><text class="d-t-sm" x="250" y="72">parser &rarr; fields</text><text class="d-t-sm" x="340" y="72">label filter</text>
+<rect class="d-box-soft" x="140" y="88" width="220" height="22"/><text class="d-t-mono d-t-sm" x="146" y="102">sum by (route) (rate( ...[5m] ))  &rarr; a graph</text>
+<path class="d-line" d="M392 52 C 392 78, 300 78, 250 86" marker-end="url(#grafll-ah)"/>
+<defs><marker id="grafll-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="130">Only labels are indexed &mdash; the selector is mandatory and should be as narrow as possible; everything after it scans matched lines.</text>
+</svg>
+<figcaption>Every LogQL query starts with a label selector (indexed, cheap); line filters, parsers and label filters then work over just those streams; a range aggregation turns the result into a metric.</figcaption>
+</figure>
+
+
 <h3>The Loki model</h3>
 <ul>
 <li>Loki <strong>indexes only a small set of labels</strong> (e.g. <code>job</code>, <code>namespace</code>, <code>app</code>, <code>level</code>) &mdash; not the log content. The raw lines are stored compressed in object storage, grouped by label set into <strong>streams</strong>.</li>
@@ -32127,6 +32173,23 @@ Path: Grafana sends the LogQL <code>query_range</code> to the Loki <strong>query
 <p class="subtitle">Reshape, join, and compute on query results in the panel &mdash; without changing the query.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Transformations</strong> post-process query results in Grafana, after the data source returns them and before the panel renders &mdash; no change to the underlying query. This page covers the common ones: <strong>join/merge</strong> (combine series into one table by a shared field, e.g. time), <strong>organize fields</strong> (rename/reorder/hide), <strong>group by</strong> and aggregate, <strong>add field from calculation</strong> (ratios, deltas), <strong>filter by value/name</strong>, and <strong>config from query</strong> (drive thresholds/units from another query). It also covers <strong>mixed data sources</strong> &mdash; one panel querying Prometheus and Loki together &mdash; and the fact transformations run in the browser, so order and cost matter.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 135" role="img" aria-labelledby="d-graftr-t">
+<title id="d-graftr-t">Two query results merged by a shared time field into one table, with a calculated ratio column added</title>
+<rect class="d-box-soft" x="14" y="24" width="120" height="40"/><text class="d-t-sm" x="74" y="38" text-anchor="middle">A: requests</text><text class="d-t-mono d-t-sm" x="20" y="54">time | value</text>
+<rect class="d-box-soft" x="14" y="72" width="120" height="40"/><text class="d-t-sm" x="74" y="86" text-anchor="middle">B: errors</text><text class="d-t-mono d-t-sm" x="20" y="102">time | value</text>
+<path class="d-line" d="M134 44 L180 60" marker-end="url(#graftr-ah)"/><path class="d-line" d="M134 92 L180 68" marker-end="url(#graftr-ah)"/>
+<rect class="d-box-alt" x="184" y="46" width="110" height="36" rx="4"/><text class="d-t-sm" x="239" y="60" text-anchor="middle">merge / join</text><text class="d-t-sm" x="239" y="74" text-anchor="middle">on time</text>
+<path class="d-line" d="M294 64 L330 64" marker-end="url(#graftr-ah)"/>
+<rect class="d-box" x="334" y="34" width="170" height="60"/><text class="d-t-mono d-t-sm" x="340" y="48">time | req | err | err/req</text><text class="d-t-mono d-t-sm" x="340" y="64">... add field from calc ...</text><text class="d-t-mono d-t-sm" x="340" y="80">organize: rename, hide</text>
+<defs><marker id="graftr-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="128">Transformations run in the browser, in order, on the returned data &mdash; the queries are unchanged. Mixed data sources feed one panel this way.</text>
+</svg>
+<figcaption>Transformations are a post-query pipeline in Grafana: join separate results, add calculated fields, group, rename/hide &mdash; useful for building a table or a ratio the data source can&rsquo;t return directly.</figcaption>
+</figure>
+
+
 <h3>What transformations are</h3>
 <p>A transformation runs <strong>in Grafana, after the query, before the visualization</strong>.
 It operates on the returned data frames: rename fields, filter rows, join two queries,
@@ -32270,6 +32333,8 @@ Causes: (1) <strong>Timestamp misalignment</strong> &mdash; Prometheus emits poi
 <p class="subtitle">Rules produce alert instances; notification policies route them; contact points deliver them.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Grafana Unified Alerting</strong> evaluates alert rules on a schedule and routes the results to people. This page covers the model: an <strong>alert rule</strong> is a query + a threshold condition, evaluated every interval, producing one alert instance <em>per label set</em> (multi-dimensional); an instance goes <strong>Pending</strong> for the <code>for</code> duration then <strong>Firing</strong>. Routing is separate: <strong>contact points</strong> (where &mdash; Slack, PagerDuty, email) and <strong>notification policies</strong> (a routing tree matching labels, with grouping, timing, and mute intervals), plus <strong>silences</strong> to suppress known issues.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 84" role="img" aria-labelledby="d-grafalert-t">
 <title id="d-grafalert-t">Alerting flow: rule -> instances -> notification policy -> contact point</title>
@@ -32445,6 +32510,8 @@ Grafana's unified alerting embeds a fork of Prometheus <strong>Alertmanager</str
 <p class="subtitle">Click-ops doesn't survive a rebuild &mdash; define data sources, dashboards, and alerts as files.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Provisioning</strong> means defining Grafana&rsquo;s configuration &mdash; data sources, dashboards, alert rules, folders &mdash; in version-controlled files instead of clicking in the UI. This page covers file-based provisioning (YAML that points Grafana at dashboard JSON on disk), the <strong>dashboard JSON model</strong> itself, keeping dashboards as code with Terraform / Grizzly / the API (and the &ldquo;UI is read-only for provisioned dashboards&rdquo; consequence), <strong>library panels</strong> for reuse, and treating dashboard changes like code changes &mdash; review, diff, roll back.</p>
+
 <h3>File provisioning</h3>
 <p>On startup Grafana reads YAML from <code>conf/provisioning/</code> (path set by
 <code>GF_PATHS_PROVISIONING</code>):</p>
@@ -32612,6 +32679,8 @@ Grafana migrates dashboard JSON to the current <code>schemaVersion</code> on loa
 <p class="subtitle">Who logs in, which org they land in, and what they can see and edit.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers who can see and do what in Grafana. The basic <strong>roles</strong> are Viewer / Editor / Admin, granted at the <strong>organization</strong> level and refined by <strong>folder</strong> permissions (a team gets Edit on the &ldquo;Payments&rdquo; folder, View elsewhere). It covers <strong>teams</strong> (group users, assign permissions once), external auth (<strong>OAuth</strong>, <strong>LDAP</strong>, <strong>SAML</strong>) with role mapping from the IdP, <strong>service accounts</strong> + tokens for automation (replacing legacy API keys), and fine-grained <strong>RBAC</strong> in enterprise builds.</p>
+
 <h3>Authentication</h3>
 <ul>
 <li><strong>Built-in</strong>: username/password in Grafana's DB. Fine for tiny setups; disable with <code>disable_login_form</code> once SSO is in.</li>
@@ -32791,6 +32860,8 @@ On a dashboard load Grafana checks, roughly in this order: (1) <strong>Authn</st
 <p class="subtitle">Ad-hoc investigation, jumping between signals, and dashboards people can actually read.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers ad-hoc investigation and dashboard craft. <strong>Explore</strong> is the query workbench for one-off questions &mdash; no panel to save, a <strong>split view</strong> to compare two sources side by side, and <strong>trace-to-logs</strong> / <strong>logs-to-trace</strong> jumps that follow a request across signals. <strong>Correlations</strong> configure those jumps declaratively. The practices half covers dashboard <strong>performance</strong> (limit panels and series, sensible refresh, use recording rules for heavy queries) and <strong>layout</strong> (most important signal top-left, consistent units, rows for grouping).</p>
+
 <h3>Explore</h3>
 <ul>
 <li>A query-focused view with <strong>no panels to configure</strong> &mdash; type a query, see the result, iterate. For investigation, not monitoring.</li>
