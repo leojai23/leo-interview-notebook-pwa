@@ -16979,6 +16979,8 @@ CSRF: a malicious page causes the victim's browser to send a state-changing requ
 <p class="subtitle">A program is a file; a process is that program running, with its own everything.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>process</strong> is a running program: the executable&rsquo;s code and data <em>plus</em> everything the OS tracks to run it &mdash; its own address space, open files, registers, and scheduling state, all recorded in a <strong>Process Control Block (PCB)</strong>. It&rsquo;s the OS&rsquo;s unit of resource ownership and isolation. This page covers what distinguishes a process from a program, what the PCB holds, the process states and transitions, how <code>fork()</code> and <code>exec()</code> create and replace processes, and what zombies and orphans are.</p>
+
 <h3>Process = program + execution context</h3>
 <p>A process has its own <strong>virtual address space</strong> (text, data, heap, stack), open file
 descriptors, registers, and kernel bookkeeping. Two runs of the same program are two processes,
@@ -17135,6 +17137,8 @@ Validate the path and permissions; read the file header (ELF, or <code>#!</code>
 <p class="subtitle">Shared memory and cheap creation &mdash; at the cost of shared blast radius.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>thread</strong> is an independent flow of execution <em>within</em> a process: it has its own stack, registers, and program counter, but <strong>shares</strong> the process&rsquo;s address space, open files, and other resources with its sibling threads. That sharing makes threads cheap to create and communicate but exposes them to data races. This page covers exactly what threads share vs own, the trade-offs against multiple processes, user-level vs kernel-level threading models (1:1, N:1, M:N), and when threads are the right tool versus processes or async I/O.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 128" role="img" aria-labelledby="d-osthr-t">
 <title id="d-osthr-t">Threads in one process share the address space but each has its own stack</title>
@@ -17285,6 +17289,27 @@ Linux doesn't have separate "create process" and "create thread" primitives at t
 <p class="subtitle">Deciding which ready process runs next &mdash; and what metric you're optimising.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>CPU scheduler</strong> decides which ready thread runs next on each core and for how long. The &ldquo;best&rdquo; choice depends on what you&rsquo;re optimising &mdash; throughput, average turnaround, worst-case response time, fairness &mdash; and these goals conflict. This page covers the metrics, the classic algorithms (FCFS, SJF/SRTF, round-robin, priority, multilevel feedback queue) and what each optimises and starves, how real schedulers like Linux CFS/EEVDF approximate fairness, and the preemptive vs cooperative distinction.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-os-sched-t">
+<title id="d-os-sched-t">Ready queue feeds one CPU; round-robin gives each job a time slice, FCFS runs to completion</title>
+<rect class="d-box-alt" x="14" y="18" width="150" height="20"/><text class="d-t-sm" x="20" y="32">ready queue: P1 P2 P3 P4</text>
+<rect class="d-box" x="220" y="14" width="70" height="28" rx="4"/><text class="d-t-sm" x="255" y="32" text-anchor="middle">CPU</text>
+<rect class="d-box-soft" x="340" y="14" width="90" height="28" rx="4"/><text class="d-t-sm" x="385" y="32" text-anchor="middle">blocked (I/O)</text>
+<path class="d-line" d="M164 28 L218 28" marker-end="url(#os-sched-ah)"/><text class="d-t-sm" x="168" y="14">dispatch</text>
+<path class="d-line" d="M290 22 L338 22" marker-end="url(#os-sched-ah)"/><text class="d-t-sm" x="294" y="14">syscall / wait</text>
+<path class="d-line" d="M340 38 C 250 60, 120 50, 90 38" marker-end="url(#os-sched-ah)"/><text class="d-t-sm" x="150" y="60">I/O done &rarr; back to ready</text>
+<path class="d-line" d="M255 42 C 200 70, 100 60, 90 38" marker-end="url(#os-sched-ah)"/><text class="d-t-accent" x="196" y="78">time slice expired (preempt)</text>
+<defs><marker id="os-sched-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="104"><tspan class="d-t-b">FCFS</tspan>: run to completion (a long job blocks short ones &mdash; the convoy effect).</text>
+<text class="d-t-sm" x="14" y="122"><tspan class="d-t-b">Round-robin</tspan>: fixed quantum then preempt &rarr; good response time, more context switches.</text>
+<text class="d-t-sm" x="14" y="140"><tspan class="d-t-b">SJF/SRTF</tspan>: shortest job first &rarr; optimal average wait, but needs burst estimates and can starve long jobs.</text>
+<text class="d-t-sm" x="14" y="158"><tspan class="d-t-b">MLFQ / CFS</tspan>: real schedulers approximate &ldquo;favour interactive, be fair&rdquo; without knowing burst lengths.</text>
+</svg>
+<figcaption>Every algorithm is a different answer to &ldquo;which of turnaround, response time, throughput, and fairness do we optimise, and what do we starve?&rdquo;</figcaption>
+</figure>
+
+
 <h3>Metrics</h3>
 <ul>
 <li><strong>Throughput</strong> &mdash; jobs completed per unit time.</li>
@@ -17418,6 +17443,8 @@ Now you're placing tasks across N run queues (usually per-CPU, to avoid a global
 <p class="subtitle">The cost of multitasking, and the two different "switches" people conflate.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>context switch</strong> is the OS saving one thread&rsquo;s CPU state (registers, program counter, stack pointer) and restoring another&rsquo;s, so a single core can run many threads. A <strong>mode switch</strong> (user &harr; kernel) is cheaper and separate. This page covers the difference between the two, what a context switch actually saves and costs (direct register work plus indirect cache/TLB pollution &mdash; often the larger hit), what events trigger one (timer, blocking syscall, higher-priority wakeup, page fault), and how traps differ from interrupts.</p>
+
 <h3>Mode switch vs context switch</h3>
 <ul>
 <li><strong>Mode switch</strong>: user mode &harr; kernel mode, <em>same</em> process (a syscall, an interrupt handler, a page fault). Save/restore a few registers; no scheduler involved. Cheap (~tens&ndash;hundreds of ns).</li>
@@ -17568,6 +17595,8 @@ Suppose a context switch (direct + amortised indirect: TLB refill, cache misses)
 <p class="subtitle">Every process thinks it owns a huge, private, contiguous memory. The MMU keeps up the illusion.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Virtual memory</strong> gives every process its own private, contiguous-looking address space; the hardware MMU and OS translate each virtual address to a physical one (or trap if it&rsquo;s not resident) using <strong>page tables</strong>, cached in the <strong>TLB</strong>. This is what provides isolation between processes, lets programs use more memory than physically exists, and enables <code>mmap</code>, copy-on-write, and shared libraries. This page covers why virtual memory exists, the paging translation mechanism and multi-level page tables, the TLB and its miss cost, segmentation, and memory-mapped files.</p>
+
 <h3>Why virtual memory</h3>
 <ul>
 <li><strong>Isolation</strong> &mdash; a process can't name another's memory.</li>
@@ -17731,6 +17760,27 @@ Linux by default lets processes <code>malloc</code>/<code>mmap</code> more virtu
 <p class="subtitle">Loading pages only when touched &mdash; and deciding what to evict when RAM is full.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page is about what happens when a virtual page a process touches is <strong>not currently in RAM</strong>. <strong>Demand paging</strong> loads pages only when first accessed; a <strong>page fault</strong> is the trap that triggers the load (or signals an error). When memory is full, a <strong>replacement algorithm</strong> chooses a victim page to evict. It covers minor vs major faults, the practical replacement algorithms (clock / second-chance, why true LRU is too expensive), and <strong>thrashing</strong> &mdash; the collapse that happens when the working sets don&rsquo;t fit &mdash; and the working-set model that predicts it.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-os-pf-t">
+<title id="d-os-pf-t">A page fault: the CPU traps to the OS, which loads the page (or signals an error) and restarts the instruction</title>
+<rect class="d-box" x="14" y="20" width="120" height="22" rx="4"/><text class="d-t-sm" x="74" y="35" text-anchor="middle">access virtual addr</text>
+<rect class="d-box-alt" x="170" y="20" width="120" height="22" rx="4"/><text class="d-t-sm" x="230" y="35" text-anchor="middle">present bit = 0?</text>
+<rect class="d-box-soft" x="330" y="14" width="180" height="16"/><text class="d-t-sm" x="336" y="26">valid mapping &rarr; MINOR fault (in cache / zero page / CoW)</text>
+<rect class="d-box-soft" x="330" y="34" width="180" height="16"/><text class="d-t-sm" x="336" y="46">on disk &rarr; MAJOR fault: read from swap / file</text>
+<rect class="d-box-soft" x="330" y="54" width="180" height="16"/><text class="d-t-sm" x="336" y="66">not your memory &rarr; SIGSEGV</text>
+<path class="d-line" d="M134 31 L168 31" marker-end="url(#os-pf-ah)"/>
+<path class="d-line" d="M290 27 L328 22" marker-end="url(#os-pf-ah)"/><path class="d-line" d="M290 31 L328 42" marker-end="url(#os-pf-ah)"/><path class="d-line" d="M290 35 L328 62" marker-end="url(#os-pf-ah)"/>
+<defs><marker id="os-pf-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="96">If RAM is full the OS picks a <tspan class="d-t-b">victim</tspan> page to evict first (clock / second-chance approximates LRU).</text>
+<text class="d-t-sm" x="14" y="114">Then it updates the page table, flushes the stale TLB entry, and <tspan class="d-t-b">re-runs the faulting instruction</tspan>.</text>
+<text class="d-t-sm" x="14" y="140"><tspan class="d-t-b">Thrashing</tspan>: working sets exceed RAM &rarr; every step faults &rarr; the disk, not the CPU, sets the pace.</text>
+<text class="d-t-sm" x="14" y="158">The <tspan class="d-t-b">working set</tspan> W(t, &Delta;) = pages used in the last &Delta; time; keep &sum; working sets &le; RAM.</text>
+</svg>
+<figcaption>A minor fault costs microseconds (just fix the mapping); a major fault costs milliseconds (a disk read) &mdash; the difference dominates the performance of a memory-pressured system.</figcaption>
+</figure>
+
+
 <h3>Demand paging</h3>
 <p>Pages aren't loaded until first accessed. Starting a program maps its executable but faults in
 code pages as execution reaches them &mdash; fast startup, only the working set is resident.</p>
@@ -17855,6 +17905,134 @@ Both aim to give each process "enough" frames to avoid thrashing without wasting
 </section>
 <!-- /TOPIC:os:paging -->
 
+<!-- TOPIC:os:filesystems -->
+<section class="view topic" id="v-os-filesystems" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>File Systems: Inodes, the VFS &amp; Journaling</h1>
+<p class="subtitle">How persistent storage becomes named files &mdash; and why <code>rm</code> on an open file doesn&rsquo;t free space, why <code>fsync</code> exists, and how a crash mid-write doesn&rsquo;t corrupt the disk.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>file system</strong> organises a block device into named files and directories and mediates every read and write. Its design explains a lot of everyday behaviour: why a file&rsquo;s name lives in its directory and not the file itself, why hard links share storage, why deleting an open file doesn&rsquo;t reclaim space, why writes can be lost in a crash unless you <code>fsync</code>, and why the same <code>open</code>/<code>read</code>/<code>write</code> calls work on ext4, a network share, and <code>/proc</code>. This page covers the on-disk layout (superblock, inodes, data blocks), what an <strong>inode</strong> holds vs what a directory entry holds, path resolution, the kernel&rsquo;s <strong>VFS</strong> abstraction and its caches, the <strong>page cache</strong> and durability, and <strong>journaling</strong> / copy-on-write for crash consistency.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 170" role="img" aria-labelledby="d-os-fs-t">
+<title id="d-os-fs-t">A name in a directory points at an inode; the inode holds metadata and block pointers to the data</title>
+<rect class="d-box-alt" x="14" y="24" width="130" height="48" rx="4"/><text class="d-t-b" x="79" y="18" text-anchor="middle">directory entry</text>
+<text class="d-t-mono" x="24" y="44">"report.txt"</text><text class="d-t-mono" x="24" y="62">&rarr; inode 4217</text>
+<rect class="d-box" x="200" y="14" width="150" height="70" rx="4"/><text class="d-t-b" x="275" y="30" text-anchor="middle">inode 4217</text>
+<text class="d-t-sm" x="210" y="46">mode, uid/gid, size</text><text class="d-t-sm" x="210" y="62">times, link count = 2</text><text class="d-t-sm" x="210" y="78">block ptrs / extents</text>
+<rect class="d-box-soft" x="400" y="16" width="100" height="16"/><text class="d-t-sm" x="450" y="28" text-anchor="middle">data block</text>
+<rect class="d-box-soft" x="400" y="38" width="100" height="16"/><text class="d-t-sm" x="450" y="50" text-anchor="middle">data block</text>
+<rect class="d-box-soft" x="400" y="60" width="100" height="16"/><text class="d-t-sm" x="450" y="72" text-anchor="middle">indirect block</text>
+<path class="d-line" d="M144 48 L198 44" marker-end="url(#os-fs-ah)"/>
+<path class="d-line" d="M350 50 L398 24" marker-end="url(#os-fs-ah)"/><path class="d-line" d="M350 55 L398 46" marker-end="url(#os-fs-ah)"/><path class="d-line" d="M350 62 L398 68" marker-end="url(#os-fs-ah)"/>
+<defs><marker id="os-fs-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="108">A <tspan class="d-t-b">hard link</tspan> is a second directory entry pointing at the same inode &rarr; link count 2.</text>
+<text class="d-t-sm" x="14" y="126">Data is freed only when link count <tspan class="d-t-b">and</tspan> the count of open file descriptors both reach 0.</text>
+<text class="d-t-sm" x="14" y="150">Journaling: write the intended change to a log first, then apply it &rarr; replay the log after a crash.</text>
+</svg>
+<figcaption>Separating &ldquo;name &rarr; inode&rdquo; (directory) from &ldquo;metadata + data location&rdquo; (inode) is why one file can have many names, and why an open but unlinked file keeps working until the last <code>close</code>.</figcaption>
+</figure>
+
+<h3>On-disk layout</h3>
+<ul>
+<li><strong>Superblock</strong>: filesystem-wide metadata &mdash; block size, total/free counts, inode count, feature flags, location of the other structures. Usually replicated.</li>
+<li><strong>Inode table</strong>: a fixed array of inodes (allocated at format time on ext-family; dynamic on xfs/btrfs). Each inode is ~256 bytes.</li>
+<li><strong>Data blocks</strong>: the file contents, in fixed-size blocks (4&nbsp;KiB is typical).</li>
+<li><strong>Allocation bitmaps</strong> (or B-trees / free-space maps): track which inodes and blocks are free.</li>
+</ul>
+
+<h3>Inode vs directory entry</h3>
+<p><strong>What.</strong> The <strong>inode</strong> holds everything about a file <em>except its name</em>: type (regular / dir / symlink / device / FIFO / socket), permission bits, owner/group, size, timestamps (atime/mtime/ctime), the <strong>link count</strong>, and pointers to the data &mdash; direct block pointers plus single/double/triple <strong>indirect</strong> blocks on ext2/3, or <strong>extents</strong> (start block + length) on ext4/xfs/btrfs. The <strong>name</strong> lives in a <strong>directory entry</strong> (a record in the parent directory&rsquo;s data mapping a name to an inode number).</p>
+<pre><code>$ ls -li file.txt
+4217 -rw-r--r-- <span class="n">2</span> leo staff <span class="n">1024</span> ... file.txt      <span class="c"># 4217 = inode; "2" = link count</span>
+$ ln file.txt also.txt            <span class="c"># HARD link: new dirent -> same inode 4217, link count -> 2</span>
+$ ln -s file.txt short             <span class="c"># SYMlink: a tiny file whose data is the string "file.txt"</span>
+$ rm file.txt                      <span class="c"># removes the dirent, link count -> 1; data still there via also.txt</span>
+<span class="c"># Delete the last name while a process has it open -> dirent gone, but inode + data</span>
+<span class="c"># survive until that fd is closed. This is how /tmp scratch files self-clean, and</span>
+<span class="c"># why `df` can disagree with `du` after deleting a big log a daemon still holds open.</span></code></pre>
+
+<h3>Path resolution &amp; mounts</h3>
+<p><strong>How.</strong> <code>/a/b/c</code> is resolved component by component from the root inode (or the cwd inode for a relative path): read the directory, find the entry for the next name, fetch that inode, repeat. <code>.</code> is the directory itself, <code>..</code> its parent. A <strong>mount point</strong> replaces a directory&rsquo;s inode with the root of another filesystem, so resolution crosses seamlessly into ext4, tmpfs, NFS, etc. Symlinks are followed (with a loop limit) unless <code>O_NOFOLLOW</code>/<code>lstat</code>.</p>
+
+<h3>The VFS &mdash; one interface, many filesystems</h3>
+<p><strong>What / why.</strong> The kernel&rsquo;s <strong>Virtual File System</strong> layer defines objects &mdash; <code>super_block</code>, <code>inode</code>, <code>dentry</code> (a cached name&rarr;inode link), <code>file</code> (an open instance with a position) &mdash; and a set of operations each concrete filesystem implements. So <code>open</code>/<code>read</code>/<code>write</code>/<code>stat</code> behave identically whether the target is ext4, xfs, btrfs, FAT, NFS, <code>tmpfs</code>, <code>procfs</code>, or FUSE. The <strong>dentry cache</strong> and <strong>inode cache</strong> keep hot path components in memory so repeated lookups don&rsquo;t re-read directories from disk.</p>
+
+<h3>The page cache and durability</h3>
+<ul>
+<li>File reads and writes go through <strong>page-cache</strong> pages in RAM. A write returns as soon as the page is marked <strong>dirty</strong> &mdash; it is written to the device later by <strong>writeback</strong> (or when you force it).</li>
+<li>That&rsquo;s why a power loss can lose the last few seconds of writes, and why <code>fsync(fd)</code> (flush this file&rsquo;s data <em>and</em> metadata) and <code>fdatasync(fd)</code> (data + only size-changing metadata) exist. Databases call <code>fsync</code> at commit; to make a rename durable you also <code>fsync</code> the containing directory.</li>
+<li><code>O_DIRECT</code> bypasses the page cache (the app manages its own caching &mdash; databases). <code>mmap</code> maps page-cache pages straight into the process address space; <code>msync</code> flushes them.</li>
+</ul>
+
+<h3>Crash consistency: journaling &amp; copy-on-write</h3>
+<ul>
+<li><strong>The problem</strong>: an operation like &ldquo;append a block&rdquo; touches several structures (data block, block bitmap, inode size, inode block pointer). A crash between them leaves the filesystem inconsistent &mdash; a block marked used but not referenced, or worse.</li>
+<li><strong>Journaling</strong> (ext3/4, xfs, NTFS): write the intended changes to a <strong>journal</strong> (a circular log) and mark it committed; only then apply them to their real locations. On reboot, replay committed journal entries and discard incomplete ones. Modes: <em>journal</em> (data + metadata &mdash; safest, slowest), <em>ordered</em> (metadata journaled, data forced to disk first &mdash; the default), <em>writeback</em> (metadata only &mdash; fastest, can expose stale data after a crash).</li>
+<li><strong>Copy-on-write</strong> (btrfs, ZFS, bcachefs): never overwrite live data. Write new blocks, then atomically swap a pointer at the top of the tree. Gives cheap <strong>snapshots</strong>, block <strong>checksums</strong>, and no journal &mdash; at the cost of fragmentation and more write amplification.</li>
+<li>Other approaches: <em>soft updates</em> (BSD &mdash; carefully ordered writes, no journal), <em>log-structured</em> filesystems (F2FS for flash &mdash; write everything sequentially).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>On disk: <strong>superblock</strong> (FS metadata) + <strong>inode table</strong> + <strong>data blocks</strong> + free bitmaps. Block size ~4&nbsp;KiB.</li>
+<li><strong>Inode</strong> = all file metadata <em>except the name</em> + block pointers (direct/indirect) or <strong>extents</strong>. <strong>Directory entry</strong> = name &rarr; inode number.</li>
+<li><strong>Hard link</strong> = extra dirent, same inode, link count++. <strong>Symlink</strong> = tiny file containing a path. Data freed only when link count <em>and</em> open-fd count both hit 0.</li>
+<li>Path resolution = component-by-component dir reads + inode fetches from root/cwd; mount points splice in another FS.</li>
+<li><strong>VFS</strong>: <code>superblock</code>/<code>inode</code>/<code>dentry</code>/<code>file</code> objects &rarr; one API over ext4/xfs/btrfs/NFS/tmpfs/procfs/FUSE. dentry + inode caches speed lookups.</li>
+<li><strong>Page cache</strong>: writes return when the page is dirty; <strong>writeback</strong> persists later. <code>fsync</code>/<code>fdatasync</code> to force; <code>fsync</code> the directory to make a rename durable. <code>O_DIRECT</code> bypasses; <code>mmap</code> maps cache pages.</li>
+<li><strong>Journaling</strong> (ext4/xfs): log intent &rarr; commit &rarr; apply &rarr; replay on recovery. Modes: journal / <em>ordered (default)</em> / writeback. <strong>CoW</strong> (btrfs/ZFS): new blocks + atomic pointer swap &rarr; snapshots + checksums.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Where is a file&rsquo;s name stored, and why does that design matter?</dt>
+<dd>In the <strong>directory entry</strong> of its parent directory (a record mapping the name to an inode number) &mdash; <em>not</em> in the inode. The inode holds metadata and data-block pointers. This separation is why one file (one inode) can have several names (hard links) in different directories, why renaming a file is just editing directory entries and never touches the data, and why removing a name only frees storage when the inode&rsquo;s link count reaches zero.</dd>
+<dt>You <code>rm</code> a 5&nbsp;GB log file but <code>df</code> still shows the space used. Why?</dt>
+<dd>A running process (the logger) still has the file open. <code>rm</code> removes the <em>directory entry</em> and drops the inode&rsquo;s link count to 0, but the kernel also tracks open file descriptors; the inode and its data blocks are only actually freed when the link count <em>and</em> the open-fd count are both 0. Until the process closes the fd (or restarts, or you truncate via <code>/proc/&lt;pid&gt;/fd/&hellip;</code>), the space stays allocated. <code>du</code> can&rsquo;t see it because there&rsquo;s no name to walk to; <code>df</code> counts it because the blocks are still in use. <code>lsof +L1</code> lists such deleted-but-open files.</dd>
+<dt>Why does a database call <code>fsync</code> on commit, and what does <code>fsync</code> on a directory do?</dt>
+<dd>An ordinary <code>write</code> only puts data in the page cache as dirty pages; the kernel writes them back to the device seconds later, so a crash in between loses them. <code>fsync(fd)</code> blocks until this file&rsquo;s data <em>and</em> metadata are durably on the device &mdash; the database needs that guarantee before it tells the client &ldquo;committed&rdquo;. <code>fsync</code> on the <em>directory</em> file descriptor is needed after creating, renaming, or deleting a file: the new/changed directory entry is itself buffered, so without it a crash could leave the file&rsquo;s data on disk but the name pointing nowhere (or the old name still present). The durable-rename recipe is: write temp file, <code>fsync</code> temp, <code>rename</code> temp &rarr; final, <code>fsync</code> the directory.</dd>
+<dt>What problem does journaling solve, and what does &ldquo;ordered mode&rdquo; mean?</dt>
+<dd>A single logical operation (e.g. growing a file) modifies several on-disk structures; a crash partway through leaves them inconsistent &mdash; e.g. a data block marked allocated in the bitmap but not linked from any inode, or an inode size that doesn&rsquo;t match its blocks. Journaling writes a description of the change to a log and marks it committed <em>before</em> touching the real locations, so recovery just replays committed entries and ignores torn ones &mdash; the filesystem is always consistent. <strong>Ordered mode</strong> (ext4&rsquo;s default) journals only <em>metadata</em>, but forces the associated <em>data</em> blocks to disk before the metadata commit &mdash; so you can&rsquo;t end up with an inode pointing at a block that still contains someone else&rsquo;s old data. <em>journal</em> mode logs data too (safer, ~2&times; writes); <em>writeback</em> mode drops the ordering (fastest, can expose stale block contents after a crash).</dd>
+<dt>Hard link vs symbolic link &mdash; the concrete differences?</dt>
+<dd>A <strong>hard link</strong> is a directory entry pointing at an existing inode; it is indistinguishable from the &ldquo;original&rdquo; name, shares all data and metadata, keeps the file alive via the link count, but cannot cross filesystems or link to a directory (loop risk). A <strong>symbolic link</strong> is its own tiny file whose contents are a path string; it can point anywhere (other filesystems, directories, even non-existent targets), is resolved at each use, breaks if the target is moved/deleted (&ldquo;dangling&rdquo;), and has its own inode and permissions (usually ignored). <code>stat</code> follows symlinks; <code>lstat</code> shows the link itself.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does an inode contain?</summary><div class="answer-box">
+File type and permissions, owner/group, size, timestamps, the link count, and pointers to the file&rsquo;s data blocks (direct + indirect, or extents). It does <em>not</em> contain the filename &mdash; that&rsquo;s in the directory entry.
+</div></details>
+<details class="answer-reveal"><summary>What is the VFS?</summary><div class="answer-box">
+The kernel&rsquo;s Virtual File System layer &mdash; a common set of objects (superblock, inode, dentry, file) and operations that every concrete filesystem implements, so system calls like <code>open</code>/<code>read</code>/<code>write</code> work uniformly across ext4, xfs, NFS, tmpfs, procfs, FUSE, etc.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Trace what the kernel does for <code>open("/var/log/app.log", O_RDONLY)</code> through to a successful <code>read()</code>.</summary><div class="answer-box">
+(1) <strong>Path resolution</strong> via the VFS: start at the root dentry, look up <code>var</code> in <code>/</code> (dentry cache hit, or read <code>/</code>&rsquo;s directory blocks and find the entry &rarr; inode), then <code>log</code> in <code>/var</code>, then <code>app.log</code> in <code>/var/log</code>. Each step may cross a mount point. Permission checks at each directory (execute bit) and on the final file (read bit). (2) The VFS allocates a <code>struct file</code> with position 0, links it to the inode, and installs it in the process&rsquo;s fd table &mdash; <code>open</code> returns the fd. (3) <code>read(fd, buf, n)</code>: the VFS calls the filesystem&rsquo;s read op, which consults the <strong>page cache</strong> for the needed file offset&rarr;pages. (4) <strong>Cache hit</strong>: copy from the cached page to the user buffer, advance the position, return. (5) <strong>Cache miss</strong>: the filesystem maps the file offset to on-disk blocks (via the inode&rsquo;s extents/indirect blocks), the block layer issues a read request to the device, the thread <strong>sleeps</strong>; a completion interrupt wakes it; the page is now populated (and cached for next time), data is copied to the user buffer, position advances, <code>read</code> returns the byte count. Readahead may have prefetched subsequent pages. Subsequent reads of the same region are cache hits.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the on-disk format and write path for a filesystem that must never corrupt on power loss and must support cheap snapshots. Discuss the trade-offs against a journaling design.</summary><div class="answer-box">
+<strong>Choose copy-on-write (CoW) B-trees</strong> (the ZFS/btrfs approach). On-disk: a tree of blocks rooted at a small <strong>superblock</strong> that is written last and atomically (double-buffered: alternate between two superblock slots, each with a checksum and a generation number; mount picks the highest valid generation). Every block &mdash; metadata nodes and data extents &mdash; carries a <strong>checksum</strong> of its contents and a back-reference for scrubbing. Free space tracked by its own CoW tree (or a log of allocations) so allocation is also crash-safe. <strong>Write path</strong>: (1) never overwrite a live block. To modify anything (append data, change an inode), allocate fresh blocks for the new data <em>and</em> for every tree node from the leaf up to the root (&ldquo;bubble up&rdquo;), writing the new copies to free space. (2) Issue all those writes; wait for the device to report them durable (respecting write barriers / FUA so the drive&rsquo;s own cache is flushed). (3) Finally write the new superblock pointing at the new root, with a barrier before and after. Until step 3 completes, the old tree is still entirely intact and consistent; a crash at any earlier point just leaves some orphaned free-space writes that the next allocation reuses. This gives <strong>atomic multi-block updates</strong> with no journal. <strong>Snapshots</strong> are then nearly free: a snapshot is just a saved pointer to a past root; shared blocks stay shared until one side modifies them (at which point CoW forks that subtree). Reference counting or back-reference walking handles &ldquo;when can this block be freed&rdquo;. <strong>Trade-offs vs journaling</strong>: (+) no double-write of data (journal-data mode writes everything twice); (+) instant snapshots and clones; (+) end-to-end checksums detect silent corruption and, with redundancy, self-heal; (+) the filesystem is <em>always</em> consistent on disk, so no fsck/replay delay on mount. (&minus;) <strong>fragmentation</strong>: overwriting a file scatters its blocks, hurting sequential read on spinning disks (less relevant on SSD); (&minus;) <strong>write amplification</strong>: a 1-byte change rewrites the whole path to the root &mdash; batching (transaction groups every few seconds) amortises this but adds latency for <code>fsync</code>, so you still need a small intent log / ZIL for synchronous writes; (&minus;) more complex free-space management and the &ldquo;CoW death spiral&rdquo; when the disk is nearly full (no room to write the new tree); (&minus;) RAM-hungry (checksums, trees, dedup tables). <strong>Journaling</strong> by contrast is simpler, has predictable performance, low overhead in <em>ordered</em> mode (metadata-only log), and pairs well with in-place updates and defragmentation &mdash; but gives no snapshots, no data checksums by default, and a replay step on recovery. <strong>Recommendation</strong>: CoW for the &ldquo;never corrupt + snapshots + integrity&rdquo; requirement, with a per-filesystem intent log for sync-write latency, transaction-group batching to bound write amplification, and background defrag/scrub; reserve enough free space to always be able to write a new tree.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:filesystems -->
+
+
 <!-- TOPIC:os:sync-primitives -->
 <section class="view topic" id="v-os-sync-primitives" data-skill="os">
 <div class="layout">
@@ -17864,6 +18042,8 @@ Both aim to give each process "enough" frames to avoid thrashing without wasting
 <p class="subtitle">Mutex, semaphore, condition variable, spinlock &mdash; what each is for.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">When multiple threads touch shared data, you need <strong>synchronization primitives</strong> to enforce that only safe interleavings happen. This page covers the critical-section problem (mutual exclusion, progress, bounded waiting), the primitives themselves &mdash; <strong>mutex</strong>, <strong>semaphore</strong>, <strong>condition variable</strong>, <strong>spinlock</strong>, <strong>monitor</strong>, read-write lock &mdash; how each works and its cost, the specific difference between a mutex and a semaphore (ownership), and the producer&ndash;consumer pattern that ties them together.</p>
+
 <h3>The critical section problem</h3>
 <p>When threads share mutable state, concurrent access must be serialised. A correct solution needs
 <strong>mutual exclusion</strong> (one at a time), <strong>progress</strong> (no unnecessary blocking), and
@@ -18000,6 +18180,8 @@ A reader/writer lock still has readers taking and releasing the lock (atomic ops
 <p class="subtitle">When everyone is waiting for everyone else &mdash; the four conditions and the four responses.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Deadlock</strong> is a set of threads each waiting for a resource another holds, so none can proceed &mdash; and it requires <em>all four</em> Coffman conditions to hold simultaneously (mutual exclusion, hold-and-wait, no preemption, circular wait). This page covers those conditions and how breaking any one prevents deadlock, the four handling strategies (prevention, avoidance via the banker&rsquo;s algorithm, detection-and-recovery, and deliberately ignoring it), what real systems actually do (lock ordering), and the related failures livelock and starvation.</p>
+
 <h3>The four Coffman conditions (all needed for deadlock)</h3>
 <ol>
 <li><strong>Mutual exclusion</strong> &mdash; a resource is held by at most one process.</li>
@@ -18158,6 +18340,8 @@ One clean solution: a central "waiter"/arbitrator (a mutex or semaphore initiali
 <p class="subtitle">Isolated processes need channels &mdash; and each channel makes a different speed/scope trade.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Inter-process communication</strong> is how separate processes &mdash; which by design don&rsquo;t share memory &mdash; exchange data and signals. The mechanism you choose trades throughput, latency, direction, whether it crosses machines, and how much the kernel is involved. This page covers pipes and FIFOs, message queues, shared memory (fastest, but you supply the synchronization), Unix-domain and network sockets, and signals &mdash; with the strengths, limits, and classic gotchas of each.</p>
+
 <h3>The mechanisms</h3>
 <table>
 <tr><th>Mechanism</th><th>Shape</th><th>Notes</th></tr>
@@ -18275,6 +18459,138 @@ You send a normal message with <code>sendmsg()</code> that carries an <em>ancill
 </section>
 <!-- /TOPIC:os:ipc -->
 
+<!-- TOPIC:os:io-and-devices -->
+<section class="view topic" id="v-os-io-and-devices" data-skill="os">
+<div class="layout">
+<nav class="sidebar" data-sidebar="os"></nav>
+<div class="topic-body">
+<h1>I/O, Interrupts &amp; DMA</h1>
+<p class="subtitle">How the CPU actually moves data to and from disks and network cards &mdash; and why interrupts, DMA, and async I/O exist.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Everything outside the CPU and RAM &mdash; disks, SSDs, network cards, keyboards &mdash; is a <strong>device</strong> the OS talks to through a driver. This page covers the mechanisms: how the CPU learns a device is ready (<strong>polling</strong> vs <strong>interrupts</strong>), how bulk data moves without the CPU copying every byte (<strong>DMA</strong>), the layered path a disk read takes through the kernel (page cache &rarr; filesystem &rarr; block layer &rarr; driver &rarr; device &rarr; completion interrupt), the difference between blocking, non-blocking, and truly asynchronous I/O (<code>epoll</code>, <code>io_uring</code>), and the interrupt-rate problems that show up at high throughput (interrupt storms, coalescing, NAPI, IRQ affinity).</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 170" role="img" aria-labelledby="d-os-io-t">
+<title id="d-os-io-t">CPU sets up a DMA transfer; the DMA controller moves data device to RAM; one interrupt on completion</title>
+<rect class="d-box" x="14" y="30" width="90" height="30" rx="4"/><text class="d-t-sm" x="59" y="49" text-anchor="middle">CPU</text>
+<rect class="d-box-soft" x="150" y="24" width="110" height="42" rx="4"/><text class="d-t-b" x="205" y="40" text-anchor="middle">DMA controller</text><text class="d-t-sm" x="205" y="56" text-anchor="middle">src, dst, length</text>
+<rect class="d-box" x="310" y="30" width="90" height="30" rx="4"/><text class="d-t-sm" x="355" y="49" text-anchor="middle">device</text>
+<rect class="d-box-alt" x="430" y="30" width="80" height="30" rx="4"/><text class="d-t-b" x="470" y="49" text-anchor="middle">RAM</text>
+<path class="d-line" d="M104 40 L148 40" marker-end="url(#os-io-ah)"/><text class="d-t-sm" x="106" y="34">1 set up</text>
+<path class="d-line" d="M310 45 L262 45" marker-end="url(#os-io-ah)"/><text class="d-t-sm" x="266" y="80">2 device &rarr; DMA</text>
+<path class="d-line" d="M260 52 L428 52" marker-end="url(#os-io-ah)"/><text class="d-t-sm" x="300" y="66">3 DMA writes RAM (no CPU)</text>
+<path class="d-line" d="M200 66 L100 60" marker-end="url(#os-io-ah)"/><text class="d-t-accent" x="120" y="96">4 one interrupt: &ldquo;done&rdquo;</text>
+<defs><marker id="os-io-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="122">Without DMA (programmed I/O) the CPU copies every word from a device register &mdash; a 10&nbsp;GbE NIC would consume a whole core.</text>
+<text class="d-t-sm" x="14" y="142">Interrupt handling splits: <tspan class="d-t-b">top half</tspan> (tiny ISR: acknowledge, schedule work) then <tspan class="d-t-b">bottom half</tspan> (softirq/workqueue: the real processing).</text>
+<text class="d-t-sm" x="14" y="162">Under load, switch interrupts &rarr; polling (NAPI) and coalesce; pin device IRQs to cores (affinity, MSI-X).</text>
+</svg>
+<figcaption>The CPU&rsquo;s job for bulk I/O is orchestration &mdash; program the transfer, then do other work &mdash; not byte-copying. DMA plus interrupts is what makes gigabytes/second feasible.</figcaption>
+</figure>
+
+<h3>Device types &amp; how the CPU addresses them</h3>
+<ul>
+<li><strong>Character devices</strong>: an unstructured byte stream, accessed sequentially &mdash; terminals, serial ports, <code>/dev/random</code>, sound.</li>
+<li><strong>Block devices</strong>: fixed-size blocks with random access &mdash; disks, SSDs. The filesystem and page cache sit on top.</li>
+<li><strong>Network devices</strong>: packet-oriented, not a file in <code>/dev</code>; accessed through the socket API and the network stack.</li>
+<li><strong>Memory-mapped I/O</strong>: the device&rsquo;s control/status registers appear at physical memory addresses; the driver reads/writes them like memory (with barriers). <strong>Port-mapped I/O</strong> (x86 legacy): separate address space via <code>in</code>/<code>out</code> instructions.</li>
+</ul>
+
+<h3>Polling vs interrupts</h3>
+<p><strong>What / why.</strong> <strong>Polling</strong>: the CPU repeatedly reads a status register until the device is ready. Simple and low-latency, but burns CPU while waiting &mdash; only sensible for devices that are almost always ready (very fast NVMe under heavy load, some real-time contexts). <strong>Interrupts</strong>: the device asserts an IRQ line; the CPU finishes the current instruction, saves minimal state, jumps to the registered <strong>interrupt service routine</strong> (ISR), which acknowledges the device and returns. The thread that was waiting is later made runnable. Interrupt handling is deliberately split:</p>
+<ul>
+<li><strong>Top half</strong> (the ISR): runs with interrupts disabled, must be tiny &mdash; read a status word, acknowledge, copy nothing heavy, schedule the rest.</li>
+<li><strong>Bottom half</strong> (softirq / tasklet / workqueue on Linux): runs later with interrupts enabled &mdash; the actual packet processing, block-request completion, waking waiters.</li>
+</ul>
+
+<h3>DMA &mdash; moving data without the CPU</h3>
+<p><strong>What / why.</strong> A <strong>DMA</strong> engine transfers data directly between a device and RAM. The CPU programs the transfer (physical source, destination, length, direction), the device and DMA controller do the movement, and the CPU gets <em>one</em> interrupt when the whole transfer completes &mdash; instead of copying every word through a register (&ldquo;programmed I/O&rdquo;). <strong>Scatter-gather</strong> DMA handles a list of non-contiguous buffer fragments in one operation. An <strong>IOMMU</strong> sits between devices and RAM to translate and permission-check DMA addresses (isolation, and letting a device see contiguous virtual buffers). Cache coherence must be handled &mdash; the driver flushes/invalidates CPU caches for the DMA region, or the platform is DMA-coherent.</p>
+
+<h3>The block I/O path (Linux)</h3>
+<pre><code>read() syscall
+  &rarr; VFS  &rarr;  page cache lookup   [HIT: copy to user buffer, done]
+  &rarr; filesystem: map file offset &rarr; device blocks (extents / indirect)
+  &rarr; block layer: build 'bio' requests, merge &amp; sort them
+  &rarr; I/O scheduler (mq-deadline / BFQ / kyber / none) via blk-mq per-CPU queues
+  &rarr; device driver: submit to the hardware queue; DMA set up
+  &rarr; device performs the transfer
+  &rarr; completion interrupt &rarr; bottom half marks the request done
+  &rarr; wake the sleeping thread; data now in the page cache and the user buffer</code></pre>
+<p>I/O schedulers trade throughput (merge/sort for sequential access), latency (deadline caps), and fairness (BFQ) &mdash; on fast NVMe, <code>none</code> (just the multi-queue plumbing) is often best.</p>
+
+<h3>Blocking, non-blocking, and async</h3>
+<table>
+<tr><th>Model</th><th>Behaviour</th></tr>
+<tr><td><strong>Blocking</strong></td><td><code>read()</code> sleeps the thread until data is ready. Simple; one thread per concurrent I/O.</td></tr>
+<tr><td><strong>Non-blocking + readiness</strong></td><td><code>O_NONBLOCK</code> + <code>epoll</code>/<code>kqueue</code>: the kernel tells you which fds are readable/writable; you then do a non-blocking op. One thread, many sockets. Great for network I/O; doesn&rsquo;t truly work for regular files (they&rsquo;re &ldquo;always ready&rdquo; but the read still blocks on disk).</td></tr>
+<tr><td><strong>Asynchronous completion</strong></td><td>Submit an operation, get told when it&rsquo;s <em>finished</em> (not just ready). POSIX AIO (weak, often thread-pool emulated); Linux <strong><code>io_uring</code></strong> &mdash; shared submission/completion ring buffers, batched syscalls, real async for storage <em>and</em> network, zero-copy options.</td></tr>
+</table>
+
+<h3>Interrupt-rate problems at scale</h3>
+<ul>
+<li><strong>Interrupt storm</strong>: at millions of packets/sec, one IRQ per packet melts a core. <strong>NAPI</strong>: after the first interrupt, disable further NIC interrupts and <em>poll</em> the ring in the bottom half until it drains, then re-enable &mdash; interrupt at low load, poll at high load.</li>
+<li><strong>Interrupt coalescing</strong>: the NIC fires one interrupt per N packets or per T microseconds &mdash; fewer interrupts, slightly more latency.</li>
+<li><strong>IRQ affinity</strong>: pin a device&rsquo;s interrupts to specific cores so cache stays warm and one core isn&rsquo;t swamped. <strong>MSI-X</strong> gives a device many interrupt vectors (one per queue); <strong>RSS</strong> hashes flows across NIC queues so receive processing spreads over cores.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Device types: <strong>character</strong> (byte stream), <strong>block</strong> (random-access blocks, under the FS + page cache), <strong>network</strong> (packets, via sockets). Registers via memory-mapped I/O (or x86 port I/O).</li>
+<li><strong>Polling</strong>: CPU spins on a status register &mdash; low latency, wastes CPU; only for near-always-ready devices. <strong>Interrupts</strong>: device raises IRQ &rarr; ISR runs.</li>
+<li>ISR is split: <strong>top half</strong> (tiny, IRQs off, acknowledge + schedule) and <strong>bottom half</strong> (softirq/tasklet/workqueue &mdash; the real work).</li>
+<li><strong>DMA</strong>: CPU programs (src, dst, len); controller moves data device&harr;RAM; <strong>one</strong> completion interrupt. Scatter-gather for fragmented buffers; IOMMU for translation/isolation; handle cache coherence.</li>
+<li>Block path: syscall &rarr; VFS &rarr; page cache (hit = done) &rarr; FS &rarr; block layer (bio, merge) &rarr; I/O scheduler (blk-mq: mq-deadline/BFQ/kyber/none) &rarr; driver + DMA &rarr; device &rarr; completion IRQ &rarr; wake thread.</li>
+<li>I/O models: <strong>blocking</strong> (thread sleeps), <strong>non-blocking + epoll</strong> (readiness, one thread many sockets, not for disk), <strong>async completion</strong> (<code>io_uring</code> &mdash; submit/complete rings, batched, real async for storage + net).</li>
+<li>High rate: <strong>NAPI</strong> (interrupt&rarr;poll under load), <strong>coalescing</strong> (1 IRQ per N/T), <strong>IRQ affinity</strong> + <strong>MSI-X</strong> + <strong>RSS</strong> to spread across cores.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why is DMA essential rather than just an optimisation?</dt>
+<dd>Without it, the CPU must copy every word of every transfer from/to a device register (&ldquo;programmed I/O&rdquo;). For a modern SSD (gigabytes/sec) or a 10/40/100&nbsp;GbE NIC, that copying alone would consume one or more full CPU cores, leaving nothing for actual work &mdash; and the memory-bus contention would still bottleneck. DMA lets the CPU program a transfer (addresses + length) and then do useful work while the DMA engine moves the data, receiving a single interrupt at the end. Bulk I/O at line rate simply isn&rsquo;t possible on general-purpose CPUs without it.</dd>
+<dt>What is the top-half / bottom-half split in interrupt handling and why does it exist?</dt>
+<dd>The <strong>top half</strong> is the interrupt service routine that runs immediately when the IRQ fires &mdash; with interrupts disabled (at least that line), preempting whatever was running. It must be as short as possible: acknowledge the device, grab a status word or descriptor, and schedule the rest of the work. The <strong>bottom half</strong> (Linux softirq, tasklet, or workqueue) runs slightly later with interrupts re-enabled and does the substantial processing &mdash; parsing packets, completing block requests, waking waiters. The split exists because long work in the top half would block <em>all</em> other interrupts (missed timer ticks, dropped packets, worse latency for every device) and can&rsquo;t safely sleep or take normal locks. Keep the top half tiny; defer everything else.</dd>
+<dt>Why doesn&rsquo;t <code>epoll</code> help with regular file I/O the way it helps with sockets?</dt>
+<dd><code>epoll</code> reports <em>readiness</em> &mdash; &ldquo;this fd won&rsquo;t block if you read now.&rdquo; For a socket, data either has arrived or hasn&rsquo;t, so readiness is meaningful. A regular file is <em>always</em> considered readable (there&rsquo;s always &ldquo;data&rdquo; at the current offset, even if it&rsquo;s on a slow disk), so <code>epoll</code> immediately says &ldquo;ready&rdquo; and the subsequent <code>read()</code> still blocks on the actual disk I/O. To get non-blocking file I/O you need true asynchronous submission: Linux <code>io_uring</code> (submit a read, get a completion event when the data is actually in your buffer) or a thread pool doing blocking reads. <code>O_NONBLOCK</code> on a regular file has essentially no effect.</dd>
+<dt>Your server drops packets under high load and one CPU is pegged at 100% in soft IRQ. What&rsquo;s happening and what do you tune?</dt>
+<dd>The NIC is firing an interrupt per packet (or close to it), and all of that receive processing is landing on a single core, which saturates in softirq context and can&rsquo;t keep up &mdash; the ring buffer overflows and the NIC drops packets. Tuning: (1) ensure <strong>NAPI</strong> is active (it is by default in modern drivers) so the driver switches to polling the ring under load instead of taking an interrupt per packet. (2) Enable/raise <strong>interrupt coalescing</strong> (<code>ethtool -C</code>) to batch interrupts. (3) Spread the load across cores: enable <strong>multi-queue</strong> with <strong>MSI-X</strong> and <strong>RSS</strong> so different flows hash to different NIC queues, each with its own interrupt, and set <strong>IRQ affinity</strong> (or use <code>irqbalance</code> / explicit <code>/proc/irq/*/smp_affinity</code>) to pin each queue&rsquo;s IRQ to a distinct core; also RPS/RFS to spread softirq work if hardware queues are limited. (4) Grow the NIC ring buffers (<code>ethtool -G</code>). (5) If it&rsquo;s userspace that can&rsquo;t drain fast enough, that&rsquo;s a separate app-side fix (more worker threads, bigger socket buffers, or a kernel-bypass stack like DPDK/AF_XDP for extreme rates).</dd>
+<dt>What does <code>io_uring</code> change compared with the older read/write + epoll model?</dt>
+<dd>It replaces &ldquo;one syscall per operation&rdquo; and &ldquo;readiness then a blocking op&rdquo; with two shared ring buffers between the app and the kernel: a <strong>submission queue</strong> where the app posts operations (read, write, accept, send, fsync, &hellip;) and a <strong>completion queue</strong> where the kernel posts results. The app can batch many operations and submit them with a single <code>io_uring_enter</code> (or with SQPOLL, zero syscalls &mdash; a kernel thread polls the ring). Operations are truly asynchronous, including <em>file</em> I/O (which epoll can&rsquo;t do). It supports linked operations, fixed buffers/files to skip per-call setup, and zero-copy send. The result is far fewer syscalls and context switches at high I/O rates, and one uniform async interface for storage and network. Costs: newer API, a learning curve, and a history of kernel security issues that led some environments to restrict it.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What&rsquo;s the difference between polling and interrupt-driven I/O?</summary><div class="answer-box">
+Polling: the CPU repeatedly checks a device status register until it&rsquo;s ready &mdash; simple but wastes cycles. Interrupt-driven: the device signals the CPU (an IRQ) when it&rsquo;s ready, so the CPU can do other work meanwhile and only handle the device on the interrupt.
+</div></details>
+<details class="answer-reveal"><summary>In one sentence, what does a DMA controller do?</summary><div class="answer-box">
+It transfers a block of data directly between a device and RAM without the CPU copying each word, raising a single interrupt when the whole transfer is complete.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Compare thread-per-connection blocking I/O with an epoll event loop for a server handling 50,000 idle-ish connections.</summary><div class="answer-box">
+<strong>Thread-per-connection blocking</strong>: each connection has a thread that blocks in <code>read()</code>. Simple to write (linear code, no state machine), but 50,000 threads means ~50,000 stacks (even at 64&nbsp;KB each that&rsquo;s ~3&nbsp;GB), heavy scheduler load, and lots of context switches when many wake at once &mdash; the classic C10K problem. Fine for hundreds of connections, not tens of thousands. <strong>epoll event loop</strong>: one (or a few, one per core) threads call <code>epoll_wait</code>, which returns only the handful of fds that are actually ready; the loop does a non-blocking read/write on each and dispatches to per-connection state. Memory is a small buffer + state struct per connection (kilobytes, not a stack), and the kernel does O(ready) work, not O(total). This scales to hundreds of thousands of mostly-idle connections on modest hardware. Costs: the code becomes callback/state-machine style (mitigated by async/await or coroutines that compile to the same thing), you must handle partial reads/writes and backpressure explicitly, and CPU-bound work in a handler stalls the whole loop (offload to a worker pool). For the described workload (many connections, little activity each), the epoll loop is clearly right; a hybrid (epoll for I/O readiness + a bounded worker pool for request processing) is the common production shape. For a small number of very busy connections doing heavy per-request CPU work, threads can be simpler and fast enough.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the I/O architecture for a storage service that must sustain millions of small random reads per second from NVMe with low tail latency. Cover the data path, threading, interrupts, and the syscall interface.</summary><div class="answer-box">
+<strong>Goal</strong>: keep the per-request path short and predictable; eliminate syscalls, copies, context switches, and cross-core traffic on the hot path. <strong>Device path</strong>: NVMe with many hardware submission/completion queues &mdash; one queue pair <em>per worker core</em>, so submissions and completions for a core never touch another core&rsquo;s queue (no locks, no cache-line bouncing). Use <strong>polled completions</strong> for the completion queues under load (NVMe polling / <code>io_uring</code> IOPOLL) instead of interrupts &mdash; at millions of IOPS an interrupt per completion is pure overhead and adds jitter; a core that&rsquo;s always busy polls its CQ with near-zero latency. Fall back to interrupt mode when idle to save power. <strong>Threading</strong>: a fixed pool of pinned worker threads, one per dedicated core, each owning: its NVMe queue pair, its slice of connections, its buffer pool, and its portion of any in-memory index/cache. <strong>Shared-nothing</strong> &mdash; a request is hashed to the owning core and handled entirely there; cross-core work only for the rare cases (rebalancing, replication) via explicit message passing, not shared mutable state. Housekeeping (GC, compaction, metrics) on separate non-hot cores. <strong>Syscall interface</strong>: <strong><code>io_uring</code></strong> per worker, with <em>registered</em> fixed buffers and fixed file descriptors (skip per-call refcount/lookup), <strong>SQPOLL</strong> so submissions need no syscall at all (a kernel thread drains the SQ), and batched submit/complete. This collapses &ldquo;syscall + copy + wait + wakeup&rdquo; per read into &ldquo;write an SQE, read a CQE from a ring in user memory.&rdquo; Consider <strong>SPDK</strong> (full userspace NVMe driver, kernel bypass) if you can dedicate the device &mdash; it removes the block layer and page cache entirely and gives the tightest, most predictable path, at the cost of reimplementing caching/scheduling/failure handling yourself. <strong>Memory / copies</strong>: pre-allocated, huge-page-backed buffer pools per core; DMA directly into the response buffer; zero-copy from that buffer to the network (io_uring zero-copy send, or <code>sendfile</code>-style). Align buffers to the NVMe LBA and to 4&nbsp;KB. Avoid the page cache for this workload (<code>O_DIRECT</code> or SPDK) since random reads over a huge dataset get near-zero cache hit and the cache just adds a copy and reclaim pressure &mdash; keep an explicit application cache sized to the working set instead. <strong>Interrupts / IRQ</strong>: MSI-X vectors mapped one-per-core-queue with affinity pinned to that core; <code>isolcpus</code>/<code>nohz_full</code>/no <code>irqbalance</code> on the worker cores so nothing steals cycles or causes jitter; move all other device IRQs and kernel threads off those cores. <strong>Tail latency</strong>: bound the queue depth per core so a burst can&rsquo;t build an unbounded backlog (little&rsquo;s law: latency = depth / throughput); use hedged/tied requests to a replica for the slow 0.1%; separate read and write paths so a compaction write burst can&rsquo;t stall reads (or rate-limit background writes with token buckets); watch for NVMe device-side latency spikes (garbage collection) and steer around a misbehaving drive. <strong>Backpressure</strong>: when a core&rsquo;s in-flight limit is hit, shed or delay new requests explicitly rather than letting queues grow. <strong>Observability</strong>: per-core histograms for submit&rarr;complete and end-to-end latency, CQ poll efficiency, ring-full events, and per-drive latency &mdash; all lock-free per-core counters aggregated off the hot path. Net: shared-nothing pinned workers, one NVMe queue pair per core, polled completions with io_uring/SQPOLL (or SPDK kernel bypass), O_DIRECT with per-core huge-page buffer pools and an explicit app cache, MSI-X affinity + core isolation to kill jitter, and per-core bounded queue depth plus hedging for the tail.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:os:io-and-devices -->
+
+
 <!-- TOPIC:os:syscalls-kernel -->
 <section class="view topic" id="v-os-syscalls-kernel" data-skill="os">
 <div class="layout">
@@ -18284,6 +18600,28 @@ You send a normal message with <code>sendmsg()</code> that carries an <em>ancill
 <p class="subtitle">How user code asks the kernel for something &mdash; and why crossing that line costs.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>system call</strong> is the controlled entry point from an unprivileged user program into the kernel to request a privileged service (open a file, send on a socket, map memory). It&rsquo;s deliberately expensive &mdash; a hardware trap that switches privilege level and mode &mdash; which is why batching and avoiding syscalls matters for performance. This page covers the user/kernel space split, exactly what happens on a syscall (trap, mode switch, dispatch, return), the <strong>vDSO</strong> shortcut for a few hot calls, and monolithic vs microkernel design.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-os-sc-t">
+<title id="d-os-sc-t">A syscall: trap instruction switches to kernel mode, dispatches by number, returns to user mode</title>
+<rect class="d-box-alt" x="14" y="16" width="230" height="128" rx="6"/><text class="d-t-b" x="129" y="32" text-anchor="middle">user mode (unprivileged)</text>
+<text class="d-t-sm" x="24" y="52">library call: read(fd, buf, n)</text>
+<text class="d-t-sm" x="24" y="72">put args in registers, syscall #0</text>
+<text class="d-t-mono" x="24" y="92">syscall / svc / int 0x80</text>
+<rect class="d-box" x="276" y="16" width="230" height="128" rx="6"/><text class="d-t-b" x="391" y="32" text-anchor="middle">kernel mode (privileged)</text>
+<text class="d-t-sm" x="286" y="52">save user regs; switch to kstack</text>
+<text class="d-t-sm" x="286" y="72">sys_call_table[nr] &rarr; sys_read</text>
+<text class="d-t-sm" x="286" y="92">do the work (may sleep &rarr; scheduler)</text>
+<text class="d-t-sm" x="286" y="112">set return value; restore user regs</text>
+<path class="d-line" d="M244 90 L274 90" marker-end="url(#os-sc-ah)"/><text class="d-t-accent" x="234" y="108">trap</text>
+<path class="d-line" d="M274 122 L244 122" marker-end="url(#os-sc-ah)"/><text class="d-t-accent" x="248" y="138">sysret</text>
+<defs><marker id="os-sc-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="158">The <tspan class="d-t-b">vDSO</tspan> maps a few hot calls (gettimeofday, clock_gettime) into user space &mdash; no trap at all.</text>
+</svg>
+<figcaption>The mode switch is the cheap part (hundreds of cycles); the expensive part is the cache/TLB/branch-predictor disturbance and any resulting context switch &mdash; which is why syscall batching (<code>io_uring</code>, <code>readv</code>) matters.</figcaption>
+</figure>
+
+
 <h3>User space vs kernel space</h3>
 <p>The CPU runs at a privilege level. <strong>User mode</strong> can't touch hardware, other processes'
 memory, or privileged instructions. <strong>Kernel mode</strong> can. A <strong>system call</strong> is the
@@ -43917,9 +44255,11 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["context-switch",  "Context Switches & Mode Switches",     "What's saved, TLB flush cost, user/kernel mode, traps vs interrupts, cost."],
       ["virtual-memory",  "Virtual Memory & Address Translation", "Virtual vs physical, page tables, MMU, TLB, segmentation, protection, mmap."],
       ["paging",          "Paging, Page Faults & Replacement",    "Demand paging, minor/major faults, LRU/clock/second-chance, thrashing, working set."],
+      ["filesystems",     "File Systems: Inodes, the VFS & Journaling", "Superblock/inode/data-block layout, inode vs directory entry, hard vs soft links, path resolution & mounts, VFS + dentry cache, page cache & fsync durability, journaling vs copy-on-write."],
       ["sync-primitives", "Synchronization Primitives",           "Mutex, semaphore, condition variable, spinlock, monitor, when each fits."],
       ["deadlock",        "Deadlock: Conditions, Prevention",     "Coffman conditions, prevention vs avoidance (banker's) vs detection vs ostrich."],
       ["ipc",             "Inter-Process Communication",          "Pipes, FIFOs, message queues, shared memory, sockets, signals, trade-offs."],
+      ["io-and-devices",  "I/O, Interrupts & DMA",                "Character/block/network devices, polling vs interrupts, top/bottom half, DMA & scatter-gather, the block I/O path, blocking vs epoll vs io_uring, NAPI/coalescing/IRQ affinity."],
       ["syscalls-kernel", "System Calls & the Kernel Boundary",   "Trap instruction, user vs kernel space, syscall cost, vDSO, monolithic vs micro."]
     ],
     concurrency: [
