@@ -14119,6 +14119,29 @@ A suffix array is the sorted order of all <code>n</code> suffixes of <code>T</co
 <p class="subtitle">Tables as sets of tuples, and the keys that give rows identity and link them together.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>relational model</strong> represents data as <strong>relations</strong> (tables) of <strong>tuples</strong> (rows) over named, typed <strong>attributes</strong> (columns), with no ordering and no duplicates in the pure model. Its power is that queries are declarative &mdash; you describe <em>what</em> you want, not how to fetch it &mdash; and integrity is enforced by the schema. This page covers relations and their properties, the kinds of <strong>keys</strong> (candidate, primary, foreign, composite, surrogate vs natural), the <strong>constraints</strong> that keep data valid (NOT NULL, UNIQUE, CHECK, foreign keys and their referential actions), and the three-valued logic that <code>NULL</code> introduces.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 180" role="img" aria-labelledby="d-db-rm-t">
+<title id="d-db-rm-t">A foreign key in orders references the primary key of customers; candidate keys and constraints</title>
+<text class="d-t-b" x="14" y="16">customers</text>
+<rect class="d-box-alt" x="14" y="22" width="70" height="18"/><text class="d-t-sm" x="49" y="35" text-anchor="middle">id (PK)</text>
+<rect class="d-box" x="84" y="22" width="90" height="18"/><text class="d-t-sm" x="129" y="35" text-anchor="middle">email (UNIQUE)</text>
+<rect class="d-box" x="174" y="22" width="70" height="18"/><text class="d-t-sm" x="209" y="35" text-anchor="middle">name</text>
+<text class="d-t-sm" x="14" y="56">rows = tuples &middot; no order &middot; no duplicate rows &middot; every value atomic</text>
+<text class="d-t-b" x="14" y="88">orders</text>
+<rect class="d-box-alt" x="14" y="94" width="70" height="18"/><text class="d-t-sm" x="49" y="107" text-anchor="middle">id (PK)</text>
+<rect class="d-box-soft" x="84" y="94" width="110" height="18"/><text class="d-t-sm" x="139" y="107" text-anchor="middle">customer_id (FK)</text>
+<rect class="d-box" x="194" y="94" width="90" height="18"/><text class="d-t-sm" x="239" y="107" text-anchor="middle">total (CHECK &gt; 0)</text>
+<path class="d-line" d="M139 94 C 139 66, 49 66, 49 42" marker-end="url(#db-rm-ah)"/>
+<text class="d-t-accent" x="150" y="74">FK must match an existing customers.id (referential integrity)</text>
+<defs><marker id="db-rm-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="140"><tspan class="d-t-b">candidate key</tspan>: any minimal column set that uniquely identifies a row (id, email). One is chosen <tspan class="d-t-b">PRIMARY KEY</tspan> (also NOT NULL).</text>
+<text class="d-t-sm" x="14" y="160"><tspan class="d-t-b">ON DELETE</tspan> CASCADE / SET NULL / RESTRICT decides what happens to orders when their customer is removed. NULL = &ldquo;unknown&rdquo;, 3-valued logic.</text>
+</svg>
+<figcaption>A foreign key is just a promise: &ldquo;this value exists as a primary key over there.&rdquo; The database enforces it on every insert, update, and delete.</figcaption>
+</figure>
+
+
 <h3>The model</h3>
 <p>A <strong>relation</strong> (table) is a set of <strong>tuples</strong> (rows) over named, typed
 <strong>attributes</strong> (columns). Rows are unordered and, in the pure model, unique. SQL relaxes
@@ -14256,6 +14279,30 @@ By default FK checks are <em>immediate</em> (checked at each statement), which c
 <p class="subtitle">Removing redundancy so an update can't leave the data contradicting itself.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Normalization</strong> is the process of structuring tables so that each fact is stored in exactly one place, eliminating update, insert, and delete <strong>anomalies</strong>. It&rsquo;s driven by <strong>functional dependencies</strong> &mdash; &ldquo;this column determines that one&rdquo; &mdash; and proceeds through a sequence of <strong>normal forms</strong> (1NF, 2NF, 3NF, BCNF), each removing a specific kind of redundancy. This page covers the anomalies, how to read functional dependencies, what each normal form requires, and when to deliberately <strong>denormalize</strong> for read performance.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 190" role="img" aria-labelledby="d-db-nf-t">
+<title id="d-db-nf-t">One wide orders table split into orders, customers, and order_items to remove redundancy</title>
+<text class="d-t-b" x="14" y="14">unnormalised: one fact repeated on every row</text>
+<rect class="d-box" x="14" y="20" width="490" height="34"/>
+<text class="d-t-mono d-t-sm" x="20" y="33">order_id | cust_name | cust_city | item | price | qty</text>
+<text class="d-t-mono d-t-sm" x="20" y="48">1001 | Ada | Paris | bolt | 2.00 | 10   &lt;- cust_city repeats, multivalued items</text>
+<text class="d-t-accent" x="14" y="72">&darr; 1NF atomic cells &middot; 2NF remove partial-key deps &middot; 3NF remove transitive deps</text>
+<rect class="d-box-alt" x="14" y="84" width="150" height="46"/><text class="d-t-b" x="20" y="98">customers</text>
+<text class="d-t-mono d-t-sm" x="20" y="112">id (PK)</text><text class="d-t-mono d-t-sm" x="20" y="124">name, city</text>
+<rect class="d-box-alt" x="184" y="84" width="150" height="46"/><text class="d-t-b" x="190" y="98">orders</text>
+<text class="d-t-mono d-t-sm" x="190" y="112">id (PK)</text><text class="d-t-mono d-t-sm" x="190" y="124">customer_id (FK)</text>
+<rect class="d-box-alt" x="354" y="84" width="150" height="46"/><text class="d-t-b" x="360" y="98">order_items</text>
+<text class="d-t-mono d-t-sm" x="360" y="112">order_id (FK)</text><text class="d-t-mono d-t-sm" x="360" y="124">item, price, qty</text>
+<path class="d-line" d="M184 107 L166 107" marker-end="url(#db-nf-ah)"/><path class="d-line" d="M354 107 L336 107" marker-end="url(#db-nf-ah)"/>
+<defs><marker id="db-nf-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="152">Now each fact lives once: change Ada&rsquo;s city in one row. No update/insert/delete anomalies.</text>
+<text class="d-t-sm" x="14" y="172"><tspan class="d-t-b">Denormalise</tspan> later only for a measured read hotpath &mdash; and own the job of keeping the copies in sync.</text>
+</svg>
+<figcaption>Normalization = one fact, one place, driven by functional dependencies. Each normal form removes a specific class of redundancy that otherwise causes anomalies.</figcaption>
+</figure>
+
+
 <h3>The anomalies normalization prevents</h3>
 <ul>
 <li><strong>Update anomaly</strong> &mdash; a fact stored in many rows; updating one misses the others.</li>
@@ -14392,6 +14439,8 @@ A star schema has a central <em>fact</em> table (measurements, foreign keys to d
 <p class="subtitle">The logical evaluation order &mdash; get that right and the rest of SQL clicks.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>SQL</strong> is a declarative language: you state the result you want and the engine figures out how to compute it. This page covers the pieces of a <code>SELECT</code> and &mdash; crucially &mdash; the <strong>logical processing order</strong> (<code>FROM</code> &rarr; <code>WHERE</code> &rarr; <code>GROUP BY</code> &rarr; <code>HAVING</code> &rarr; <code>SELECT</code> &rarr; <code>ORDER BY</code> &rarr; <code>LIMIT</code>), which explains why you can&rsquo;t use a <code>SELECT</code> alias in <code>WHERE</code>. It then covers aggregates and <code>GROUP BY</code> (and <code>WHERE</code> vs <code>HAVING</code>), subqueries and CTEs (including recursive), and <strong>window functions</strong> for running totals and rankings without collapsing rows.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 96" role="img" aria-labelledby="d-dbsql-t">
 <title id="d-dbsql-t">SQL is written SELECT-first but evaluated FROM-first</title>
@@ -14552,6 +14601,8 @@ The anchor selects the root; the recursive term joins children of the current le
 <p class="subtitle">The join types, the NULL edge cases, and the three algorithms underneath.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>join</strong> combines rows from two tables based on a predicate &mdash; the core operation of a relational query. This page covers the join <em>types</em> (<code>INNER</code>, <code>LEFT</code>/<code>RIGHT</code>/<code>FULL OUTER</code>, <code>CROSS</code>, self-join, and the semi/anti-joins behind <code>EXISTS</code>/<code>NOT EXISTS</code>), the subtle but critical difference between putting a condition in the <code>ON</code> clause vs the <code>WHERE</code> clause of an outer join, how <code>NULL</code>s behave, and the physical join <strong>algorithms</strong> the planner chooses between (nested loop, hash join, merge join) and when each wins.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 118" role="img" aria-labelledby="d-dbjoin-t">
 <title id="d-dbjoin-t">Which rows each join keeps from the left and right tables</title>
@@ -14707,6 +14758,8 @@ A hash join needs to build the whole hash table on one input (blocking, memory-h
 <p class="subtitle">The single biggest lever on query speed &mdash; and a tax on every write.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">An <strong>index</strong> is an auxiliary data structure &mdash; almost always a B-tree &mdash; that lets the database find rows matching a predicate without scanning the whole table, at the cost of extra storage and slower writes. This page covers what an index physically is, the index types (B-tree, hash, GIN/GiST, full-text), <strong>clustered</strong> (the table itself is the index) vs <strong>secondary</strong> indexes, the rules for <strong>composite index column order</strong> and covering indexes, and the cases where adding an index makes things <em>worse</em>.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 138" role="img" aria-labelledby="d-dbidx-t">
 <title id="d-dbidx-t">A B-tree index: sorted keys in shallow nodes point at rows</title>
@@ -14856,6 +14909,27 @@ An index with a <code>WHERE</code> predicate, so it only contains rows matching 
 <p class="subtitle">How SQL (declarative) becomes an execution plan &mdash; and how to read it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">When you run a query, the database <strong>parses</strong> it, generates candidate execution <strong>plans</strong>, estimates the cost of each using table statistics, and runs the cheapest. This page covers that pipeline, how to read an <code>EXPLAIN</code> / <code>EXPLAIN ANALYZE</code> plan tree, why <strong>cardinality estimation</strong> (how many rows will each step produce) is the hardest and most error-prone part, the difference between a full <strong>scan</strong> and an index <strong>seek</strong> and what makes a predicate <strong>SARGable</strong> (index-usable), and the common fixes when the planner gets it wrong.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 185" role="img" aria-labelledby="d-db-qp-t">
+<title id="d-db-qp-t">Parser to planner to executor; an EXPLAIN plan tree with a seq scan vs an index scan</title>
+<rect class="d-box" x="14" y="18" width="70" height="20"/><text class="d-t-sm" x="49" y="32" text-anchor="middle">parse</text>
+<rect class="d-box" x="96" y="18" width="90" height="20"/><text class="d-t-sm" x="141" y="32" text-anchor="middle">rewrite</text>
+<rect class="d-box-soft" x="198" y="18" width="120" height="20"/><text class="d-t-sm" x="258" y="32" text-anchor="middle">plan (cost-based)</text>
+<rect class="d-box" x="330" y="18" width="90" height="20"/><text class="d-t-sm" x="375" y="32" text-anchor="middle">execute</text>
+<path class="d-line" d="M84 28 L94 28" marker-end="url(#db-qp-ah)"/><path class="d-line" d="M186 28 L196 28" marker-end="url(#db-qp-ah)"/><path class="d-line" d="M318 28 L328 28" marker-end="url(#db-qp-ah)"/>
+<text class="d-t-accent" x="198" y="52">uses table statistics to estimate rows (cardinality) &amp; pick cheapest</text>
+<text class="d-t-b" x="14" y="80">EXPLAIN plan tree (read inner-most first)</text>
+<rect class="d-box" x="14" y="88" width="200" height="18"/><text class="d-t-mono d-t-sm" x="20" y="101">Hash Join  (rows=1200)</text>
+<rect class="d-box-soft" x="34" y="110" width="200" height="18"/><text class="d-t-mono d-t-sm" x="40" y="123">Index Scan on users  (rows=1)</text>
+<rect class="d-box-alt" x="34" y="132" width="220" height="18"/><text class="d-t-mono d-t-sm" x="40" y="145">Seq Scan on orders  (rows=1.2M) &lt;- filter not SARGable</text>
+<defs><marker id="db-qp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="170"><tspan class="d-t-b">SARGable</tspan>: <tspan class="d-t-mono">WHERE created_at &gt;= $1</tspan> uses an index; <tspan class="d-t-mono">WHERE date(created_at)=$1</tspan> or <tspan class="d-t-mono">col+0</tspan> forces a scan. Bad row estimates &rarr; bad plan.</text>
+</svg>
+<figcaption>The planner is only as good as its row estimates. <code>EXPLAIN ANALYZE</code> shows estimated vs actual rows &mdash; a big gap is where plans go wrong.</figcaption>
+</figure>
+
+
 <h3>From SQL to plan</h3>
 <p>Parse &rarr; bind (resolve names/types) &rarr; <strong>logical plan</strong> (relational-algebra tree) &rarr;
 rewrite/normalize &rarr; <strong>cost-based optimization</strong> (enumerate plans, estimate cost) &rarr;
@@ -14992,6 +15066,27 @@ The number of possible join orders for n tables grows factorially (n! left-deep,
 <p class="subtitle">All-or-nothing units of work, and the four guarantees that make them safe.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>transaction</strong> is a group of operations that the database treats as a single indivisible unit &mdash; either all of them take effect or none do. The <strong>ACID</strong> properties define the guarantees: <strong>Atomicity</strong> (all-or-nothing), <strong>Consistency</strong> (never violate constraints), <strong>Isolation</strong> (concurrent transactions don&rsquo;t corrupt each other), <strong>Durability</strong> (committed data survives a crash). This page covers what each property means and how the engine delivers it (write-ahead logging, undo/redo), transaction control (<code>BEGIN</code>/<code>COMMIT</code>/<code>ROLLBACK</code>, savepoints), and the extra problems of distributed transactions.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 180" role="img" aria-labelledby="d-db-acid-t">
+<title id="d-db-acid-t">Write-ahead log: change is logged and fsynced before COMMIT returns, then applied to data pages</title>
+<text class="d-t-b" x="14" y="16">commit write path (durability + atomicity)</text>
+<rect class="d-box" x="14" y="24" width="90" height="22"/><text class="d-t-sm" x="59" y="38" text-anchor="middle">BEGIN</text>
+<rect class="d-box" x="116" y="24" width="120" height="22"/><text class="d-t-sm" x="176" y="38" text-anchor="middle">change rows (in memory)</text>
+<rect class="d-box-soft" x="248" y="24" width="120" height="22"/><text class="d-t-sm" x="308" y="38" text-anchor="middle">append to WAL + fsync</text>
+<rect class="d-box-alt" x="380" y="24" width="120" height="22"/><text class="d-t-sm" x="440" y="38" text-anchor="middle">COMMIT returns</text>
+<path class="d-line" d="M104 35 L114 35" marker-end="url(#db-acid-ah)"/><path class="d-line" d="M236 35 L246 35" marker-end="url(#db-acid-ah)"/><path class="d-line" d="M368 35 L378 35" marker-end="url(#db-acid-ah)"/>
+<text class="d-t-accent" x="14" y="66">crash here &rarr; on restart, replay WAL (redo committed) &amp; roll back un-committed (undo)</text>
+<rect class="d-box" x="14" y="80" width="150" height="20"/><text class="d-t-sm" x="89" y="94" text-anchor="middle">dirty data pages</text>
+<path class="d-line d-dash" d="M308 46 L120 80" marker-end="url(#db-acid-ah)"/><text class="d-t-sm" x="180" y="112">flushed lazily later (checkpoint) &mdash; not on the commit path</text>
+<defs><marker id="db-acid-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="140"><tspan class="d-t-b">A</tspan>tomicity: all-or-nothing (undo log). <tspan class="d-t-b">C</tspan>onsistency: constraints hold at commit. <tspan class="d-t-b">I</tspan>solation: concurrent txns don&rsquo;t corrupt each other.</text>
+<text class="d-t-sm" x="14" y="160"><tspan class="d-t-b">D</tspan>urability: once COMMIT returns, the change survives a crash &mdash; because the WAL record is already fsynced to disk.</text>
+</svg>
+<figcaption>Writing the small sequential WAL record and fsyncing it is what makes COMMIT durable; the actual data pages are written back later at a checkpoint.</figcaption>
+</figure>
+
+
 <h3>ACID</h3>
 <table>
 <tr><th></th><th>Property</th><th>Means</th></tr>
@@ -15119,6 +15214,8 @@ Atomicity (must not leave A debited without B credited &mdash; roll back on reco
 <p class="subtitle">The dial between "fast but weird" and "correct but contended".</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Full <strong>Isolation</strong> (running transactions as if one at a time) is expensive, so databases offer weaker <strong>isolation levels</strong> that permit certain concurrency <strong>anomalies</strong> in exchange for speed. This page covers the anomalies in order of severity (dirty read, non-repeatable read, phantom read, and the write-skew / lost-update problems the SQL standard misses), what each of the four standard levels (Read Uncommitted, Read Committed, Repeatable Read, Serializable) allows and forbids, how real engines actually implement them (often via snapshots, not locks), and how to choose a level per workload.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dbiso-t">
 <title id="d-dbiso-t">The read anomalies each isolation level prevents</title>
@@ -15257,6 +15354,8 @@ Under Read Committed, each <em>statement</em> sees a fresh snapshot. If an <code
 <p class="subtitle">Two strategies for isolation &mdash; block writers, or keep multiple versions.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers how a database lets many transactions run concurrently without corrupting data. <strong>Lock-based</strong> concurrency uses shared/exclusive locks and a protocol (two-phase locking) to serialise conflicting access &mdash; correct but contention-prone. <strong>MVCC</strong> (Multi-Version Concurrency Control) instead keeps multiple versions of each row so that <em>readers never block writers and writers never block readers</em> &mdash; each transaction reads a consistent snapshot. It covers both models, how <strong>deadlocks</strong> arise and are detected/broken, lock escalation, and when you&rsquo;d take an explicit lock (<code>SELECT ... FOR UPDATE</code>).</p>
+
 <h3>Lock-based concurrency</h3>
 <ul>
 <li><strong>Shared (S)</strong> lock for reads, <strong>Exclusive (X)</strong> for writes. S&ndash;S compatible; anything with X conflicts.</li>
@@ -15394,6 +15493,256 @@ InnoDB's <em>next-key lock</em> = a lock on an index record plus the <em>gap</em
 </div></div>
 </section>
 <!-- /TOPIC:db:locking-mvcc -->
+<!-- TOPIC:db:replication-partitioning -->
+<section class="view topic" id="v-db-replication-partitioning" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Replication, Partitioning &amp; Sharding</h1>
+<p class="subtitle">One server can fail, can&rsquo;t hold everything, and can&rsquo;t serve every read &mdash; replication buys availability and read capacity, partitioning and sharding buy write capacity and storage.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A single database server has three limits: it can crash (availability), it can run out of disk or memory (capacity), and it can only serve so many queries per second (throughput). This page covers the two families of solutions. <strong>Replication</strong> keeps copies of the data: a primary takes the writes and streams its change log to replicas, which serve reads and can be promoted on failure &mdash; the key trade-off is synchronous (no data loss, slower writes) vs asynchronous (fast writes, replication lag and read-your-writes anomalies). <strong>Partitioning</strong> splits one big table into pieces by key; <strong>sharding</strong> spreads those pieces across servers so writes and storage scale &mdash; at the cost of cross-shard joins/transactions, a shard key you can&rsquo;t easily change, and N databases to operate.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 180" role="img" aria-labelledby="d-db-rp-t">
+<title id="d-db-rp-t">Primary streams its change log to replicas (with lag); sharding routes rows by a shard key to N databases</title>
+<text class="d-t-b" x="14" y="16">replication (primary&ndash;replica)</text>
+<rect class="d-box-alt" x="14" y="22" width="90" height="24" rx="4"/><text class="d-t-sm" x="59" y="38" text-anchor="middle">primary (RW)</text>
+<rect class="d-box-soft" x="170" y="14" width="90" height="18"/><text class="d-t-sm" x="215" y="27" text-anchor="middle">replica (RO)</text>
+<rect class="d-box-soft" x="170" y="38" width="90" height="18"/><text class="d-t-sm" x="215" y="51" text-anchor="middle">replica (RO)</text>
+<path class="d-line" d="M104 30 L168 22" marker-end="url(#db-rp-ah)"/><path class="d-line" d="M104 38 L168 46" marker-end="url(#db-rp-ah)"/>
+<text class="d-t-accent" x="270" y="30">WAL / binlog stream &mdash; async &rArr; replica lag (ms&ndash;s)</text>
+<text class="d-t-sm" x="270" y="50">read just after a write on a replica &rarr; may not see it</text>
+<text class="d-t-b" x="14" y="86">sharding (horizontal partition across servers)</text>
+<rect class="d-box" x="14" y="92" width="130" height="22"/><text class="d-t-sm" x="20" y="106">shard key = hash(user_id) % N</text>
+<rect class="d-box-soft" x="170" y="92" width="70" height="22"/><text class="d-t-sm" x="205" y="106" text-anchor="middle">shard 0</text>
+<rect class="d-box-soft" x="250" y="92" width="70" height="22"/><text class="d-t-sm" x="285" y="106" text-anchor="middle">shard 1</text>
+<rect class="d-box-soft" x="330" y="92" width="70" height="22"/><text class="d-t-sm" x="365" y="106" text-anchor="middle">shard 2</text>
+<path class="d-line" d="M144 103 L168 103" marker-end="url(#db-rp-ah)"/>
+<text class="d-t-sm" x="14" y="140">Query has the shard key &rarr; goes to one shard. Doesn&rsquo;t &rarr; <tspan class="d-t-b">scatter-gather</tspan> across all N. No cross-shard joins or ACID txns (or costly 2PC).</text>
+<text class="d-t-sm" x="14" y="160">Each shard is usually itself replicated. Order to reach for scale: index/tune &rarr; read replicas &rarr; cache &rarr; vertical &rarr; functional split &rarr; shard.</text>
+<defs><marker id="db-rp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Replication multiplies <em>copies</em> (availability + reads); sharding divides the <em>data</em> (writes + storage). Most large systems do both: N shards, each a replicated primary + replicas.</figcaption>
+</figure>
+
+<h3>Replication: primary&ndash;replica</h3>
+<ul>
+<li><strong>How.</strong> All writes go to the <strong>primary</strong> (leader). It records every change in its write-ahead log (Postgres WAL, MySQL binlog) and streams that log to <strong>replicas</strong> (followers), which replay it to stay in sync. Replicas serve read-only queries; one can be <strong>promoted</strong> to primary if the primary fails.</li>
+<li><strong>Synchronous</strong>: the primary waits for at least one replica to acknowledge the change before it reports the commit as done. No committed data is lost on failover, but write latency includes a network round trip, and if the acknowledging replica is slow or down the primary stalls. <strong>Semi-sync</strong>: wait for any 1 of N. <strong>Asynchronous</strong>: the primary commits immediately and replicas catch up whenever; writes are fast, but a failover loses the tail of un-replicated commits (the <em>replication lag</em>).</li>
+<li><strong>Replication lag</strong> is normal (milliseconds to seconds, more under load). It causes the <strong>read-your-writes</strong> anomaly: a user updates their profile (primary) then immediately loads it (stale replica) and sees the old value. Mitigations: route reads to the primary for a short window after a write, sticky per-session routing, or pass the primary&rsquo;s log position (LSN/GTID) and have the replica wait until it has applied at least that far.</li>
+<li><strong>Failover &amp; split-brain</strong>: automated failover needs a way to be sure the old primary is really dead (a consensus quorum or an external witness) and to <strong>fence</strong> it &mdash; otherwise two nodes accept writes and the data diverges irreconcilably. Manual failover trades recovery time for safety.</li>
+<li><strong>Multi-primary / active-active</strong>: writes on several nodes for geo-locality &mdash; but concurrent conflicting writes need resolution (last-write-wins loses data; CRDTs or app-level merge for correctness). Uncommon for transactional workloads.</li>
+</ul>
+
+<h3>Partitioning (splitting one table)</h3>
+<p><strong>What / why.</strong> Break a large table into <strong>partitions</strong> by a key: <strong>range</strong> (e.g. by month), <strong>list</strong> (by region), or <strong>hash</strong> (for even spread). It can all still live on one server. Benefits: the planner <strong>prunes</strong> partitions a query can&rsquo;t need; you can <code>DROP</code> an old partition instantly (time-series retention) instead of a slow <code>DELETE</code>; each partition&rsquo;s index is smaller; maintenance (<code>VACUUM</code>, reindex) runs per partition. The catch: queries that don&rsquo;t filter on the partition key touch every partition.</p>
+
+<h3>Sharding (splitting across servers)</h3>
+<ul>
+<li><strong>What.</strong> Each <strong>shard</strong> is a complete, independent database holding a subset of the rows, selected by a <strong>shard key</strong>. The application (or a proxy like Vitess/Citus) routes each query to the right shard.</li>
+<li><strong>Choosing the shard key</strong> &mdash; the decision you can&rsquo;t easily undo: high cardinality; even distribution (a key where one value dominates &mdash; a whale tenant, a celebrity user &mdash; creates a <strong>hot shard</strong>); and present in your common queries, or every lookup becomes a <strong>scatter-gather</strong> across all shards. Composite keys and hashing help spread load.</li>
+<li><strong>Routing</strong>: a directory/lookup table (flexible, one more thing to keep consistent), a static range map, or <strong>consistent hashing</strong> (adding/removing a shard reshuffles only a small fraction of keys).</li>
+<li><strong>Costs</strong>: no cross-shard joins (do them in the app, or denormalize); no cross-shard ACID transactions without two-phase commit or sagas; secondary lookups on non-shard-key columns need a global secondary index or a scatter-gather; aggregates fan out and merge; and you now operate N databases plus their replicas.</li>
+<li><strong>Rebalancing</strong>: map keys to many <strong>virtual buckets</strong> and assign buckets to shards, so moving load is moving buckets, done online with dual-write + backfill + verified cutover.</li>
+</ul>
+
+<h3>The order to reach for scale</h3>
+<ol>
+<li><strong>Fix the queries</strong>: add the missing index, kill the N+1, tune the plan. Usually the biggest win.</li>
+<li><strong>Read replicas</strong>: offload read traffic; scales reads without sharding&rsquo;s complexity.</li>
+<li><strong>Cache</strong>: a read-through cache in front for hot keys.</li>
+<li><strong>Vertical scale</strong>: a bigger box &mdash; simple, buys time.</li>
+<li><strong>Functional partitioning</strong>: move unrelated tables (e.g. an analytics or audit domain) to their own database.</li>
+<li><strong>Shard</strong>: only when write throughput or dataset size genuinely exceeds one node &mdash; or use a NewSQL engine (CockroachDB, Spanner, Vitess, Citus) that shards transparently.</li>
+</ol>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Replication</strong> = copies for availability + read scaling. Primary takes writes, streams WAL/binlog to replicas, replicas serve reads, one can be promoted.</li>
+<li><strong>Sync</strong> = wait for replica ack (no data loss, slower, stalls on a slow replica). <strong>Async</strong> = commit now (fast, but failover loses the un-replicated tail). <strong>Semi-sync</strong> = wait for any 1 of N.</li>
+<li><strong>Replication lag</strong> &rarr; <strong>read-your-writes</strong> anomaly. Fix: read primary after a write / sticky session / wait-for-LSN.</li>
+<li><strong>Failover</strong>: need quorum/witness + fencing or you get <strong>split-brain</strong> (two primaries, divergent data).</li>
+<li><strong>Partitioning</strong> (one table): range / list / hash; partition pruning, instant <code>DROP</code> of old partitions, smaller per-partition indexes. Queries must filter on the partition key.</li>
+<li><strong>Sharding</strong> (across servers): each shard = full DB with a subset by <strong>shard key</strong>. Key needs high cardinality, even spread (no hot shard), and to be in common queries (else <strong>scatter-gather</strong>). No cross-shard joins/txns without 2PC/sagas. Rebalance via virtual buckets / consistent hashing.</li>
+<li>Scale order: <strong>index/tune &rarr; read replicas &rarr; cache &rarr; vertical &rarr; functional split &rarr; shard</strong> (last resort; or use CockroachDB/Spanner/Vitess/Citus).</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Synchronous vs asynchronous replication &mdash; what&rsquo;s the trade-off?</dt>
+<dd><strong>Synchronous</strong>: the primary doesn&rsquo;t acknowledge a commit until at least one replica has durably received the change. On failover you lose nothing that was reported committed. The cost is that every write pays a network round trip to the replica, and if that replica is slow or unreachable the primary&rsquo;s writes stall (mitigated by semi-sync: wait for any one of several). <strong>Asynchronous</strong>: the primary commits and returns immediately; replicas apply the log whenever they can. Writes are fast and a slow replica doesn&rsquo;t affect the primary, but there&rsquo;s a window of already-committed transactions that haven&rsquo;t reached any replica &mdash; if the primary dies in that window, those commits are lost on failover (RPO &gt; 0). Choose sync (or semi-sync) when losing any committed data is unacceptable (payments, ledgers); async when a small, bounded data-loss risk is acceptable for lower latency and looser coupling (most web apps, with backups covering the catastrophic case).</dd>
+<dt>What is the &ldquo;read-your-writes&rdquo; problem with read replicas, and how do you handle it?</dt>
+<dd>Writes go to the primary; reads are load-balanced to replicas that lag the primary by some milliseconds. So a user who updates something and then immediately reads it may hit a replica that hasn&rsquo;t applied the change yet and see stale data &mdash; a jarring &ldquo;my edit didn&rsquo;t save&rdquo; experience. Fixes, in increasing sophistication: (1) after any write in a session, route that session&rsquo;s reads to the <em>primary</em> for a few seconds; (2) sticky routing so a user consistently hits one replica (still stale, but at least monotonic); (3) capture the primary&rsquo;s log sequence number (LSN/GTID) at write time, pass it with subsequent reads, and have the replica block until it has replayed at least that far (or the router picks a caught-up replica); (4) only serve <em>tolerant</em> reads (analytics, lists) from replicas and keep user-facing &ldquo;just changed&rdquo; reads on the primary. The point is that eventual consistency is fine for most reads but not for the one right after a write.</dd>
+<dt>You&rsquo;re about to shard a users table. What makes a good vs bad shard key here?</dt>
+<dd><strong>Good</strong>: <code>user_id</code> (hashed) &mdash; high cardinality, roughly uniform, and it&rsquo;s in almost every query (&ldquo;load user X&rsquo;s data&rdquo;), so lookups go to exactly one shard. <strong>Bad</strong>: <code>country</code> or <code>signup_month</code> &mdash; low cardinality and skewed, so a few shards hold most of the data and traffic (hot shards) while others are idle. Also bad: <code>tenant_id</code> if one tenant is 80% of the load (that whole tenant is one hot shard) &mdash; you&rsquo;d need to further split large tenants. Also consider what <em>else</em> you query by: if you frequently look users up by <code>email</code>, that&rsquo;s not the shard key, so email lookups become a scatter-gather across all shards unless you maintain a separate <code>email &rarr; shard</code> directory. And remember the shard key is effectively permanent &mdash; changing it means re-sharding the whole dataset &mdash; so model your access patterns carefully first. Often the answer is a hashed high-cardinality entity id plus a plan for hot entities and a small number of global secondary indexes/directories for the other lookup dimensions.</dd>
+<dt>Why is sharding considered a last resort rather than a first move for scaling a database?</dt>
+<dd>Because it permanently removes capabilities the relational model gave you for free and multiplies operational burden, and most scaling problems are solved more cheaply upstream. After sharding: no cross-shard joins (rewrite as app-side joins or denormalize), no cross-shard transactions without slow two-phase commit or complex sagas, secondary-key lookups fan out, aggregates fan out and merge, schema migrations must run on every shard, backups/restores are per-shard, and rebalancing data across shards is a delicate online migration. Meanwhile, the common causes of &ldquo;the database is slow&rdquo; are a missing index, an N+1 query pattern, or a bad plan &mdash; fixable in an afternoon &mdash; and read-heavy load scales with read replicas + caching, and moderate write growth scales with a bigger machine or splitting unrelated tables to their own database. Shard only when a single node genuinely can&rsquo;t hold the data or absorb the write rate, and strongly consider a transparent-sharding engine (Vitess, Citus, CockroachDB, Spanner) so the application doesn&rsquo;t have to own routing and cross-shard logic.</dd>
+<dt>What is split-brain and how is it prevented during failover?</dt>
+<dd>Split-brain is when a network partition or a botched failover leaves <strong>two nodes both acting as primary</strong>, each accepting writes. The two datasets diverge, and there is no automatic correct way to merge them &mdash; you lose data or spend a painful outage reconciling by hand. Prevention: (1) require a <strong>quorum</strong> &mdash; a node may only be primary if it can see a majority of the cluster (or a dedicated witness/arbiter), so a minority partition can&rsquo;t elect its own primary; (2) <strong>fence</strong> the old primary before promoting a new one &mdash; STONITH (&ldquo;shoot the other node in the head&rdquo;), revoke its storage lease, or block it at the network/proxy layer so even if it&rsquo;s alive it can&rsquo;t accept writes; (3) route all writes through a single proxy/VIP that is atomically switched so clients can&rsquo;t reach both; (4) prefer consensus-based systems (Raft/Paxos) where leadership itself requires a majority. The cost is that in a true majority-loss partition the database becomes read-only or unavailable rather than risking divergence &mdash; the CP choice.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What does adding read replicas let you scale, and what does it not?</summary><div class="answer-box">
+It scales <strong>read throughput</strong> (and adds availability &mdash; a replica can be promoted). It does <em>not</em> scale write throughput (all writes still go to the one primary) or total storage, and it introduces replication lag / stale reads.
+</div></details>
+<details class="answer-reveal"><summary>What&rsquo;s the difference between partitioning and sharding?</summary><div class="answer-box">
+Partitioning splits one table into pieces by a key, typically still on one server (for pruning, retention, smaller indexes). Sharding spreads those pieces across multiple independent database servers to scale writes and storage, with an application/proxy routing queries by shard key.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>A read-heavy web app&rsquo;s single Postgres is at 80% CPU and p99 latency is climbing. Walk through your scaling steps before considering sharding.</summary><div class="answer-box">
+(1) <strong>Profile first</strong>: <code>pg_stat_statements</code> for the top queries by total time; <code>EXPLAIN ANALYZE</code> the worst ones. Very often a handful of queries with a missing index or a sequential scan dominate &mdash; add the index, and CPU drops sharply. Check for an <strong>N+1</strong> pattern from the ORM (many identical small queries per request) and batch/eager-load it. Check for <code>SELECT *</code> pulling huge rows, unbounded result sets, and missing <code>LIMIT</code>/pagination. (2) <strong>Tune the instance</strong>: <code>shared_buffers</code>, <code>effective_cache_size</code>, <code>work_mem</code>, autovacuum aggressiveness (bloat causes scans to read more pages); make sure the working set fits in RAM. (3) <strong>Connection pool</strong>: if the app opens too many connections, a pooler (PgBouncer, transaction mode) with a small pool often improves throughput by reducing DB-side contention. (4) <strong>Read replicas</strong>: add 1&ndash;2 async replicas and route read-only queries to them; keep &ldquo;read right after write&rdquo; on the primary. This directly removes read load from the primary &mdash; the main lever for a read-heavy app. (5) <strong>Cache</strong>: put a read-through cache (Redis) in front of hot, rarely-changing reads (config, catalog, user profile) with sensible TTLs and invalidation on write. (6) <strong>Vertical scale</strong>: if still hot, move to a bigger instance &mdash; cheap and immediate, buys months. (7) <strong>Functional split</strong>: move a heavy unrelated domain (analytics, activity feed, audit log) to its own database. Only after all that, if <em>write</em> volume or dataset size on the primary is the real ceiling, consider sharding or a distributed SQL engine. For a read-heavy app specifically, steps 1&ndash;5 almost always suffice.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the data tier for a multi-tenant B2B SaaS that must scale to tens of thousands of tenants with very skewed sizes (a few huge, many tiny), strong per-tenant consistency, and occasional cross-tenant analytics.</summary><div class="answer-box">
+<strong>Tenancy model</strong>: don&rsquo;t pick one &mdash; use a <strong>tiered</strong> approach. Small tenants share a database (row-level <code>tenant_id</code> on every table, enforced by a mandatory <code>tenant_id</code> predicate / Postgres row-level security so a query can never leak across tenants). Medium tenants get their own <strong>schema</strong> within a shared database (isolation, per-tenant migrations possible, still cheap). The few huge tenants get a <strong>dedicated database</strong> (or cluster) each &mdash; full resource isolation, independent scaling and maintenance windows, and they can&rsquo;t be a noisy neighbour. A <strong>tenant directory</strong> service maps <code>tenant_id &rarr; {placement: shared|schema|dedicated, connection info}</code>; every request resolves its tenant and routes accordingly; tenants can be <strong>migrated</strong> up a tier online (dual-write + backfill + cutover) as they grow. This handles the skew: the huge tenants don&rsquo;t create a hot shard because they&rsquo;re each their own database. <strong>Sharding of the shared pool</strong>: shard the shared-tenant databases by <code>hash(tenant_id)</code> into virtual buckets mapped to physical shards (so rebalancing = moving buckets). Because <code>tenant_id</code> is in every query, every request is single-shard &mdash; no scatter-gather, and cross-shard transactions never occur (a tenant is entirely on one shard). Use a transparent sharding layer (Citus with <code>tenant_id</code> as the distribution column, or Vitess) so the app mostly sees one logical database. <strong>Per-tenant consistency</strong>: each tenant lives on exactly one primary (its shard/schema/dedicated DB), so ACID transactions and strong consistency are natural <em>within</em> a tenant &mdash; which is all the requirement asks for. Each primary has sync or semi-sync replicas for HA (payments-grade tenants: sync; others: semi-sync), automatic failover with quorum + fencing. Read replicas per shard for read scaling, with read-your-writes handling (primary reads for a window after a write). <strong>Cross-tenant analytics</strong>: do <em>not</em> run these against the OLTP shards. Stream every shard&rsquo;s changes (CDC / logical replication / Debezium) into a central <strong>analytics warehouse / lakehouse</strong> (Snowflake, BigQuery, ClickHouse) partitioned by tenant and date, where cross-tenant aggregates are cheap and can&rsquo;t impact production. Near-real-time via CDC; heavy historical via nightly batch. <strong>Noisy-neighbour &amp; fairness</strong> in the shared pool: per-tenant connection limits and statement timeouts, resource governance (Postgres per-role limits or a proxy), and monitoring per-tenant query cost so a tenant approaching &ldquo;too big for shared&rdquo; is flagged for promotion. <strong>Schema migrations</strong>: expand/contract migrations applied per shard/schema via an orchestrated rollout (online DDL: <code>CREATE INDEX CONCURRENTLY</code>, add-nullable-then-backfill), with the directory tracking each tenant&rsquo;s schema version so app code can handle mixed versions during the rollout. <strong>Backups</strong>: per-shard PITR; dedicated tenants can have their own retention/restore SLAs. <strong>Onboarding/offboarding</strong>: creating a tenant = a directory entry + (for shared) nothing, (for schema) a schema create + migrate, (for dedicated) provision a DB; deleting = drop schema / DB or purge rows, plus a compliance data-export. Net: tiered tenancy (shared rows &rarr; schema &rarr; dedicated DB) with a routing directory and online tier-migration to absorb size skew, hash-by-<code>tenant_id</code> virtual-bucket sharding so every request is single-shard with natural per-tenant ACID, replicas + quorum failover per shard for HA, and CDC into a separate warehouse for the cross-tenant analytics so it never touches OLTP.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:replication-partitioning -->
+<!-- TOPIC:db:connection-pooling-orm -->
+<section class="view topic" id="v-db-connection-pooling-orm" data-skill="db">
+<div class="layout">
+<nav class="sidebar" data-sidebar="db"></nav>
+<div class="topic-body">
+<h1>Connection Pooling, Prepared Statements &amp; the ORM Trap</h1>
+<p class="subtitle">The gap between &ldquo;the SQL is correct&rdquo; and &ldquo;the app is fast&rdquo; is mostly about how connections are managed, how statements are sent, and what the ORM does behind your back.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Correct SQL doesn&rsquo;t make a fast application &mdash; the surrounding plumbing does. This page covers the operational layer between your code and the database: why database <strong>connections</strong> are expensive and how to size a <strong>connection pool</strong> (hint: much smaller than you think), where to put the pool (in-process vs an external pooler like PgBouncer), what <strong>prepared statements</strong> buy you and their gotchas, the <strong>N+1 query</strong> problem and the other ways an <strong>ORM</strong> silently generates slow or wrong queries, minimising network round trips with batching, and running schema <strong>migrations</strong> on a live database without locking it.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 175" role="img" aria-labelledby="d-db-cp-t">
+<title id="d-db-cp-t">Many app instances share a small pool (or an external pooler) rather than each opening its own connections</title>
+<rect class="d-box" x="14" y="20" width="70" height="16"/><rect class="d-box" x="14" y="40" width="70" height="16"/><rect class="d-box" x="14" y="60" width="70" height="16"/>
+<text class="d-t-sm" x="49" y="32" text-anchor="middle">app pod</text><text class="d-t-sm" x="49" y="52" text-anchor="middle">app pod</text><text class="d-t-sm" x="49" y="72" text-anchor="middle">app pod</text>
+<rect class="d-box-soft" x="150" y="34" width="110" height="30" rx="4"/><text class="d-t-b" x="205" y="50" text-anchor="middle">PgBouncer</text><text class="d-t-sm" x="205" y="62" text-anchor="middle">txn-mode multiplex</text>
+<rect class="d-box-alt" x="330" y="30" width="120" height="38" rx="4"/><text class="d-t-b" x="390" y="46" text-anchor="middle">database</text><text class="d-t-sm" x="390" y="60" text-anchor="middle">max_connections</text>
+<path class="d-line" d="M84 28 L148 44" marker-end="url(#db-cp-ah)"/><path class="d-line" d="M84 48 L148 49" marker-end="url(#db-cp-ah)"/><path class="d-line" d="M84 68 L148 54" marker-end="url(#db-cp-ah)"/>
+<path class="d-line" d="M260 49 L328 49" marker-end="url(#db-cp-ah)"/><text class="d-t-accent" x="264" y="42">a few dozen real connections</text>
+<defs><marker id="db-cp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="104">A Postgres connection &asymp; a backend process (~few MB). 200 idle pods &times; a local pool of 20 = 4000 connections = dead server.</text>
+<text class="d-t-sm" x="14" y="124">Pool size &asymp; ((cores &times; 2) + disks) &mdash; often just 10&ndash;20. Too big &rarr; DB-side contention; too small &rarr; app threads queue. Watch pool-wait time.</text>
+<text class="d-t-sm" x="14" y="146"><tspan class="d-t-b">N+1</tspan>: list N parents (1 query) then lazy-load each child (N queries). Fix: one join, or one <tspan class="d-t-mono">WHERE id IN (...)</tspan>.</text>
+<text class="d-t-sm" x="14" y="166">Prepared statement: parse+plan once, execute many with bound params &rarr; faster and injection-proof (params are data, not code).</text>
+</svg>
+<figcaption>The DB has a hard connection ceiling and each connection has real cost. A small in-process pool per instance, plus an external transaction-mode pooler when you have many instances, keeps the total sane.</figcaption>
+</figure>
+
+<h3>Why connections are expensive &mdash; and pool sizing</h3>
+<ul>
+<li>A database connection is a TCP socket <em>plus</em> a server-side session: memory, session state (search path, prepared statements, temp tables), and on Postgres a whole <strong>backend process</strong> (a few MB each). Opening one per request costs the TCP + auth handshake (milliseconds) and the server has a hard <code>max_connections</code>.</li>
+<li>A <strong>connection pool</strong> keeps a fixed set of connections open and hands them out. <strong>Sizing</strong>: it is <em>not</em> &ldquo;one per app thread&rdquo;. For a workload bound by the database, a good starting point is <code>((core_count &times; 2) + effective_disk_count)</code> (the HikariCP rule) &mdash; frequently just <strong>10&ndash;20</strong>. A pool that&rsquo;s too large makes the database slower (more processes contending for locks, CPU, and buffer cache); too small and application threads block waiting to borrow one. Instrument <strong>pool-wait time</strong> and connection utilisation, not just throughput.</li>
+</ul>
+
+<h3>Where the pool lives</h3>
+<ul>
+<li><strong>In-process</strong> (HikariCP, <code>database/sql</code>, SQLAlchemy&rsquo;s pool): one pool per app instance. Fine when you have a handful of instances.</li>
+<li><strong>External pooler</strong> (PgBouncer, ProxySQL, RDS Proxy) sits between many app instances and the database and multiplexes their requests onto a small set of real connections &mdash; essential at scale (100 pods each wanting 20 connections would be 2000). PgBouncer modes: <strong>session</strong> (a client gets a real connection for its whole session &mdash; safe, low multiplexing), <strong>transaction</strong> (a real connection is assigned only for the duration of a transaction &mdash; high multiplexing, but breaks anything session-scoped: server-side prepared statements, <code>SET</code>, advisory locks, <code>LISTEN/NOTIFY</code>), <strong>statement</strong> (per statement &mdash; most aggressive, most restrictions).</li>
+</ul>
+
+<h3>Prepared statements</h3>
+<p><strong>What / why.</strong> Send the SQL once with placeholders (<code>WHERE id = $1</code>); the server parses and plans it and returns a handle; you then <code>EXECUTE</code> it many times with different bound parameter values. Wins: skip re-parsing and re-planning on every call, and &mdash; the big one &mdash; <strong>SQL injection is impossible</strong> because the parameters are transmitted as data and never interpreted as SQL. <strong>Gotchas</strong>: a server-side prepared statement is bound to a session, so it doesn&rsquo;t survive PgBouncer transaction-mode pooling (use client-side parameterisation or disable server-side prepares); Postgres may switch to a <em>generic</em> plan after a few executions that is worse than a value-specific plan for skewed data (<code>plan_cache_mode = force_custom_plan</code> to override); and the statement cache has a bounded size.</p>
+
+<h3>The N+1 query problem</h3>
+<pre><code><span class="c"># N+1: 1 query for the list, then 1 query per row for the association</span>
+posts = Post.objects.all()                 <span class="c"># SELECT * FROM posts               (1)</span>
+<span class="k">for</span> p <span class="k">in</span> posts:
+    print(p.author.name)                   <span class="c"># SELECT * FROM users WHERE id=?    (N times)</span>
+
+<span class="c"># fix: one query with a join / batched IN</span>
+posts = Post.objects.select_related(<span class="s">"author"</span>)   <span class="c"># Django: JOIN</span>
+<span class="c"># or  .prefetch_related("author")               # Django: one extra "WHERE id IN (...)"</span>
+<span class="c"># Rails: .includes(:author)   JPA/Hibernate: JOIN FETCH   SQLAlchemy: selectinload(Post.author)</span></code></pre>
+<p>It passes every test (small data), then falls over in production when a page renders 500 rows as 501 queries. Detect it with per-request query counting / an assertion in tests, or an APM that flags &ldquo;N similar queries&rdquo;.</p>
+
+<h3>The other ORM traps</h3>
+<ul>
+<li><strong>Over-fetching</strong>: <code>SELECT *</code> and full objects when you need one column or a count; loading an entire collection into memory instead of paginating or streaming.</li>
+<li><strong>Surprise writes</strong>: the identity map / session tracks loaded objects and issues <code>UPDATE</code>s on flush for anything that looks dirty &mdash; including no-op assignments.</li>
+<li><strong>Lazy load after the session closes</strong>: <code>LazyInitializationException</code> (Hibernate) / <code>DetachedInstanceError</code> (SQLAlchemy) when you touch an un-loaded association outside the unit of work.</li>
+<li><strong>The generated SQL isn&rsquo;t what you&rsquo;d write</strong>: check the query log; ORMs sometimes emit a correlated subquery or a cartesian join where a plain join or a window function is far better.</li>
+<li><strong>Missing indexes</strong> on the columns the ORM filters and joins on &mdash; the ORM won&rsquo;t tell you.</li>
+<li><strong>Transaction held for the whole request</strong>: a request-scoped transaction that stays open during template rendering or an external API call holds locks and generates MVCC bloat &mdash; keep transactions short and around the writes.</li>
+</ul>
+
+<h3>Round trips &amp; online migrations</h3>
+<ul>
+<li>Every statement is a network round trip. <strong>Batch</strong> inserts (<code>INSERT ... VALUES (...),(...),...</code> or <code>COPY</code>), use <code>RETURNING</code> to avoid a follow-up <code>SELECT</code>, pipeline where the driver allows, and select only the columns/rows you need.</li>
+<li><strong>Migrations on a live database</strong>: adding a column with a volatile default, adding an index, changing a type, or adding a <code>NOT NULL</code>/FK can take a table lock and stall the app. Use <code>CREATE INDEX CONCURRENTLY</code>; add a column nullable, backfill in batches, then add the constraint; use <code>gh-ost</code> / <code>pt-online-schema-change</code> / <code>pg_repack</code> for heavy changes; and deploy code with the <strong>expand&ndash;contract</strong> pattern so it works against both the old and new schema during the rollout.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>A DB connection = socket + server session (Postgres: a backend process, ~MBs). Don&rsquo;t open per request; there&rsquo;s a hard <code>max_connections</code>.</li>
+<li><strong>Pool size</strong> &asymp; <code>(cores &times; 2) + disks</code> &mdash; often 10&ndash;20, <em>not</em> one per thread. Too big &rarr; DB contention; too small &rarr; app threads queue. Monitor pool-wait time.</li>
+<li>Many app instances &rarr; put an <strong>external pooler</strong> (PgBouncer/ProxySQL/RDS Proxy) in front. PgBouncer modes: <strong>session</strong> (safe), <strong>transaction</strong> (multiplexes; breaks server-side prepared statements / <code>SET</code> / advisory locks / LISTEN), statement (most aggressive).</li>
+<li><strong>Prepared statements</strong>: parse/plan once, execute many with bound params &rarr; faster + <strong>injection-proof</strong>. Watch: session-bound (breaks txn-mode pooling), possible generic-plan regression, bounded cache.</li>
+<li><strong>N+1</strong>: list (1) + per-row association (N). Fix with a join (<code>select_related</code> / <code>includes</code> / <code>JOIN FETCH</code>) or a batched <code>WHERE id IN (...)</code> (<code>prefetch_related</code> / <code>selectinload</code>). Assert query count in tests.</li>
+<li>Other ORM traps: <code>SELECT *</code>/over-fetch, unpaginated collections, dirty-tracking surprise <code>UPDATE</code>s, lazy-load after session close, generated SQL &ne; hand-written, missing indexes, request-long transactions.</li>
+<li>Cut round trips: batch inserts / <code>COPY</code>, <code>RETURNING</code>, pipelining, select only what you need.</li>
+<li><strong>Online DDL</strong>: <code>CREATE INDEX CONCURRENTLY</code>; add-nullable &rarr; backfill in batches &rarr; add constraint; gh-ost / pt-osc / pg_repack; expand&ndash;contract deploys.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why isn&rsquo;t &ldquo;pool size = number of application threads&rdquo; the right sizing?</dt>
+<dd>Because the bottleneck is the database, not the app. If you have 400 app threads and give them 400 connections, the database now has 400 sessions competing for a fixed number of CPU cores, disk, and shared buffers &mdash; more time is spent context-switching and contending on internal locks than doing work, and total throughput <em>drops</em>. A small pool (often 10&ndash;20, guided by <code>(cores &times; 2) + disk_count</code>) keeps the database working near its efficient concurrency; the app threads that can&rsquo;t get a connection briefly queue, which is fine because those queries would have been slow anyway with 400-way contention. The right metric to watch is connection-pool wait time: if it&rsquo;s consistently high, the fix is usually faster queries (indexes, killing N+1) or more database capacity, not a bigger pool.</dd>
+<dt>What does PgBouncer&rsquo;s transaction pooling mode give you, and what does it break?</dt>
+<dd>In transaction mode, a real server connection is assigned to a client only for the duration of a single transaction and returned to the pool immediately after <code>COMMIT</code>/<code>ROLLBACK</code>. This lets thousands of mostly-idle client connections share a few dozen server connections &mdash; huge for many app instances or serverless. What it breaks: anything that assumes a stable session across statements/transactions &mdash; <strong>server-side prepared statements</strong> (the next transaction may land on a different backend), session <code>SET</code>/<code>SET LOCAL</code> outside a transaction, session-level advisory locks, <code>LISTEN/NOTIFY</code>, temporary tables that outlive a transaction, and <code>WITH HOLD</code> cursors. Mitigations: disable server-side prepares in the driver (or use a driver that emulates them client-side), use <code>SET LOCAL</code> inside the transaction, and move any session-scoped feature to session-mode pooling (a separate PgBouncer pool/port).</dd>
+<dt>How do you detect and fix an N+1 query problem?</dt>
+<dd><strong>Detect</strong>: enable SQL logging in dev and look for a burst of near-identical queries per page/request; add a test-time assertion that a given endpoint issues at most K queries; use an APM (New Relic, Datadog, Scout) that specifically flags &ldquo;N similar queries in one transaction&rdquo;; or a library like Django&rsquo;s <code>nplusone</code> / Bullet (Rails). <strong>Fix</strong>: eager-load the association so it&rsquo;s fetched up front &mdash; either a <em>join</em> (<code>select_related</code>, <code>includes</code> with references, <code>JOIN FETCH</code>, SQLAlchemy <code>joinedload</code>) which returns everything in one query but can multiply rows for one-to-many, or a <em>batched second query</em> (<code>prefetch_related</code>, SQLAlchemy <code>selectinload</code>) that does <code>SELECT ... WHERE parent_id IN (...)</code> once. For deeply nested access, chain the eager loads. If you only need a scalar from the association (a count, a name), select just that with an annotation/subquery instead of loading the whole related object. And make sure the join/filter columns are indexed.</dd>
+<dt>What&rsquo;s the risk of running <code>ALTER TABLE big_table ADD COLUMN status text NOT NULL DEFAULT 'active'</code> on a live database?</dt>
+<dd>On older Postgres and on MySQL, this rewrites the entire table (to populate the default) while holding an <strong>ACCESS EXCLUSIVE</strong> lock &mdash; every read and write to the table blocks for the duration, which on a large table can be minutes to hours: an outage. (Modern Postgres, 11+, optimises a <em>constant</em> default to a metadata-only change, but a <em>volatile</em> default, or adding <code>NOT NULL</code> that must validate existing rows, still scans/rewrites.) Safe pattern: (1) <code>ADD COLUMN status text</code> (nullable, no default) &mdash; fast metadata change; (2) set the default for <em>new</em> rows: <code>ALTER TABLE ... ALTER COLUMN status SET DEFAULT 'active'</code>; (3) <strong>backfill</strong> existing rows in small batches (<code>UPDATE ... WHERE status IS NULL AND id BETWEEN ...</code>) with pauses, so no single statement locks the table long; (4) once all rows are populated, <code>ALTER TABLE ... ALTER COLUMN status SET NOT NULL</code> (Postgres 12+ can validate this without a full lock if a matching <code>CHECK</code> constraint was added <code>NOT VALID</code> then <code>VALIDATE</code>d first). Deploy application code that tolerates the column being null during the rollout (expand&ndash;contract). For MySQL, use <code>gh-ost</code> or <code>pt-online-schema-change</code> which build a shadow table and swap it in.</dd>
+<dt>Your service is fast in isolation but slow under load, and the DB shows hundreds of idle-in-transaction connections. What&rsquo;s likely wrong?</dt>
+<dd>The application is opening a transaction (or just checking out a pooled connection) and then holding it while doing non-database work &mdash; rendering a template, calling an external API, waiting on a lock in the app, or sitting in a slow request handler &mdash; before finally committing and returning the connection. Under load, every in-flight request ties up a connection it isn&rsquo;t actively using, the pool (or <code>max_connections</code>) is exhausted, new requests block waiting for a connection, latency spikes, and &ldquo;idle in transaction&rdquo; connections also pin old row versions (MVCC bloat) and hold locks. Fixes: keep transactions <strong>short</strong> and wrapped tightly around the actual writes (open late, commit early, never span an external call); do read-only work outside a transaction; set <code>idle_in_transaction_session_timeout</code> and a statement timeout as guardrails; return pooled connections promptly (check for framework middleware that holds one for the whole request); and use an external transaction-mode pooler so idle client connections don&rsquo;t map 1:1 to server backends. Monitor &ldquo;idle in transaction&rdquo; count and longest-transaction age as first-class metrics.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Why use a connection pool instead of opening a connection per request?</summary><div class="answer-box">
+Opening a connection costs a TCP + auth handshake (milliseconds) and a server-side session/process, and the database has a hard limit on concurrent connections. A pool keeps a small set of connections open and reuses them, removing the per-request setup cost and capping load on the database.
+</div></details>
+<details class="answer-reveal"><summary>Name one thing prepared statements protect against besides being faster.</summary><div class="answer-box">
+SQL injection &mdash; parameter values are sent as data bound to placeholders and are never parsed as SQL, so user input can&rsquo;t change the query&rsquo;s structure.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>An endpoint that lists 200 orders with their customer and line items takes 4 seconds. The SQL log shows ~600 queries. Diagnose and fix, step by step.</summary><div class="answer-box">
+This is a classic <strong>N+1 (really N+1+M)</strong>: 1 query for the 200 orders, then 1 query per order for <code>order.customer</code> (200), then 1 query per order for <code>order.line_items</code> (200) &mdash; ~601. <strong>Fix</strong>: eager-load both associations. For the to-one <code>customer</code>, a <strong>join</strong> is ideal (<code>select_related('customer')</code> / <code>includes(:customer)</code> / <code>joinedload</code>) &mdash; one join, no row multiplication. For the to-many <code>line_items</code>, use a <strong>batched second query</strong> (<code>prefetch_related('line_items')</code> / <code>selectinload</code>) rather than a join, because joining a one-to-many multiplies the 200 order rows by their item counts and you&rsquo;d de-duplicate in memory &mdash; the batched form does one <code>SELECT * FROM line_items WHERE order_id IN (...200 ids...)</code>. Result: 1 (orders + customer join) + 1 (line items) = <strong>2 queries</strong>. <strong>Then</strong>: make sure <code>line_items.order_id</code> and <code>orders.customer_id</code> are indexed (the <code>IN</code> and the join need them). Only select the columns the response uses (<code>.only(...)</code> / a projection) if the rows are wide. Add <code>LIMIT</code>/pagination so &ldquo;200&rdquo; can&rsquo;t become &ldquo;20000&rdquo;. Add a test asserting the endpoint issues &le; 3 queries so a future lazy access re-introducing N+1 fails CI. Re-measure &mdash; 4s should drop to tens of milliseconds.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the database access layer for a service running as 300 autoscaling pods against a single primary Postgres (plus replicas). Cover connection management, statement handling, read/write routing, and resilience.</summary><div class="answer-box">
+<strong>Connection topology</strong>: 300 pods each with a small in-process pool (say 5&ndash;10) would be 1500&ndash;3000 backends &mdash; far past a sane Postgres <code>max_connections</code> (each backend is a process). So put <strong>PgBouncer</strong> (or RDS Proxy / pgcat) between the pods and the database, in <strong>transaction pooling</strong> mode, sized so the <em>real</em> connection count to Postgres is a few dozen (guided by <code>(cores &times; 2) + disks</code> on the DB box), with separate PgBouncer pools/ports for the primary and for the replicas. Run PgBouncer itself HA (2+ instances behind a VIP/service, or a sidecar per node). Each pod&rsquo;s local pool then just needs to cover its own concurrency to PgBouncer (small), and pods can scale freely because idle pod connections don&rsquo;t map 1:1 to DB backends. <strong>Statement handling</strong>: transaction-mode pooling breaks server-side prepared statements, so configure the driver to use client-side parameter binding (still injection-safe) or disable server-side prepares; avoid session state (<code>SET</code> outside a txn, session advisory locks, <code>LISTEN/NOTIFY</code> &mdash; move those to a dedicated session-mode pool if truly needed). Keep transactions short and tight around writes; set <code>statement_timeout</code> and <code>idle_in_transaction_session_timeout</code> as guardrails. <strong>Read/write routing</strong>: the data layer exposes explicit &ldquo;primary&rdquo; and &ldquo;replica&rdquo; handles. Writes and any read that must be current (read-your-writes, or inside a write transaction) go to the primary pool; tolerant reads (lists, search, analytics-ish) go to a replica pool that load-balances across replicas. Implement read-your-writes by pinning a session to the primary for N seconds after any write it made (a per-session flag / token), or by capturing the primary&rsquo;s LSN on write and requiring the replica to have replayed past it. Health-check replicas and drop ones whose lag exceeds a threshold from the read pool. <strong>Resilience</strong>: on connection acquisition failure or a transient error (deadlock, serialization failure, connection reset, primary failover), retry the <em>transaction</em> with capped exponential backoff + jitter &mdash; but only if it&rsquo;s idempotent or wrapped so partial effects are rolled back; classify errors (retryable vs not) explicitly. Use a circuit breaker so that when the DB is down the service fails fast (and serves cached/degraded responses) instead of piling up threads waiting on connections. During <strong>failover</strong>, PgBouncer + a floating primary endpoint (or a service like Patroni/Stolon managing the VIP) means pods reconnect transparently; make the app tolerate a few seconds of write errors and retry. <strong>Pool/DB observability</strong>: export pool-wait time, in-use vs idle connections, PgBouncer <code>SHOW POOLS</code>/<code>SHOW STATS</code>, Postgres <code>pg_stat_activity</code> (idle-in-transaction count, longest transaction), replica lag, and per-query stats (<code>pg_stat_statements</code>); alert on pool saturation, idle-in-transaction, and lag. <strong>Migrations</strong>: online DDL only (<code>CREATE INDEX CONCURRENTLY</code>, add-nullable+backfill+constrain, gh-ost-style for rewrites), rolled out with expand&ndash;contract so the 300 pods (which deploy gradually) tolerate both schema versions. <strong>Guardrails against bad queries</strong>: a query-count assertion in tests to catch N+1, mandatory <code>LIMIT</code> on list endpoints, and a slow-query log alert. Net: PgBouncer in transaction mode as the real connection gatekeeper (with a session-mode side pool for the rare stateful needs), small per-pod pools, explicit primary/replica handles with read-your-writes pinning and lag-aware replica selection, transaction-level retry + circuit breaker for resilience, and full pool/replica/idle-in-transaction observability &mdash; so 300 pods can share one primary without exhausting it.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:db:connection-pooling-orm -->
+
+
 
 <!-- TOPIC:db:sql-vs-nosql -->
 <section class="view topic" id="v-db-sql-vs-nosql" data-skill="db">
@@ -15404,6 +15753,23 @@ InnoDB's <em>next-key lock</em> = a lock on an index record plus the <em>gap</em
 <p class="subtitle">Different data models for different access patterns &mdash; and what you give up in a partition.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">&ldquo;NoSQL&rdquo; covers several very different data models &mdash; key-value, document, wide-column, and graph &mdash; that trade the relational model&rsquo;s joins, schema, and strong consistency for horizontal scalability, flexible schemas, or a data-shape that fits the domain. This page covers the four families and what each is good at, an honest comparison of when a relational database is still the right default, the <strong>CAP theorem</strong> (under a network partition you must choose consistency or availability) and the related BASE philosophy, and polyglot persistence.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 175" role="img" aria-labelledby="d-db-cap-t">
+<title id="d-db-cap-t">CAP triangle: under a network partition you must choose consistency or availability</title>
+<path class="d-line" d="M260 20 L60 140 L460 140 Z"/>
+<text class="d-t-b" x="260" y="14" text-anchor="middle">Consistency</text>
+<text class="d-t-b" x="46" y="156">Availability</text>
+<text class="d-t-b" x="416" y="156">Partition tolerance</text>
+<text class="d-t-sm" x="150" y="70">CP: refuse writes on the</text><text class="d-t-sm" x="150" y="84">minority side (HBase, etcd,</text><text class="d-t-sm" x="150" y="98">Spanner, RDBMS w/ sync repl)</text>
+<text class="d-t-sm" x="300" y="70">AP: keep serving, reconcile</text><text class="d-t-sm" x="300" y="84">later (Dynamo, Cassandra,</text><text class="d-t-sm" x="300" y="98">Riak &mdash; eventual consistency)</text>
+<text class="d-t-accent" x="260" y="132" text-anchor="middle">networks partition &rarr; P is not optional &rarr; the real choice is C vs A during a partition</text>
+<text class="d-t-sm" x="14" y="168">When there is no partition, a system can be both consistent and available. CAP only bites during the partition.</text>
+</svg>
+<figcaption>&ldquo;Pick 2 of 3&rdquo; is a simplification: partitions happen whether you like it or not, so you are really choosing what to sacrifice <em>while</em> one is happening.</figcaption>
+</figure>
+
+
 <h3>The NoSQL families</h3>
 <table>
 <tr><th>Family</th><th>Model</th><th>Fits</th></tr>
@@ -44918,6 +45284,8 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["transactions-acid", "Transactions & ACID",                   "Atomicity/consistency/isolation/durability, commit/rollback, WAL, savepoints."],
       ["isolation",         "Isolation Levels & Anomalies",          "Dirty/non-repeatable/phantom reads, read committed, repeatable read, serializable."],
       ["locking-mvcc",      "Locking, MVCC & Deadlocks",             "Shared/exclusive locks, 2PL, MVCC snapshots, deadlock detection, lock escalation."],
+      ["replication-partitioning", "Replication, Partitioning & Sharding", "Primary/replica, sync vs async, replication lag, failover/split-brain, range/hash partitioning, shard keys, scatter-gather."],
+      ["connection-pooling-orm", "Connection Pooling, Prepared Statements & the ORM Trap", "Pool sizing, PgBouncer modes, prepared statements, N+1 queries, ORM pitfalls, batching, online migrations."],
       ["sql-vs-nosql",      "SQL vs NoSQL & the CAP Trade-off",      "Document/KV/column/graph stores, CAP, BASE, when to pick each, polyglot persistence."]
     ],
     net: [
