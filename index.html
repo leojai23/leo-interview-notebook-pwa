@@ -36379,6 +36379,8 @@ An owner, a due date, and a priority &mdash; and it must be tracked to completio
 <p class="subtitle">Everything in Jira is an issue &mdash; and what an issue looks like is controlled by three layered schemes.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">In Jira, an <strong>issue</strong> is the unit of work &mdash; a bug, story, task, epic. This page covers <strong>issue types</strong> and how they behave differently, the difference between the small set of <strong>standard fields</strong> (summary, assignee, priority&hellip;) and <strong>custom fields</strong> your admin adds, and how <strong>screens</strong> + <strong>screen schemes</strong> control which fields appear on the create / edit / view forms and per transition. It also covers the built-in grouping fields &mdash; <strong>components</strong>, <strong>labels</strong>, and <strong>fix versions</strong> &mdash; and when to use each.</p>
+
 <h3>The issue is the atom</h3>
 <ul>
 <li>Every work item &mdash; story, bug, task, epic, sub-task, incident, change &mdash; is an <strong>issue</strong> with a key (<code>PROJ-123</code>), a type, a status, and a set of fields.</li>
@@ -36531,6 +36533,8 @@ An ordered list of fields shown for a particular operation (Create, Edit, View, 
 <p class="subtitle">A workflow is a state machine for issues &mdash; and the Resolution field is the part everyone gets wrong.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>workflow</strong> is the set of <strong>statuses</strong> an issue type can be in and the <strong>transitions</strong> between them. This page covers the crucial distinction between a <strong>status</strong> (where the issue is: To Do / In Progress / Done) and a <strong>resolution</strong> (why it left the active state: Fixed / Won&rsquo;t Do / Duplicate &mdash; and why a &ldquo;Done&rdquo; issue with an empty resolution is a classic misconfiguration that makes it reappear in filters). It covers transition <strong>conditions</strong> (who can do it), <strong>validators</strong> (required fields), <strong>post-functions</strong> (set resolution, assign, fire events), and workflow schemes mapping workflows to issue types.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 96" role="img" aria-labelledby="d-jirawf-t">
 <title id="d-jirawf-t">A workflow is a state machine; transitions carry conditions/validators/post-functions</title>
@@ -36679,6 +36683,8 @@ To Do, In Progress, Done.
 <p class="subtitle">A board is a saved filter plus a column layout &mdash; not a container of issues.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A Jira <strong>board</strong> is just a <em>saved filter</em> plus a visual configuration &mdash; it shows the issues the filter returns, arranged in columns. This page covers how board <strong>columns</strong> map to one or more workflow statuses (an issue moves column when its status changes), <strong>swimlanes</strong> (horizontal grouping by assignee/epic/query), <strong>quick filters</strong>, and <strong>WIP limits</strong>. It then covers the two board types: <strong>Scrum</strong> (work in timeboxed sprints pulled from a backlog) vs <strong>Kanban</strong> (continuous flow, no sprints, focus on WIP limits and cycle time).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 100" role="img" aria-labelledby="d-jiraboard-t">
 <title id="d-jiraboard-t">A board = a saved filter (JQL) + columns mapped to statuses</title>
@@ -36831,6 +36837,8 @@ Jira runs the workflow transition to the status that column maps to (if a valid 
 <p class="subtitle">Turning an ordered list of work into time-boxed, forecastable delivery.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers planning and running work. The <strong>backlog</strong> is the ordered list of everything not yet in a sprint; <strong>grooming/refinement</strong> keeps the top of it estimated and ready. A <strong>sprint</strong> is a fixed timebox (1&ndash;4 weeks) with a committed scope. It covers <strong>estimation</strong> &mdash; <strong>story points</strong> (relative size/complexity, the common choice) vs time estimates &mdash; <strong>capacity</strong> planning, starting and completing a sprint, and what happens to unfinished work (<strong>carry-over</strong>) and why a sprint&rsquo;s scope shouldn&rsquo;t change mid-flight.</p>
+
 <h3>The backlog</h3>
 <ul>
 <li>The <strong>Backlog</strong> screen (Scrum boards) shows the ranked list of issues <em>not</em> in an active/future sprint, plus a section per planned sprint.</li>
@@ -36979,6 +36987,8 @@ Back to the backlog or into a selected future sprint.
 <p class="subtitle">Jira Query Language &mdash; SQL-ish clauses over issue fields, powering filters, boards, dashboards, and automation.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>JQL</strong> (Jira Query Language) is a structured query language for issues &mdash; <code>field operator value</code> clauses joined by <code>AND</code>/<code>OR</code>, with <code>ORDER BY</code>. This page covers the fields and operators (<code>=</code>, <code>!=</code>, <code>IN</code>, <code>~</code> for text, <code>WAS</code>/<code>CHANGED</code> for history), <strong>functions</strong> that make it powerful (<code>currentUser()</code>, <code>sprint()</code>, <code>membersOf()</code>, <code>startOfDay()</code>, <code>linkedIssues()</code>), turning a query into a <strong>saved filter</strong> that boards and dashboards consume, and filter <strong>subscriptions</strong> that email results on a schedule.</p>
+
 <h3>Shape of a query</h3>
 <pre>field OPERATOR value [AND|OR field OPERATOR value ...] [ORDER BY field ASC|DESC]</pre>
 <p>No <code>SELECT</code> &mdash; a JQL query is just the <code>WHERE</code> + <code>ORDER BY</code>.
@@ -37126,6 +37136,28 @@ cf[10016] &gt;= 8           # ...or use cf[ID] (also disambiguates duplicate nam
 <p class="subtitle">How Jira models "big thing &rarr; smaller things", and where the model runs out.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Jira organises work in a <strong>hierarchy</strong>. This page covers the standard levels &mdash; <strong>sub-task</strong> (a breakdown of one issue) &rarr; <strong>story</strong>/bug/task (the sprint-level unit) &rarr; <strong>epic</strong> (a large body of work spanning sprints) &mdash; and, with Advanced Roadmaps, <strong>initiatives</strong> above epics. It covers the difference between the <strong>parent</strong> relationship (structural, one parent) and generic <strong>issue links</strong> (&ldquo;blocks&rdquo;, &ldquo;relates to&rdquo; &mdash; many, non-hierarchical), how the epic association changed from the old &ldquo;Epic Link&rdquo; to a unified parent field, and how the hierarchy drives roadmap and reporting rollups.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 155" role="img" aria-labelledby="d-jiraeh-t">
+<title id="d-jiraeh-t">Jira issue hierarchy: initiative to epic to story/bug/task to sub-task, plus non-hierarchical issue links</title>
+<rect class="d-box-alt" x="200" y="14" width="120" height="18"/><text class="d-t-sm" x="260" y="27" text-anchor="middle">Initiative (Roadmaps)</text>
+<rect class="d-box-alt" x="120" y="44" width="90" height="18"/><rect class="d-box-alt" x="310" y="44" width="90" height="18"/>
+<text class="d-t-sm" x="165" y="57" text-anchor="middle">Epic</text><text class="d-t-sm" x="355" y="57" text-anchor="middle">Epic</text>
+<rect class="d-box" x="70" y="76" width="80" height="16"/><rect class="d-box" x="160" y="76" width="80" height="16"/><rect class="d-box" x="300" y="76" width="80" height="16"/>
+<text class="d-t-sm" x="110" y="88" text-anchor="middle">Story</text><text class="d-t-sm" x="200" y="88" text-anchor="middle">Bug</text><text class="d-t-sm" x="340" y="88" text-anchor="middle">Task</text>
+<rect class="d-box-soft" x="80" y="104" width="70" height="14"/><rect class="d-box-soft" x="160" y="104" width="70" height="14"/>
+<text class="d-t-sm" x="115" y="115" text-anchor="middle">Sub-task</text><text class="d-t-sm" x="195" y="115" text-anchor="middle">Sub-task</text>
+<path class="d-line-soft" d="M260 32 L165 44"/><path class="d-line-soft" d="M260 32 L355 44"/>
+<path class="d-line-soft" d="M165 62 L110 76"/><path class="d-line-soft" d="M165 62 L200 76"/><path class="d-line-soft" d="M355 62 L340 76"/>
+<path class="d-line-soft" d="M110 92 L115 104"/><path class="d-line-soft" d="M110 92 L195 104"/>
+<path class="d-line d-dash" d="M240 84 L298 84" marker-end="url(#jiraeh-ah)"/><text class="d-t-sm" x="228" y="102">&ldquo;blocks&rdquo; = issue link (many, not hierarchy)</text>
+<defs><marker id="jiraeh-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="140"><tspan class="d-t-b">parent</tspan> = structural, exactly one, drives rollups. <tspan class="d-t-b">issue links</tspan> (blocks / relates to / duplicates) = any number, no rollup.</text>
+</svg>
+<figcaption>One parent per issue up the hierarchy (sub-task &rarr; story &rarr; epic &rarr; initiative); issue links are a separate, flat, many-to-many relationship for dependencies.</figcaption>
+</figure>
+
+
 <h3>The default three levels</h3>
 <table>
 <tr><th>Level</th><th>Type</th><th>Role</th></tr>
@@ -37267,6 +37299,23 @@ Jira Premium / Advanced Roadmaps (adds Initiative and configurable levels).
 <p class="subtitle">Burndown, velocity, cumulative flow, control chart &mdash; what each shows and how to misread it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the standard agile reports and how to read them honestly. <strong>Burndown</strong>: remaining work in a sprint over time &mdash; ideal line vs actual; a flat line means nothing&rsquo;s being completed, a step up means scope was added. <strong>Velocity</strong>: points completed per sprint, for forecasting (use a rolling average, not one sprint). <strong>Cumulative flow diagram</strong>: band widths show WIP per status &mdash; a widening band is a bottleneck. <strong>Control chart</strong> / cycle &amp; lead time: how long issues take. It also covers the common gotchas (points completed only on the last day, unestimated issues, mid-sprint scope change).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-jirar-t">
+<title id="d-jirar-t">Sprint burndown ideal vs actual, and a cumulative flow diagram whose widening band shows a bottleneck</title>
+<text class="d-t-b" x="14" y="14">burndown</text>
+<path class="d-line-soft d-dash" d="M20 30 L150 110"/><text class="d-t-sm" x="90" y="44">ideal</text>
+<path class="d-line" d="M20 30 L45 30 L70 78 L95 80 L120 60 L150 108"/><text class="d-t-sm" x="60" y="70">flat = nothing closed</text><text class="d-t-sm" x="95" y="55">step up = scope added</text>
+<text class="d-t-b" x="290" y="14">cumulative flow</text>
+<path class="d-fill" d="M300 110 L300 90 L470 60 L470 110 Z" opacity="0.25"/>
+<path class="d-line-soft" d="M300 110 L470 110"/><path class="d-line-soft" d="M300 90 L470 60"/><path class="d-line-soft" d="M300 70 L470 30"/>
+<text class="d-t-sm" x="360" y="128">band widening over time = WIP piling up in that status = bottleneck</text>
+<text class="d-t-sm" x="14" y="140">Velocity: use a rolling average of completed points, not a single sprint. Watch for unestimated issues and last-day-only completion.</text>
+</svg>
+<figcaption>Burndown shows whether the sprint is on track (and reveals mid-sprint scope changes as steps); a cumulative flow diagram&rsquo;s band widths reveal where work accumulates.</figcaption>
+</figure>
+
+
 <h3>Scrum reports</h3>
 <table>
 <tr><th>Report</th><th>Shows</th><th>Read it for</th></tr>
@@ -37413,6 +37462,23 @@ In Progress (work actually started).
 <p class="subtitle">No-code "when this, if that, do this" rules &mdash; the modern replacement for most workflow scripting.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Jira Automation</strong> runs no-code rules: <strong>when</strong> a trigger fires (issue created, transitioned, field changed, a schedule, an incoming webhook), <strong>if</strong> conditions match (JQL, field value, issue type), <strong>then</strong> perform actions (transition, assign, comment, create sub-tasks, send a web request, edit linked issues). This page covers that trigger&ndash;condition&ndash;action model, <strong>smart values</strong> (<code>{{issue.summary}}</code>, <code>{{now}}</code>) for dynamic text, branching to related issues (subtasks, parent, linked), scheduled and webhook rules, and the execution limits/loop-protection to be aware of.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 130" role="img" aria-labelledby="d-jiraau-t">
+<title id="d-jiraau-t">Automation rule: a trigger fires, conditions gate it, then actions run - optionally branching to related issues</title>
+<rect class="d-box-alt" x="14" y="30" width="110" height="26" rx="4"/><text class="d-t-b" x="69" y="43" text-anchor="middle">WHEN (trigger)</text><text class="d-t-sm" x="69" y="53" text-anchor="middle">issue transitioned</text>
+<rect class="d-box" x="150" y="30" width="110" height="26" rx="4"/><text class="d-t-b" x="205" y="43" text-anchor="middle">IF (condition)</text><text class="d-t-sm" x="205" y="53" text-anchor="middle">type = Story, JQL</text>
+<rect class="d-box-soft" x="286" y="30" width="110" height="26" rx="4"/><text class="d-t-b" x="341" y="43" text-anchor="middle">THEN (actions)</text><text class="d-t-sm" x="341" y="53" text-anchor="middle">comment, assign</text>
+<rect class="d-box-soft" x="286" y="66" width="150" height="20"/><text class="d-t-sm" x="361" y="79" text-anchor="middle">branch: for each sub-task &rarr; transition</text>
+<path class="d-line" d="M124 43 L148 43" marker-end="url(#jiraau-ah)"/><path class="d-line" d="M260 43 L284 43" marker-end="url(#jiraau-ah)"/><path class="d-line" d="M341 56 L341 64" marker-end="url(#jiraau-ah)"/>
+<defs><marker id="jiraau-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="106">Smart values: <tspan class="d-t-mono">{{issue.key}}</tspan>, <tspan class="d-t-mono">{{now}}</tspan>, <tspan class="d-t-mono">{{issue.assignee.displayName}}</tspan>. Triggers also include scheduled (cron) and incoming webhook.</text>
+<text class="d-t-sm" x="14" y="124">Loop protection: a rule&rsquo;s own edits don&rsquo;t re-trigger it by default; watch execution quotas.</text>
+</svg>
+<figcaption>No-code rules follow when&ndash;if&ndash;then; branches let one rule act on a parent, sub-tasks, or linked issues. Smart values fill in dynamic text.</figcaption>
+</figure>
+
+
 <h3>Rule structure</h3>
 <pre>TRIGGER  (what starts the rule)
   &rarr; CONDITION(s)   (gate: stop if not met)
@@ -37578,6 +37644,8 @@ The rule's audit log.
 <p class="subtitle">How Jira decides what a person can see and do &mdash; a stack of reusable schemes bolted onto each project.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers how Jira projects are configured and secured. It starts with <strong>team-managed</strong> (project admin owns the config, simpler, isolated) vs <strong>company-managed</strong> (shared schemes controlled by Jira admins, consistent across many projects) projects. Then the <strong>schemes</strong> &mdash; reusable config objects a company-managed project points at: <strong>permission scheme</strong> (who can do what, granted to <strong>roles</strong> not users), <strong>notification scheme</strong>, <strong>issue type scheme</strong>, <strong>workflow scheme</strong>, screen scheme &mdash; and why <strong>roles</strong> (project-scoped) are preferred over <strong>groups</strong> (instance-wide) for granting access.</p>
+
 <h3>Project styles</h3>
 <table>
 <tr><th></th><th>Company-managed (classic)</th><th>Team-managed (next-gen)</th></tr>
@@ -37741,6 +37809,8 @@ An issue security level.
 <p class="subtitle">Wiring Jira to source control, CI/CD, chat, and other systems &mdash; and shipping via versions.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers connecting Jira to the delivery toolchain. <strong>Smart commits</strong> let a commit message transition an issue or log work (<code>PROJ-123 #close #time 2h</code>). Linking a Git provider surfaces <strong>branch / PR / build / deployment</strong> info right on the issue and in the development panel, and drives the <strong>deployment</strong> and <strong>release</strong> views. It also covers <strong>versions</strong> (fix version &rarr; release), the <strong>REST API</strong> and <strong>webhooks</strong> for custom integration, and the <strong>Marketplace app</strong> ecosystem (Confluence, test management, time tracking) that extends Jira.</p>
+
 <h3>The dev-tools integration</h3>
 <ul>
 <li>Connect GitHub / GitLab / Bitbucket (and CI/CD, feature-flag, deployment tools) so Jira shows a <strong>Development panel</strong> on the issue: branches, commits, pull requests, builds, deployments.</li>
