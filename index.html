@@ -37956,6 +37956,8 @@ Fix Version/s.
 <p class="subtitle">Push copies of content close to users, and route each user to the nearest copy.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>CDN</strong> is a globally distributed set of caching servers (<strong>PoPs</strong> / edge nodes) that sit between users and your origin. A user&rsquo;s request is routed &mdash; usually by <strong>anycast</strong>, where every PoP announces the same IP and the network delivers to the nearest &mdash; to a close edge, which serves the response from cache (a <strong>hit</strong>) or fetches it from origin once and caches it (a <strong>miss</strong>). This page covers that request flow, why it cuts latency (<strong>TTFB</strong>) and origin load, and where a CDN does and doesn&rsquo;t help.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 100" role="img" aria-labelledby="d-cdnfund-t">
 <title id="d-cdnfund-t">Users hit a nearby edge PoP; a miss fetches from origin and caches it</title>
@@ -38112,6 +38114,25 @@ The proportion of traffic served from cache without reaching the origin.
 <p class="subtitle">Two requests share a cached object only if they produce the same cache key &mdash; get this wrong and your hit ratio collapses.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>cache key</strong> is what the edge uses to decide &ldquo;have I got this response already?&rdquo; By default it&rsquo;s roughly host + path + query string, but every part is tunable. This page covers what to include and exclude &mdash; dropping tracking query params (<code>utm_*</code>) so they don&rsquo;t fragment the cache, deciding which query params actually change the response, handling <strong>cookies</strong> (a per-user cookie in the key = near-zero hit rate) and the <strong><code>Vary</code></strong> header (cache a separate copy per <code>Accept-Encoding</code> / device), and <strong>normalization</strong> to collapse equivalent requests to one key.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 140" role="img" aria-labelledby="d-cdnck-t">
+<title id="d-cdnck-t">The cache key is assembled from host, path, selected query params and Vary headers; noise fragments the cache</title>
+<text class="d-t-mono d-t-sm" x="14" y="16">GET https://shop.example/p/42?color=red&amp;utm_source=fb   Cookie: sid=abc   Accept-Encoding: br</text>
+<rect class="d-box-alt" x="14" y="26" width="90" height="20"/><text class="d-t-sm" x="59" y="39" text-anchor="middle">host + path</text>
+<rect class="d-box-alt" x="112" y="26" width="90" height="20"/><text class="d-t-sm" x="157" y="39" text-anchor="middle">?color=red</text>
+<rect class="d-box-alt" x="210" y="26" width="120" height="20"/><text class="d-t-sm" x="270" y="39" text-anchor="middle">Vary: Accept-Encoding</text>
+<text class="d-t-accent" x="340" y="39">&rarr; ONE key = a good hit rate</text>
+<rect class="d-line-soft" x="14" y="56" width="110" height="18"/><text class="d-t-sm" x="69" y="69" text-anchor="middle">utm_source (drop it)</text>
+<rect class="d-line-soft" x="132" y="56" width="120" height="18"/><text class="d-t-sm" x="192" y="69" text-anchor="middle">Cookie: sid (never in key)</text>
+<text class="d-t-sm" x="262" y="69">each unique value = a new copy &rarr; cache fragments, hit rate collapses</text>
+<text class="d-t-sm" x="14" y="100"><tspan class="d-t-b">Normalize</tspan>: sort/allowlist query params, strip tracking params, ignore request cookies for cacheable paths, lowercase host.</text>
+<text class="d-t-sm" x="14" y="122"><tspan class="d-t-mono">Vary</tspan> only on headers with few values (Accept-Encoding, maybe a device class) &mdash; never <tspan class="d-t-mono">Vary: User-Agent</tspan> or <tspan class="d-t-mono">Cookie</tspan>.</text>
+</svg>
+<figcaption>Every distinct key is a separate cached copy. Include only what genuinely changes the response; strip tracking params and per-user cookies, and <code>Vary</code> only on low-cardinality headers.</figcaption>
+</figure>
+
+
 <h3>What forms the default cache key</h3>
 <ul>
 <li>Typically: <strong>scheme + host + path + (all or part of) the query string</strong>. Method is usually implicit (only GET/HEAD cached).</li>
@@ -38281,6 +38302,8 @@ normalize:
 <p class="subtitle">The headers that tell every cache how long to reuse a response and what to do when it goes stale.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong><code>Cache-Control</code></strong> is how the origin tells caches how long a response stays fresh and who may store it. This page covers the directives: <code>max-age</code> (browser) vs <code>s-maxage</code> (shared/CDN cache), <code>public</code> vs <code>private</code> vs <code>no-store</code>, <strong><code>stale-while-revalidate</code></strong> (serve stale instantly, refresh in the background) and <strong><code>stale-if-error</code></strong> (serve stale if origin is down), <code>immutable</code> for fingerprinted assets, and <strong>revalidation</strong> with <code>ETag</code> / <code>Last-Modified</code> and conditional requests (<code>If-None-Match</code> &rarr; <code>304</code>).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 96" role="img" aria-labelledby="d-cdncc-t">
 <title id="d-cdncc-t">Freshness lifecycle of a cached response</title>
@@ -38452,6 +38475,26 @@ Vary: Cookie               # near-zero reuse
 <p class="subtitle">Getting new content out before the TTL expires &mdash; by URL, by tag, or by versioning the URL itself.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Setting a long TTL is only safe if you can <strong>purge</strong> when content changes. This page covers the mechanisms: purge by exact <strong>URL</strong>, by <strong>prefix/path</strong>, or &mdash; the scalable one &mdash; by <strong>cache tag / surrogate key</strong> (the origin tags responses <code>product-42</code>, <code>homepage</code>; one API call purges everything tagged), <strong>soft purge</strong> (mark stale, revalidate on next hit &mdash; no origin stampede) vs <strong>hard purge</strong> (evict now), and the alternative of never purging at all: <strong>versioned/fingerprinted URLs</strong> (<code>app.a1b2c3.js</code>) so a deploy just references new URLs. It also covers purge <strong>propagation</strong> time across PoPs.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 140" role="img" aria-labelledby="d-cdninv-t">
+<title id="d-cdninv-t">Origin tags responses with surrogate keys; one purge-by-tag call evicts every related object across PoPs</title>
+<rect class="d-box-soft" x="14" y="20" width="150" height="18"/><text class="d-t-sm" x="20" y="33">/product/42  tags: product-42, catalog</text>
+<rect class="d-box-soft" x="14" y="42" width="150" height="18"/><text class="d-t-sm" x="20" y="55">/product/42.json  tags: product-42</text>
+<rect class="d-box-soft" x="14" y="64" width="150" height="18"/><text class="d-t-sm" x="20" y="77">/  (home)  tags: homepage, catalog</text>
+<rect class="d-box-alt" x="220" y="34" width="150" height="24" rx="4"/><text class="d-t-sm" x="295" y="50" text-anchor="middle">PURGE tag=product-42</text>
+<path class="d-line" d="M164 40 C 195 42, 200 44, 218 46" marker-end="url(#cdninv-ah)"/>
+<rect class="d-box" x="400" y="26" width="50" height="14"/><rect class="d-box" x="400" y="46" width="50" height="14"/><rect class="d-box" x="400" y="66" width="50" height="14"/>
+<text class="d-t-sm" x="425" y="37" text-anchor="middle">PoP</text><text class="d-t-sm" x="425" y="57" text-anchor="middle">PoP</text><text class="d-t-sm" x="425" y="77" text-anchor="middle">PoP</text>
+<path class="d-line" d="M370 42 L398 33" marker-end="url(#cdninv-ah)"/><path class="d-line" d="M370 46 L398 53" marker-end="url(#cdninv-ah)"/><path class="d-line" d="M370 50 L398 73" marker-end="url(#cdninv-ah)"/>
+<defs><marker id="cdninv-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="104"><tspan class="d-t-b">Soft purge</tspan>: mark stale, revalidate on next request (no origin stampede). <tspan class="d-t-b">Hard purge</tspan>: evict immediately.</text>
+<text class="d-t-sm" x="14" y="124">Alternative: never purge &mdash; <tspan class="d-t-b">versioned URLs</tspan> (<tspan class="d-t-mono">app.a1b2c3.js</tspan>, <tspan class="d-t-mono">immutable</tspan>) so a deploy just points at new names.</text>
+</svg>
+<figcaption>Tag responses at the origin with surrogate keys; a single purge-by-tag invalidates every URL that shares a tag across all PoPs, instead of enumerating URLs.</figcaption>
+</figure>
+
+
 <h3>Ways to invalidate</h3>
 <table>
 <tr><th>Method</th><th>How</th><th>Notes</th></tr>
@@ -38600,6 +38643,8 @@ No &mdash; only versioned URLs or short browser TTLs address that.
 <p class="subtitle">Concentrating misses through a shield tier, and keeping the site up when an origin dies.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Without protection, a popular-but-uncached object requested by 200 edge PoPs means 200 requests hammering your origin. This page covers the mitigations: an <strong>origin shield</strong> (a designated mid-tier PoP that all other PoPs fetch through, so origin sees one request per object), <strong>collapsed forwarding</strong> / request coalescing (many simultaneous misses for the same key become one origin fetch), <strong>origin failover</strong> to a backup on errors/timeouts, <strong>health checks</strong>, and measuring <strong>origin offload</strong> (the % of bytes/requests the CDN served so origin didn&rsquo;t).</p>
+
 <h3>The origin</h3>
 <ul>
 <li>The <strong>origin</strong> is where the CDN fetches content on a miss: your app servers, a load balancer, an object store (S3/GCS), or another CDN.</li>
@@ -38768,6 +38813,8 @@ IP-allowlist the CDN's egress ranges (or require a secret header, or use mTLS).
 <p class="subtitle">Making a CDN useful for content that isn't a static file &mdash; from micro-caching to running code at the PoP.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Caching isn&rsquo;t only for static files. This page covers serving <em>dynamic</em> responses faster: <strong>micro-caching</strong> (cache for even 1&ndash;5 seconds &mdash; huge origin offload for a hot page with minimal staleness), caching API responses with short TTL + tags, <strong>ESI</strong> (Edge Side Includes &mdash; assemble a page at the edge from separately-cached fragments so the shell caches long and the personalised strip caches short or not at all), and <strong>edge compute</strong> (Workers / edge functions) for routing, A/B tests, auth checks, header rewriting, and personalization without a round trip to origin.</p>
+
 <h3>The spectrum, cheapest to richest</h3>
 <table>
 <tr><th>Technique</th><th>What</th></tr>
@@ -38919,6 +38966,8 @@ The origin request/response function.
 <p class="subtitle">The CDN terminates TLS close to the user and speaks modern protocols &mdash; that's a big chunk of the latency win.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The edge terminates the client connection, so it&rsquo;s where the protocol details live. This page covers <strong>TLS termination</strong> at the edge (and re-encryption or mTLS to origin), <strong>session resumption</strong> and <strong>OCSP stapling</strong> to cut handshake cost, <strong>ALPN</strong> for protocol negotiation, <strong>HTTP/2</strong> multiplexing over one connection, <strong>HTTP/3 / QUIC</strong> over UDP (no TCP head-of-line blocking, faster on lossy/mobile networks), and keeping <strong>persistent keep-alive connections</strong> from edge to origin so cache misses don&rsquo;t pay a fresh handshake each time.</p>
+
 <h3>TLS termination at the edge</h3>
 <ul>
 <li>The TLS handshake costs 1&ndash;2 round trips. Doing it against a nearby PoP instead of a distant origin removes those RTTs from every new connection.</li>
@@ -39081,6 +39130,8 @@ Idempotent ones (GET) &mdash; never state-changing requests, because early data 
 <p class="subtitle">The edge is your outermost security perimeter &mdash; it absorbs volume and filters bad requests before origin.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Sitting in front of everything, the CDN edge is the natural place to enforce security. This page covers <strong>DDoS absorption</strong> &mdash; L3/L4 volumetric attacks soaked up by the distributed network&rsquo;s capacity and anycast, L7 (application) floods handled with rate limiting and challenges &mdash; a <strong>WAF</strong> (managed rulesets for OWASP Top 10 + custom rules), <strong>rate limiting</strong> per IP/token/route, <strong>bot management</strong> (fingerprinting, JS challenges), <strong>signed URLs / tokens</strong> for authorised access to private content, and <strong>mTLS</strong> or an allowlist to lock the origin so it only accepts traffic from the CDN.</p>
+
 <h3>DDoS absorption</h3>
 <ul>
 <li><strong>L3/L4 (volumetric)</strong> &mdash; SYN floods, UDP/amplification, sheer bandwidth. The CDN's anycast network spreads the attack across many PoPs, each absorbing a slice with far more capacity than any single origin; scrubbing drops malformed/spoofed packets. Largely automatic.</li>
@@ -39246,6 +39297,8 @@ Access to private/paid content &mdash; the edge checks an HMAC signature and exp
 <p class="subtitle">Hit ratio and offload are the levers; RUM tells you if users actually got faster.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers measuring a CDN and improving it. Key metrics: <strong>cache hit ratio</strong> (by request and by byte), <strong>origin offload %</strong>, and <strong>edge vs origin latency</strong>. Measure with <strong>RUM</strong> (real user monitoring &mdash; actual field data, the source of truth) alongside <strong>synthetic</strong> checks (controlled, good for regressions). Tuning levers: raise hit ratio by simplifying the cache key and lengthening TTLs with <code>stale-while-revalidate</code>, enable <strong>Brotli</strong>/gzip compression, right-size images, use HTTP/2+3, and add an origin shield to lift offload.</p>
+
 <h3>The core metrics</h3>
 <table>
 <tr><th>Metric</th><th>Meaning</th></tr>
@@ -39402,6 +39455,26 @@ Brotli (especially precompressed at max level for static files).
 <p class="subtitle">Running two or more CDNs for resilience and performance &mdash; and the config-parity tax that comes with it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Running more than one CDN provider for the same traffic. This page covers <strong>why</strong> &mdash; resilience against a single provider outage, better coverage in specific regions, and pricing leverage &mdash; and the <strong>steering</strong> mechanisms: <strong>DNS-based</strong> (a managed DNS resolver hands out the CDN chosen per client/region &mdash; simple, coarse, TTL-bound), <strong>302 redirect</strong> steering (precise, adds a round trip), and <strong>RUM-based</strong> steering (route by measured real-user performance per CDN per region). It also covers the operational tax: keeping cache rules, TLS, WAF and purge <strong>config in parity</strong> across providers, and modelling <strong>egress + per-request costs</strong>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 135" role="img" aria-labelledby="d-cdnmc-t">
+<title id="d-cdnmc-t">A steering layer routes each client to CDN A or B by DNS, 302 or measured RUM performance</title>
+<rect class="d-box" x="14" y="30" width="70" height="20"/><text class="d-t-sm" x="49" y="43" text-anchor="middle">client</text>
+<rect class="d-box-alt" x="130" y="24" width="120" height="32" rx="4"/><text class="d-t-b" x="190" y="38" text-anchor="middle">steering</text><text class="d-t-sm" x="190" y="50" text-anchor="middle">DNS / 302 / RUM</text>
+<rect class="d-box-soft" x="300" y="18" width="90" height="18"/><rect class="d-box-soft" x="300" y="44" width="90" height="18"/>
+<text class="d-t-sm" x="345" y="31" text-anchor="middle">CDN A</text><text class="d-t-sm" x="345" y="57" text-anchor="middle">CDN B</text>
+<rect class="d-box-alt" x="430" y="30" width="70" height="20"/><text class="d-t-sm" x="465" y="43" text-anchor="middle">origin</text>
+<path class="d-line" d="M84 40 L128 40" marker-end="url(#cdnmc-ah)"/>
+<path class="d-line" d="M250 36 L298 27" marker-end="url(#cdnmc-ah)"/><path class="d-line" d="M250 44 L298 53" marker-end="url(#cdnmc-ah)"/>
+<path class="d-line" d="M390 27 L428 36" marker-end="url(#cdnmc-ah)"/><path class="d-line" d="M390 53 L428 44" marker-end="url(#cdnmc-ah)"/>
+<defs><marker id="cdnmc-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="86">DNS steering: coarse, TTL-bound, no extra RTT. 302: precise, one extra round trip. RUM: route by measured real-user latency per region.</text>
+<text class="d-t-sm" x="14" y="108">Cost of multi-CDN: keep cache rules / TLS / WAF / purge config in <tspan class="d-t-b">parity</tspan> across providers; model egress + per-request pricing.</text>
+</svg>
+<figcaption>A steering layer picks a CDN per request or per client; the trade-off is granularity vs added latency, and the ongoing tax is keeping every provider&rsquo;s config identical.</figcaption>
+</figure>
+
+
 <h3>Why multi-CDN</h3>
 <ul>
 <li><strong>Resilience</strong>: a CDN provider <em>does</em> have global outages; a second provider removes that single point of failure.</li>
