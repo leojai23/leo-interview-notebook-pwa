@@ -29563,6 +29563,8 @@ On send, always persist the message to the conversation store with its sequence 
 <p class="subtitle">Everything in Git is an object in a content-addressed store &mdash; understand this and the rest follows.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Git is a <strong>content-addressed key-value store</strong> with a version-control UI on top. This page covers the four object types it stores &mdash; <strong>blob</strong> (file contents), <strong>tree</strong> (a directory listing: names &rarr; blob/tree hashes + modes), <strong>commit</strong> (a snapshot: one root tree + parent commit(s) + author/message), and <strong>tag</strong> (an annotated pointer) &mdash; each named by the SHA-1/SHA-256 hash of its contents, so identical content is stored once and any change anywhere changes every hash up the chain. It also covers loose objects vs <strong>packfiles</strong>, and why history is effectively immutable.</p>
+
 <h3>A content-addressed key-value store</h3>
 <p>At its core Git is a key-value database. You hand it content, it stores the content and
 returns a hash (SHA-1 historically; SHA-256 in newer repos). The hash <em>is</em> the key:
@@ -29736,6 +29738,8 @@ Storing every object as its own zlib-compressed file ("loose objects") wastes sp
 <p class="subtitle">Almost every confusing Git command makes sense once you track which of the three trees it moves.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Almost every everyday Git command is moving data between three &ldquo;trees&rdquo;: the <strong>working tree</strong> (your actual files on disk), the <strong>index</strong> / staging area (a proposed next commit), and <strong>HEAD</strong> (the last commit on the current branch). This page covers exactly which command touches which: <code>add</code> (working &rarr; index), <code>commit</code> (index &rarr; new commit, moves HEAD), <code>checkout</code>/<code>switch</code> (HEAD + index + working), <code>reset</code> in its three modes (<code>--soft</code>/<code>--mixed</code>/<code>--hard</code> &mdash; how far the reset reaches), and <code>git diff</code> vs <code>git diff --staged</code>.</p>
+
 <h3>The three "trees" (states)</h3>
 <table>
 <tr><th>Tree</th><th>What it is</th></tr>
@@ -29896,6 +29900,29 @@ The index is a flat, sorted binary file listing every tracked path with its blob
 <p class="subtitle">A branch is just a movable pointer &mdash; once that clicks, merges and rebases stop being mysterious.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>branch</strong> in Git is nothing but a movable pointer &mdash; a 41-byte file containing a commit hash &mdash; which is why creating and deleting branches is instant. This page covers that model, <strong>HEAD</strong> (the pointer to &ldquo;where you are&rdquo;, normally pointing at a branch), <strong>detached HEAD</strong> (HEAD pointing straight at a commit &mdash; commits you make there are unreferenced and can be lost), and <strong>fast-forward</strong> (when the target branch is a direct ancestor, Git just slides the pointer forward) vs a <strong>true merge</strong> (a new commit with two parents).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-gitbh-t">
+<title id="d-gitbh-t">A branch is a pointer to a commit; HEAD points to the branch; fast-forward just slides the pointer</title>
+<circle class="d-fill" cx="60" cy="50" r="6"/><circle class="d-fill" cx="130" cy="50" r="6"/><circle class="d-fill" cx="200" cy="50" r="6"/>
+<path class="d-line-soft" d="M66 50 L124 50"/><path class="d-line-soft" d="M136 50 L194 50"/>
+<rect class="d-box" x="170" y="16" width="70" height="16"/><text class="d-t-mono d-t-sm" x="205" y="28" text-anchor="middle">main</text>
+<path class="d-line" d="M205 32 L202 44" marker-end="url(#gitbh-ah)"/>
+<rect class="d-box-alt" x="150" y="80" width="60" height="16"/><text class="d-t-mono d-t-sm" x="180" y="92" text-anchor="middle">HEAD</text>
+<path class="d-line" d="M195 80 L204 34" marker-end="url(#gitbh-ah)"/><text class="d-t-sm" x="212" y="70">HEAD &rarr; main &rarr; commit</text>
+<text class="d-t-b" x="300" y="24">fast-forward merge</text>
+<circle class="d-fill" cx="310" cy="50" r="5"/><circle class="d-fill" cx="360" cy="50" r="5"/><circle class="d-box-alt" cx="410" cy="50" r="5"/><circle class="d-box-alt" cx="460" cy="50" r="5"/>
+<path class="d-line-soft" d="M315 50 L355 50"/><path class="d-line-soft" d="M365 50 L405 50"/><path class="d-line-soft" d="M415 50 L455 50"/>
+<text class="d-t-sm" x="300" y="70">main was here &rarr; feature ahead &rarr; no divergence</text>
+<text class="d-t-sm" x="300" y="86">so <tspan class="d-t-mono">git merge</tspan> just moves main to the feature tip &mdash; no merge commit.</text>
+<defs><marker id="gitbh-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="124"><tspan class="d-t-b">Detached HEAD</tspan>: HEAD points straight at a commit, not a branch. New commits there belong to no branch &mdash; recover via reflog before gc.</text>
+<text class="d-t-sm" x="14" y="144">Creating/deleting a branch just writes/removes a 41-byte file under <tspan class="d-t-mono">.git/refs/heads/</tspan> &mdash; that&rsquo;s why it&rsquo;s instant.</text>
+</svg>
+<figcaption>A branch is a name for a commit hash; <code>HEAD</code> is a name for the current branch. &ldquo;Moving to a branch&rdquo; is just repointing <code>HEAD</code>; a fast-forward is just repointing the branch.</figcaption>
+</figure>
+
+
 <h3>A branch is a pointer, not a copy</h3>
 <p>A branch is a 41-byte file under <code>.git/refs/heads/</code> containing one commit hash.
 Creating a branch writes that file; it does not copy any files. When you commit <em>on</em> a
@@ -30042,6 +30069,127 @@ A normal ref (<code>.git/refs/heads/main</code>) contains a 40-hex commit hash &
 </div></div>
 </section>
 <!-- /TOPIC:git:branches-head -->
+<!-- TOPIC:git:remotes-refspecs -->
+<section class="view topic" id="v-git-remotes-refspecs" data-skill="git">
+<div class="layout">
+<nav class="sidebar" data-sidebar="git"></nav>
+<div class="topic-body">
+<h1>Remotes, Fetch/Pull/Push &amp; Refspecs</h1>
+<p class="subtitle">How your local repository talks to other copies &mdash; and the small config that decides what syncs where.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>remote</strong> is a named URL for another copy of the repository (usually <code>origin</code>). Git keeps a local, read-only mirror of that remote&rsquo;s branches as <strong>remote-tracking branches</strong> (<code>origin/main</code>), and every sync operation is defined by a <strong>refspec</strong> &mdash; a <code>src:dst</code> mapping saying which refs move and where they land. This page covers <code>git remote</code>, the crucial difference between <strong><code>fetch</code></strong> (download objects + update <code>origin/*</code>, touch nothing of yours) and <strong><code>pull</code></strong> (<code>fetch</code> then <code>merge</code> or <code>rebase</code> into your branch), <strong><code>push</code></strong> and why <code>--force-with-lease</code> is the safe force, <strong>upstream tracking</strong> (<code>@{u}</code>, ahead/behind), and pruning deleted branches.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 170" role="img" aria-labelledby="d-gitrr-t">
+<title id="d-gitrr-t">fetch updates the local origin/* mirror only; merge/rebase then moves your branch; push sends your commits back</title>
+<rect class="d-box-alt" x="360" y="20" width="140" height="30" rx="4"/><text class="d-t-b" x="430" y="34" text-anchor="middle">remote (origin)</text><text class="d-t-sm" x="430" y="46" text-anchor="middle">main</text>
+<rect class="d-box-soft" x="200" y="70" width="140" height="26" rx="4"/><text class="d-t-sm" x="270" y="87" text-anchor="middle">origin/main (mirror)</text>
+<rect class="d-box" x="14" y="120" width="140" height="26" rx="4"/><text class="d-t-sm" x="84" y="137" text-anchor="middle">main (your branch)</text>
+<path class="d-line" d="M358 40 C 300 55, 300 60, 272 68" marker-end="url(#gitrr-ah)"/><text class="d-t-sm" x="300" y="62">fetch: download +</text><text class="d-t-sm" x="300" y="50" text-anchor="end">update mirror</text>
+<path class="d-line" d="M215 96 C 160 108, 150 110, 120 118" marker-end="url(#gitrr-ah)"/><text class="d-t-sm" x="120" y="112">merge / rebase origin/main</text>
+<path class="d-line" d="M120 118 C 220 150, 380 120, 400 52" marker-end="url(#gitrr-ah)"/><text class="d-t-sm" x="200" y="150">push: send your new commits &rarr; remote (fast-forward only, unless forced)</text>
+<defs><marker id="gitrr-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="20"><tspan class="d-t-b">pull = fetch + (merge|rebase)</tspan> in one step. Prefer separate fetch &rarr; look &rarr; integrate.</text>
+</svg>
+<figcaption><code>fetch</code> never changes your working tree or branches &mdash; only the <code>origin/*</code> mirror. Integrating that into your branch is a separate <code>merge</code>/<code>rebase</code> (which <code>pull</code> bundles in).</figcaption>
+</figure>
+
+<h3>Remotes</h3>
+<pre><code>git remote -v                       <span class="c"># list remotes and their URLs</span>
+git remote add upstream URL         <span class="c"># add a second remote (e.g. the fork source)</span>
+git remote set-url origin NEWURL    <span class="c"># change where origin points</span>
+git remote rename origin old        <span class="c"># rename</span>
+git remote show origin              <span class="c"># branches, tracking, what push/pull would do</span></code></pre>
+<p>You can have many remotes: <code>origin</code> (your fork), <code>upstream</code> (the project you forked), a colleague&rsquo;s repo, a deploy target. Each has its own set of <code>&lt;remote&gt;/*</code> tracking branches.</p>
+
+<h3>fetch vs pull</h3>
+<ul>
+<li><strong><code>git fetch origin</code></strong>: contacts the remote, downloads any new objects, and updates your <code>origin/*</code> remote-tracking branches. It does <em>not</em> touch your working tree, your index, or your local branches. Completely safe &mdash; run it any time.</li>
+<li><strong><code>git pull</code></strong> = <code>git fetch</code> + integrate <code>origin/&lt;branch&gt;</code> into your current branch. By default the integrate step is a <strong>merge</strong> (can create a merge commit); <code>git pull --rebase</code> replays your local commits on top instead (linear). Set <code>git config pull.rebase true</code> (or <code>pull.ff only</code> to refuse anything non-trivial) to make the behaviour explicit.</li>
+<li>Recommended habit: <code>git fetch</code>, then <code>git log --oneline main..origin/main</code> to see what&rsquo;s incoming, then <code>merge</code>/<code>rebase</code> deliberately.</li>
+</ul>
+
+<h3>push and force</h3>
+<pre><code>git push -u origin main             <span class="c"># push + set upstream (only needed once)</span>
+git push                            <span class="c"># thereafter: pushes current branch to its upstream</span>
+git push origin :old-branch         <span class="c"># delete a remote branch (empty src) -- or --delete</span>
+git push --force-with-lease         <span class="c"># overwrite remote history ONLY if it's where you last saw it</span></code></pre>
+<ul>
+<li>A normal <code>push</code> is refused unless it&rsquo;s a <strong>fast-forward</strong> (your branch contains the remote&rsquo;s current tip). If someone else pushed since you fetched, you must integrate first.</li>
+<li><strong>Never use <code>--force</code> on a shared branch.</strong> After a rebase/amend of your <em>own</em> feature branch, use <strong><code>--force-with-lease</code></strong>: it checks the remote branch still points where your <code>origin/&lt;branch&gt;</code> says before overwriting, so you can&rsquo;t clobber a teammate&rsquo;s commit you never saw.</li>
+</ul>
+
+<h3>Upstream tracking</h3>
+<ul>
+<li>An <strong>upstream</strong> (a.k.a. tracking) link ties your local branch to a remote branch, enabling bare <code>git push</code>/<code>git pull</code> and the &ldquo;ahead 2, behind 3&rdquo; status.</li>
+<li>Set it: <code>git push -u origin main</code>, or <code>git branch --set-upstream-to=origin/main</code>. Refer to it as <code>@{u}</code> or <code>@{upstream}</code>: <code>git log @{u}..</code> = &ldquo;my commits not yet pushed&rdquo;.</li>
+<li><code>git status</code> shows the ahead/behind count against the upstream.</li>
+</ul>
+
+<h3>Refspecs</h3>
+<ul>
+<li>A refspec is <code>[+]&lt;src&gt;:&lt;dst&gt;</code> &mdash; <em>which</em> ref on one side maps to <em>which</em> ref on the other; a leading <code>+</code> allows a non-fast-forward update.</li>
+<li>The default fetch refspec for <code>origin</code> (in <code>.git/config</code>) is <code>+refs/heads/*:refs/remotes/origin/*</code> &mdash; &ldquo;every branch on the remote becomes <code>origin/&lt;name&gt;</code> locally.&rdquo;</li>
+<li><code>git push origin main:main</code> is explicit; <code>git push origin HEAD:refs/heads/feature</code> pushes your current commit to a differently-named remote branch; <code>git fetch origin pull/42/head:pr-42</code> fetches a GitHub PR into a local branch.</li>
+<li><strong>Pruning</strong>: deleting a branch on the remote doesn&rsquo;t remove your stale <code>origin/&lt;name&gt;</code> automatically. <code>git fetch --prune</code> (or <code>git config fetch.prune true</code>) cleans them up.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>remote</strong> = named URL for another repo copy. <code>git remote -v</code>, <code>add</code>, <code>set-url</code>, <code>show origin</code>. Many allowed (<code>origin</code>, <code>upstream</code>&hellip;).</li>
+<li><strong><code>fetch</code></strong>: download + update <code>origin/*</code> mirror only. Never touches your branches/working tree &mdash; always safe.</li>
+<li><strong><code>pull</code></strong> = <code>fetch</code> + <code>merge</code> (or <code>--rebase</code>). Set <code>pull.rebase true</code> or <code>pull.ff only</code> to make it predictable.</li>
+<li><strong><code>push</code></strong> allowed only if fast-forward. <code>push -u origin BR</code> once to set upstream; then bare <code>git push</code>.</li>
+<li>Delete remote branch: <code>git push origin --delete BR</code> (or <code>:BR</code>).</li>
+<li>After rebasing your own branch: <code>git push --force-with-lease</code> (safe force) &mdash; <strong>never</strong> <code>--force</code> on shared branches.</li>
+<li><strong>upstream</strong>: <code>@{u}</code>; <code>git log @{u}..</code> = unpushed commits; <code>git status</code> shows ahead/behind.</li>
+<li><strong>refspec</strong> <code>+src:dst</code>. Default: <code>+refs/heads/*:refs/remotes/origin/*</code>. <code>git fetch --prune</code> removes stale <code>origin/*</code>.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What exactly does <code>git fetch</code> change, and what does it not?</dt>
+<dd>It contacts the remote, downloads any commits/trees/blobs you don&rsquo;t have, and moves your <strong>remote-tracking branches</strong> (<code>origin/main</code>, <code>origin/feature-x</code>, &hellip;) to match the remote. That&rsquo;s all. It does <em>not</em> modify your local branches, your index, or your working-tree files, and it never creates a merge or changes what <code>git status</code> says you have checked out. This is why <code>git fetch</code> is safe to run at any moment &mdash; the worst case is you downloaded some objects. To actually incorporate fetched work you then run <code>git merge origin/main</code> or <code>git rebase origin/main</code> (or <code>git pull</code>, which does the fetch and one of those in a single step).</dd>
+<dt>When is <code>--force-with-lease</code> better than <code>--force</code>?</dt>
+<dd>Both let you overwrite remote history (needed after you <code>rebase</code> or <code>commit --amend</code> a branch you already pushed). Plain <code>--force</code> overwrites unconditionally &mdash; if a teammate pushed a commit to that branch after your last fetch, <code>--force</code> silently discards it. <code>--force-with-lease</code> first checks that the remote branch still points at the commit your <code>origin/&lt;branch&gt;</code> remembers; if someone else has pushed, the check fails and Git refuses, so you find out instead of destroying their work. Use it only on branches that are yours (a personal feature branch), and always <code>git fetch</code> right before so the &ldquo;lease&rdquo; reflects reality. Shared/protected branches (<code>main</code>) should never be force-pushed at all &mdash; use <code>git revert</code>.</dd>
+<dt>Your <code>git push</code> is rejected with &ldquo;non-fast-forward / fetch first.&rdquo; What happened and what are your options?</dt>
+<dd>The remote branch has commits your local branch doesn&rsquo;t &mdash; someone pushed since you last synced &mdash; so your push isn&rsquo;t a simple fast-forward and Git refuses to avoid losing their work. Options: (1) <code>git pull --rebase</code> (or <code>git fetch</code> then <code>git rebase origin/&lt;branch&gt;</code>) to replay your commits on top of theirs, then push &mdash; keeps history linear, preferred for a feature branch. (2) <code>git pull</code> (merge) to create a merge commit joining the two lines, then push &mdash; fine but adds a merge commit. (3) If it&rsquo;s your own branch and their commits are ones you deliberately dropped in a rebase, <code>git push --force-with-lease</code>. Never (4) blind <code>git push --force</code>, which would delete their commits.</dd>
+<dt>You cloned a fork. How do you keep it current with the original project?</dt>
+<dd>Add the original as a second remote: <code>git remote add upstream https://github.com/ORIG/repo</code>. Then periodically <code>git fetch upstream</code>, and update your <code>main</code>: <code>git checkout main &amp;&amp; git merge --ff-only upstream/main</code> (or <code>git rebase upstream/main</code>), then <code>git push origin main</code> to update your fork on the host. Feature branches are rebased onto the freshly-updated <code>main</code>. <code>origin</code> stays your fork (where you push); <code>upstream</code> is read-only (where you pull project changes from).</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What is <code>origin/main</code> and how does it differ from <code>main</code>?</summary><div class="answer-box">
+<code>main</code> is your local branch that you commit to. <code>origin/main</code> is a read-only remote-tracking branch &mdash; your local cache of where <code>main</code> was on the remote as of your last <code>fetch</code>/<code>pull</code>. It only moves when you sync.
+</div></details>
+<details class="answer-reveal"><summary>Why might <code>git pull</code> surprise you compared to <code>git fetch</code>?</summary><div class="answer-box">
+<code>pull</code> also <em>integrates</em> the fetched changes into your current branch &mdash; by default with a merge, which can create a merge commit or a conflict right then. <code>fetch</code> just updates <code>origin/*</code> and leaves the decision to you.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Explain the default fetch refspec <code>+refs/heads/*:refs/remotes/origin/*</code> piece by piece.</summary><div class="answer-box">
+It&rsquo;s a <code>src:dst</code> mapping applied during <code>git fetch origin</code>. <code>refs/heads/*</code> = &ldquo;every branch on the remote&rdquo; (branches live under <code>refs/heads/</code> there). <code>refs/remotes/origin/*</code> = &ldquo;store each one locally under this path&rdquo;, which is what makes <code>origin/main</code>, <code>origin/dev</code>, etc. appear. The <code>*</code> on each side pairs up (remote <code>foo</code> &rarr; local <code>origin/foo</code>). The leading <code>+</code> means &ldquo;allow non-fast-forward updates&rdquo; &mdash; so if the remote force-pushed <code>main</code>, your <code>origin/main</code> still updates to match rather than erroring. This line lives in <code>.git/config</code> under <code>[remote "origin"]</code> and you can add more (e.g. a line to also fetch <code>refs/pull/*/head</code>).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design a team&rsquo;s remote/branch conventions and safety rules for a repo with ~50 contributors, protected release branches, and frequent long-running forks. Cover tracking, force-push policy, syncing, and cleanup.</summary><div class="answer-box">
+<strong>Remotes.</strong> Contributors clone the canonical repo as <code>origin</code> (no personal forks for employees &mdash; simpler CI and permissions); external contributors fork and add <code>upstream</code>. One canonical URL; mirror for DR is push-configured server-side, invisible to devs. <strong>Branch namespace.</strong> <code>main</code> (always releasable, protected), <code>release/x.y</code> (protected, only release managers merge), <code>feature/&lt;ticket&gt;-slug</code>, <code>fix/&lt;ticket&gt;</code>, <code>hotfix/&lt;ticket&gt;</code>. Personal experiments under <code>user/&lt;name&gt;/&hellip;</code>. <strong>Protection rules</strong> on <code>main</code> and <code>release/*</code>: no direct push, no force-push, require PR + green CI + N reviews + up-to-date-with-base, linear history (squash or rebase merge only), signed commits. This makes force-push accidents on shared history impossible at the server. <strong>Tracking.</strong> Everyone sets <code>push.default = simple</code> (or <code>current</code>), <code>pull.rebase = true</code> (or <code>pull.ff = only</code> to force an explicit choice), <code>fetch.prune = true</code>, and <code>rebase.autosquash = true</code>. New feature branches are created from and rebased onto <code>origin/main</code>; upstream is set on first push (<code>push -u</code>). <strong>Force-push policy.</strong> Allowed only on your own unmerged <code>feature/*</code>/<code>user/*</code> branches, and only via <code>--force-with-lease</code> after a fresh <code>fetch</code>; a pre-push hook rejects <code>--force</code> without-lease and rejects any force to <code>main</code>/<code>release/*</code>. Shared long-running branches are only ever advanced by merge, never rebased. <strong>Syncing long-running forks.</strong> A long feature or an external fork rebases (or merges, if the branch is shared among several people) from <code>origin/main</code> on a schedule &mdash; at least weekly &mdash; to keep conflicts small; CI runs the branch against latest <code>main</code> nightly (&ldquo;merge check&rdquo;) and pings the owner if it breaks. <code>rerere</code> enabled globally so repeated conflict resolutions during long rebases are replayed automatically. <strong>Release flow.</strong> Cut <code>release/x.y</code> from <code>main</code>; fixes land on <code>main</code> and are <code>cherry-pick</code>ed (or PR&rsquo;d) to the release branch; tags (<code>vX.Y.Z</code>, annotated, signed) mark releases; hotfixes branch from the tag, fix, tag, then forward-merge to <code>main</code>. <strong>Cleanup.</strong> Merge-button deletes the source branch; a scheduled job deletes remote branches merged &gt; 30 days ago and reports stale unmerged ones to owners; devs run <code>git fetch --prune</code> (automatic via config) and a periodic <code>git branch --merged main | grep -v main | xargs git branch -d</code>. <strong>Onboarding doc</strong> ships the exact <code>git config</code> block and the hook so everyone&rsquo;s client behaves the same. Net: the server enforces the non-negotiables (protected, no force, linear, reviewed), client config + hooks make the safe path the default, and a regular rebase-from-main cadence plus <code>rerere</code> keeps the long forks manageable.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:git:remotes-refspecs -->
+
 
 <!-- TOPIC:git:merge-vs-rebase -->
 <section class="view topic" id="v-git-merge-vs-rebase" data-skill="git">
@@ -30052,6 +30200,8 @@ A normal ref (<code>.git/refs/heads/main</code>) contains a 40-hex commit hash &
 <p class="subtitle">Two ways to combine work &mdash; one preserves history as it happened, the other rewrites it to look tidy.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Merge</strong> and <strong>rebase</strong> both integrate one branch&rsquo;s work into another, but produce different history. <strong>Merge</strong> creates a new commit with two parents, preserving exactly what happened (and adding a merge commit for every integration). <strong>Rebase</strong> replays your commits one by one onto the tip of the target, producing a linear history but <em>rewriting</em> those commits (new hashes). This page covers when each fits, the trade-off (honest but noisy vs clean but edited), and the <strong>golden rule</strong>: never rebase commits that others have already pulled.</p>
+
 <h3>The setup</h3>
 <pre>      D ← E     feature
      /
@@ -30214,6 +30364,8 @@ What happened: the branch <code>origin/shared</code> used to point at history H1
 <p class="subtitle">Reword, squash, split, reorder, and drop commits before anyone else sees them.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><code>git rebase -i</code> opens an editable <strong>to-do list</strong> of commits and lets you rewrite a stretch of history before sharing it: <strong>reword</strong> a message, <strong>edit</strong> a commit&rsquo;s contents, <strong>squash</strong>/<strong>fixup</strong> several into one, <strong>drop</strong> or <strong>reorder</strong>. This page covers each action, the <code>--autosquash</code> workflow with <code>commit --fixup</code>, splitting one commit into several with <code>edit</code> + <code>reset</code>, and why this is for <em>local</em> cleanup only &mdash; it changes every downstream hash.</p>
+
 <h3>Starting it</h3>
 <pre>git rebase -i HEAD~5        # edit the last 5 commits
 git rebase -i main         # edit every commit on this branch since it left main
@@ -30358,6 +30510,8 @@ Mechanism: when you mark a commit <code>edit</code>, the rebase applies that com
 <p class="subtitle">Git almost never truly loses a commit &mdash; the reflog is your undo history for refs.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The <strong>reflog</strong> records every position <code>HEAD</code> (and each branch) has pointed to on your machine &mdash; every commit, checkout, reset, rebase, merge &mdash; for ~90 days. This page covers it as a <strong>safety net</strong>: because a &ldquo;lost&rdquo; commit after a bad <code>reset --hard</code>, a deleted branch, or a botched rebase is still an object in the database and still in the reflog, you recover it with <code>git reset</code>/<code>branch</code> to the <code>HEAD@{n}</code> entry. It also covers when data really is gone (never committed; or <code>gc</code> ran after expiry).</p>
+
 <h3>What the reflog is</h3>
 <p>Every time a ref (a branch, or <code>HEAD</code>) changes where it points &mdash; commit,
 checkout, reset, rebase, merge, pull, <code>amend</code> &mdash; Git appends a line to that
@@ -30502,6 +30656,23 @@ Stage 1 &mdash; <strong>becomes unreachable</strong>: a ref move (reset, rebase,
 <p class="subtitle">Binary search over history to find the exact commit that introduced a bug &mdash; in log&#8322;(n) steps.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong><code>git bisect</code></strong> finds the commit that introduced a bug by <strong>binary search</strong> over history: you mark one <strong>good</strong> commit and one <strong>bad</strong> commit, and Git repeatedly checks out the midpoint for you to test, halving the range each step &mdash; ~10 tests to pin a bug across 1000 commits. This page covers the workflow (<code>start</code> / <code>good</code> / <code>bad</code> / <code>reset</code>), automating it entirely with <code>git bisect run &lt;test script&gt;</code> (exit 0 = good, 1&ndash;124 = bad, 125 = skip), and handling untestable commits with <code>skip</code>.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 130" role="img" aria-labelledby="d-gitbis-t">
+<title id="d-gitbis-t">git bisect binary-searches the commit range between a known-good and known-bad commit</title>
+<circle class="d-box-alt" cx="30" cy="40" r="7"/><text class="d-t-sm" x="30" y="62" text-anchor="middle">good</text>
+<circle class="d-fill" cx="90" cy="40" r="5"/><circle class="d-fill" cx="150" cy="40" r="5"/><circle class="d-fill" cx="210" cy="40" r="5"/><circle class="d-fill" cx="270" cy="40" r="5"/><circle class="d-fill" cx="330" cy="40" r="5"/><circle class="d-fill" cx="390" cy="40" r="5"/><circle class="d-fill" cx="450" cy="40" r="5"/>
+<circle class="d-box" cx="490" cy="40" r="7"/><text class="d-t-sm" x="490" y="62" text-anchor="middle">bad (HEAD)</text>
+<path class="d-line-soft" d="M37 40 L483 40"/>
+<path class="d-line" d="M240 90 L240 52" marker-end="url(#gitbis-ah)"/><text class="d-t-sm" x="200" y="104">test midpoint &rarr; good? &rarr; move left bound here</text>
+<path class="d-line" d="M360 78 L360 52" marker-end="url(#gitbis-ah)"/><text class="d-t-sm" x="330" y="92">bad? &rarr; right bound</text>
+<defs><marker id="gitbis-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="122">~log2(N) tests: 1000 commits &rarr; ~10 checks. <tspan class="d-t-mono">git bisect run ./test.sh</tspan> automates it (exit 0 good, 1&ndash;124 bad, 125 skip).</text>
+</svg>
+<figcaption>Mark one good and one bad commit; Git checks out the midpoint, you (or a script) test it, and the range halves each round until the first bad commit is isolated.</figcaption>
+</figure>
+
+
 <h3>The idea</h3>
 <p>You know the bug is present now (a "bad" commit) and absent at some older commit (a
 "good" commit). Somewhere between them one commit flipped it. <code>git bisect</code> checks
@@ -30657,6 +30828,32 @@ Causes: (1) <strong>Flaky repro</strong> &mdash; the test is nondeterministic, s
 <p class="subtitle">Copy a commit, safely undo a commit on shared history, or move a branch pointer around.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers three commands for moving and undoing commits. <strong><code>cherry-pick</code></strong> copies the <em>change</em> introduced by one commit and applies it as a new commit on your current branch (a new hash). <strong><code>revert</code></strong> creates a new commit that undoes a previous one &mdash; the safe way to &ldquo;undo&rdquo; on <em>shared</em> history because it adds rather than rewrites. <strong><code>reset</code></strong> moves the current branch pointer (and, depending on <code>--soft</code>/<code>--mixed</code>/<code>--hard</code>, the index and working tree) &mdash; the way to undo <em>local</em> commits.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-gitcpr-t">
+<title id="d-gitcpr-t">git reset modes: --soft moves HEAD only; --mixed also resets the index; --hard also resets the working tree</title>
+<text class="d-t-b" x="14" y="14">git reset &lt;target&gt; &mdash; how far the reset reaches</text>
+<rect class="d-box" x="40" y="26" width="90" height="18"/><text class="d-t-sm" x="85" y="39" text-anchor="middle">HEAD / branch</text>
+<rect class="d-box" x="170" y="26" width="90" height="18"/><text class="d-t-sm" x="215" y="39" text-anchor="middle">index (staged)</text>
+<rect class="d-box" x="300" y="26" width="110" height="18"/><text class="d-t-sm" x="355" y="39" text-anchor="middle">working tree</text>
+<text class="d-t-mono d-t-sm" x="14" y="66">--soft</text>
+<rect class="d-box-alt" x="40" y="72" width="90" height="16"/><text class="d-t-sm" x="85" y="84" text-anchor="middle">moved</text>
+<rect class="d-line-soft" x="170" y="72" width="90" height="16"/><text class="d-t-sm" x="215" y="84" text-anchor="middle">kept</text>
+<rect class="d-line-soft" x="300" y="72" width="110" height="16"/><text class="d-t-sm" x="355" y="84" text-anchor="middle">kept</text>
+<text class="d-t-sm" x="420" y="84">&rarr; changes left staged</text>
+<text class="d-t-mono d-t-sm" x="14" y="106">--mixed</text>
+<rect class="d-box-alt" x="40" y="112" width="90" height="16"/><text class="d-t-sm" x="85" y="124" text-anchor="middle">moved</text>
+<rect class="d-box-alt" x="170" y="112" width="90" height="16"/><text class="d-t-sm" x="215" y="124" text-anchor="middle">reset</text>
+<rect class="d-line-soft" x="300" y="112" width="110" height="16"/><text class="d-t-sm" x="355" y="124" text-anchor="middle">kept</text>
+<text class="d-t-sm" x="420" y="124">&rarr; changes unstaged (default)</text>
+<text class="d-t-mono d-t-sm" x="14" y="146">--hard</text>
+<rect class="d-box-alt" x="40" y="150" width="90" height="10"/><rect class="d-box-alt" x="170" y="150" width="90" height="10"/><rect class="d-box-alt" x="300" y="150" width="110" height="10"/>
+<text class="d-t-sm" x="420" y="159">&rarr; changes DISCARDED</text>
+</svg>
+<figcaption><code>--soft</code> = &ldquo;uncommit, keep everything staged&rdquo;; <code>--mixed</code> (default) = &ldquo;uncommit and unstage&rdquo;; <code>--hard</code> = &ldquo;uncommit and delete the changes&rdquo; (recoverable only via reflog).</figcaption>
+</figure>
+
+
 <h3>cherry-pick &mdash; copy a commit onto the current branch</h3>
 <pre>git cherry-pick &lt;hash&gt;             # apply that commit's diff as a NEW commit here
 git cherry-pick A^..B              # a range (A exclusive .. B inclusive)
@@ -30786,6 +30983,8 @@ The mechanism is <strong>patch-id</strong>. <code>git patch-id</code> reads a co
 <p class="subtitle">Read the markers, pick the right resolution, and set up Git so you fight the same conflict only once.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>merge conflict</strong> happens when two branches changed the same lines (or one deleted what the other edited) and Git can&rsquo;t choose automatically, so it stops and marks the spot. This page covers reading the <code>&lt;&lt;&lt;&lt;&lt;&lt;&lt; / ======= / &gt;&gt;&gt;&gt;&gt;&gt;&gt;</code> markers (ours vs theirs), resolving by hand or with a merge tool, <code>--ours</code>/<code>--theirs</code> shortcuts, aborting with <code>merge --abort</code>, <strong><code>rerere</code></strong> (reuse recorded resolutions) for repeated conflicts, and the habits &mdash; small PRs, frequent integration &mdash; that keep conflicts rare.</p>
+
 <h3>Why conflicts happen</h3>
 <p>Git does a <strong>three-way merge</strong>: it compares "ours" (current branch), "theirs"
 (the branch being merged), and the <strong>merge base</strong> (their common ancestor). If a
@@ -30939,6 +31138,28 @@ When a conflict occurs with <code>rerere.enabled</code>, Git computes a <strong>
 <p class="subtitle">Trunk-based vs git-flow vs GitHub flow, and how pull requests, review, and CI gates fit together.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">How a team arranges branches and reviews changes. This page covers the common <strong>branching models</strong> &mdash; <strong>trunk-based</strong> (everyone commits to <code>main</code> behind feature flags, tiny short-lived branches), <strong>GitHub flow</strong> (branch &rarr; PR &rarr; review &rarr; merge &rarr; deploy), and <strong>git-flow</strong> (long-lived <code>develop</code>/<code>release</code>/<code>hotfix</code> branches &mdash; heavier, for versioned releases) &mdash; and the <strong>pull-request</strong> mechanics: review, required checks/CI gates, and the merge-button choice (merge commit vs squash vs rebase) and what each does to history.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-gitwf-t">
+<title id="d-gitwf-t">Trunk-based, GitHub flow and git-flow branch shapes compared</title>
+<text class="d-t-b" x="14" y="14">trunk-based</text>
+<path class="d-line-soft" d="M90 20 L500 20"/><circle class="d-fill" cx="150" cy="20" r="4"/><circle class="d-fill" cx="250" cy="20" r="4"/><circle class="d-fill" cx="350" cy="20" r="4"/>
+<path class="d-line" d="M150 20 C 180 10, 210 10, 240 20" /><text class="d-t-sm" x="360" y="18">tiny branches, merge same day, feature flags</text>
+<text class="d-t-b" x="14" y="64">GitHub flow</text>
+<path class="d-line-soft" d="M90 70 L500 70"/><circle class="d-fill" cx="150" cy="70" r="4"/><circle class="d-fill" cx="330" cy="70" r="4"/>
+<path class="d-line" d="M150 70 C 200 46, 280 46, 328 70" marker-end="url(#gitwf-ah)"/><text class="d-t-sm" x="200" y="52">feature branch &rarr; PR + review + CI &rarr; merge &rarr; deploy</text>
+<text class="d-t-b" x="14" y="118">git-flow</text>
+<path class="d-line-soft" d="M90 124 L500 124"/><text class="d-t-sm" x="94" y="120">main (tags)</text>
+<path class="d-line-soft d-dash" d="M90 140 L500 140"/><text class="d-t-sm" x="94" y="152">develop &rarr; feature/*, release/*, hotfix/*</text>
+<circle class="d-fill" cx="200" cy="124" r="4"/><circle class="d-fill" cx="380" cy="124" r="4"/><circle class="d-box-alt" cx="290" cy="140" r="4"/>
+<path class="d-line" d="M290 140 L378 124" marker-end="url(#gitwf-ah)"/>
+<defs><marker id="gitwf-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="164">More long-lived branches = more merge overhead. Trunk-based needs strong CI + flags; git-flow fits slow, versioned releases.</text>
+</svg>
+<figcaption>The models trade branch lifetime against process weight: trunk-based (fastest integration, needs discipline) &rarr; GitHub flow (PR per feature) &rarr; git-flow (heavy, release-oriented).</figcaption>
+</figure>
+
+
 <h3>The main branching models</h3>
 <table>
 <tr><th>Model</th><th>Shape</th><th>Fits</th></tr>
@@ -46771,6 +46992,7 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["object-model",       "The Object Model: Blob, Tree, Commit", "Content-addressed store, SHA-1/256, blobs vs trees vs commits vs tags, packfiles."],
       ["three-trees",        "The Three Trees: Working Tree, Index, HEAD","How add/commit/checkout/reset move data between the working tree, index and HEAD."],
       ["branches-head",      "Branches, HEAD & Fast-Forward",       "A branch is a movable pointer, HEAD, detached HEAD, fast-forward vs true merge."],
+      ["remotes-refspecs",   "Remotes, Fetch/Pull/Push & Refspecs", "Remote-tracking branches, fetch vs pull, push & --force-with-lease, upstream @{u}, refspecs, prune."],
       ["merge-vs-rebase",    "Merge vs Rebase",                     "Merge commits vs replayed commits, when each fits, the golden rule of rebase."],
       ["interactive-rebase", "Interactive Rebase & Editing History","rebase -i: reword/edit/squash/fixup/drop/reorder, autosquash, splitting a commit."],
       ["reflog-recovery",    "The Reflog & Recovering Lost Work",   "reflog as a safety net, recovering deleted branches & bad resets, gc & expiry."],
