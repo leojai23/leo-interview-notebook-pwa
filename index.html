@@ -42871,6 +42871,8 @@ To stdout/stderr. The runtime captures them and the platform's log collector shi
 <p class="subtitle">The control plane stores desired state and makes decisions; nodes run the workloads and report back.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A Kubernetes cluster splits into a <strong>control plane</strong> and <strong>worker nodes</strong>. The control plane runs the <strong>API server</strong> (the only component anything talks to; the front door to all state), <strong>etcd</strong> (the consistent key-value store holding the entire cluster state), the <strong>scheduler</strong> (assigns Pods to nodes), and the <strong>controller-manager</strong> (the reconciliation loops). Each node runs the <strong>kubelet</strong> (starts/monitors Pods via the container runtime), <strong>kube-proxy</strong> (Service networking), and a CRI <strong>runtime</strong> (containerd). This page covers each piece and the path a <code>kubectl apply</code> takes.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 170" role="img" aria-labelledby="d-ka-t">
 <title id="d-ka-t">Control-plane components around the API server; nodes run kubelet + runtime</title>
@@ -43006,6 +43008,8 @@ The <strong>kubelet</strong> &mdash; it reads Pod specs from the API server and 
 <p class="subtitle">You declare desired state in <code>spec</code>; controllers watch and drive the real world toward it, forever.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Everything in Kubernetes is an <strong>object</strong> with two halves: a <strong><code>spec</code></strong> (your desired state) and a <strong><code>status</code></strong> (the observed reality). A <strong>controller</strong> watches its objects and runs a <strong>reconciliation loop</strong> forever &mdash; compare status to spec, take one step to close the gap, repeat. This page covers that model (which is why Kubernetes is <em>declarative</em> &mdash; you describe the destination, not the steps), <code>kubectl apply</code> vs imperative commands, <strong>labels and selectors</strong> as the glue between objects, and <strong>namespaces</strong> for scoping.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-koa-t">
 <title id="d-koa-t">The control loop: observe, diff spec vs status, act, repeat</title>
@@ -43152,6 +43156,8 @@ Your edit is a write to the API server, so the controller reconciles to your new
 <p class="subtitle">A pod is one or more containers that are always co-scheduled and share a network namespace, IPC, and volumes.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>Pod</strong> is the smallest deployable unit &mdash; one or (rarely) more containers that are always co-scheduled on the same node and <strong>share</strong> a network namespace (same IP and localhost), IPC, and mounted volumes. This page covers why the Pod exists (a place to group a main container with tightly-coupled helpers), <strong>init containers</strong> (run to completion first, in order), <strong>sidecars</strong>, the <code>pause</code> container that holds the namespaces, the three <strong>probes</strong> (liveness / readiness / startup), <code>restartPolicy</code>, and <strong>QoS classes</strong> derived from requests/limits.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 140" role="img" aria-labelledby="d-kpod-t">
 <title id="d-kpod-t">A pod: shared net/IPC/volumes, init containers run to completion first</title>
@@ -43301,6 +43307,8 @@ When a pod is deleted (scale-down, rollout, eviction): (1) its <code>deletionTim
 <p class="subtitle">Pick the controller by what the workload needs: interchangeable replicas, stable identity, one-per-node, or run-to-completion.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">You almost never create Pods directly &mdash; a <strong>workload controller</strong> manages them. This page covers the main ones: a <strong>Deployment</strong> owns a <strong>ReplicaSet</strong> which owns Pods, giving you scaling and <strong>rolling updates</strong> with rollback (for stateless apps); a <strong>StatefulSet</strong> adds stable network identity and per-Pod persistent storage with ordered rollout (for databases, quorum systems); a <strong>DaemonSet</strong> runs exactly one Pod per node (log/metric agents, CNI); and <strong>Job</strong> / <strong>CronJob</strong> run Pods to completion, once or on a schedule.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 140" role="img" aria-labelledby="d-kwl-t">
 <title id="d-kwl-t">Deployment owns a ReplicaSet owns Pods; other controllers own Pods directly</title>
@@ -43493,6 +43501,8 @@ A <strong>StatefulSet</strong> (or, better, a Postgres operator that manages one
 <p class="subtitle">Pods are ephemeral and get new IPs; a Service is a stable name + virtual IP that load-balances to the current set of matching pods.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Pods are ephemeral and their IPs change, so you never talk to a Pod directly &mdash; you talk to a <strong>Service</strong>, a stable virtual IP and DNS name that load-balances across the Pods matching its <strong>label selector</strong> (tracked as <strong>EndpointSlices</strong>). This page covers the types &mdash; <strong>ClusterIP</strong> (internal only, the default), <strong>NodePort</strong>, <strong>LoadBalancer</strong> (cloud LB), <strong>Headless</strong> (no VIP, DNS returns Pod IPs) &mdash; how <strong>kube-proxy</strong> implements the VIP (iptables or IPVS rules), and the <strong>CoreDNS</strong> naming scheme (<code>svc.namespace.svc.cluster.local</code>).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-ksvc-t">
 <title id="d-ksvc-t">Service selector to EndpointSlice to kube-proxy dataplane to pods</title>
@@ -43634,6 +43644,8 @@ The pod is still in the Service's EndpointSlices, which means Kubernetes thinks 
 <p class="subtitle">One external entry point that routes HTTP(S) by host and path to many Services, terminates TLS, and does L7 features &mdash; run by a controller you install.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>Service</strong> of type LoadBalancer per app is expensive and only does L4. <strong>Ingress</strong> is a single L7 entry point: a set of rules (&ldquo;host <code>api.example.com</code> path <code>/v1</code> &rarr; this Service&rdquo;) plus TLS termination. This page covers that the Ingress <em>object</em> is just data &mdash; an <strong>Ingress controller</strong> (nginx, Traefik, HAProxy, a cloud ALB) actually runs, watches those rules, and configures a proxy &mdash; the common annotations, and the newer, more expressive and role-oriented <strong>Gateway API</strong> that is replacing Ingress.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 140" role="img" aria-labelledby="d-king-t">
 <title id="d-king-t">One LoadBalancer to an ingress controller that routes by host/path to Services</title>
@@ -43789,6 +43801,8 @@ ingress-nginx regenerates its <code>nginx.conf</code> and reloads whenever a wat
 <p class="subtitle">Keep configuration out of the image; inject it as environment variables or mounted files at run time.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Configuration should live outside the image. This page covers <strong>ConfigMaps</strong> (non-sensitive key/value config) and <strong>Secrets</strong> (credentials, tokens, certs), consumed either as <strong>environment variables</strong> (simple, but a restart is needed to pick up changes and env can leak) or a <strong>mounted volume</strong> (files, can update live). Crucially: a Secret is only <strong>base64-encoded, not encrypted</strong> &mdash; enable <strong>encryption-at-rest</strong> for etcd and tight RBAC, or use an external secret manager. It also covers immutable ConfigMaps/Secrets and projected volumes.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-kcfg-t">
 <title id="d-kcfg-t">ConfigMap/Secret injected as env vars or a mounted volume</title>
@@ -43958,6 +43972,8 @@ Rotation has to propagate through several layers, and any of them can be the sta
 <p class="subtitle">A pod asks for storage with a PersistentVolumeClaim; a StorageClass + provisioner turns that into a real disk automatically.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Containers are ephemeral, so persistent data needs a decoupled abstraction. This page covers it: a <strong>PersistentVolume</strong> (PV) is a piece of storage in the cluster (a disk, an NFS share); a <strong>PersistentVolumeClaim</strong> (PVC) is a Pod&rsquo;s request for storage, which <strong>binds</strong> to a matching PV. A <strong>StorageClass</strong> + its provisioner enables <strong>dynamic</strong> provisioning &mdash; a PVC creates a PV on demand. It also covers <strong>access modes</strong> (RWO/ROX/RWX), the <strong>reclaim policy</strong> (Delete vs Retain), simple volume types (<code>emptyDir</code>, <code>configMap</code>), and the <strong>CSI</strong> plugin interface.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 140" role="img" aria-labelledby="d-kstor-t">
 <title id="d-kstor-t">Pod -> PVC -> (StorageClass provisioner) -> PV -> real disk</title>
@@ -44110,6 +44126,8 @@ ReadWriteOnce (RWO) &mdash; mountable read-write by one node at a time. For many
 <p class="subtitle">Requests decide where a pod fits and its QoS; affinity, anti-affinity, taints and spread constraints steer <em>which</em> node it lands on.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">When a Pod is created the <strong>scheduler</strong> picks a node: it <em>filters</em> nodes that can&rsquo;t fit (based on the Pod&rsquo;s resource <strong>requests</strong>, not limits) then <em>scores</em> the rest. This page covers the controls you use to influence or constrain that: <strong>requests vs limits</strong> (placement + QoS vs a hard cap), <code>nodeSelector</code> and <strong>node/pod affinity &amp; anti-affinity</strong> (&ldquo;spread replicas across zones&rdquo;, &ldquo;keep me off GPU nodes&rdquo;), <strong>taints &amp; tolerations</strong> (a node repels Pods unless they tolerate it), <strong>topology spread</strong>, <strong>PriorityClass</strong> (preemption), and <strong>PodDisruptionBudgets</strong>.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-ksch-t">
 <title id="d-ksch-t">Scheduler: filter feasible nodes, score them, bind to the best</title>
@@ -44261,6 +44279,8 @@ If you used <code>topologySpreadConstraints</code> (or anti-affinity) with <code
 <p class="subtitle">HPA changes how many pods, VPA changes how big each pod, Cluster Autoscaler changes how many nodes.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Kubernetes scales on three independent axes. The <strong>Horizontal Pod Autoscaler</strong> (HPA) adds/removes Pod <em>replicas</em> to hit a target CPU/memory or custom metric (via metrics-server / an adapter). The <strong>Vertical Pod Autoscaler</strong> (VPA) right-sizes a Pod&rsquo;s <em>requests</em> based on observed usage. The <strong>Cluster Autoscaler</strong> adds/removes <em>nodes</em> when Pods can&rsquo;t be scheduled or nodes sit idle. This page covers each, why HPA and VPA on the same resource conflict, and <strong>KEDA</strong> for event-driven scaling (queue length &rarr; replicas, scale-to-zero).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-kas-t">
 <title id="d-kas-t">Three axes of autoscaling operate at different layers</title>
@@ -44408,6 +44428,8 @@ Use <strong>KEDA</strong> with the appropriate queue scaler (Kafka lag, SQS <cod
 <p class="subtitle">Who can call the API (RBAC + ServiceAccounts), and what a pod is allowed to do to the node/kernel (Pod Security + admission).</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers who and what can do what in the cluster. <strong>RBAC</strong>: a <strong>Role</strong> (or cluster-wide <strong>ClusterRole</strong>) is a list of allowed verbs on resources; a <strong>RoleBinding</strong> grants it to a user, group, or <strong>ServiceAccount</strong> (the identity a Pod runs as, presented as a mounted token). The principle is <strong>least privilege</strong> &mdash; no default-wide permissions. It also covers <strong>Pod Security Standards</strong> (privileged / baseline / restricted, enforced by the Pod Security admission controller) and where <strong>admission controllers</strong> (validating/mutating webhooks, OPA/Kyverno) fit.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-krbac-t">
 <title id="d-krbac-t">Request -> authn -> authz (RBAC) -> admission -> etcd</title>
@@ -44561,6 +44583,8 @@ Its ServiceAccount (the namespace's <code>default</code> SA unless <code>spec.se
 <p class="subtitle">By default every pod can talk to every pod; a NetworkPolicy that selects a pod flips it to default-deny for the directions it specifies.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">By default every Pod can reach every other Pod in the cluster &mdash; a flat, open network. A <strong>NetworkPolicy</strong> changes that: as soon as <em>any</em> policy selects a Pod, that Pod switches to <strong>default-deny</strong> for the direction(s) the policy covers, and only the listed <strong>ingress</strong>/<strong>egress</strong> rules are allowed. This page covers writing rules by <code>podSelector</code> / <code>namespaceSelector</code> / <code>ipBlock</code>, the common &ldquo;deny-all then allow&rdquo; baseline, the fact the <strong>CNI plugin must support enforcement</strong> (Calico, Cilium &mdash; flannel doesn&rsquo;t), and L7 policy / mTLS via a service mesh.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-knp-t">
 <title id="d-knp-t">No policy = allow all; a selecting policy = deny all except its allow rules</title>
@@ -44704,6 +44728,8 @@ Systematic isolation. (1) <strong>Confirm enforcement</strong> &mdash; which CNI
 <p class="subtitle">Node agents ship container stdout to a log store; Prometheus scrapes metrics; <code>kubectl describe/logs/debug</code> and events are the first-line diagnostics.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers seeing inside a running cluster. <strong>Logs</strong>: containers write to stdout/stderr, the kubelet captures them, and a node-level agent (Fluent Bit) ships them to Loki/Elasticsearch &mdash; because Pod logs vanish with the Pod. <strong>Metrics</strong>: Prometheus scrapes Pods, nodes, and <strong>kube-state-metrics</strong> (object state) / metrics-server (for HPA), visualised in Grafana. <strong>Debugging</strong>: <code>kubectl describe</code> (events!), <code>logs</code> (<code>--previous</code> for a crashed container), <code>exec</code>, and <code>kubectl debug</code> with an <strong>ephemeral container</strong> for images that have no shell.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-kobs-t">
 <title id="d-kobs-t">Logs via node DaemonSet; metrics via Prometheus scrape; traces via OTel</title>
@@ -44855,6 +44881,8 @@ $ kubectl port-forward svc/api 8080:80                            # hit it local
 <p class="subtitle">Package manifests with Helm, keep git as the source of truth with GitOps, and extend the API with CRDs + an operator.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the ecosystem layered on top of raw manifests. <strong>Helm</strong> packages a set of templated manifests + a <code>values.yaml</code> into a <strong>chart</strong>, and tracks each install as a versioned <strong>release</strong> (upgrade/rollback). <strong>GitOps</strong> (Argo CD, Flux) makes a git repo the single source of truth &mdash; a controller continuously reconciles the cluster to match it, so deploys are git commits and drift is auto-corrected. <strong>CRDs</strong> extend the Kubernetes API with your own resource types; an <strong>Operator</strong> is a custom controller that manages a stateful app (a database, a mesh) through its CRDs.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-khg-t">
 <title id="d-khg-t">Git repo -> GitOps controller reconciles -> cluster; Helm renders templates</title>
