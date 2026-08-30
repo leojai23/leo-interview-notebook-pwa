@@ -21538,6 +21538,8 @@ Developers often reason "this race is harmless &mdash; worst case a thread reads
 <p class="subtitle">Three tables between an <code>int</code> and a file &mdash; and why that structure explains <code>dup</code>, <code>fork</code>, and pipes.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">On Linux, almost every resource a process talks to &mdash; files, pipes, sockets, devices, even timers and signals &mdash; is reached through a small non-negative integer called a <strong>file descriptor</strong>. This page covers the three-level structure behind that integer: the per-process <strong>fd table</strong> (fd &rarr; a pointer + flags like close-on-exec), the system-wide <strong>open file description</strong> (the offset and status flags, shared by <code>dup</code> and inherited across <code>fork</code>), and the <strong>inode</strong> (the actual file). Understanding these three layers explains <code>dup2</code>, why <code>fork</code>ed processes share a file offset, and what &ldquo;everything is a file&rdquo; really buys you.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-lxfd-t">
 <title id="d-lxfd-t">fd -> open file description (offset, flags) -> inode</title>
@@ -21681,6 +21683,28 @@ Because <code>open</code>/<code>dup</code>/<code>accept</code> always return the
 <p class="subtitle">The raw syscalls, the loops you must write around them, and how (not) to lock a file.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the raw system-call layer beneath <code>fread</code>/<code>fwrite</code>: <code>open</code> with its flag set (<code>O_CREAT</code>, <code>O_APPEND</code>, <code>O_NONBLOCK</code>, <code>O_TRUNC</code>, <code>O_CLOEXEC</code>), and the fact that <code>read</code> and <code>write</code> may transfer <strong>fewer bytes than requested</strong> &mdash; so real code loops. It covers <code>O_APPEND</code>&rsquo;s atomic seek-to-end (vital for concurrent log writers), the difference between the C library&rsquo;s user-space buffering and the kernel page cache, <code>fsync</code>/<code>fdatasync</code> for durability, and advisory <strong>file locking</strong> with <code>fcntl</code>/<code>flock</code> and their pitfalls.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-lxfio-t">
+<title id="d-lxfio-t">Layers from a program write to disk: stdio buffer, kernel page cache, device; and the short-write loop</title>
+<rect class="d-box" x="14" y="22" width="90" height="20"/><text class="d-t-sm" x="59" y="36" text-anchor="middle">your buffer</text>
+<rect class="d-box-soft" x="120" y="22" width="110" height="20"/><text class="d-t-sm" x="175" y="36" text-anchor="middle">stdio buffer (libc)</text>
+<rect class="d-box-soft" x="246" y="22" width="110" height="20"/><text class="d-t-sm" x="301" y="36" text-anchor="middle">kernel page cache</text>
+<rect class="d-box-alt" x="372" y="22" width="90" height="20"/><text class="d-t-sm" x="417" y="36" text-anchor="middle">disk</text>
+<path class="d-line" d="M104 32 L118 32" marker-end="url(#lxfio-ah)"/><text class="d-t-sm" x="120" y="56">fwrite</text>
+<path class="d-line" d="M230 32 L244 32" marker-end="url(#lxfio-ah)"/><text class="d-t-sm" x="232" y="56">write() syscall (flush)</text>
+<path class="d-line" d="M356 32 L370 32" marker-end="url(#lxfio-ah)"/><text class="d-t-sm" x="330" y="56">fsync / writeback</text>
+<defs><marker id="lxfio-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-b" x="14" y="90">write() can be partial &mdash; always loop:</text>
+<text class="d-t-mono d-t-sm" x="14" y="108">while (len) { n = write(fd, p, len);</text>
+<text class="d-t-mono d-t-sm" x="14" y="124">          if (n &lt; 0) { if (errno==EINTR) continue; break; }</text>
+<text class="d-t-mono d-t-sm" x="14" y="140">          p += n; len -= n; }</text>
+<text class="d-t-sm" x="14" y="160"><tspan class="d-t-mono">O_APPEND</tspan> makes each write seek-to-end atomically (safe for concurrent log writers). <tspan class="d-t-mono">fsync</tspan> is what actually guarantees durability.</text>
+</svg>
+<figcaption>Data returned by a &ldquo;successful&rdquo; <code>write</code> is only in the page cache; it reaches the platter at writeback or when you call <code>fsync</code>. And a single <code>write</code> may accept only part of your buffer.</figcaption>
+</figure>
+
+
 <h3>The syscalls</h3>
 <ul>
 <li><code>open(path, flags, mode)</code> &mdash; flags: <code>O_RDONLY</code>/<code>O_WRONLY</code>/<code>O_RDWR</code>, plus <code>O_CREAT</code>, <code>O_EXCL</code> (fail if exists &mdash; atomic create), <code>O_TRUNC</code>, <code>O_APPEND</code>, <code>O_NONBLOCK</code>, <code>O_CLOEXEC</code>, <code>O_DIRECT</code>, <code>O_SYNC</code>.</li>
@@ -21812,6 +21836,29 @@ Yes &mdash; the <code>lseek</code> and <code>write</code> aren't atomic together
 <p class="subtitle">Spawning processes the Unix way, reaping them, and detaching one from the terminal.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A new Unix process is created by <strong><code>fork</code></strong> (duplicate the caller) and usually immediately <strong><code>exec</code></strong> (replace the program image), a split that lets the child adjust fds, signals, and environment in between. This page covers copy-on-write <code>fork</code> semantics, the <code>exec</code> family, reaping children with <strong><code>wait</code>/<code>waitpid</code></strong> and the <strong>zombie</strong> and <strong>orphan</strong> states, process groups and sessions, and the classic recipe for turning a process into a <strong>daemon</strong> (<code>fork</code>, <code>setsid</code>, <code>fork</code> again, redirect std fds) &mdash; and why modern service managers make that unnecessary.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 180" role="img" aria-labelledby="d-lxfew-t">
+<title id="d-lxfew-t">fork returns twice; child calls exec to replace its image; parent blocks in wait until the child exits</title>
+<text class="d-t-mono d-t-b" x="14" y="16">parent</text>
+<path class="d-line" d="M60 24 L60 150"/><text class="d-t-mono d-t-sm" x="66" y="40">pid = fork()</text>
+<text class="d-t-mono d-t-sm" x="66" y="96">waitpid(pid) &mdash; blocks</text>
+<text class="d-t-mono d-t-sm" x="66" y="150">resumes with child status</text>
+<path class="d-line d-dash" d="M60 46 L200 60" marker-end="url(#lxfew-ah)"/><text class="d-t-sm" x="90" y="56">fork &rarr; COW copy</text>
+<text class="d-t-mono d-t-b" x="200" y="52">child (pid=0)</text>
+<path class="d-line" d="M210 60 L210 140"/>
+<text class="d-t-mono d-t-sm" x="216" y="76">adjust fds / signals</text>
+<text class="d-t-mono d-t-sm" x="216" y="94">execve("/bin/ls")</text>
+<rect class="d-box-alt" x="216" y="102" width="160" height="16"/><text class="d-t-sm" x="296" y="114" text-anchor="middle">image replaced; PID kept</text>
+<text class="d-t-mono d-t-sm" x="216" y="134">_exit(status)</text>
+<path class="d-line" d="M210 140 C 210 160, 60 160, 60 150" marker-end="url(#lxfew-ah)"/><text class="d-t-sm" x="230" y="156">SIGCHLD + status &rarr; parent</text>
+<defs><marker id="lxfew-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="176">Not reaped &rarr; <tspan class="d-t-b">zombie</tspan> (status held). Parent dies first &rarr; child <tspan class="d-t-b">orphan</tspan>, re-parented to init/subreaper.</text>
+</svg>
+<figcaption><code>fork</code> duplicates (copy-on-write), <code>exec</code> replaces the program but keeps the PID and open fds, <code>wait</code> collects the exit status so the kernel can free the entry.</figcaption>
+</figure>
+
+
 <h3>fork / exec / wait</h3>
 <ul>
 <li><code>fork()</code> &rarr; COW copy of the process. Returns child PID to parent, 0 to child, &minus;1 on error.</li>
@@ -21954,6 +22001,8 @@ An entrypoint script or wrapper that <code>exec</code>s the real app is fine (th
 <p class="subtitle">Asynchronous notifications with a tiny, treacherous execution environment.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>signal</strong> is an asynchronous notification delivered to a process &mdash; from the kernel (<code>SIGSEGV</code>, <code>SIGCHLD</code>), another process (<code>kill</code>), or a keystroke (<code>SIGINT</code>). This page covers how delivery and handling work, the very small set of <strong>async-signal-safe</strong> functions you may call from a handler (and why <code>printf</code>/<code>malloc</code> are not among them), <code>sigaction</code> vs the legacy <code>signal</code>, <code>SA_RESTART</code> and interrupted syscalls (<code>EINTR</code>), blocking signals with the signal mask, and the modern patterns &mdash; the <strong>self-pipe trick</strong> and <code>signalfd</code> &mdash; that turn signals into ordinary readable events.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 110" role="img" aria-labelledby="d-lxsig-t">
 <title id="d-lxsig-t">A signal interrupts the main flow to run a handler, then resumes</title>
@@ -22109,6 +22158,8 @@ Async-signal-safe means the function is either fully reentrant or the signal can
 <p class="subtitle">Kernel byte channels between processes &mdash; and the SIGPIPE that catches everyone once.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the kernel&rsquo;s in-memory byte-stream channels between processes. An anonymous <strong>pipe</strong> (<code>pipe()</code>) is a one-way buffer shared by related processes &mdash; the basis of shell <code>|</code>. A <strong>FIFO</strong> (named pipe, <code>mkfifo</code>) is the same thing with a filesystem name so unrelated processes can rendezvous. A <strong>socketpair</strong> is a bidirectional variant that can also pass file descriptors between processes. It covers pipe capacity and blocking, <strong><code>SIGPIPE</code></strong> / <code>EPIPE</code> when the reader is gone, atomic write size (<code>PIPE_BUF</code>), and why a forgotten open write-end causes a reader to hang forever.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 96" role="img" aria-labelledby="d-lxpipe-t">
 <title id="d-lxpipe-t">A pipe is a kernel buffer with a write end and a read end</title>
@@ -22262,6 +22313,8 @@ Two processes each write a large message to the other then read the reply, over 
 <p class="subtitle">Watching thousands of file descriptors from one thread &mdash; the heart of every async server.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">To watch many file descriptors at once with one thread, a process asks the kernel &ldquo;which of these are ready?&rdquo; This page covers the three interfaces: <strong><code>select</code></strong> and <strong><code>poll</code></strong> (portable, but O(n) &mdash; you re-pass the whole set each call) and <strong><code>epoll</code></strong> (Linux, O(1) &mdash; you register fds once and get back only the ready ones). It covers <strong>readiness</strong> vs completion models, <strong>level-triggered</strong> vs <strong>edge-triggered</strong> notification and the &ldquo;must drain until <code>EAGAIN</code>&rdquo; rule that edge mode imposes, and the classic epoll footguns (stale fds, thundering herd).</p>
+
 <h3>The problem</h3>
 <p>You have N sockets and want to act on whichever becomes readable/writable, without a thread
 per socket. You need the kernel to tell you "which of these fds are ready".</p>
@@ -22429,6 +22482,23 @@ epoll registers an fd by number, but internally associates the interest with the
 <p class="subtitle">Mapping files and memory into the address space &mdash; for speed, sharing, and zero-copy.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong><code>mmap</code></strong> maps a region of a process&rsquo;s address space directly onto a file or onto anonymous zeroed pages, so memory reads/writes become the I/O &mdash; no <code>read</code>/<code>write</code> calls, and pages are shared through the page cache. This page covers file-backed vs anonymous mappings, <code>MAP_SHARED</code> (writes visible to others and the file) vs <code>MAP_PRIVATE</code> (copy-on-write), flushing with <code>msync</code>, POSIX shared memory (<code>shm_open</code> + <code>mmap</code>) as the fast IPC mechanism, huge pages, and <strong>zero-copy</strong> techniques. It also covers the failure modes: <code>SIGBUS</code> past end-of-file, and page-fault latency.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 170" role="img" aria-labelledby="d-lxmm-t">
+<title id="d-lxmm-t">mmap maps file pages or anonymous pages into the address space; MAP_SHARED writes go through the page cache to the file</title>
+<rect class="d-box-alt" x="14" y="24" width="120" height="120" rx="4"/><text class="d-t-b" x="74" y="40" text-anchor="middle">virtual address</text><text class="d-t-b" x="74" y="52" text-anchor="middle">space (proc)</text>
+<rect class="d-box-soft" x="26" y="64" width="96" height="20"/><text class="d-t-sm" x="74" y="78" text-anchor="middle">mmap region</text>
+<rect class="d-box" x="220" y="40" width="120" height="24"/><text class="d-t-sm" x="280" y="55" text-anchor="middle">page cache</text>
+<rect class="d-box-alt" x="220" y="100" width="120" height="24"/><text class="d-t-sm" x="280" y="115" text-anchor="middle">file on disk</text>
+<path class="d-line" d="M122 74 L218 54" marker-end="url(#lxmm-ah)"/><text class="d-t-sm" x="128" y="60">page fault &rarr; map page</text>
+<path class="d-line d-dash" d="M280 64 L280 98" marker-end="url(#lxmm-ah)"/><text class="d-t-sm" x="286" y="84">msync / writeback</text>
+<defs><marker id="lxmm-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="160"><tspan class="d-t-b">MAP_SHARED</tspan> file: writes reach the file &amp; other mappers. <tspan class="d-t-b">MAP_PRIVATE</tspan>: copy-on-write, changes stay local. <tspan class="d-t-b">Anonymous</tspan>: zeroed RAM, no file (malloc, shm).</text>
+</svg>
+<figcaption>With <code>mmap</code> the load/store instruction <em>is</em> the I/O; the kernel faults pages in on demand and (for <code>MAP_SHARED</code>) writes them back through the shared page cache.</figcaption>
+</figure>
+
+
 <h3><code>mmap</code> flavours</h3>
 <pre><code>mmap(addr, len, prot, flags, fd, offset)</code></pre>
 <table>
@@ -22551,6 +22621,8 @@ When multiple processes <code>mmap</code> the same file region <code>MAP_SHARED<
 <p class="subtitle">The kernel's introspection filesystems, plus the per-process knobs every program inherits.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The kernel exposes most of its state as virtual filesystems you can read with ordinary tools. This page covers <strong><code>/proc</code></strong> (per-process directories &mdash; <code>/proc/PID/status</code>, <code>maps</code>, <code>fd/</code>, <code>cmdline</code> &mdash; plus system-wide entries like <code>/proc/meminfo</code>), <strong><code>/sys</code></strong> (the device and kernel-object tree, tunables), the process <strong>environment</strong> (<code>environ</code>, how it&rsquo;s passed across <code>exec</code>), and <strong>resource limits</strong> &mdash; <code>rlimit</code>/<code>ulimit</code> for max open files, stack size, core dump size &mdash; and how exit codes propagate.</p>
+
 <h3>procfs</h3>
 <p>A virtual filesystem exposing kernel + process state as files.</p>
 <pre><code>$ pid=$(pgrep -n nginx)
@@ -22679,6 +22751,146 @@ Check <code>ulimit -c</code> (must be non-zero; systemd units default <code>Limi
 </div></div>
 </section>
 <!-- /TOPIC:linux:proc-sys -->
+<!-- TOPIC:linux:users-perms-caps -->
+<section class="view topic" id="v-linux-users-perms-caps" data-skill="linux">
+<div class="layout">
+<nav class="sidebar" data-sidebar="linux"></nav>
+<div class="topic-body">
+<h1>Users, Permissions &amp; Capabilities</h1>
+<p class="subtitle">Who a process is, how the kernel decides what it may touch, and how &ldquo;root or nothing&rdquo; became a fine-grained set of privileges.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Every process carries a set of numeric <strong>credentials</strong> &mdash; a real and effective user ID, a real and effective group ID, saved-set IDs, and a list of supplementary groups &mdash; and the kernel uses these against a file&rsquo;s owner, group, and 9 permission bits on every access. This page covers that permission-check algorithm, the <strong>real / effective / saved</strong> UID triple and why it exists, <strong>set-user-ID</strong> binaries (how <code>sudo</code> and <code>passwd</code> work, and why they are a classic attack surface), the <strong>setuid/setgid/sticky</strong> special bits, how identity is looked up (<code>/etc/passwd</code>, <code>/etc/shadow</code>, NSS), and <strong>POSIX capabilities</strong> &mdash; the split of the single all-powerful root privilege into ~40 independent bits like <code>CAP_NET_BIND_SERVICE</code>.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 190" role="img" aria-labelledby="d-lxup-t">
+<title id="d-lxup-t">The kernel permission check: match process UID/GID against file owner/group/other bits</title>
+<rect class="d-box-alt" x="14" y="18" width="150" height="52" rx="4"/><text class="d-t-b" x="89" y="33" text-anchor="middle">process creds</text>
+<text class="d-t-mono d-t-sm" x="20" y="47">euid=1000 egid=1000</text>
+<text class="d-t-mono d-t-sm" x="20" y="60">groups={1000,4,27}</text>
+<rect class="d-box-soft" x="200" y="18" width="170" height="52" rx="4"/><text class="d-t-b" x="285" y="33" text-anchor="middle">file: report.txt</text>
+<text class="d-t-mono d-t-sm" x="206" y="47">owner=1000 group=50</text>
+<text class="d-t-mono d-t-sm" x="206" y="60">rw- r-- ---  (0640)</text>
+<path class="d-line" d="M164 44 L198 44" marker-end="url(#lxup-ah)"/>
+<defs><marker id="lxup-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-b" x="14" y="92">check, in order (first match wins):</text>
+<text class="d-t-sm" x="14" y="108">1. euid == 0 ? &rarr; allowed (almost) always &mdash; unless a capability was dropped</text>
+<text class="d-t-sm" x="14" y="124">2. euid == file owner ? &rarr; use the <tspan class="d-t-mono">owner</tspan> (u) bits &mdash; here rw-, even if group/other grant more</text>
+<text class="d-t-sm" x="14" y="140">3. egid or a supplementary group == file group ? &rarr; use the <tspan class="d-t-mono">group</tspan> (g) bits</text>
+<text class="d-t-sm" x="14" y="156">4. otherwise &rarr; use the <tspan class="d-t-mono">other</tspan> (o) bits</text>
+<text class="d-t-sm" x="14" y="178">Owner match is checked before group: if you own a file mode <tspan class="d-t-mono">044</tspan> you still cannot write it &mdash; the owner bits (<tspan class="d-t-mono">---</tspan>) apply, not <tspan class="d-t-mono">r--</tspan>.</text>
+</svg>
+<figcaption>The classic surprise: permission is decided by the <em>first</em> applicable class (owner, then group, then other), not the most permissive one.</figcaption>
+</figure>
+
+<h3>Process credentials: real, effective, saved</h3>
+<ul>
+<li><strong>Real UID/GID</strong>: who you <em>are</em> &mdash; the user who launched the process. Used for signals (who may <code>kill</code> whom) and accounting.</li>
+<li><strong>Effective UID/GID</strong>: who you act <em>as</em> for permission checks. Normally equals the real ID.</li>
+<li><strong>Saved set-UID/GID</strong>: a stash so a privileged program can drop the effective ID to the real one temporarily and later restore it. This is how a setuid helper does the risky bit as root, then runs as the calling user for everything else.</li>
+<li><strong>Supplementary groups</strong>: the extra groups from <code>/etc/group</code> you belong to; all are consulted in the group check.</li>
+<li><strong>fsuid</strong> (Linux-specific): the ID actually used for filesystem checks; historically split from euid for NFS servers.</li>
+</ul>
+
+<h3>set-user-ID and set-group-ID binaries</h3>
+<ul>
+<li>An executable with the <strong>setuid bit</strong> (<code>chmod u+s</code>, shows as <code>-rwsr-xr-x</code>) runs with its effective UID set to the file&rsquo;s <em>owner</em>, not the caller. <code>/usr/bin/passwd</code> is owned by root and setuid so an ordinary user can update <code>/etc/shadow</code> &mdash; but only through <code>passwd</code>&rsquo;s controlled logic.</li>
+<li>This is a major <strong>attack surface</strong>: any bug in a setuid-root program (buffer overflow, <code>$PATH</code> or environment trust, symlink race, unsanitised argument) can be a full local privilege escalation. Modern practice: minimise setuid binaries, use <strong>capabilities</strong> instead, or a privileged daemon reached over a socket.</li>
+<li><strong>setgid</strong> on a <em>directory</em> means new files inherit the directory&rsquo;s group (useful for shared project trees). The <strong>sticky bit</strong> on a world-writable directory (<code>/tmp</code>, shown <code>drwxrwxrwt</code>) restricts deletion to the file&rsquo;s owner.</li>
+<li>Linux ignores setuid/setgid bits on scripts (the <code>#!</code> line) for security &mdash; only real binaries.</li>
+</ul>
+
+<h3>Dropping privilege correctly</h3>
+<pre><code><span class="c">// a daemon started as root that must bind :80 then run as 'www'</span>
+<span class="c">// 1. do the privileged work first</span>
+bind(fd, &amp;addr80, ...);
+
+<span class="c">// 2. drop GROUPS, then gid, then uid -- order matters</span>
+setgroups(1, &amp;www_gid);          <span class="c">// clear supplementary groups</span>
+setgid(www_gid);                 <span class="c">// before setuid -- after setuid you lack the privilege to</span>
+setuid(www_uid);                 <span class="c">// permanent if no saved-setuid path back</span>
+
+<span class="c">// 3. verify it cannot be undone</span>
+<span class="k">if</span> (setuid(0) != -1) abort();     <span class="c">// regaining root must FAIL</span></code></pre>
+<p>Getting the order wrong (uid before gid) leaves the group privilege un-droppable. Forgetting <code>setgroups</code> leaves the process in <code>root</code>&rsquo;s supplementary groups.</p>
+
+<h3>POSIX capabilities: root, divided</h3>
+<ul>
+<li>Historically the kernel checked &ldquo;is euid 0?&rdquo;. <strong>Capabilities</strong> split that into ~40 independent privileges a process (and, via file capabilities, an executable) can hold or lack: <code>CAP_NET_BIND_SERVICE</code> (bind ports &lt; 1024), <code>CAP_NET_RAW</code> (raw sockets &mdash; <code>ping</code>), <code>CAP_SYS_ADMIN</code> (the sprawling catch-all), <code>CAP_CHOWN</code>, <code>CAP_DAC_OVERRIDE</code> (bypass file permission checks), <code>CAP_KILL</code>, <code>CAP_SETUID</code>&hellip;</li>
+<li>Each thread has capability sets: <strong>permitted</strong> (the ceiling), <strong>effective</strong> (checked now), <strong>inheritable</strong>/<strong>ambient</strong> (passed across <code>exec</code>), and a per-process <strong>bounding set</strong> (a hard cap).</li>
+<li>Instead of setuid-root, give a binary just what it needs: <code>setcap 'cap_net_bind_service=+ep' ./myserver</code> lets it bind port 80 with no other power. Containers use the bounding set to strip dangerous caps.</li>
+<li>Inspect with <code>getpcaps PID</code>, <code>capsh --print</code>, <code>getcap -r /usr/bin</code>.</li>
+</ul>
+
+<h3>Where identity comes from</h3>
+<ul>
+<li><strong><code>/etc/passwd</code></strong>: <code>name:x:uid:gid:gecos:home:shell</code> &mdash; world-readable, no password (the <code>x</code> is a placeholder).</li>
+<li><strong><code>/etc/shadow</code></strong>: the hashed passwords and ageing info &mdash; readable only by root.</li>
+<li><strong><code>/etc/group</code></strong>: group name &rarr; gid &rarr; member list.</li>
+<li><strong>NSS</strong> (<code>/etc/nsswitch.conf</code>): the switch that lets <code>getpwnam()</code> resolve users from LDAP, SSSD, systemd-userdb, etc., not just the flat files.</li>
+<li><strong>PAM</strong> handles <em>authentication</em> (verifying the password, MFA, account expiry) &mdash; separate from the NSS <em>identity</em> lookup.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Creds: <strong>real</strong> uid (who you are) / <strong>effective</strong> uid (checked for access) / <strong>saved</strong> uid (stash to restore) + supplementary groups.</li>
+<li>Permission check order: <strong>root &rarr; owner bits &rarr; group bits &rarr; other bits</strong>, first applicable class wins (not the most permissive).</li>
+<li><code>-rwsr-xr-x</code> = <strong>setuid</strong>: runs as file owner. <code>chmod u+s</code>. Big attack surface &mdash; prefer capabilities.</li>
+<li><strong>setgid on dir</strong> = new files inherit dir&rsquo;s group. <strong>sticky</strong> on <code>/tmp</code> (<code>t</code>) = only owner deletes their files.</li>
+<li>Linux ignores setuid on <code>#!</code> scripts.</li>
+<li>Drop privilege in order: <code>setgroups</code> &rarr; <code>setgid</code> &rarr; <code>setuid</code>; then verify <code>setuid(0)</code> fails.</li>
+<li><strong>Capabilities</strong> = root split ~40 ways. <code>cap_net_bind_service</code> (ports&lt;1024), <code>cap_net_raw</code>, <code>cap_sys_admin</code>, <code>cap_dac_override</code>. <code>setcap</code>, <code>getcap</code>, <code>getpcaps</code>, <code>capsh --print</code>.</li>
+<li>Identity: <code>/etc/passwd</code> (public) + <code>/etc/shadow</code> (root-only hashes) + <code>/etc/group</code>; <strong>NSS</strong> = lookup source, <strong>PAM</strong> = authentication.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>You own a file but <code>cat</code> says &ldquo;Permission denied.&rdquo; How is that possible?</dt>
+<dd>The permission check uses the <em>first</em> matching class, and since your UID is the file&rsquo;s owner, only the <strong>owner</strong> (user) bits apply &mdash; the group and other bits are never consulted for you. If the mode is something like <code>0044</code> (<code>---r--r--</code>), the owner bits are <code>---</code>, so you as owner have no access even though &ldquo;group&rdquo; and &ldquo;other&rdquo; can read. Fix it with <code>chmod u+r file</code> (you can always <code>chmod</code> a file you own). Being root bypasses the check entirely; being merely the owner does not.</dd>
+<dt>Why does <code>passwd</code> need to be setuid root, and what makes that safe(ish)?</dt>
+<dd>It edits <code>/etc/shadow</code>, which is mode <code>0000</code> / root-owned, so a normal user&rsquo;s process can&rsquo;t write it. The setuid bit makes <code>passwd</code> run with effective UID 0 regardless of who invokes it, so it <em>can</em> write the file. It&rsquo;s &ldquo;safe&rdquo; only because the program is small, audited, drops or confines privilege quickly, validates its input, ignores the environment, and only ever performs the one narrow operation (change the caller&rsquo;s own password hash). The risk is that <em>any</em> memory-safety or logic bug in a setuid-root binary is a local root exploit, which is why the trend is to replace them with capability-bounded helpers or a privileged D-Bus/socket service.</dd>
+<dt>What problem do capabilities solve that setuid doesn&rsquo;t?</dt>
+<dd>Granularity and blast radius. A setuid-root program has <em>all</em> of root&rsquo;s power for the whole time its effective UID is 0; a bug anywhere in it can do anything. Capabilities let you grant exactly one privilege: a web server that only needs to bind port 80 gets <code>cap_net_bind_service</code> and nothing else &mdash; a compromise of it can&rsquo;t read arbitrary files, load kernel modules, or change other users&rsquo; passwords. They also let you <em>remove</em> privilege from root: a container&rsquo;s process can run as UID 0 but with <code>cap_sys_admin</code>, <code>cap_net_raw</code>, etc. stripped from the bounding set, so &ldquo;root in the container&rdquo; is far weaker than real root.</dd>
+<dt>What&rsquo;s the difference between NSS and PAM?</dt>
+<dd><strong>NSS</strong> (Name Service Switch) answers <em>identity</em> questions: &ldquo;what UID is <code>alice</code>, what&rsquo;s her home directory and shell, what groups is she in&rdquo; &mdash; via <code>getpwnam</code>/<code>getgrnam</code>, with <code>/etc/nsswitch.conf</code> choosing backends (files, LDAP, SSSD, systemd). <strong>PAM</strong> (Pluggable Authentication Modules) answers <em>authentication</em> and <em>account</em> questions: &ldquo;is this the right password / OTP / fingerprint, is the account expired, is login allowed from this terminal at this hour, set up the session (mount home, set limits)&rdquo;. <code>login</code>, <code>sshd</code>, <code>sudo</code> call PAM to verify you and NSS to look you up; they&rsquo;re independent subsystems.</dd>
+<dt>A service dropping privileges calls <code>setuid(www)</code> then <code>setgid(www)</code>. What&rsquo;s wrong?</dt>
+<dd>The order is backwards. <code>setgid</code> requires privilege (<code>CAP_SETGID</code> / euid 0); once you&rsquo;ve called <code>setuid(www)</code> and given up UID 0, you no longer have the privilege to change the GID, so the process keeps running with <code>root</code>&rsquo;s GID (and, if <code>setgroups</code> wasn&rsquo;t called, root&rsquo;s supplementary groups). Correct sequence: <code>setgroups()</code> to drop supplementary groups, then <code>setgid(www)</code>, then <code>setuid(www)</code> last, and finally assert that <code>setuid(0)</code> now fails so you know the drop is irreversible.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>What do the three groups in <code>rwxr-xr--</code> mean?</summary><div class="answer-box">
+Owner (user) permissions <code>rwx</code>, group permissions <code>r-x</code>, other (everyone else) permissions <code>r--</code>. Each is read / write / execute.
+</div></details>
+<details class="answer-reveal"><summary>What does the sticky bit on <code>/tmp</code> do?</summary><div class="answer-box">
+On a world-writable directory it restricts deletion and renaming so a user can only remove files they own, even though anyone can create files there. Shown as <code>t</code> in <code>drwxrwxrwt</code>.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You want your Go/Rust web server to listen on port 443 without running as root. What are the options?</summary><div class="answer-box">
+(1) <strong>File capability</strong>: <code>setcap 'cap_net_bind_service=+ep' /path/to/server</code> &mdash; the binary can bind low ports and has no other privilege. Simple, but the cap must be re-applied on every rebuild/redeploy and doesn&rsquo;t survive some copy operations. (2) <strong>systemd</strong>: <code>AmbientCapabilities=CAP_NET_BIND_SERVICE</code> (plus <code>User=</code>), or let systemd do <strong>socket activation</strong> &mdash; systemd (as root) opens the listening socket and passes the fd to your unprivileged service. (3) Bind a high port (8443) and put a reverse proxy / load balancer / iptables REDIRECT in front. (4) Start as root, bind, then drop privileges (<code>setgroups</code>/<code>setgid</code>/<code>setuid</code>) &mdash; works but you own the drop logic. In a container, just map container-port 443 from host-port 443 and bind 443 inside where UID 0 is namespaced. Preferred for a standalone host: socket activation or the ambient capability via the service manager.
+</div></details>
+<details class="answer-reveal"><summary>Explain real vs effective vs saved UID with a concrete flow.</summary><div class="answer-box">
+Say user <code>alice</code> (UID 1000) runs <code>/usr/bin/mount</code>, which is setuid root. At <code>exec</code>: <strong>real UID</strong> = 1000 (alice launched it), <strong>effective UID</strong> = 0 (from the setuid bit &mdash; this is what permission checks use, so it can touch <code>/etc/mtab</code> and call <code>mount(2)</code>), <strong>saved set-UID</strong> = 0 (a copy of the effective UID at exec). A well-written setuid program can now call <code>seteuid(1000)</code> to run as alice for the non-critical parts (so a bug there can&rsquo;t abuse root), keeping 0 in the saved slot; when it needs privilege again it does <code>seteuid(0)</code>, which is permitted precisely because 0 is in the real-or-saved set. If instead it wants to drop root <em>permanently</em>, it calls <code>setuid(1000)</code>, which &mdash; when euid is 0 &mdash; sets all three (real, effective, saved) to 1000, so there is no path back. The real UID staying 1000 throughout is also why <code>alice</code> can send it signals and why accounting attributes it to her.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the privilege model for a multi-tenant job runner: untrusted user code must run with strong isolation, the supervisor needs enough power to set that up, and a compromise of one job must not reach another or the host.</summary><div class="answer-box">
+<strong>Supervisor.</strong> Runs as a dedicated non-root system user where possible; the few things that genuinely need privilege (creating namespaces, mounting, setting up cgroups, configuring veth) are granted as <em>specific capabilities</em> via systemd (<code>AmbientCapabilities=CAP_SYS_ADMIN CAP_NET_ADMIN CAP_SETUID CAP_SETGID</code>&hellip;) or by talking to a tiny, audited privileged helper over a unix socket rather than being setuid-root itself. Its bounding set drops everything it doesn&rsquo;t use. <strong>Per-job sandbox.</strong> For each job the supervisor: (1) creates fresh <strong>namespaces</strong> &mdash; user (so the job&rsquo;s &ldquo;root&rdquo; = an unprivileged host UID; UID/GID map to a per-job range so two jobs never share a host UID), mount (private root via pivot_root onto a read-only image + tmpfs scratch), PID, network (empty, or a locked-down veth), IPC, UTS, cgroup; (2) applies a <strong>cgroup v2</strong> subtree with hard <code>memory.max</code>, <code>cpu.max</code>, <code>pids.max</code>, IO limits, so a job can&rsquo;t starve others; (3) drops <strong>all capabilities</strong> from the job (empty bounding + inheritable sets) &mdash; even as namespaced root it can&rsquo;t load modules, mknod, or touch host devices; (4) installs a <strong>seccomp-bpf</strong> allowlist so only the syscalls the workload needs are reachable (kills whole classes of kernel-attack surface); (5) sets <code>no_new_privs</code> so no setuid binary inside can ever elevate; (6) runs the payload as a distinct unprivileged UID inside the user namespace, with <code>setgroups</code> cleared, on a private <code>/tmp</code>. <strong>Isolation between jobs.</strong> Distinct UID ranges + distinct mount trees + distinct network namespaces + per-job cgroup means no shared filesystem path, no shared SysV/POSIX IPC (separate IPC ns), no ability to signal or <code>ptrace</code> another job (separate PID ns, and <code>ptrace</code> gated by <code>no_new_privs</code>/YAMA). Job output is collected by the supervisor through a pipe/fd it created, never a shared file. <strong>Host protection.</strong> Read-only root image, tmpfs scratch wiped on exit, seccomp + dropped caps + user-ns mean a full RCE inside a job is confined to an unprivileged, resource-capped, namespaced context; escaping requires a kernel LPE, which you further mitigate by keeping the kernel patched and the seccomp filter tight. Optionally run each job in a microVM (Firecracker/gVisor) for a second boundary. <strong>Auditing.</strong> The supervisor logs the exact creds, caps, cgroup limits, and seccomp profile per job; capabilities and namespaces are inspected with <code>getpcaps</code>, <code>capsh</code>, <code>lsns</code>. Net: least privilege at every layer &mdash; supervisor has narrow capabilities not root, jobs have <em>no</em> capabilities and a syscall allowlist, and the kernel&rsquo;s namespace + cgroup + seccomp primitives provide the walls between tenants.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:linux:users-perms-caps -->
+
 
 <!-- TOPIC:linux:gdb-strace -->
 <section class="view topic" id="v-linux-gdb-strace" data-skill="linux">
@@ -22689,6 +22901,8 @@ Check <code>ulimit -c</code> (must be non-zero; systemd units default <code>Limi
 <p class="subtitle">Three lenses: source-level state, the kernel boundary, and library calls.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers three debuggers that answer different questions. <strong><code>gdb</code></strong> inspects your program&rsquo;s <em>internal</em> state &mdash; breakpoints, single-stepping, <code>backtrace</code>, examining variables and memory, and post-mortem analysis of a <strong>core dump</strong>. <strong><code>strace</code></strong> shows every <strong>system call</strong> a process makes (arguments, return values, errno, timing) &mdash; invaluable for &ldquo;which file/permission/network call failed&rdquo;. <strong><code>ltrace</code></strong> does the same for library calls. It covers attaching to a running process, filtering, and common recipes for hangs, crashes, and mysterious <code>ENOENT</code>s.</p>
+
 <h3>gdb &mdash; source-level debugging</h3>
 <pre><code>gdb ./prog          gdb -p PID           gdb ./prog core
 (gdb) break main / break file.c:42 / break func if x==0
@@ -22818,6 +23032,8 @@ Conditional: <code>break process_item if item->id == target</code>. Ignore count
 <p class="subtitle">Finding where the time and the memory actually go &mdash; sampling vs instrumentation.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the tools that tell you <em>where the time and memory go</em>. <strong><code>perf</code></strong> is Linux&rsquo;s sampling profiler built on hardware counters: <code>perf stat</code> (cycles, cache misses, branch mispredicts), <code>perf record</code>/<code>report</code>, and <strong>flame graphs</strong> for CPU hotspots &mdash; low overhead, whole-system. <strong>Valgrind</strong> instruments every instruction in a synthetic CPU: <strong>Memcheck</strong> finds leaks, invalid reads/writes and use-after-free; <strong>Cachegrind</strong>/<strong>Callgrind</strong> model the cache; <strong>Massif</strong> profiles the heap &mdash; precise but 10&ndash;50&times; slower. It covers when to reach for which.</p>
+
 <h3>Two philosophies</h3>
 <ul>
 <li><strong>Sampling</strong> (<code>perf</code>): interrupt the program N times/sec, record the stack. Low overhead (~1&ndash;5%), safe on production, statistical &mdash; shows where time is spent proportionally.</li>
@@ -45655,6 +45871,7 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["io-multiplexing", "I/O Multiplexing: select/poll/epoll", "Readiness vs completion, O(n) vs O(1), level vs edge triggered, epoll edge-case bugs."],
       ["mmap-shm",        "mmap & Shared Memory",                "File-backed vs anonymous, MAP_SHARED/PRIVATE, msync, shm_open, huge pages, zero-copy."],
       ["proc-sys",        "/proc, /sys, Environment & Limits",   "procfs/sysfs, /proc/PID, rlimits, ulimit, environ, getopt, exit codes."],
+      ["users-perms-caps","Users, Permissions & Capabilities",   "real/effective/saved UID, permission-check order, setuid binaries, sticky/setgid, dropping privilege, POSIX capabilities, NSS/PAM."],
       ["gdb-strace",      "Debugging: gdb, strace, ltrace",      "Breakpoints/backtrace/core dumps, syscall tracing, attaching, common recipes."],
       ["perf-valgrind",   "Profiling: perf, valgrind & friends", "perf stat/record/top, flame graphs, cache misses, valgrind memcheck/cachegrind."]
     ],
