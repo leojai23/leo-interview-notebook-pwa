@@ -33000,6 +33000,8 @@ Causes: (1) <strong>Alerting writes annotations on every state change</strong> &
 <p class="subtitle">Forwarders collect, indexers store and search, search heads coordinate &mdash; and clustering makes each tier resilient.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A Splunk deployment splits three jobs across tiers. <strong>Forwarders</strong> collect data at the source and ship it &mdash; a <strong>universal forwarder</strong> (UF) is a tiny agent that just forwards raw data; a <strong>heavy forwarder</strong> (HF) can parse and route first. <strong>Indexers</strong> parse incoming data into events, write them to time-bucketed indexes on disk, and do the heavy lifting of a search. <strong>Search heads</strong> take your SPL, distribute it to the indexers (map), and merge the results (reduce). This page covers those roles, <strong>indexer clustering</strong> (replication for HA) and <strong>search head clustering</strong>, and the bucket lifecycle (hot &rarr; warm &rarr; cold &rarr; frozen).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 90" role="img" aria-labelledby="d-splarch-t">
 <title id="d-splarch-t">Splunk tiers: forwarders collect, indexers store+search, search heads coordinate</title>
@@ -33173,6 +33175,27 @@ Auto load balancing on the forwarder switches target indexers on an interval or 
 <p class="subtitle">Inputs decide what to collect; <code>props.conf</code> / <code>transforms.conf</code> decide how it's parsed.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">&ldquo;Getting data in&rdquo; is where most Splunk problems are actually created. This page covers the <strong>inputs</strong> (files/dirs, network ports, scripts, HEC) and the four fields stamped on every event &mdash; <strong>index</strong> (which store), <strong>sourcetype</strong> (the format, drives parsing), <strong>source</strong> (where it came from), <strong>host</strong> &mdash; then the <strong>parsing pipeline</strong> on the indexer: line breaking (one event or many?), timestamp recognition and extraction, and any index-time transforms. It covers <code>props.conf</code> / <code>transforms.conf</code>, and why getting <code>sourcetype</code>, line-breaking and the timestamp right at ingest matters (you can&rsquo;t easily fix it later).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-splkdi-t">
+<title id="d-splkdi-t">Ingest pipeline: input to line-breaking to timestamp extraction to indexing; most fields are parsed later at search time</title>
+<rect class="d-box" x="10" y="26" width="70" height="22"/><text class="d-t-sm" x="45" y="40" text-anchor="middle">input</text>
+<rect class="d-box-soft" x="90" y="26" width="80" height="22"/><text class="d-t-sm" x="130" y="40" text-anchor="middle">line break</text>
+<rect class="d-box-soft" x="180" y="26" width="90" height="22"/><text class="d-t-sm" x="225" y="40" text-anchor="middle">timestamp</text>
+<rect class="d-box-soft" x="280" y="26" width="110" height="22"/><text class="d-t-sm" x="335" y="40" text-anchor="middle">sourcetype / transforms</text>
+<rect class="d-box-alt" x="400" y="26" width="110" height="22"/><text class="d-t-sm" x="455" y="40" text-anchor="middle">write to index</text>
+<path class="d-line" d="M80 37 L88 37" marker-end="url(#splkdi-ah)"/><path class="d-line" d="M170 37 L178 37" marker-end="url(#splkdi-ah)"/><path class="d-line" d="M270 37 L278 37" marker-end="url(#splkdi-ah)"/><path class="d-line" d="M390 37 L398 37" marker-end="url(#splkdi-ah)"/>
+<text class="d-t-sm" x="14" y="70">index-time: <tspan class="d-t-b">host, source, sourcetype, _time</tspan>, index &mdash; fixed once written, expensive to change.</text>
+<rect class="d-box" x="14" y="82" width="120" height="20"/><text class="d-t-sm" x="74" y="95" text-anchor="middle">search-time</text>
+<rect class="d-box-soft" x="150" y="82" width="200" height="20"/><text class="d-t-sm" x="250" y="95" text-anchor="middle">fields extracted from _raw when you search</text>
+<path class="d-line" d="M134 92 L148 92" marker-end="url(#splkdi-ah)"/>
+<defs><marker id="splkdi-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="128">Get <tspan class="d-t-b">sourcetype</tspan>, line-breaking and the <tspan class="d-t-b">timestamp</tspan> right at ingest &mdash; everything downstream depends on them and they can&rsquo;t be fixed retroactively without re-indexing.</text>
+</svg>
+<figcaption>The indexer stamps a few immutable fields and stores the raw event; the bulk of field parsing happens later at search time, which is why bad line-breaking or timestamps at ingest are so costly.</figcaption>
+</figure>
+
+
 <h3>The four "default fields" &mdash; get them right at ingest</h3>
 <ul>
 <li><strong>index</strong> &mdash; the storage bucket + the main access-control boundary. Choose per data category (retention, RBAC).</li>
@@ -33338,6 +33361,8 @@ Order of precedence per event: (1) If <code>DATETIME_CONFIG = CURRENT</code>, us
 <p class="subtitle">A search is a pipeline: retrieve events, then transform them command by command.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>SPL</strong> (Search Processing Language) is a pipeline: a search expression selects events, then each <code>|</code> command transforms the stream. This page covers the anatomy &mdash; the base search (terms are implicitly AND-ed, always constrain <strong>index</strong> and <strong>time</strong> first), field expressions (<code>status=500</code>), quoting and wildcards (and why a <em>leading</em> wildcard is slow), <code>TERM()</code> for segmented matching, and the <code>earliest</code>/<code>latest</code> time modifiers. The golden rule: <strong>filter as much as possible in the base search</strong> before the first <code>|</code>, because that part runs on the indexers.</p>
+
 <h3>The pipeline model</h3>
 <pre>index=web sourcetype=access_combined status=500   <-- base search (retrieval)
 | stats count by uri_path                          <-- transforming command
@@ -33499,6 +33524,26 @@ Subsearch: <code>index=web [ search index=threat earliest=-1d@d | stats count by
 <p class="subtitle">The transforming commands that turn a pile of events into a report.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers Splunk&rsquo;s core aggregation commands and the <strong>streaming vs transforming</strong> distinction. <strong>Streaming</strong> commands (<code>eval</code>, <code>where</code>, <code>rex</code>) process one event at a time and run distributed on the indexers. <strong>Transforming</strong> commands (<code>stats</code>, <code>chart</code>, <code>timechart</code>, <code>top</code>) turn events into a results table and force a reduce on the search head. It covers <code>stats</code> functions and <code>BY</code> clauses, <code>timechart</code> (stats over time, with <code>span</code>), <code>chart</code> (a second split dimension), and the <code>eventstats</code>/<code>streamstats</code> variants that add aggregates back onto each event.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 145" role="img" aria-labelledby="d-splkst-t">
+<title id="d-splkst-t">Streaming commands run on indexers per-event; transforming commands force a reduce on the search head</title>
+<rect class="d-box" x="14" y="24" width="120" height="40" rx="4"/><text class="d-t-b" x="74" y="38" text-anchor="middle">indexers</text><text class="d-t-sm" x="74" y="52" text-anchor="middle">search + streaming</text>
+<text class="d-t-mono d-t-sm" x="150" y="34">search index=web status=500</text>
+<text class="d-t-mono d-t-sm" x="150" y="50">| rex ...  | eval ...  | where ...</text>
+<text class="d-t-sm" x="150" y="64">&mdash; per event, distributed</text>
+<path class="d-line" d="M134 44 L340 44" marker-end="url(#splkst-ah)"/>
+<rect class="d-box-alt" x="344" y="24" width="120" height="40" rx="4"/><text class="d-t-b" x="404" y="38" text-anchor="middle">search head</text><text class="d-t-sm" x="404" y="52" text-anchor="middle">reduce / merge</text>
+<text class="d-t-mono d-t-sm" x="150" y="92">| timechart span=5m count BY host</text>
+<text class="d-t-sm" x="150" y="106">transforming &rarr; events become a results table (runs on the SH)</text>
+<path class="d-line" d="M340 88 C 380 88, 404 74, 404 66" marker-end="url(#splkst-ah)"/>
+<defs><marker id="splkst-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="132">Put filtering and <tspan class="d-t-mono">eval</tspan>/<tspan class="d-t-mono">rex</tspan> <tspan class="d-t-b">before</tspan> the first transforming command so indexers shed load; <tspan class="d-t-mono">eventstats</tspan>/<tspan class="d-t-mono">streamstats</tspan> add aggregates back per event.</text>
+</svg>
+<figcaption>Streaming commands (<code>eval</code>, <code>rex</code>, <code>where</code>) parallelise across indexers; a transforming command (<code>stats</code>, <code>timechart</code>, <code>top</code>) collapses events into a table on the search head &mdash; do as much filtering as possible before it.</figcaption>
+</figure>
+
+
 <h3>The three</h3>
 <table>
 <tr><th>Command</th><th>Output shape</th></tr>
@@ -33650,6 +33695,8 @@ Sort ascending by user then time, then use <code>streamstats</code> to reach bac
 <p class="subtitle">Compute new fields inline, or enrich events with data from CSV / KV Store tables.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers enriching and computing fields. <strong><code>eval</code></strong> creates or rewrites a field with an expression &mdash; arithmetic, string functions, <code>if()</code>/<code>case()</code>/<code>coalesce()</code>, <code>mvindex()</code> and friends; a saved <code>eval</code> becomes a <strong>calculated field</strong> that appears automatically. <strong>Lookups</strong> join external context onto events: a <strong>CSV lookup</strong> (small static table &mdash; asset owner, error-code &rarr; description), the <strong>KV Store</strong> (larger, writable), and <strong>automatic lookups</strong> that apply at search time without an explicit <code>| lookup</code>. External/scripted lookups call out to code.</p>
+
 <h3><code>eval</code></h3>
 <pre>| eval kb = bytes/1024
 | eval status_class = case(status&gt;=500,"server", status&gt;=400,"client", status&gt;=300,"redirect", 1==1,"ok")
@@ -33795,6 +33842,8 @@ Use a KV Store collection (better than CSV for continual growth and concurrent w
 <p class="subtitle">Turning raw text into fields &mdash; at search time (flexible) or index time (rare, costly).</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Splunk extracts some fields at index time but most at <strong>search time</strong> &mdash; parsed from the raw event when you run the search &mdash; which keeps indexing fast and lets you add fields retroactively. This page covers that trade-off, the <strong>field extractor</strong> UI, delimiter-based extraction (<code>KV</code>, CSV, JSON auto-extraction), and <strong><code>rex</code></strong> &mdash; inline regular-expression extraction with named capture groups (<code>| rex "user=(?&lt;user&gt;\w+)"</code>) &mdash; plus persistent search-time extractions via <code>EXTRACT</code>/<code>REPORT</code> in <code>props.conf</code>, and handling multivalue fields.</p>
+
 <h3>Search-time vs index-time extraction</h3>
 <table>
 <tr><th></th><th>Search-time (default, preferred)</th><th>Index-time (rare)</th></tr>
@@ -33940,6 +33989,24 @@ No &mdash; it applies to existing data immediately.
 <p class="subtitle">Filter early, reduce data before the search head, and use the tsidx when you can.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A slow Splunk search is almost always doing work too late in the pipeline. This page covers the levers: make the base search <strong>dense</strong> not sparse (constrain <code>index</code>, time, and <code>sourcetype</code>; add specific terms), <strong>filter before the first <code>|</code></strong> so the indexers discard events you don&rsquo;t want, avoid <strong>leading wildcards</strong> and needless <code>rex</code> on huge event sets, pick the right <strong>search mode</strong> (fast / smart / verbose), use <strong><code>tstats</code></strong> against indexed fields or accelerated data models for order-of-magnitude speedups, and read the <strong>Job Inspector</strong> to see where time actually went.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 140" role="img" aria-labelledby="d-splkso-t">
+<title id="d-splkso-t">Filter-early funnel: constrain index/time/sourcetype and terms in the base search so little data reaches later commands</title>
+<path class="d-line-soft" d="M20 24 L500 24 L410 60 L110 60 Z"/>
+<text class="d-t-sm" x="260" y="20" text-anchor="middle">all events</text>
+<text class="d-t-mono d-t-sm" x="260" y="40" text-anchor="middle">index=web sourcetype=access_combined status=500 uri="/pay*"</text>
+<text class="d-t-sm" x="260" y="55" text-anchor="middle">base search &mdash; runs on indexers, before the first |</text>
+<rect class="d-box" x="150" y="70" width="220" height="18"/><text class="d-t-mono d-t-sm" x="260" y="83" text-anchor="middle">| rex | eval | stats  (small input now)</text>
+<path class="d-line" d="M260 60 L260 68" marker-end="url(#splkso-ah)"/>
+<defs><marker id="splkso-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="108"><tspan class="d-t-b">Dense</tspan> search (many matches per scanned event) is efficient; <tspan class="d-t-b">sparse</tspan> (rare term, huge scan) or a <tspan class="d-t-b">leading wildcard</tspan> (<tspan class="d-t-mono">* error</tspan>) defeats the index.</text>
+<text class="d-t-sm" x="14" y="128">For counts/aggregates over indexed fields, <tspan class="d-t-mono">| tstats</tspan> on an accelerated data model is often 10&ndash;100x faster. Job Inspector shows where time went.</text>
+</svg>
+<figcaption>Every term and constraint you add to the base search (before the first <code>|</code>) is applied by the indexers; anything after the pipe runs on whatever survived. Narrow first, transform second.</figcaption>
+</figure>
+
+
 <h3>The four levers, in order of impact</h3>
 <ol>
 <li><strong>Time range</strong> &mdash; the single biggest filter. Every extra day is more buckets scanned. Default dashboards to the smallest useful window.</li>
@@ -34105,6 +34172,8 @@ The time range.
 <p class="subtitle">A schema over your events, an acceleration that makes it fast, and a shared vocabulary so content is portable.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>data model</strong> is a hierarchical, normalised schema over your raw data (e.g. &ldquo;Web&rdquo; &rarr; &ldquo;request&rdquo; with fields like <code>status</code>, <code>uri_path</code>). <strong>Accelerating</strong> one builds a background summary (a TSIDX) so <strong><code>tstats</code></strong> queries against it return in seconds over huge time ranges. This page covers building/accelerating models, <code>tstats</code> and <code>pivot</code>, and the <strong>CIM</strong> (Common Information Model) &mdash; Splunk&rsquo;s standard field names so that content (dashboards, correlation searches, the security apps) works across any source that is CIM-compliant.</p>
+
 <h3>Data models</h3>
 <ul>
 <li>A <strong>hierarchical schema</strong> defined on top of raw events: a tree of <strong>datasets</strong> (formerly "objects"), each with <strong>constraints</strong> (a search that selects its events) and <strong>fields</strong> (extracted / eval / lookup / geoip).</li>
@@ -34255,6 +34324,8 @@ Data model structure and field names (and tags) across data sources.
 <p class="subtitle">A saved search plus a schedule plus a trigger condition plus an action.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>report</strong> is a saved search; an <strong>alert</strong> is a saved search plus a <strong>trigger condition</strong> and <strong>actions</strong>. This page covers <strong>scheduled</strong> alerts (cron, run over a window &mdash; the common case) vs <strong>real-time</strong> alerts (continuous, expensive &mdash; avoid), trigger conditions (per-result or on a count/threshold), <strong>throttling</strong> to suppress repeat notifications, alert actions (email, webhook, script, notable event), and <strong>summary indexing</strong> &mdash; periodically rolling up expensive searches into a small index so dashboards query the summary, not the raw data. It also covers schedule <strong>skew</strong> to spread load.</p>
+
 <h3>The building block: the saved search</h3>
 <p>A <strong>report</strong> = a saved search you re-run/share. Add a <strong>schedule</strong> and it
 runs on a cron; add a <strong>trigger condition</strong> + <strong>alert actions</strong> and it's an
@@ -34428,6 +34499,8 @@ Real-time.
 <p class="subtitle">Building interactive views, and controlling who can see which data and knowledge objects.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers presenting results and controlling access. Dashboards come in two flavours: <strong>Classic (Simple XML)</strong> and the newer <strong>Dashboard Studio</strong>; both use <strong>tokens</strong> (<code>$field$</code>) set by inputs and <strong>drilldown</strong> so clicking a chart passes context to another panel or dashboard, and a <strong>base search</strong> shared by several panels to avoid re-querying. The RBAC half covers <strong>roles</strong> (capabilities + index access + search filters), users, and <strong>knowledge objects</strong> (field extractions, lookups, macros, event types, tags) &mdash; their sharing scope (private / app / global) and how <strong>apps</strong> package them.</p>
+
 <h3>Two dashboard frameworks</h3>
 <table>
 <tr><th>Classic (Simple XML)</th><th>Dashboard Studio</th></tr>
