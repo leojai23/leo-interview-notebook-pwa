@@ -9065,6 +9065,8 @@ You can write the object parameter explicitly: <code>template&lt;class Self&gt; 
 <p class="subtitle">Everyone can name them. The interview is whether you can distinguish abstraction from encapsulation.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Object-oriented programming organises code around <strong>objects</strong> &mdash; bundles of data and the behaviour that acts on it &mdash; and is usually summarised by four ideas. <strong>Abstraction</strong>: expose a meaningful interface, hide the mechanism. <strong>Encapsulation</strong>: keep an object&rsquo;s data private and guard it behind methods that maintain its invariants. <strong>Inheritance</strong>: derive a specialised type from a general one to reuse and extend it. <strong>Polymorphism</strong>: call the same operation on different types and get type-appropriate behaviour. This page draws the real distinctions between them (abstraction vs encapsulation especially) and shows where each earns its keep and where it is overused.</p>
+
 <h3>Abstraction</h3>
 <p>Exposing <em>what</em> something does, hiding <em>how</em>. You model a problem with the relevant
 essentials and ignore the rest. A <code>List</code> interface (<code>add</code>, <code>get</code>, <code>size</code>) is an
@@ -9243,6 +9245,33 @@ Inheritance creates subtypes; polymorphism relies on being able to use a subtype
 <p class="subtitle">Blueprint vs instance, and who is allowed to touch what.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>class</strong> is a blueprint &mdash; it declares what data every instance holds and what operations it supports; an <strong>object</strong> is one concrete instance with its own copy of that data. This page covers that distinction, the hidden <code>this</code>/<code>self</code> reference every method receives, <strong>static</strong> (class-level) members that belong to the type rather than any instance, and the <strong>access specifiers</strong> &mdash; <code>public</code> (part of the interface), <code>private</code> (implementation detail, the default for encapsulation), <code>protected</code> (visible to subclasses) &mdash; plus <code>friend</code> and why tight access control is what makes encapsulation real rather than a convention.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 180" role="img" aria-labelledby="d-oopsca-t">
+<title id="d-oopsca-t">One class blueprint produces many objects each with their own instance data; static data is shared; access bands</title>
+<rect class="d-box-alt" x="14" y="20" width="120" height="60" rx="4"/><text class="d-t-b" x="74" y="36" text-anchor="middle">class Account</text>
+<text class="d-t-mono d-t-sm" x="20" y="52">balance  (instance)</text>
+<text class="d-t-mono d-t-sm" x="20" y="66">+ count  (static)</text>
+<text class="d-t-mono d-t-sm" x="20" y="78">deposit(), this</text>
+<rect class="d-box-soft" x="180" y="18" width="90" height="28"/><text class="d-t-mono d-t-sm" x="225" y="30" text-anchor="middle">a1</text><text class="d-t-mono d-t-sm" x="225" y="42" text-anchor="middle">balance=50</text>
+<rect class="d-box-soft" x="180" y="52" width="90" height="28"/><text class="d-t-mono d-t-sm" x="225" y="64" text-anchor="middle">a2</text><text class="d-t-mono d-t-sm" x="225" y="76" text-anchor="middle">balance=999</text>
+<rect class="d-box-soft" x="180" y="86" width="90" height="28"/><text class="d-t-mono d-t-sm" x="225" y="98" text-anchor="middle">a3</text><text class="d-t-mono d-t-sm" x="225" y="110" text-anchor="middle">balance=0</text>
+<path class="d-line" d="M134 40 L178 32" marker-end="url(#oopsca-ah)"/><path class="d-line" d="M134 50 L178 64" marker-end="url(#oopsca-ah)"/><path class="d-line" d="M134 60 L178 98" marker-end="url(#oopsca-ah)"/>
+<text class="d-t-sm" x="200" y="128">each object: own copy of instance fields + hidden <tspan class="d-t-mono">this</tspan></text>
+<rect class="d-box" x="330" y="86" width="150" height="24"/><text class="d-t-sm" x="405" y="101" text-anchor="middle">count = 3  (one, shared)</text>
+<path class="d-line d-dash" d="M134 70 C 240 150, 340 120, 400 110" marker-end="url(#oopsca-ah)"/>
+<defs><marker id="oopsca-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-b" x="330" y="24">access from outside &rarr;</text>
+<text class="d-t-sm" x="330" y="40"><tspan class="d-t-mono">public</tspan>: anyone (the interface)</text>
+<text class="d-t-sm" x="330" y="54"><tspan class="d-t-mono">protected</tspan>: this class + subclasses</text>
+<text class="d-t-sm" x="330" y="68"><tspan class="d-t-mono">private</tspan>: this class only (default)</text>
+<text class="d-t-sm" x="14" y="152">A class is a type/blueprint; an object is an instance with identity and its own state. <tspan class="d-t-mono">static</tspan> members belong to the class, not any instance.</text>
+<text class="d-t-sm" x="14" y="172">Encapsulation = data <tspan class="d-t-mono">private</tspan>, mutated only through methods that keep invariants true. <tspan class="d-t-mono">friend</tspan> grants one other unit access.</text>
+</svg>
+<figcaption>Instance fields are per-object; static fields and methods are per-class. Access specifiers are what make &ldquo;private&rdquo; enforced rather than a naming convention.</figcaption>
+</figure>
+
+
 <h3>Class vs object</h3>
 <p>A <strong>class</strong> is a type &mdash; a blueprint describing state (fields) and behaviour (methods).
 An <strong>object</strong> (instance) is a concrete value of that type occupying memory, with its own copy
@@ -9385,6 +9414,8 @@ Nested/inner classes (Java, C++, C#) can access the enclosing class's private me
 <p class="subtitle">Creation, initialisation, and clean-up &mdash; and when each actually happens.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Every object has a <strong>lifecycle</strong>: it is allocated, its <strong>constructor</strong> runs to establish its invariants, it lives and is used, then its <strong>destructor</strong>/finaliser runs to release what it owns and it is deallocated. This page covers the constructor family (default, parameterised, copy/move), <strong>initialisation order</strong> (base before derived, members in declaration order &mdash; a classic bug source), when destructors run and in what order (reverse of construction), and why a virtual destructor matters when deleting through a base pointer. It also contrasts deterministic destruction (C++ RAII) with garbage-collected finalisation (Java/C#).</p>
+
 <h3>Kinds of constructor</h3>
 <ul>
 <li><strong>Default</strong> &mdash; no arguments. Often compiler-generated; suppressed once you declare any other constructor.</li>
@@ -9531,6 +9562,8 @@ Allocation and initialisation are separate calls, so between them there's a vali
 <p class="subtitle">is-a done right, and why multiple inheritance of state is a minefield.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Inheritance</strong> models an &ldquo;is-a&rdquo; relationship: a <code>Manager</code> is an <code>Employee</code>, so it inherits the employee&rsquo;s data and behaviour and adds or overrides some. This page covers the forms &mdash; single, multilevel, hierarchical, and <strong>multiple</strong> inheritance &mdash; the ambiguity multiple inheritance creates, and the <strong>diamond problem</strong>: when two base classes share a common ancestor, a naive design gives the grandchild two copies of the ancestor&rsquo;s state. It covers how languages resolve this (C++ <code>virtual</code> inheritance, Java&rsquo;s single-inheritance + interfaces, mixins/traits) and why &ldquo;is-a&rdquo; should be used sparingly.</p>
+
 <h3>Forms of inheritance</h3>
 <table>
 <tr><th>Form</th><th>Shape</th></tr>
@@ -9670,6 +9703,8 @@ Each object with a virtual base stores a hidden pointer (or offset in the vtable
 <p class="subtitle">Static binding, dynamic binding, and where the decision is made.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Polymorphism</strong> &mdash; &ldquo;many forms&rdquo; &mdash; means one name denotes different behaviour depending on type. This page separates the two kinds. <strong>Compile-time</strong> (static) polymorphism resolves the call while compiling: function/operator overloading and templates/generics &mdash; zero runtime cost, but the type must be known then. <strong>Runtime</strong> (dynamic) polymorphism resolves the call while running, via <strong>virtual dispatch</strong>: a base-class pointer invokes the derived override, looked up through a per-class <strong>vtable</strong>. It covers how the vtable works, its cost (an indirection, no inlining), and when to reach for each.</p>
+
 <h3>Compile-time (static) polymorphism</h3>
 <ul>
 <li><strong>Function/operator overloading</strong> &mdash; the compiler picks an overload from the argument types.</li>
@@ -9814,6 +9849,8 @@ Most OO languages dispatch on one receiver only. When behaviour depends on <em>t
 <p class="subtitle">Three similar-looking things with completely different resolution rules.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Three similar-looking mechanisms that behave very differently. <strong>Overloading</strong>: several functions share a name but differ in parameters; the compiler picks one by the argument types (compile-time). <strong>Overriding</strong>: a subclass replaces a <code>virtual</code> base method with the same signature; the call dispatches to the object&rsquo;s actual type at runtime. <strong>Hiding</strong>: a subclass member with the same name as a non-virtual base member simply shadows it, and which one runs depends on the <em>static</em> type &mdash; usually a bug. This page covers signatures and the rules, covariant return types, <code>override</code>/<code>final</code>, and early vs late binding.</p>
+
 <h3>Overloading</h3>
 <p>Same method name, <strong>different parameter list</strong> (count or types), in the <em>same</em> scope.
 Chosen at <strong>compile time</strong> by the static types of the arguments. Return type alone can't
@@ -9962,6 +9999,8 @@ In C++ (and similarly Java for a different reason), declaring <em>any</em> membe
 <p class="subtitle">Two ways to say "implement this" &mdash; and when each is the right tool.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">An <strong>abstract class</strong> defines a partial type that cannot be instantiated on its own: it has at least one <strong>pure virtual</strong> (abstract) method that subclasses must implement, and may also carry shared state and concrete helpers. An <strong>interface</strong> is the pure form &mdash; only a contract of method signatures, no state &mdash; letting unrelated classes declare &ldquo;I can be used this way.&rdquo; This page covers both, when to choose an abstract base (shared implementation, single lineage) vs an interface (capability across a hierarchy, multiple implementations), and how languages express the distinction (C++ ABCs, Java <code>abstract</code> vs <code>interface</code>, default methods).</p>
+
 <h3>Abstract class</h3>
 <ul>
 <li>Can't be instantiated; may hold state, constructors, concrete methods, <em>and</em> abstract (unimplemented) methods.</li>
@@ -10123,6 +10162,8 @@ A fat abstract class (or interface) forces every subclass to deal with methods i
 <p class="subtitle">has-a relationships, ownership, and why "favour composition over inheritance" is the default advice.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Beyond &ldquo;is-a&rdquo; inheritance, objects relate by <strong>&ldquo;has-a&rdquo;</strong>. This page distinguishes <strong>association</strong> (an object uses another it doesn&rsquo;t own &mdash; independent lifetimes), <strong>aggregation</strong> (a whole references parts that can outlive it &mdash; a team and its players), and <strong>composition</strong> (the whole <em>owns</em> its parts and their lifetime is bound to it &mdash; a house and its rooms). It then covers the maxim <strong>&ldquo;favour composition over inheritance&rdquo;</strong>: why building behaviour by holding and delegating to collaborators is usually more flexible and less brittle than deep class hierarchies.</p>
+
 <h3>The three has-a strengths</h3>
 <table>
 <tr><th>Relationship</th><th>Meaning</th><th>Lifetime</th><th>UML</th></tr>
@@ -10257,6 +10298,8 @@ A mixin/trait bundles behaviour (and sometimes requires certain abstract members
 <p class="subtitle">Five principles for classes that stay changeable, plus the two metrics they optimise.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>SOLID</strong> is five design principles for keeping object-oriented code changeable: <strong>S</strong>ingle Responsibility (one reason to change per module), <strong>O</strong>pen/Closed (extend without modifying), <strong>L</strong>iskov Substitution (a subtype must be usable wherever its base is, without surprises), <strong>I</strong>nterface Segregation (many small client-specific interfaces, not one fat one), <strong>D</strong>ependency Inversion (depend on abstractions, inject the concretes). This page covers each with a violation and a fix, and the underlying vocabulary &mdash; <strong>coupling</strong> (how much modules depend on each other), <strong>cohesion</strong> (how focused a module is), the Law of Demeter, and DRY/KISS/YAGNI.</p>
+
 <h3>SOLID</h3>
 <table>
 <tr><th></th><th>Principle</th><th>In practice</th></tr>
@@ -10418,6 +10461,36 @@ Each principle is a response to a real pain (ripple changes, edit-to-extend, bro
 <p class="subtitle">The handful that actually come up &mdash; what problem each solves, and how each is misused.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Design patterns</strong> are named, reusable solutions to recurring design problems &mdash; a shared vocabulary (&ldquo;use a Strategy here&rdquo;) more than copy-paste code. This page covers the most interview-relevant ones grouped by intent: <strong>creational</strong> (Singleton, Factory Method, Abstract Factory, Builder), <strong>structural</strong> (Adapter, Decorator, Facade, Proxy, Composite), and <strong>behavioural</strong> (Observer, Strategy, Template Method, Command, Iterator, State). For each: the problem it solves, a sketch, and &mdash; important &mdash; how it is commonly <em>misused</em> (Singleton as a global, pattern-for-pattern&rsquo;s-sake over-engineering).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 180" role="img" aria-labelledby="d-oopsdp-t">
+<title id="d-oopsdp-t">GoF patterns grouped by intent: creational, structural, behavioural</title>
+<rect class="d-box-alt" x="10" y="16" width="160" height="150" rx="4"/><text class="d-t-b" x="90" y="32" text-anchor="middle">Creational</text>
+<text class="d-t-sm" x="90" y="46" text-anchor="middle">how objects are made</text>
+<text class="d-t-sm" x="18" y="66">Singleton (one instance)</text>
+<text class="d-t-sm" x="18" y="82">Factory Method</text>
+<text class="d-t-sm" x="18" y="98">Abstract Factory (families)</text>
+<text class="d-t-sm" x="18" y="114">Builder (step-by-step)</text>
+<text class="d-t-sm" x="18" y="130">Prototype (clone)</text>
+<rect class="d-box-alt" x="180" y="16" width="160" height="150" rx="4"/><text class="d-t-b" x="260" y="32" text-anchor="middle">Structural</text>
+<text class="d-t-sm" x="260" y="46" text-anchor="middle">how objects compose</text>
+<text class="d-t-sm" x="188" y="66">Adapter (fit an interface)</text>
+<text class="d-t-sm" x="188" y="82">Decorator (wrap, add)</text>
+<text class="d-t-sm" x="188" y="98">Facade (simplify)</text>
+<text class="d-t-sm" x="188" y="114">Proxy (stand-in)</text>
+<text class="d-t-sm" x="188" y="130">Composite (tree)</text>
+<rect class="d-box-alt" x="350" y="16" width="160" height="150" rx="4"/><text class="d-t-b" x="430" y="32" text-anchor="middle">Behavioural</text>
+<text class="d-t-sm" x="430" y="46" text-anchor="middle">how objects interact</text>
+<text class="d-t-sm" x="358" y="66">Strategy (swap algorithm)</text>
+<text class="d-t-sm" x="358" y="82">Observer (publish/notify)</text>
+<text class="d-t-sm" x="358" y="98">Template Method</text>
+<text class="d-t-sm" x="358" y="114">Command / State</text>
+<text class="d-t-sm" x="358" y="130">Iterator</text>
+</svg>
+<figcaption>Patterns are a shared vocabulary for designs that recur &mdash; not a checklist. Reaching for one where a plain function or a field would do is itself an anti-pattern.</figcaption>
+</figure>
+
+
 <h3>Creational</h3>
 <table>
 <tr><th>Pattern</th><th>Solves</th><th>Watch out</th></tr>
@@ -10551,6 +10624,145 @@ Enum + switch: all transitions visible in one place, trivial to serialize the st
 </div></div>
 </section>
 <!-- /TOPIC:oops:design-patterns -->
+<!-- TOPIC:oops:when-oop-hurts -->
+<section class="view topic" id="v-oops-when-oop-hurts" data-skill="oops">
+<div class="layout">
+<nav class="sidebar" data-sidebar="oops"></nav>
+<div class="topic-body">
+<h1>When OOP Hurts: Over-Engineering &amp; Alternatives</h1>
+<p class="subtitle">Knowing where object-orientation stops paying off &mdash; and what to reach for instead &mdash; is a senior-level signal.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Every technique in this skill has a cost, and applied reflexively they produce code that is <em>harder</em> to change, not easier. This page covers the recognisable failure modes &mdash; deep inheritance hierarchies, premature abstraction, the <strong>anemic domain model</strong>, <strong>God objects</strong>, and the &ldquo;everything must be a class&rdquo; reflex &mdash; why each hurts, and the alternatives: plain functions and modules, <strong>composition</strong> and small interfaces, <strong>data-oriented design</strong> for performance-critical code, and functional-style transformations over data. The goal is not &ldquo;OOP bad&rdquo; but knowing when a simpler tool fits.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 170" role="img" aria-labelledby="d-oopsh-t">
+<title id="d-oopsh-t">A deep rigid inheritance tree versus a shallow object composed of small collaborators</title>
+<text class="d-t-b" x="14" y="14">deep hierarchy: change high up ripples to every leaf</text>
+<rect class="d-box" x="120" y="20" width="90" height="16"/><text class="d-t-sm" x="165" y="32" text-anchor="middle">Entity</text>
+<rect class="d-box" x="120" y="42" width="90" height="16"/><text class="d-t-sm" x="165" y="54" text-anchor="middle">Character</text>
+<rect class="d-box" x="120" y="64" width="90" height="16"/><text class="d-t-sm" x="165" y="76" text-anchor="middle">Humanoid</text>
+<rect class="d-box-alt" x="70" y="86" width="90" height="16"/><text class="d-t-sm" x="115" y="98" text-anchor="middle">Player</text>
+<rect class="d-box-alt" x="180" y="86" width="90" height="16"/><text class="d-t-sm" x="225" y="98" text-anchor="middle">NPC</text>
+<path class="d-line-soft" d="M165 36 L165 42"/><path class="d-line-soft" d="M165 58 L165 64"/><path class="d-line-soft" d="M165 80 L115 86"/><path class="d-line-soft" d="M165 80 L225 86"/>
+<text class="d-t-b" x="320" y="14">composition: mix in only what applies</text>
+<rect class="d-box-soft" x="330" y="30" width="120" height="18"/><text class="d-t-sm" x="390" y="43" text-anchor="middle">Player</text>
+<rect class="d-box" x="300" y="58" width="80" height="16"/><text class="d-t-sm" x="340" y="70" text-anchor="middle">Health</text>
+<rect class="d-box" x="386" y="58" width="80" height="16"/><text class="d-t-sm" x="426" y="70" text-anchor="middle">Inventory</text>
+<rect class="d-box" x="343" y="80" width="90" height="16"/><text class="d-t-sm" x="388" y="92" text-anchor="middle">InputControl</text>
+<path class="d-line" d="M370 48 L340 58" marker-end="url(#oopsh-ah)"/><path class="d-line" d="M410 48 L426 58" marker-end="url(#oopsh-ah)"/><path class="d-line" d="M390 48 L388 80" marker-end="url(#oopsh-ah)"/>
+<defs><marker id="oopsh-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="126">Inheritance fixes the taxonomy at compile time; real requirements cut across it (a flying, non-attacking NPC).</text>
+<text class="d-t-sm" x="14" y="146">Composition lets each object hold exactly the capabilities it needs and swap them at runtime &mdash; the ECS pattern generalises this.</text>
+<text class="d-t-sm" x="14" y="164">Rule of thumb: reach for inheritance only for a genuine, stable &ldquo;is-a&rdquo;; otherwise hold a collaborator.</text>
+</svg>
+<figcaption>Most &ldquo;we need to refactor the hierarchy&rdquo; pain comes from modelling with <code>is-a</code> what was really <code>has-a</code>.</figcaption>
+</figure>
+
+<h3>Deep or wide inheritance hierarchies</h3>
+<ul>
+<li><strong>Symptom.</strong> Four-plus levels of subclasses; a change to a base class breaks distant leaves; new requirements don&rsquo;t fit the tree (&ldquo;a <code>Penguin</code> is a <code>Bird</code> but can&rsquo;t <code>fly()</code>&rdquo;); behaviour is spread across the chain so you can&rsquo;t understand a leaf without reading all its ancestors.</li>
+<li><strong>Why it hurts.</strong> Inheritance is the tightest coupling available &mdash; a subclass depends on its base&rsquo;s implementation, not just its interface (the fragile base class problem). The taxonomy is fixed at compile time, but requirements cut across it.</li>
+<li><strong>Fix.</strong> Flatten to one or two levels; replace &ldquo;kinds of X&rdquo; subclasses with an X that <em>holds</em> a strategy/policy object; use interfaces for the capabilities. If types genuinely vary along several independent axes, that is composition (or an entity-component design), not a class tree.</li>
+</ul>
+
+<h3>Premature and speculative abstraction</h3>
+<ul>
+<li><strong>Symptom.</strong> An interface with exactly one implementation; a factory that only ever makes one thing; layers of indirection (<code>Manager</code>, <code>Handler</code>, <code>Provider</code>, <code>Strategy</code>) added &ldquo;for flexibility&rdquo; that never arrived; you must open six files to follow one call.</li>
+<li><strong>Why it hurts.</strong> Every abstraction has a carrying cost &mdash; a thing to name, learn, navigate, and keep honest &mdash; paid now against a benefit that is hypothetical. Wrong abstractions are harder to remove than duplication is to consolidate (&ldquo;prefer duplication over the wrong abstraction&rdquo;).</li>
+<li><strong>Fix.</strong> <strong>YAGNI</strong>: write the concrete thing; extract an interface when the <em>second</em> real implementation appears and the shape is known. Inline indirections that only forward.</li>
+</ul>
+
+<h3>Anemic domain model</h3>
+<ul>
+<li><strong>Symptom.</strong> Classes that are just bags of getters/setters with no behaviour, and all the logic living in &ldquo;service&rdquo; classes that operate on them from outside.</li>
+<li><strong>Why it hurts.</strong> It is procedural code wearing objects &mdash; you pay OOP&rsquo;s ceremony (classes, mappers, DTOs) and get none of its benefit (encapsulated invariants). Data and the rules that keep it valid are separated, so invariants get violated.</li>
+<li><strong>Fix.</strong> Put the behaviour that enforces an invariant on the object that owns the data (<code>account.withdraw(amount)</code>, not <code>service.withdraw(account, amount)</code>). Or &mdash; equally valid &mdash; embrace a data + functions split deliberately (see below), just don&rsquo;t do it by accident.</li>
+</ul>
+
+<h3>God objects and feature envy</h3>
+<ul>
+<li><strong>Symptom.</strong> One class of 2000 lines that touches everything (<code>Application</code>, <code>Manager</code>, <code>Utils</code>); methods that spend all their time reaching into <em>another</em> object&rsquo;s data (feature envy).</li>
+<li><strong>Why it hurts.</strong> No boundaries means no unit that can be understood, tested, or reused in isolation; every change risks the whole thing.</li>
+<li><strong>Fix.</strong> Split by responsibility (SRP); move a method to the class whose data it uses; extract cohesive clusters of fields+methods into their own types.</li>
+</ul>
+
+<h3>&ldquo;Everything must be a class&rdquo; &mdash; the Kingdom of Nouns</h3>
+<ul>
+<li><strong>Symptom.</strong> <code>StringUtils</code>, <code>PriceCalculatorFactory</code>, a class to hold one function; simple scripts turned into class hierarchies; a verb (<code>calculateTax</code>) forced to become a noun object.</li>
+<li><strong>Why it hurts.</strong> Ceremony without payoff; a free function in a module is simpler to find, test, and call than a stateless class with one method.</li>
+<li><strong>Fix.</strong> Use the plain tools the language already has: <strong>free functions</strong> and <strong>modules/namespaces</strong> for stateless behaviour; a <strong>struct/record</strong> for plain data; reserve classes for when you genuinely have state + invariants + identity.</li>
+</ul>
+
+<h3>Alternatives worth knowing</h3>
+<ul>
+<li><strong>Procedural / modular</strong>: functions grouped in modules operating on transparent data structures &mdash; great for scripts, data pipelines, and code with little inherent state.</li>
+<li><strong>Functional style</strong>: immutable data transformed by pure functions (<code>map</code>/<code>filter</code>/<code>reduce</code>, pipelines); fewer moving parts, trivial to test, no aliasing bugs.</li>
+<li><strong>Data-oriented design</strong>: lay data out for how it is <em>processed</em> (structure-of-arrays, contiguous memory) rather than as an object graph &mdash; large wins in games, simulation, and hot loops where cache behaviour dominates. OOP&rsquo;s pointer-chasing object graphs are cache-hostile.</li>
+<li><strong>Entity-Component-System</strong>: composition taken to its conclusion &mdash; entities are ids, components are plain data, systems are functions over components.</li>
+<li><strong>Where OOP still shines</strong>: GUIs and widgets, stateful protocol handlers, plugin systems, domain models with rich invariants, anything with a natural &ldquo;thing that has state and a small interface&rdquo; shape.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Deep inheritance</strong> &rarr; fragile base class, cross-cutting requirements don&rsquo;t fit. Flatten; compose; strategy objects.</li>
+<li><strong>Premature abstraction</strong> (interface with one impl, speculative factories) &rarr; YAGNI; extract on the second real case. &ldquo;Duplication is cheaper than the wrong abstraction.&rdquo;</li>
+<li><strong>Anemic model</strong> (getters/setters + external services) &rarr; move invariant-guarding behaviour onto the data&rsquo;s owner, or go data+functions on purpose.</li>
+<li><strong>God object / feature envy</strong> &rarr; SRP split; move method to the data it uses.</li>
+<li><strong>Kingdom of Nouns</strong> (a class per verb, <code>*Utils</code>, <code>*Manager</code>) &rarr; free functions + modules; structs for plain data.</li>
+<li><strong>Alternatives</strong>: procedural/modular, functional pipelines, data-oriented design (SoA, cache-friendly), ECS.</li>
+<li><strong>OOP still wins</strong>: GUIs, stateful handlers, plugins, rich domain models with invariants.</li>
+<li>Heuristic: class = <strong>state + invariants + identity</strong>. Missing all three? Use a function.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is the &ldquo;fragile base class&rdquo; problem?</dt>
+<dd>Because a subclass depends on <em>how</em> its base class is implemented (which methods call which, protected state, invariants), a change to the base that is perfectly valid in isolation &mdash; reordering internal calls, adding a call to another method &mdash; can silently break subclasses that overrode part of that behaviour. The base and its subclasses are coupled far more tightly than two classes communicating through an interface, and that coupling is invisible from the base class&rsquo;s own code. It is a core reason to prefer composition, where the collaborator is used only through its public interface.</dd>
+<dt>&ldquo;Favour composition over inheritance&rdquo; &mdash; does that mean never inherit?</dt>
+<dd>No. It means inheritance is the wrong <em>default</em>. Use inheritance when there is a genuine, stable &ldquo;is-a&rdquo; substitutability relationship (a subtype is usable everywhere the base is, per Liskov) and you want polymorphism over that hierarchy &mdash; e.g. <code>Shape</code> with <code>Circle</code>/<code>Square</code>, or a framework&rsquo;s <code>Stream</code> types. Use composition when you want to reuse behaviour (&ldquo;this object needs logging / retry / a cache&rdquo;), when the type varies along multiple independent axes, or when you might want to change the behaviour at runtime. Most everyday code reuse is the second case.</dd>
+<dt>When is an anemic domain model actually fine?</dt>
+<dd>When the &ldquo;objects&rdquo; really are just data in transit &mdash; DTOs at an API boundary, rows from a query, messages on a queue &mdash; and the meaningful logic is genuinely a transformation or an orchestration across several of them rather than an invariant on one. The anti-pattern is specifically when there <em>are</em> invariants (a balance that can&rsquo;t go negative, a state machine with legal transitions) but they live in external services where nothing stops another caller from mutating the object into an invalid state. If you deliberately choose a data + pure-functions design, keep the data immutable and validate at construction.</dd>
+<dt>Why can an object-oriented design be bad for performance?</dt>
+<dd>A graph of objects connected by references means data you process together is scattered across the heap, so iterating it thrashes the CPU cache (pointer chasing, cache misses), and virtual calls block inlining and branch prediction. Data-oriented design instead stores like fields contiguously (structure-of-arrays) and processes them in tight loops, which the hardware prefetcher and SIMD love &mdash; often an order of magnitude faster for large uniform workloads (particle systems, ECS, numerical code). For code that isn&rsquo;t hot, the clarity of objects is usually worth more than the cycles.</dd>
+<dt>A colleague wants to add a <code>PaymentProviderFactory</code> interface with one implementation &ldquo;so we can swap providers later.&rdquo; Push back or accept?</dt>
+<dd>Push back, gently. One implementation means the abstraction is a guess at what the second one will need, and guesses about future interfaces are usually wrong &mdash; you will end up reshaping it anyway when the real second provider arrives, having paid navigation and testing cost in the meantime. The cheaper path: write the concrete <code>StripePayments</code> class now with a clean, small public surface; when a second provider is actually on the roadmap, extract the interface from the two concrete cases where you can see what genuinely varies. The exception is if swappability is a <em>current</em> requirement (a contractual need, or you already have two), in which case build it now.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>Give one sign that a class has become a &ldquo;God object.&rdquo;</summary><div class="answer-box">
+It has many unrelated responsibilities (parsing, persistence, UI, business rules) in one place, is very large, and almost every feature change touches it. It has low cohesion and everything depends on it.
+</div></details>
+<details class="answer-reveal"><summary>What does YAGNI stand for and how does it apply to abstraction?</summary><div class="answer-box">
+&ldquo;You Aren&rsquo;t Gonna Need It.&rdquo; Don&rsquo;t add interfaces, extension points, or configurability for hypothetical future needs &mdash; build the concrete thing now and abstract when a real second case forces the shape.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You inherit a codebase where <code>Bird</code> has <code>fly()</code>, and now there are <code>Penguin</code>, <code>Ostrich</code>, and <code>Kiwi</code> subclasses overriding <code>fly()</code> to throw. How would you redesign it?</summary><div class="answer-box">
+The hierarchy encodes a false universal (&ldquo;all birds fly&rdquo;). Options: (1) Pull flight out as a capability &mdash; <code>Bird</code> has no <code>fly()</code>; a <code>FlyingBird</code> subclass or, better, a <code>Flight</code> component/strategy that only flying birds hold, so <code>eagle.flight.fly()</code> and a penguin simply has no flight component. (2) If behaviour varies along several axes (movement, diet, sound), go full composition: <code>Bird</code> holds <code>Movement</code>, <code>Diet</code>, <code>Call</code> strategies, each chosen per species. (3) At minimum, if you must keep inheritance, split <code>Bird</code> into <code>Bird</code> and <code>FlightlessBird</code> so the type system reflects reality and no method throws. The key principle: don&rsquo;t put a method on a base class unless <em>every</em> subclass can honour its contract (Liskov) &mdash; a method that throws &ldquo;not supported&rdquo; is a design smell.
+</div></details>
+<details class="answer-reveal"><summary>When would you deliberately choose a procedural or functional design over OOP for a new component?</summary><div class="answer-box">
+When the component is essentially a <em>transformation of data</em> with little persistent state: a report generator, an ETL step, a parser, a pricing calculation, a batch job. Plain functions over transparent data structures (records, lists, maps) are easier to test (input &rarr; output, no setup/mock ceremony), easier to reason about (no hidden mutable state or aliasing), and easier to compose into pipelines. Also for performance-critical inner loops, where data-oriented layout beats an object graph. You&rsquo;d still use small objects/records for the data itself; what you skip is the class-per-concept, inheritance, and stateful-service scaffolding. Reserve OOP for the parts with genuine long-lived state and invariants (a connection pool, a session, a UI widget, a domain aggregate).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Your team&rsquo;s service has 40 interfaces, 38 of which have exactly one implementation, and new developers take weeks to trace a request. Diagnose the situation and lay out a remediation plan.</summary><div class="answer-box">
+<strong>Diagnosis.</strong> This is speculative-abstraction / indirection overload: interfaces added by reflex (often to enable mocking, or from a &ldquo;program to an interface&rdquo; cargo-cult) rather than to model a real variation point. Each one-impl interface adds a hop when reading code, a layer of naming, and no actual flexibility &mdash; and mock-heavy tests coupled to those interfaces make refactoring expensive, entrenching the design. The onboarding time is the visible cost of the accidental complexity. <strong>Remediation, incrementally and safely:</strong> (1) <em>Measure and classify</em> &mdash; list every interface, mark those with &gt;1 production implementation (keep), those whose only other &ldquo;implementation&rdquo; is a test double (candidate for removal), and those that are genuine seams (external I/O: DB, HTTP, clock, filesystem &mdash; keep, they aid testing and swapping). (2) <em>For the removable ones</em>, inline the interface into its single implementation, delete the interface, and update call sites to depend on the concrete type. Do it one interface per PR so review is easy and revert is cheap. (3) <em>Fix the tests that drove it</em> &mdash; replace mock-of-internal-interface tests with tests against real collaborators or in-memory fakes at the true boundaries; this is the step that stops the pattern regrowing. (4) <em>Collapse pass-through layers</em> &mdash; where <code>Controller &rarr; Service &rarr; Manager &rarr; Repository</code> and the middle layers only forward, merge them; keep a layer only where it adds transformation, policy, or a boundary. (5) <em>Establish a guideline</em> &mdash; &ldquo;introduce an interface when there is a second real implementation or a genuine external boundary; not for mocking internals.&rdquo; Add it to code review. (6) <em>Track</em> the one-impl interface count and onboarding-to-first-PR time as the metrics that show it&rsquo;s working. The end state isn&rsquo;t &ldquo;no interfaces&rdquo; &mdash; it&rsquo;s interfaces only where something varies, so the call graph a newcomer traces matches the runtime behaviour.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:oops:when-oop-hurts -->
+
 
 <!-- ============================== DATA STRUCTURES TOPICS ============================== -->
 <!-- TOPIC:ds:complexity -->
@@ -45348,7 +45560,8 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["abstract-interface", "Abstract Classes & Interfaces",             "Pure virtual, interface vs abstract class, when to use each, ABCs."],
       ["composition",        "Association, Aggregation & Composition",    "has-a vs owns-a lifetimes, 'favour composition over inheritance'."],
       ["solid",              "SOLID, Coupling & Cohesion",                "SRP/OCP/LSP/ISP/DIP, coupling vs cohesion, Law of Demeter, DRY/KISS/YAGNI."],
-      ["design-patterns",    "Common Design Patterns",                    "Singleton, Factory, Builder, Adapter, Decorator, Observer, Strategy, and misuse."]
+      ["design-patterns",    "Common Design Patterns",                    "Singleton, Factory, Builder, Adapter, Decorator, Observer, Strategy, and misuse."],
+      ["when-oop-hurts",     "When OOP Hurts: Over-Engineering & Alternatives", "Deep hierarchies, premature abstraction, anemic models, God objects, Kingdom of Nouns, data-oriented & functional alternatives."]
     ],
     ds: [
       ["complexity",     "Complexity Analysis & Big-O",              "Big-O/Theta/Omega, amortised, best/avg/worst, space, common growth rates."],
