@@ -40992,6 +40992,8 @@ Two likely causes. (1) You didn't pass <code>--fork</code>, so the command ran a
 <p class="subtitle">The <code>docker</code> command is a thin REST client; a root daemon does the work by driving containerd and runc.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Docker isn&rsquo;t one program &mdash; it&rsquo;s a stack. This page covers the pieces and how a <code>docker run</code> flows through them: the <strong>docker CLI</strong> sends a REST call to <strong><code>dockerd</code></strong> (the daemon that manages images, networks, volumes and the API), which delegates container lifecycle to <strong><code>containerd</code></strong>, which starts a <strong><code>containerd-shim</code></strong> per container that invokes <strong><code>runc</code></strong> to actually create the namespaces/cgroups and <code>exec</code> the process. It also covers where images are stored and how registries fit in &mdash; and why the shim lets the daemon restart without killing containers.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 140" role="img" aria-labelledby="d-dka-t">
 <title id="d-dka-t">docker CLI to dockerd to containerd to shim to runc to your process</title>
@@ -41125,6 +41127,8 @@ Images still run &mdash; they're OCI-standard, and Docker builds them via BuildK
 <p class="subtitle">A container moves through a small state machine &mdash; created, running, paused, exited, removed &mdash; and a handful of commands drive it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers driving containers from the command line. It walks the <strong>lifecycle</strong> &mdash; <code>create</code> &rarr; <code>start</code> &rarr; (running) &rarr; <code>stop</code> (SIGTERM then SIGKILL) &rarr; <code>rm</code> &mdash; and the everyday commands: <code>docker run</code> and its important flags (<code>-d</code>, <code>-it</code>, <code>--rm</code>, <code>-p</code>, <code>-v</code>, <code>-e</code>, <code>--name</code>), <code>ps</code>/<code>ps -a</code>, <code>exec</code> (run a command in a <em>running</em> container) vs <code>attach</code> (connect to PID 1&rsquo;s streams), <code>logs</code>, <code>inspect</code> (the full JSON state), <code>cp</code>, and <code>stats</code>.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-dcli-t">
 <title id="d-dcli-t">Container lifecycle state machine</title>
@@ -41274,6 +41278,8 @@ $ docker system df                 # what's reclaimable</pre>
 <p class="subtitle">An image is a manifest pointing at a config blob and a set of layer blobs; a registry is content-addressed blob storage with an HTTP API.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A Docker <strong>image</strong> is not a single file &mdash; it&rsquo;s a <strong>manifest</strong> listing a <strong>config</strong> (entrypoint, env, architecture) and an ordered set of <strong>layer</strong> blobs, all content-addressed by SHA-256 <strong>digest</strong>. This page covers that structure, the crucial difference between a <strong>tag</strong> (a mutable human label like <code>:latest</code> &mdash; can be moved) and a <strong>digest</strong> (<code>@sha256:&hellip;</code> &mdash; immutable, pin these in production), how <code>pull</code>/<code>push</code> transfer only missing layers, multi-arch manifest lists, and registries (Docker Hub, private, auth, rate limits).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 150" role="img" aria-labelledby="d-dimg-t">
 <title id="d-dimg-t">tag to manifest to config plus layers, all content-addressed</title>
@@ -41423,6 +41429,8 @@ The client computes each layer's digest and, for every layer, sends the registry
 <p class="subtitle">A recipe of instructions; the filesystem-changing ones become layers, and the metadata ones set how the image runs.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>Dockerfile</strong> is a recipe: each instruction runs against the previous result and produces a new <strong>layer</strong>. This page covers the instructions &mdash; <code>FROM</code> (base), <code>RUN</code> (execute + commit), <code>COPY</code>/<code>ADD</code> (bring files in), <code>ENV</code>/<code>ARG</code> (build-time vs run-time variables), <code>WORKDIR</code>, <code>EXPOSE</code>, <code>USER</code>, <code>HEALTHCHECK</code>, and the often-confused <strong><code>CMD</code> vs <code>ENTRYPOINT</code></strong> (default args vs the fixed executable) &mdash; plus <strong>shell form vs exec form</strong> and why exec form (<code>["nginx","-g","daemon off;"]</code>) is what makes signals reach your process.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-ddf-t">
 <title id="d-ddf-t">Instructions become layers or metadata; ENTRYPOINT + CMD form the final command</title>
@@ -41602,6 +41610,8 @@ Create the user in the image (<code>RUN useradd -u 10001 app</code> or <code>add
 <p class="subtitle">Each instruction is cached by a key derived from the instruction plus its inputs; the first miss invalidates every layer after it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Docker builds are incremental: if an instruction and all its inputs are unchanged, Docker reuses the cached layer. This page covers how the cache works and how to keep it &mdash; <strong>instruction ordering</strong> (copy <code>package.json</code> and install deps <em>before</em> copying source, so a code change doesn&rsquo;t bust the dependency layer), the <strong>build context</strong> (everything in the directory is tar&rsquo;d and sent to the daemon &mdash; use <strong><code>.dockerignore</code></strong> to trim it), and <strong>BuildKit</strong> features: parallel stages, <code>RUN --mount=type=cache</code>, secrets, and <code>--cache-from</code> for CI.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-dbc-t">
 <title id="d-dbc-t">One cache miss invalidates the rest of the build</title>
@@ -41753,6 +41763,8 @@ BuildKit cache mounts. For apt: <code>RUN --mount=type=cache,target=/var/cache/a
 <p class="subtitle">Build with a fat toolchain image, then <code>COPY --from</code> only the artefact into a tiny runtime image &mdash; the build stage is never shipped.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>multi-stage build</strong> uses several <code>FROM</code>s in one Dockerfile: a fat <em>build</em> stage with compilers and dev dependencies, then a lean <em>runtime</em> stage that <code>COPY --from=build</code>s only the finished artefact. This page covers that pattern, choosing a minimal base (<strong>distroless</strong>, <strong>alpine</strong>, <strong><code>scratch</code></strong>), and how it shrinks images from ~1&nbsp;GB to tens of MB &mdash; which also cuts pull time, attack surface (no shell, no package manager), and CVE noise.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-dms-t">
 <title id="d-dms-t">Builder stage has compilers and dev deps; runtime stage gets only the binary</title>
@@ -41920,6 +41932,8 @@ Python + native extensions is the hard case because you can't just copy one stat
 <p class="subtitle">The container's writable layer is ephemeral and dies with the container; anything that must persist or be shared goes in a mount.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A container&rsquo;s writable layer is <strong>ephemeral</strong> &mdash; deleted with the container &mdash; so any data that must survive needs a mount. This page covers the three kinds: <strong>named volumes</strong> (Docker-managed, the default choice for databases &mdash; portable, backed up as a unit), <strong>bind mounts</strong> (a host path mapped in &mdash; great for live-reloading source in dev, but couples you to the host layout), and <strong>tmpfs</strong> (in-memory, for secrets/scratch). It also covers volume drivers, backup/restore, and the UID/permission mismatches that bite bind mounts.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 140" role="img" aria-labelledby="d-dst-t">
 <title id="d-dst-t">Three ways data reaches a container: writable layer, volume, bind mount, tmpfs</title>
@@ -42059,6 +42073,8 @@ The container filesystem is an OverlayFS union: the image layers are read-only <
 <p class="subtitle">User-defined bridge networks give containers private IPs, name-based DNS, and NAT to the outside &mdash; <code>-p</code> opens a door inward.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers how containers get on the network. The default <strong>bridge</strong> network gives each container a private IP behind host NAT; a <strong>user-defined bridge</strong> adds automatic <strong>DNS</strong> so containers reach each other by name (the reason to always create one for a multi-container app). <strong><code>-p host:container</code></strong> publishes a port (adds a NAT/proxy rule so the outside can reach it) &mdash; distinct from <code>EXPOSE</code>, which is just documentation. It also covers <strong>host</strong> mode (no isolation, no NAT), <strong>none</strong>, and <strong>overlay</strong> networks for multi-host.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 140" role="img" aria-labelledby="d-dnet-t">
 <title id="d-dnet-t">Two containers on a user-defined bridge, one published to the host</title>
@@ -42199,6 +42215,8 @@ Two (or three) user-defined bridge networks for tiering. <strong>frontend</stron
 <p class="subtitle">One YAML file declares services, networks and volumes; <code>docker compose up</code> reconciles the whole stack.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro"><strong>Docker Compose</strong> describes a multi-container application in one <code>compose.yaml</code>: each <strong>service</strong> (its image/build, ports, env, volumes), the <strong>networks</strong> and <strong>volumes</strong> they share, and startup ordering via <strong><code>depends_on</code></strong> + <strong>healthchecks</strong> (so &ldquo;app&rdquo; waits until &ldquo;db&rdquo; is actually ready, not just started). This page covers the file structure, <code>up</code>/<code>down</code>/<code>logs</code>/<code>ps</code>, <code>.env</code> and variable interpolation, <strong>profiles</strong> for optional services, and <strong>override files</strong> for per-environment differences.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-dcmp-t">
 <title id="d-dcmp-t">compose.yaml declares services on a project network with volumes</title>
@@ -42382,6 +42400,8 @@ Isolate the <strong>project name</strong>, which prefixes container names, the n
 <p class="subtitle">The <code>--cpus</code>, <code>--memory</code> and <code>--pids-limit</code> flags are a thin wrapper over cgroup v2 files &mdash; and the failure modes are OOM kills and CFS throttling.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">By default a container can use all the host&rsquo;s CPU and memory. This page covers the limit flags and how they map to <strong>cgroups v2</strong>: <code>--memory</code> (hard cap &mdash; exceed it and the process is <strong>OOM-killed</strong>), <code>--memory-reservation</code> (soft), <code>--cpus=1.5</code> (a quota &mdash; the container is <strong>throttled</strong> to 1.5 cores of runtime), <code>--cpu-shares</code> (relative weight under contention only), and <code>--pids-limit</code> (fork-bomb protection). It also covers why an unlimited container can starve its neighbours and take down the host.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-dres-t">
 <title id="d-dres-t">Docker flags map straight onto cgroup v2 control files</title>
@@ -42542,6 +42562,8 @@ Latency-sensitive, bursty services (API servers, anything with a GC or a request
 <p class="subtitle">Assume the container will be compromised, then make that not matter: run unprivileged, drop everything, freeze the filesystem, and know what's inside.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Container defaults are convenient, not safe. This page covers the hardening steps that matter: run as a <strong>non-root <code>USER</code></strong> (a Dockerfile default of root means root in the container = a bigger blast radius), <strong><code>--cap-drop=ALL</code></strong> then add back only what&rsquo;s needed, <strong><code>--read-only</code></strong> root filesystem with explicit <code>tmpfs</code> for writable paths, <strong><code>--security-opt no-new-privileges</code></strong>, a <strong>seccomp</strong> profile, keeping <strong>secrets</strong> out of <code>ENV</code> and image layers (use mounts/secret stores), and <strong>scanning</strong> images (Trivy, Grype) in CI.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 130" role="img" aria-labelledby="d-dsec-t">
 <title id="d-dsec-t">Build-time and run-time hardening controls</title>
@@ -42690,6 +42712,8 @@ Trivy, Grype, Docker Scout, Clair, Snyk &mdash; any two.
 <p class="subtitle">The operational glue: logs to stdout, a real healthcheck, immutable tags, and a build-once/scan/sign/push pipeline.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers running Docker images reliably beyond a laptop. It covers <strong>log drivers</strong> (<code>json-file</code> with rotation, or <code>journald</code>/a shipping driver &mdash; and why apps should log to stdout), <strong><code>HEALTHCHECK</code></strong> so the orchestrator knows &ldquo;started&rdquo; from &ldquo;ready&rdquo;, <strong>restart policies</strong> (<code>unless-stopped</code>, <code>on-failure</code>), a disciplined <strong>tag strategy</strong> (immutable tags &mdash; a git SHA and/or semver, never redeploy <code>:latest</code>), building and pushing from <strong>CI</strong>, and housekeeping (<code>docker system prune</code>, registry GC) so disk doesn&rsquo;t fill.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-dprod-t">
 <title id="d-dprod-t">CI pipeline: build once, scan, sign, push by digest; deploy the digest</title>
