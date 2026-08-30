@@ -23175,6 +23175,30 @@ When a performance counter overflows (e.g. every 100,000 cache misses) it raises
 <p class="subtitle">Two's complement, IEEE-754, and which byte comes first.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Before any arithmetic makes sense you need to know how a fixed-width machine actually stores numbers. This page covers <strong>two&rsquo;s complement</strong> for signed integers (one representation of zero, wrap-around, why <code>INT_MIN</code> has no positive counterpart), <strong>unsigned</strong> arithmetic and the surprises when the two mix, integer <strong>overflow</strong> (defined wrap for unsigned, undefined behaviour for signed in C), <strong>IEEE-754</strong> floating point (sign/exponent/mantissa, why <code>0.1</code> isn&rsquo;t exact, NaN/Inf, rounding), and <strong>endianness</strong> &mdash; the order bytes of a multi-byte value are laid out in memory, and where it bites (binary formats, network protocols, casts).</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-archnr-t">
+<title id="d-archnr-t">Two's complement wrap-around and how the same 32-bit value is laid out little- vs big-endian</title>
+<text class="d-t-b" x="14" y="14">two&rsquo;s complement (4-bit shown): add 1 past the top wraps to the bottom</text>
+<text class="d-t-mono d-t-sm" x="14" y="32">0000=0  0111=7  |  1000=-8  1111=-1</text>
+<rect class="d-box" x="14" y="40" width="60" height="18"/><text class="d-t-mono d-t-sm" x="44" y="53" text-anchor="middle">0111 = 7</text>
+<path class="d-line" d="M76 49 L108 49" marker-end="url(#archnr-ah)"/><text class="d-t-sm" x="112" y="46">+1</text>
+<rect class="d-box-alt" x="140" y="40" width="90" height="18"/><text class="d-t-mono d-t-sm" x="185" y="53" text-anchor="middle">1000 = -8 (overflow)</text>
+<text class="d-t-sm" x="240" y="53">signed overflow = UB in C; unsigned wraps mod 2^n</text>
+<text class="d-t-b" x="14" y="86">endianness: store 0x0A0B0C0D at address A</text>
+<rect class="d-box-soft" x="14" y="94" width="44" height="20"/><rect class="d-box-soft" x="58" y="94" width="44" height="20"/><rect class="d-box-soft" x="102" y="94" width="44" height="20"/><rect class="d-box-soft" x="146" y="94" width="44" height="20"/>
+<text class="d-t-mono d-t-sm" x="36" y="108" text-anchor="middle">0D</text><text class="d-t-mono d-t-sm" x="80" y="108" text-anchor="middle">0C</text><text class="d-t-mono d-t-sm" x="124" y="108" text-anchor="middle">0B</text><text class="d-t-mono d-t-sm" x="168" y="108" text-anchor="middle">0A</text>
+<text class="d-t-sm" x="200" y="108">little-endian (x86, ARM default): LSB first</text>
+<rect class="d-box-soft" x="14" y="120" width="44" height="20"/><rect class="d-box-soft" x="58" y="120" width="44" height="20"/><rect class="d-box-soft" x="102" y="120" width="44" height="20"/><rect class="d-box-soft" x="146" y="120" width="44" height="20"/>
+<text class="d-t-mono d-t-sm" x="36" y="134" text-anchor="middle">0A</text><text class="d-t-mono d-t-sm" x="80" y="134" text-anchor="middle">0B</text><text class="d-t-mono d-t-sm" x="124" y="134" text-anchor="middle">0C</text><text class="d-t-mono d-t-sm" x="168" y="134" text-anchor="middle">0D</text>
+<text class="d-t-sm" x="200" y="134">big-endian (network byte order): MSB first</text>
+<defs><marker id="archnr-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="158">Endianness only matters when you reinterpret the same bytes at a different width &mdash; file formats, wire protocols, unions, casts.</text>
+</svg>
+<figcaption>Two&rsquo;s complement makes <code>a - b</code> the same hardware as <code>a + (-b)</code>; endianness is purely a byte-ordering convention for multi-byte values in memory.</figcaption>
+</figure>
+
+
 <h3>Two's complement</h3>
 <p>The near-universal signed-integer format. To negate: invert all bits and add 1. Properties:</p>
 <ul>
@@ -23315,6 +23339,8 @@ Subnormals fill the gap between the smallest normal number and zero by giving up
 <p class="subtitle">Why "memory is slow" is the single most important performance fact.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A modern CPU can do arithmetic far faster than DRAM can supply data, so machines interpose a <strong>hierarchy</strong> of progressively larger, slower, cheaper stores: registers (sub-nanosecond) &rarr; L1 (~1&nbsp;ns) &rarr; L2 &rarr; L3 (~10&nbsp;ns) &rarr; main memory (~100&nbsp;ns) &rarr; SSD/disk (microseconds to milliseconds). This page covers why each level exists, the order-of-magnitude latency and capacity gaps you must have a feel for, how data moves between levels in fixed-size blocks (cache lines, pages), and inclusive vs exclusive cache designs &mdash; the mental model behind almost every performance question.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 128" role="img" aria-labelledby="d-armh-t">
 <title id="d-armh-t">The memory hierarchy: each level is bigger but much slower</title>
@@ -23458,6 +23484,8 @@ Prefetchers are dedicated units that watch the stream of cache misses/accesses a
 <p class="subtitle">How a cache decides where a line can live, and the three reasons it isn't there.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Caches move data in fixed <strong>cache-line</strong> units (64 bytes on x86/ARM), and where a given line may sit is constrained by the cache&rsquo;s <strong>associativity</strong> (direct-mapped, N-way set-associative, fully associative). This page covers line size and why it makes sequential access cheap, how set-associativity maps addresses to sets, and the <strong>three Cs</strong> of misses &mdash; <strong>compulsory</strong> (first touch), <strong>capacity</strong> (working set exceeds the cache), <strong>conflict</strong> (too many hot lines map to one set) &mdash; plus how to recognise each from performance counters and fix it.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 112" role="img" aria-labelledby="d-arcm-t">
 <title id="d-arcm-t">Memory moves in 64-byte cache lines; one miss brings the whole line</title>
@@ -23591,6 +23619,27 @@ A traditional set-associative lookup reads the tags from <em>all</em> N ways of 
 <p class="subtitle">Concrete transformations that turn a memory-bound loop into a fast one.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Caches only help if your access pattern has <strong>locality</strong>: <strong>temporal</strong> (reuse the same data soon) and <strong>spatial</strong> (use nearby data soon, since a whole line was fetched). This page covers how to write code that has both &mdash; traversing arrays in memory order (row-major vs column-major, the classic matrix-transpose slowdown), <strong>array-of-structs vs struct-of-arrays</strong> layout, cache <strong>blocking/tiling</strong> to keep a working set resident, and helping the hardware <strong>prefetcher</strong> with predictable strides. It is the highest-leverage performance skill for data-heavy code.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 165" role="img" aria-labelledby="d-archloc-t">
+<title id="d-archloc-t">Row-major array traversed by rows hits full cache lines; traversed by columns wastes most of each line</title>
+<text class="d-t-b" x="14" y="14">2D array stored row-major; cache fetches a whole 64B line</text>
+<rect class="d-box-soft" x="14" y="22" width="150" height="16"/><text class="d-t-sm" x="20" y="34">row 0: a b c d e f g h ...</text>
+<rect class="d-box-soft" x="14" y="40" width="150" height="16"/><text class="d-t-sm" x="20" y="52">row 1: i j k l m n o p ...</text>
+<rect class="d-box-soft" x="14" y="58" width="150" height="16"/><text class="d-t-sm" x="20" y="70">row 2: ...</text>
+<text class="d-t-accent" x="180" y="34">for i: for j: A[i][j]  &mdash; sequential, every</text>
+<text class="d-t-accent" x="180" y="48">byte of each fetched line is used &rarr; fast</text>
+<text class="d-t-sm" x="180" y="70">for j: for i: A[i][j]  &mdash; stride = row length;</text>
+<text class="d-t-sm" x="180" y="84">one element per line, rest evicted before reuse &rarr; slow</text>
+<text class="d-t-b" x="14" y="112">AoS vs SoA</text>
+<text class="d-t-mono d-t-sm" x="14" y="128">AoS: [x y z m][x y z m]...  &mdash; loop over x only &rarr; 3/4 of each line wasted</text>
+<text class="d-t-mono d-t-sm" x="14" y="144">SoA: [x x x x ...][y y y y ...]  &mdash; loop over x &rarr; full lines, vectorises</text>
+<text class="d-t-sm" x="14" y="160">Blocking/tiling: process sub-blocks that fit in L1/L2 so data is reused before eviction.</text>
+</svg>
+<figcaption>Same data, same work &mdash; only the access order changes. Traversing in storage order turns one line fetch into many useful accesses instead of one.</figcaption>
+</figure>
+
+
 <h3>Traverse in memory order</h3>
 <pre><code><span class="c">// C is row-major: a[i][j] and a[i][j+1] are adjacent</span>
 <span class="k">for</span> (i) <span class="k">for</span> (j) sum += a[i][j];   <span class="c">// GOOD: sequential, prefetcher-friendly</span>
@@ -23718,6 +23767,8 @@ A <strong>cache-aware</strong> (or "cache-conscious") algorithm has the cache/bl
 <p class="subtitle">Overlapping instruction execution &mdash; and the three things that stall it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A pipelined CPU overlaps instructions like an assembly line &mdash; while one instruction executes, the next is being decoded and a third fetched &mdash; so throughput approaches one instruction per cycle even though each takes several cycles end to end. This page covers the classic stages (fetch, decode, execute, memory, write-back), the three <strong>hazards</strong> that break the overlap: <strong>structural</strong> (two instructions want one unit), <strong>data</strong> (an instruction needs a result not yet ready), and <strong>control</strong> (a branch means the next address is unknown), and the mitigations &mdash; forwarding/bypassing, stalls/bubbles, and branch prediction.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 118" role="img" aria-labelledby="d-arpipe-t">
 <title id="d-arpipe-t">A pipeline overlaps stages so one instruction finishes per cycle</title>
@@ -23858,6 +23909,26 @@ x86 instructions are variable-length and expensive to decode (find boundaries, c
 <p class="subtitle">Guessing the future to keep the pipeline full &mdash; and the security fallout.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Because a pipeline must fetch the next instruction before a branch has resolved, the CPU <strong>predicts</strong> the outcome and speculatively executes down that path; a wrong guess costs a full pipeline flush (~15&ndash;20 cycles). This page covers how predictors work (bimodal, two-level/gshare, TAGE, the branch target buffer, the return address stack), the real cost of a misprediction, when to write <strong>branchless</strong> code (conditional moves, bit tricks, sorting data so branches are predictable), and how speculation past a mispredicted or bounds-check branch created the <strong>Spectre</strong> class of vulnerabilities.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 155" role="img" aria-labelledby="d-archbp-t">
+<title id="d-archbp-t">On a predicted branch the pipeline keeps fetching; a misprediction flushes all speculative work</title>
+<text class="d-t-b" x="14" y="14">predict taken &rarr; speculatively fetch/decode/execute down that path</text>
+<rect class="d-box" x="14" y="22" width="60" height="18"/><rect class="d-box" x="78" y="22" width="60" height="18"/><rect class="d-box" x="142" y="22" width="60" height="18"/><rect class="d-box" x="206" y="22" width="60" height="18"/>
+<text class="d-t-sm" x="44" y="35" text-anchor="middle">br?</text><text class="d-t-sm" x="108" y="35" text-anchor="middle">spec</text><text class="d-t-sm" x="172" y="35" text-anchor="middle">spec</text><text class="d-t-sm" x="236" y="35" text-anchor="middle">spec</text>
+<path class="d-line" d="M44 40 L44 58" marker-end="url(#archbp-ah)"/><text class="d-t-sm" x="52" y="54">branch resolves in execute...</text>
+<text class="d-t-b d-t-accent" x="14" y="80">mispredict &rarr; squash speculative instrs, refetch correct path</text>
+<rect class="d-box-alt" x="14" y="86" width="252" height="16"/><text class="d-t-sm" x="140" y="98" text-anchor="middle">~15&ndash;20 cycles of bubble (pipeline depth)</text>
+<path class="d-line" d="M266 94 L300 94" marker-end="url(#archbp-ah)"/>
+<rect class="d-box" x="304" y="86" width="120" height="16"/><text class="d-t-sm" x="364" y="98" text-anchor="middle">correct path begins</text>
+<defs><marker id="archbp-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="124">Predictors (bimodal &rarr; gshare &rarr; TAGE) + BTB (target) + RAS (returns). Well-predicted branch &asymp; free; ~5% mispredict on unpredictable data hurts.</text>
+<text class="d-t-sm" x="14" y="142">Branchless (cmov, masks, sorting the input) trades a possible mispredict for a fixed small cost. Speculation past bounds checks &rarr; Spectre.</text>
+</svg>
+<figcaption>A correctly predicted branch costs almost nothing; a mispredict throws away every instruction fetched after it and restarts, ~a pipeline-depth penalty.</figcaption>
+</figure>
+
+
 <h3>Why predict</h3>
 <p>On a deep pipeline, waiting for each branch to resolve before fetching would waste 15&ndash;20 cycles
 every branch (~1 in 5 instructions). So the CPU <strong>predicts</strong> the outcome and direction,
@@ -23987,6 +24058,8 @@ Variant 1 is: <code>if (i &lt; array_len) x = array2[array1[i] * 64];</code> &md
 <p class="subtitle">Why a modern core runs 3&ndash;6 instructions per cycle &mdash; and why latency &ne; throughput.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Real cores extract <strong>instruction-level parallelism</strong>: they are <strong>superscalar</strong> (issue several instructions per cycle) and <strong>out-of-order</strong> (execute instructions as their inputs become ready, not in program order, then retire them in order). This page covers register <strong>renaming</strong> (removing false write-after-write / write-after-read dependencies), the reorder buffer and reservation stations, how true data dependencies and long-latency loads limit ILP, and the practical upshot: <strong>latency is not throughput</strong> &mdash; independent work overlaps, dependent chains serialise.</p>
+
 <h3>Superscalar + out-of-order</h3>
 <p>A modern core has multiple execution units (several ALUs, load/store units, FP/SIMD units) and
 issues several instructions per cycle (<strong>superscalar</strong>). It doesn't run them in program
@@ -24117,6 +24190,29 @@ The core wants to execute loads as early as possible (they're often on the criti
 <p class="subtitle">Where the padding comes from, why it matters, and how to control it.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The compiler places each member of a struct at an offset that satisfies its <strong>natural alignment</strong> (a 4-byte int on a 4-byte boundary), inserting <strong>padding</strong> bytes where needed and possibly tail padding so arrays stay aligned. This page covers why alignment exists (a single aligned access vs two accesses plus a merge; some ISAs fault on misaligned access), how to compute a struct&rsquo;s layout and size, how member <strong>ordering</strong> changes <code>sizeof</code>, <code>#pragma pack</code> / <code>__attribute__((packed))</code> and its costs, <code>alignas</code>/<code>alignof</code>, and cache-line straddling and false sharing as layout problems.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-archal-t">
+<title id="d-archal-t">Same struct members in two orders: poor ordering inserts padding and grows sizeof</title>
+<text class="d-t-mono d-t-b" x="14" y="14">struct A { char c; int i; char d; };  &rarr; sizeof 12</text>
+<rect class="d-box-alt" x="14" y="20" width="24" height="20"/><text class="d-t-mono d-t-sm" x="26" y="34" text-anchor="middle">c</text>
+<rect class="d-line-soft" x="38" y="20" width="72" height="20"/><text class="d-t-sm" x="74" y="34" text-anchor="middle">pad 3</text>
+<rect class="d-box" x="110" y="20" width="96" height="20"/><text class="d-t-mono d-t-sm" x="158" y="34" text-anchor="middle">int i (offset 4)</text>
+<rect class="d-box-alt" x="206" y="20" width="24" height="20"/><text class="d-t-mono d-t-sm" x="218" y="34" text-anchor="middle">d</text>
+<rect class="d-line-soft" x="230" y="20" width="72" height="20"/><text class="d-t-sm" x="266" y="34" text-anchor="middle">pad 3 (tail)</text>
+<text class="d-t-mono d-t-b" x="14" y="66">struct B { int i; char c; char d; };  &rarr; sizeof 8</text>
+<rect class="d-box" x="14" y="72" width="96" height="20"/><text class="d-t-mono d-t-sm" x="62" y="86" text-anchor="middle">int i</text>
+<rect class="d-box-alt" x="110" y="72" width="24" height="20"/><text class="d-t-mono d-t-sm" x="122" y="86" text-anchor="middle">c</text>
+<rect class="d-box-alt" x="134" y="72" width="24" height="20"/><text class="d-t-mono d-t-sm" x="146" y="86" text-anchor="middle">d</text>
+<rect class="d-line-soft" x="158" y="72" width="48" height="20"/><text class="d-t-sm" x="182" y="86" text-anchor="middle">pad 2</text>
+<text class="d-t-sm" x="14" y="116">Each member sits at an offset that is a multiple of its alignment (int&rarr;4). Order members large&rarr;small to minimise padding.</text>
+<text class="d-t-sm" x="14" y="136"><tspan class="d-t-mono">#pragma pack(1)</tspan> / <tspan class="d-t-mono">__attribute__((packed))</tspan> removes padding &mdash; smaller, but misaligned access is slower or faults on some ISAs.</text>
+<text class="d-t-sm" x="14" y="154">A struct that straddles a 64B cache-line boundary needs two line fetches; <tspan class="d-t-mono">alignas(64)</tspan> pins hot objects to their own line.</text>
+</svg>
+<figcaption>Reordering members from smallest-first to largest-first removed 4 bytes of padding here &mdash; free memory savings, and denser packing means more objects per cache line.</figcaption>
+</figure>
+
+
 <h3>Natural alignment</h3>
 <p>Each scalar type prefers an address that's a multiple of its size: <code>int</code> at 4, <code>double</code>
 / pointer at 8, a 32-byte SIMD vector at 32. Hardware reads are fast when aligned; misaligned
@@ -24242,6 +24338,29 @@ An empty class (no data members, e.g. a stateless allocator, comparator, or dele
 <p class="subtitle">Store buffers, why x86 and ARM disagree, and what a fence actually does.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">On a multicore machine each core has a <strong>store buffer</strong> and the hardware may make one core&rsquo;s memory operations appear to happen in a different order to another core. This page covers that <strong>hardware memory model</strong> &mdash; the relatively strong x86-TSO (only store&rarr;load reordering) vs the weak models of ARM/POWER (almost anything reorders) &mdash; the <strong>fences</strong> and acquire/release semantics that restore ordering where you need it, why C/C++ <code>volatile</code> is <em>not</em> a threading tool (no ordering, no atomicity), and how <code>std::atomic</code> memory orders map down to real barrier instructions.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-archmb-t">
+<title id="d-archmb-t">Each core's store buffer lets its own later loads pass earlier stores, so two cores can disagree on order</title>
+<rect class="d-box" x="14" y="24" width="120" height="70" rx="4"/><text class="d-t-b" x="74" y="40" text-anchor="middle">core 0</text>
+<text class="d-t-mono d-t-sm" x="20" y="56">store x = 1</text>
+<rect class="d-box-alt" x="20" y="62" width="108" height="16"/><text class="d-t-sm" x="74" y="74" text-anchor="middle">store buffer</text>
+<text class="d-t-mono d-t-sm" x="20" y="90">load y &rarr; 0 ?!</text>
+<rect class="d-box" x="200" y="24" width="120" height="70" rx="4"/><text class="d-t-b" x="260" y="40" text-anchor="middle">core 1</text>
+<text class="d-t-mono d-t-sm" x="206" y="56">store y = 1</text>
+<rect class="d-box-alt" x="206" y="62" width="108" height="16"/><text class="d-t-sm" x="260" y="74" text-anchor="middle">store buffer</text>
+<text class="d-t-mono d-t-sm" x="206" y="90">load x &rarr; 0 ?!</text>
+<rect class="d-box-soft" x="380" y="40" width="120" height="30" rx="4"/><text class="d-t-sm" x="440" y="59" text-anchor="middle">shared memory</text>
+<path class="d-line d-dash" d="M134 70 L378 55" marker-end="url(#archmb-ah)"/><path class="d-line d-dash" d="M320 70 L378 58" marker-end="url(#archmb-ah)"/>
+<defs><marker id="archmb-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="118">x86-TSO: only store&rarr;load reorders (store sits in the buffer while a later load completes). ARM/POWER: loads and stores reorder freely.</text>
+<text class="d-t-sm" x="14" y="138">A <tspan class="d-t-b">fence</tspan> (or acquire/release atomic) drains/orders the buffer so the other core sees a consistent order. <tspan class="d-t-mono">volatile</tspan> does none of this.</text>
+<text class="d-t-sm" x="14" y="156">Both cores reading 0 is a real, observable outcome of this program without a fence.</text>
+</svg>
+<figcaption>The store buffer is why <code>x=1; r=y;</code> on one core and <code>y=1; r=x;</code> on another can <em>both</em> read 0 &mdash; you need a barrier, not <code>volatile</code>, to forbid it.</figcaption>
+</figure>
+
+
 <h3>Why order isn't preserved</h3>
 <ul>
 <li><strong>Store buffer</strong>: a write goes into a per-core FIFO and completes to cache later. The writing core sees its own store immediately (store-to-load forwarding); other cores don't see it until it drains.</li>
@@ -24370,6 +24489,129 @@ A memory system is <strong>multi-copy atomic</strong> if, whenever any core othe
 </div></div>
 </section>
 <!-- /TOPIC:arch:memory-barriers -->
+<!-- TOPIC:arch:coherence-numa -->
+<section class="view topic" id="v-arch-coherence-numa" data-skill="arch">
+<div class="layout">
+<nav class="sidebar" data-sidebar="arch"></nav>
+<div class="topic-body">
+<h1>Cache Coherence &amp; NUMA</h1>
+<p class="subtitle">How multiple cores keep a consistent view of memory through their private caches &mdash; and why <em>which</em> memory a thread touches now matters.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Once a machine has several cores, each with its own L1/L2 cache, the same memory address can sit in many caches at once &mdash; and a write by one core must not leave stale copies in the others. <strong>Cache coherence</strong> is the hardware protocol (usually <strong>MESI</strong> and its variants) that maintains the illusion of a single shared memory, by tracking a state per cache line and exchanging messages when cores read and write shared data. This page covers the coherence problem, the MESI states and the bus/directory traffic they generate, how that traffic explains <strong>false sharing</strong> and lock contention costs, and <strong>NUMA</strong>: on multi-socket (and some big single-socket) systems, memory is physically attached to particular nodes, so a thread&rsquo;s access latency depends on whether the data is on its local node or a remote one &mdash; and on the <strong>first-touch</strong> policy that decides placement.</p>
+
+<figure class="diagram">
+<svg viewBox="0 0 520 195" role="img" aria-labelledby="d-archcn-t">
+<title id="d-archcn-t">MESI line states across two cores, and a NUMA layout where remote memory costs more</title>
+<text class="d-t-b" x="14" y="14">coherence: state per cache line</text>
+<rect class="d-box" x="14" y="22" width="150" height="18"/><text class="d-t-mono d-t-sm" x="20" y="35">M  Modified  (dirty, exclusive)</text>
+<rect class="d-box" x="14" y="44" width="150" height="18"/><text class="d-t-mono d-t-sm" x="20" y="57">E  Exclusive (clean, only me)</text>
+<rect class="d-box" x="14" y="66" width="150" height="18"/><text class="d-t-mono d-t-sm" x="20" y="79">S  Shared    (clean, others too)</text>
+<rect class="d-box" x="14" y="88" width="150" height="18"/><text class="d-t-mono d-t-sm" x="20" y="101">I  Invalid   (stale / absent)</text>
+<text class="d-t-sm" x="180" y="34">core A writes X (S&rarr;M)</text>
+<path class="d-line" d="M300 30 L390 30" marker-end="url(#archcn-ah)"/>
+<text class="d-t-sm" x="180" y="52">&rarr; invalidate msg to core B</text>
+<text class="d-t-sm" x="180" y="70">core B&rsquo;s copy of X: S &rarr; I</text>
+<text class="d-t-sm" x="180" y="88">B reads X again &rarr; miss, fetch</text>
+<text class="d-t-accent" x="180" y="108">two cores writing the same line = ping-pong</text>
+<text class="d-t-b" x="14" y="134">NUMA: latency depends on where the bytes live</text>
+<rect class="d-box-alt" x="14" y="140" width="150" height="40" rx="4"/><text class="d-t-sm" x="89" y="156" text-anchor="middle">Node 0: cores + RAM</text><text class="d-t-sm" x="89" y="172" text-anchor="middle">local ~100 ns</text>
+<rect class="d-box-alt" x="330" y="140" width="150" height="40" rx="4"/><text class="d-t-sm" x="405" y="156" text-anchor="middle">Node 1: cores + RAM</text><text class="d-t-sm" x="405" y="172" text-anchor="middle">local ~100 ns</text>
+<path class="d-line" d="M164 160 L328 160" marker-end="url(#archcn-ah)"/><text class="d-t-sm" x="185" y="152">interconnect: remote ~150&ndash;300 ns</text>
+<defs><marker id="archcn-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Coherence keeps caches consistent but the messages aren&rsquo;t free; NUMA adds a second axis &mdash; not just &ldquo;in cache or not&rdquo; but &ldquo;local node or remote.&rdquo;</figcaption>
+</figure>
+
+<h3>The coherence problem and MESI</h3>
+<ul>
+<li><strong>Problem.</strong> Core A and core B both cache line L. A writes to L in its own cache. Without a protocol, B keeps reading its stale copy forever.</li>
+<li><strong>MESI</strong> gives every cached line one of four states: <strong>M</strong>odified (this cache has the only copy and it&rsquo;s dirty), <strong>E</strong>xclusive (only copy, clean &mdash; matches memory), <strong>S</strong>hared (clean, other caches may also hold it), <strong>I</strong>nvalid (not usable).</li>
+<li><strong>Read miss</strong>: fetch the line; if no other cache has it, load as E, else S. <strong>Write</strong>: you must be in M or E first &mdash; a write to a Shared line broadcasts an <em>invalidate</em> so every other cache drops to I, then you transition to M. A write to an Invalid line is a <em>read-for-ownership</em> (fetch + invalidate others).</li>
+<li><strong>Variants</strong>: <strong>MOESI</strong> adds <em>Owned</em> (dirty but shared &mdash; supply data to others without writing back to memory); <strong>MESIF</strong> (Intel) adds <em>Forward</em> to pick one sharer to answer requests. Same idea, less memory traffic.</li>
+<li><strong>Transport</strong>: small systems <em>snoop</em> a shared bus (every cache watches every transaction &mdash; doesn&rsquo;t scale); large ones use a <strong>directory</strong> that records which nodes hold each line and sends point-to-point messages.</li>
+</ul>
+
+<h3>Why coherence traffic shows up in your profiler</h3>
+<ul>
+<li><strong>True sharing contention</strong>: a hot shared counter or lock word. Every writer must gain M, invalidating everyone else, so the line bounces core-to-core (&ldquo;cache-line ping-pong&rdquo;), each bounce costing tens to hundreds of cycles. This is most of the cost of an uncontended-looking spinlock under load.</li>
+<li><strong>False sharing</strong>: two threads write <em>different</em> variables that land on the <em>same</em> 64-byte line (e.g. adjacent elements of a per-thread stats array). The hardware can only track a whole line, so it behaves exactly like true sharing &mdash; the fix is to pad/align each thread&rsquo;s data to its own line (<code>alignas(64)</code>, or a cache-line-sized struct).</li>
+<li><strong>Atomics</strong>: a <code>lock</code>-prefixed RMW or a CAS needs exclusive ownership of the line for the duration &mdash; cheap uncontended, expensive when many cores hammer the same address (consider sharding the counter, or a combining tree).</li>
+<li>Counters to watch: <code>MEM_LOAD_L3_HIT_RETIRED.XSNP_HITM</code> / HITM events, <code>offcore_response</code> &mdash; &ldquo;HITM&rdquo; (hit-modified in another core) is the false/true-sharing signature.</li>
+</ul>
+
+<h3>NUMA: non-uniform memory access</h3>
+<ul>
+<li>On a multi-socket server (and AMD EPYC / large single sockets), RAM is split into <strong>nodes</strong>, each attached to a subset of cores. A core reading its <strong>local</strong> node&rsquo;s memory is fast; reading a <strong>remote</strong> node&rsquo;s memory crosses the interconnect (UPI/Infinity Fabric) &mdash; 1.5&ndash;3&times; the latency and shared, limited bandwidth.</li>
+<li><strong>First-touch policy</strong>: Linux allocates a physical page on the node of the core that <em>first writes</em> it, not the core that called <code>malloc</code>. So if one thread initialises a big array and worker threads on other nodes then process it, every access is remote. Fix: initialise data in parallel with the same thread/node partitioning you&rsquo;ll use to process it.</li>
+<li><strong>Controls</strong>: <code>numactl --cpunodebind=0 --membind=0 ./app</code>, <code>numactl --hardware</code> to see nodes and distances, <code>--interleave=all</code> to spread pages (good for a shared read-mostly structure), <code>libnuma</code> / <code>mbind()</code> / <code>set_mempolicy()</code> in code, and pinning threads (<code>pthread_setaffinity_np</code>, <code>taskset</code>) so the scheduler can&rsquo;t migrate a thread away from its data.</li>
+<li><strong>Symptoms</strong>: throughput that drops when you add cores across a socket boundary; high remote-DRAM counters (<code>numastat</code>, <code>perf mem</code>); a workload that&rsquo;s faster pinned to one node than spread across two.</li>
+</ul>
+
+<h3>Practical rules</h3>
+<ul>
+<li>Keep per-thread mutable data on its own cache line; keep read-mostly shared data truly read-only.</li>
+<li>Reduce the frequency of writes to shared lines (batch, shard, thread-local accumulate then combine).</li>
+<li>On NUMA: pin threads, use first-touch-aware parallel init, bind memory, or interleave for shared structures.</li>
+<li>Measure with HITM / remote-DRAM counters before and after &mdash; these effects are invisible in wall-clock guesses.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li><strong>Coherence</strong> = hardware keeps all caches consistent. <strong>MESI</strong>: Modified / Exclusive / Shared / Invalid per line.</li>
+<li>Write to a <strong>Shared</strong> line &rarr; broadcast <strong>invalidate</strong>, others &rarr; Invalid, you &rarr; Modified. Write to Invalid = read-for-ownership.</li>
+<li><strong>MOESI</strong> adds Owned (dirty+shared); <strong>MESIF</strong> adds Forward. Small systems <strong>snoop</strong> a bus; big ones use a <strong>directory</strong>.</li>
+<li><strong>Cache-line ping-pong</strong>: multiple cores writing the same line &mdash; true sharing (shared counter/lock) or <strong>false sharing</strong> (different vars, same 64B line). Fix false sharing with <code>alignas(64)</code> / padding.</li>
+<li>Atomic RMW / CAS needs exclusive line ownership &mdash; cheap uncontended, expensive contended. Shard hot counters.</li>
+<li>Counter signature: <strong>HITM</strong> (hit-modified in another core) = true/false sharing.</li>
+<li><strong>NUMA</strong>: memory attached to nodes; local ~100 ns, remote 1.5&ndash;3&times;. <strong>First-touch</strong>: page placed on the node that first writes it.</li>
+<li>Tools: <code>numactl --hardware</code>, <code>numactl --membind/--cpunodebind</code>, <code>--interleave=all</code>, <code>numastat</code>, <code>taskset</code>/affinity, <code>libnuma</code>.</li>
+<li>Parallel-initialise data with the same partitioning you&rsquo;ll process it with.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>What is false sharing and how do you fix it?</dt>
+<dd>Two (or more) threads write to <em>distinct</em> variables that happen to occupy the same cache line (64 bytes). Coherence hardware tracks ownership at line granularity, so each write forces the line into Modified state on that core and Invalid everywhere else &mdash; the line ping-pongs between cores exactly as if the threads shared one variable, even though logically they don&rsquo;t. Classic cases: an array indexed by thread id (<code>counter[tid]++</code>), adjacent fields of a struct touched by different threads, a lock next to the data it protects. Fix by giving each thread&rsquo;s hot data its own line: pad the struct to 64 bytes, use <code>alignas(64)</code> on per-thread entries, or keep the value thread-local and only combine at the end. Verify with HITM performance counters or by testing padded vs unpadded.</dd>
+<dt>Why can adding more threads sometimes make a parallel program slower?</dt>
+<dd>Several coherence/NUMA reasons. (1) <strong>Contention on a shared line</strong> &mdash; a shared counter, a global lock, an allocator&rsquo;s free list: more threads means more invalidations and cache-line bouncing, so per-operation cost rises faster than parallelism helps. (2) <strong>False sharing</strong> that only appears once enough threads run concurrently. (3) <strong>NUMA</strong> &mdash; threads 1&ndash;8 fit on one socket with local memory; threads 9&ndash;16 land on the second socket and, because of first-touch, their data is still on node 0, so half the threads now do every access remotely and also saturate the interconnect. (4) Oversubscription and scheduler migration moving a thread away from its warm cache/local node. The fixes are the ones in this page: shard/thread-local hot state, pad against false sharing, pin threads, and NUMA-aware parallel initialisation.</dd>
+<dt>What does &ldquo;first-touch&rdquo; mean and why does it matter?</dt>
+<dd>When a program allocates memory, no physical page is assigned yet &mdash; the mapping is lazy. Linux assigns the physical page from the NUMA node of whichever core <em>first writes</em> to that page (touches it). So the placement is decided by the initialisation pattern, not the allocation call. If a single master thread zeroes/loads a large dataset and then hands slices to workers spread across nodes, all those pages are on the master&rsquo;s node and every worker access is remote. The remedy is to perform the first touch from the same threads, with the same data partitioning, that will later process the data (a parallel init loop) &mdash; then each slice&rsquo;s pages are local to the worker that owns it. Alternatively bind or interleave memory explicitly.</dd>
+<dt>Uncontended, a mutex lock/unlock is ~20&ndash;40 ns. Contended by 8 cores it can be hundreds of ns per operation. Where does the time go?</dt>
+<dd>Into coherence traffic on the lock&rsquo;s cache line. Acquiring a lock is an atomic read-modify-write (or CAS) on the lock word, which requires the core to hold that line in Modified/Exclusive state. When 8 cores all try, the line must be transferred &mdash; with exclusive ownership &mdash; from core to core, each transfer a cross-core (or cross-socket, worse) cache miss of tens to hundreds of cycles, plus the invalidations. Spinning waiters also keep reading the line, adding Shared&harr;Modified transitions. Mitigations: reduce critical-section frequency, use per-core/sharded state, use back-off or queue locks (MCS/CLH) so each waiter spins on its <em>own</em> line, or lock-free structures where the contended atomic is on sharded data. The lock&rsquo;s own logic is cheap; moving its cache line around is not.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>In MESI, which states mean &ldquo;this is the only cached copy&rdquo;?</summary><div class="answer-box">
+<strong>Modified</strong> (only copy, and dirty) and <strong>Exclusive</strong> (only copy, and clean). <strong>Shared</strong> means other caches may also hold it; <strong>Invalid</strong> means this cache doesn&rsquo;t have a usable copy.
+</div></details>
+<details class="answer-reveal"><summary>Roughly how much slower is a remote-node memory access than a local one on a typical 2-socket server?</summary><div class="answer-box">
+About 1.5&times; to 3&times; the latency, plus contention on the shared interconnect bandwidth. Local DRAM ~100 ns; remote ~150&ndash;300 ns.
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>You have <code>struct Stats { uint64_t ops; uint64_t bytes; } stats[NUM_THREADS];</code> and each thread updates its own entry in a tight loop. Profiling shows huge time in those updates. Explain and fix.</summary><div class="answer-box">
+<code>sizeof(Stats)</code> is 16 bytes, so four threads&rsquo; entries share one 64-byte cache line. Every <code>stats[tid].ops++</code> is a write that must take the line to Modified on that core, invalidating it on the other three &mdash; classic <strong>false sharing</strong>, so the line ping-pongs continuously even though no two threads touch the same field. Fixes: (1) pad/align each entry to a full line &mdash; <code>struct alignas(64) Stats { uint64_t ops, bytes; char pad[64 - 16]; };</code> so each thread owns its line; (2) better, keep the counters as <em>local variables</em> in the loop and write them back to <code>stats[tid]</code> once at the end &mdash; no shared writes in the hot path at all; (3) if the array must stay dense, index it as <code>stats[tid * CACHE_LINE/sizeof(uint64_t)]</code>. Confirm with HITM counters dropping and the loop time falling sharply (often 5&ndash;20&times;).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the data layout and threading for a high-throughput in-memory aggregation service on a 2-socket, 4-NUMA-node box: ingest millions of events/sec, maintain per-key running aggregates, serve point queries. Address coherence and NUMA explicitly.</summary><div class="answer-box">
+<strong>Shard by key across nodes.</strong> Partition the key space (hash) into N shards, N a multiple of the NUMA node count; assign each shard to a fixed set of cores on <em>one</em> node, and allocate that shard&rsquo;s hash table / arena with memory bound to that node (<code>mbind</code> / first-touch by the owning threads). A shard is single-writer (or a small fixed writer set) so its hot structures live in that node&rsquo;s cache and DRAM with no cross-node coherence on the aggregates. <strong>Ingest path.</strong> NIC RSS / RPS steers packets to queues; a thin set of receive threads (pinned, one per node, using that node&rsquo;s local buffers) parse events and route each to its shard via a per-shard SPSC/MPSC ring buffer. The ring is the only cross-thread structure; size it to batch, and place each ring&rsquo;s producer and consumer indices on <em>separate</em> cache lines (head/tail false sharing is the classic queue killer), padded with <code>alignas(64)</code>. Cross-node hop happens once, in bulk, at the ring &mdash; not per aggregate update. <strong>Aggregate update.</strong> Within a shard, the writer updates its hash table with no atomics (single writer) or with per-bucket locks if a few writers; entries sized/padded so unrelated hot keys don&rsquo;t collide on a line; open-addressing table for cache-friendly probes; the table&rsquo;s backing memory node-local. <strong>Query path.</strong> Readers must not stall writers: use a seqlock or RCU per bucket/shard &mdash; readers take no locks, retry on a version change; reclamation deferred (epoch/RCU) so no reader-writer cache-line contention on refcounts. Queries are routed to the shard&rsquo;s node; a small read replica or periodically published immutable snapshot can serve heavy read fan-out without touching the writer&rsquo;s lines. <strong>NUMA hygiene.</strong> Pin every thread (<code>pthread_setaffinity_np</code>); allocate all per-shard memory from the owning node (first-touch via the owning thread&rsquo;s init, or explicit <code>numa_alloc_onnode</code>); keep global read-only config <code>--interleave</code>d; verify with <code>numastat</code> that remote-DRAM traffic is near zero in steady state. <strong>Coherence hygiene.</strong> No global counters &mdash; per-shard stats combined lazily for metrics; the only lines that legitimately cross cores are the ring buffers, and those are padded and batched. <strong>Scaling check.</strong> Throughput should rise near-linearly as you add shards within a node and as you add nodes, because there is no shared mutable hot line; if it doesn&rsquo;t, look for a forgotten shared allocator arena, a global metrics counter, or ring index false sharing. Net: partition state so each mutable structure has a single owning node and (near) single writer, make the one unavoidable cross-core structure (the hand-off ring) false-sharing-free and batched, and use RCU/seqlock so reads never contend with writes on a cache line.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:arch:coherence-numa -->
+
 
 <!-- TOPIC:arch:simd-perf -->
 <section class="view topic" id="v-arch-simd-perf" data-skill="arch">
@@ -24380,6 +24622,8 @@ A memory system is <strong>multi-copy atomic</strong> if, whenever any core othe
 <p class="subtitle">Doing 8 operations per instruction, the multicore trap that silently kills scaling, and how to benchmark honestly.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers squeezing the last few times out of hot code and measuring honestly. <strong>SIMD</strong>: one instruction operating on a vector of lanes (SSE/AVX/NEON/SVE) &mdash; auto-vectorisation and why it fails, intrinsics, alignment and tail handling. <strong>False sharing</strong>: two threads writing different variables that happen to share a cache line, so the line ping-pongs between cores &mdash; a silent 10&times; slowdown fixed by padding/alignment. And <strong>measuring</strong>: the roofline model (compute-bound vs memory-bound), warm-up and noise, why microbenchmarks mislead, and using hardware counters instead of guessing.</p>
+
 <h3>SIMD (vectorization)</h3>
 <ul>
 <li>One instruction operates on a vector of values: SSE 128-bit (4&times;float), AVX2 256-bit (8&times;float), AVX-512 512-bit (16&times;float), ARM NEON 128-bit, SVE variable.</li>
@@ -45885,6 +46129,7 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["ilp-ooo",          "ILP & Out-of-Order Execution",         "Superscalar, register renaming, ROB, dependencies, why latency != throughput."],
       ["alignment-layout", "Alignment & Struct Layout",            "Natural alignment, padding, packing, cache-line straddling, alignas."],
       ["memory-barriers",  "The Hardware Memory Model & Barriers", "Store buffers, x86-TSO vs ARM, acquire/release fences, why volatile isn't enough."],
+      ["coherence-numa",   "Cache Coherence & NUMA",              "MESI/MOESI states, snoop vs directory, cache-line ping-pong, false sharing, HITM, NUMA nodes, first-touch, numactl."],
       ["simd-perf",        "SIMD, False Sharing & Measuring",      "Vectorization, auto-vec vs intrinsics, false sharing, roofline, benchmarking pitfalls."]
     ],
     build: [
