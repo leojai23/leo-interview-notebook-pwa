@@ -26180,6 +26180,23 @@ Tier by cost vs signal. <strong>Per-commit / PR (fast, blocking, &lt;10 min)</st
 <p class="subtitle">The first 10 minutes of any LLD interview: turn a vague prompt into a bounded object model.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Low-level design starts before any class is written: turning a vague prompt (&ldquo;design a parking lot&rdquo;) into a bounded problem with explicit entities, behaviours, and rules. This page covers that process &mdash; <strong>clarifying scope</strong> with questions (what&rsquo;s in, what&rsquo;s out, scale, who uses it), the classic heuristic of mining <strong>nouns&nbsp;&rarr;&nbsp;candidate classes</strong> and <strong>verbs&nbsp;&rarr;&nbsp;candidate methods</strong> from the requirements, <strong>CRC cards</strong> (Class / Responsibilities / Collaborators) to assign behaviour, and stating the <strong>invariants</strong> the design must always keep true. The output is a short list of core abstractions, not code.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 160" role="img" aria-labelledby="d-lldreq-t">
+<title id="d-lldreq-t">From a prose requirement: nouns become candidate classes, verbs become methods, then CRC cards assign responsibilities</title>
+<rect class="d-box-soft" x="14" y="18" width="490" height="18"/><text class="d-t-sm" x="20" y="31">&ldquo;A <tspan class="d-t-b">member</tspan> can <tspan class="d-t-b">borrow</tspan> a <tspan class="d-t-b">book</tspan>; the <tspan class="d-t-b">library</tspan> <tspan class="d-t-b">tracks</tspan> due dates and <tspan class="d-t-b">charges</tspan> a fine.&rdquo;</text>
+<rect class="d-box" x="14" y="48" width="150" height="54"/><text class="d-t-b" x="20" y="62">nouns &rarr; classes</text><text class="d-t-sm" x="20" y="77">Member, Book, Library,</text><text class="d-t-sm" x="20" y="91">Loan, Fine</text>
+<rect class="d-box" x="180" y="48" width="150" height="54"/><text class="d-t-b" x="186" y="62">verbs &rarr; methods</text><text class="d-t-sm" x="186" y="77">borrow(), return(),</text><text class="d-t-sm" x="186" y="91">trackDueDate(), charge()</text>
+<rect class="d-box-alt" x="346" y="48" width="158" height="54"/><text class="d-t-b" x="352" y="62">CRC card: Loan</text><text class="d-t-sm" x="352" y="77">resp: know due date, fine</text><text class="d-t-sm" x="352" y="91">collab: Member, Book</text>
+<path class="d-line" d="M89 36 L89 46" marker-end="url(#lldreq-ah)"/><path class="d-line" d="M255 36 L255 46" marker-end="url(#lldreq-ah)"/><path class="d-line" d="M164 75 L178 75" marker-end="url(#lldreq-ah)"/><path class="d-line" d="M330 75 L344 75" marker-end="url(#lldreq-ah)"/>
+<defs><marker id="lldreq-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="124">First, though: <tspan class="d-t-b">clarify scope</tspan> &mdash; single branch or many? reservations? e-books? scale? &mdash; so you model the right problem.</text>
+<text class="d-t-sm" x="14" y="144">State the <tspan class="d-t-b">invariants</tspan>: a copy is on at most one active loan; a member&rsquo;s active loans &le; limit; a fine is &ge; 0.</text>
+</svg>
+<figcaption>The noun/verb pass gives you candidates; CRC cards (Class&ndash;Responsibilities&ndash;Collaborators) turn them into a design by deciding who <em>owns</em> each behaviour.</figcaption>
+</figure>
+
+
 <h3>Step 1 &mdash; clarify &amp; bound the scope</h3>
 <ul>
 <li>Ask about the core use cases, scale, and what's explicitly <em>out</em> of scope. "Design a parking lot" &mdash; do we handle payment? multiple floors? reservations? EVs?</li>
@@ -26312,6 +26329,8 @@ An <strong>aggregate</strong> (from Domain-Driven Design) is a cluster of object
 <p class="subtitle">Turning the five principles into concrete class splits and interfaces.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The SOLID principles are easy to recite and hard to apply. This page walks a concrete design and shows each principle as an actual decision: splitting a class that has two reasons to change (<strong>SRP</strong>), adding behaviour through a new implementation rather than an <code>if</code>-ladder edit (<strong>OCP</strong>), making sure a subtype honours its base&rsquo;s contract (<strong>LSP</strong>), slicing a fat interface so clients depend only on what they use (<strong>ISP</strong>), and depending on an interface with the concrete injected (<strong>DIP</strong>) &mdash; plus what each looks like when violated and the cost of applying it too eagerly.</p>
+
 <h3>Worked example: an order-processing module</h3>
 <p>Start with a fat <code>OrderService.placeOrder()</code> that validates, prices, charges a card,
 writes to the DB, and emails a receipt. Apply SOLID:</p>
@@ -26449,6 +26468,30 @@ DIP is just "depend on interfaces, inject implementations" &mdash; you don't nee
 <p class="subtitle">The minimal notation you need to communicate a design on a whiteboard.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">In a design discussion you need to sketch structure fast and unambiguously; <strong>UML</strong> is the shared notation. This page covers the parts that actually come up: <strong>class diagrams</strong> &mdash; boxes with fields/methods, and the relationship arrows (association, aggregation &loz;, composition &#9670;, inheritance &#9651;, dependency) with <strong>multiplicities</strong> (1, 0..1, *) &mdash; and <strong>sequence diagrams</strong> for the message flow of one scenario (lifelines, synchronous vs async calls, activation bars). It also covers state diagrams for objects with a lifecycle, and how much diagramming is enough in an interview.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 175" role="img" aria-labelledby="d-llduml-t">
+<title id="d-llduml-t">UML class-diagram relationships: inheritance, composition, aggregation, association with multiplicities</title>
+<rect class="d-box" x="210" y="14" width="100" height="20"/><text class="d-t-sm" x="260" y="27" text-anchor="middle">Vehicle</text>
+<rect class="d-box" x="150" y="60" width="90" height="20"/><text class="d-t-sm" x="195" y="73" text-anchor="middle">Car</text>
+<rect class="d-box" x="280" y="60" width="90" height="20"/><text class="d-t-sm" x="325" y="73" text-anchor="middle">Truck</text>
+<path class="d-line-soft" d="M195 60 L245 34"/><path class="d-line-soft" d="M325 60 L275 34"/><text class="d-t-sm" x="330" y="46">&#9651; inherit (is-a)</text>
+<rect class="d-box-alt" x="14" y="110" width="90" height="20"/><text class="d-t-sm" x="59" y="123" text-anchor="middle">Car</text>
+<rect class="d-box" x="150" y="110" width="90" height="20"/><text class="d-t-sm" x="195" y="123" text-anchor="middle">Engine</text>
+<path class="d-line" d="M104 120 L148 120" marker-end="url(#llduml-ah)"/><text class="d-t-sm" x="104" y="112">&#9670; composition 1..1 (owns; dies with it)</text>
+<rect class="d-box-alt" x="14" y="145" width="90" height="20"/><text class="d-t-sm" x="59" y="158" text-anchor="middle">Team</text>
+<rect class="d-box" x="150" y="145" width="90" height="20"/><text class="d-t-sm" x="195" y="158" text-anchor="middle">Player</text>
+<path class="d-line" d="M104 155 L148 155" marker-end="url(#llduml-ah)"/><text class="d-t-sm" x="104" y="147">&loz; aggregation 1..* (refs; outlive)</text>
+<rect class="d-box-alt" x="300" y="128" width="90" height="20"/><text class="d-t-sm" x="345" y="141" text-anchor="middle">Order</text>
+<rect class="d-box" x="420" y="128" width="90" height="20"/><text class="d-t-sm" x="465" y="141" text-anchor="middle">Customer</text>
+<path class="d-line d-dash" d="M390 138 L418 138" marker-end="url(#llduml-ah)"/><text class="d-t-sm" x="300" y="120">association * &rarr; 1 (uses)</text>
+<defs><marker id="llduml-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="18">structure</text>
+</svg>
+<figcaption>Filled diamond = composition (part&rsquo;s lifetime bound to the whole); hollow diamond = aggregation (shared, independent lifetime); triangle = inheritance; plain line = association. Multiplicities (1, 0..1, *) sit at each end.</figcaption>
+</figure>
+
+
 <h3>Class diagram</h3>
 <p>A box per class: name, attributes, operations. Visibility: <code>+</code> public, <code>-</code> private,
 <code>#</code> protected. Relationships between boxes:</p>
@@ -26591,6 +26634,8 @@ Full formal UML (all 14 diagram types, MDA/round-trip code generation) largely f
 <p class="subtitle">The canonical LLD warm-up &mdash; entities, allocation strategy, and where to leave extension points.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">&ldquo;Design a parking lot&rdquo; is the canonical warm-up LLD problem &mdash; small enough to finish, rich enough to show modelling judgement. This page works it end to end: identifying entities (<code>ParkingLot</code>, <code>Level</code>, <code>ParkingSpot</code>, <code>Vehicle</code> hierarchy, <code>Ticket</code>), choosing how spot&ndash;vehicle compatibility and <strong>allocation</strong> work (strategy per size, nearest-first), <strong>pricing</strong> as a pluggable policy, the entry/exit flow, and where to add <strong>extension points</strong> (new vehicle types, EV charging, reservations) without rewriting the core.</p>
+
 <h3>Scope (state assumptions)</h3>
 <p>Multi-floor lot; vehicle types (motorcycle, car, bus); matching spot sizes (small, medium,
 large); entry issues a ticket, exit computes a fee. In scope: spot allocation, ticketing,
@@ -26752,6 +26797,8 @@ Don't put this in one method with a pile of <code>if</code>s. Model it as a <str
 <p class="subtitle">O(1) get and put &mdash; the hash map + doubly linked list, and where it gets harder.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A cache with a size bound needs an <strong>eviction policy</strong>, and &ldquo;design an LRU cache&rdquo; tests whether you can hit <strong>O(1)</strong> for both <code>get</code> and <code>put</code>. This page covers the standard structure &mdash; a hash map for lookup plus a <strong>doubly linked list</strong> ordering entries by recency, so touching an entry is an O(1) unlink-and-move-to-front and eviction is an O(1) drop-from-tail &mdash; then the variants: <strong>LFU</strong> (frequency buckets), TTL expiry, write policies, and making it thread-safe without turning every <code>get</code> into a global lock.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 120" role="img" aria-labelledby="d-lldlru-t">
 <title id="d-lldlru-t">LRU cache = hash map (O(1) find) + doubly-linked list (O(1) reorder)</title>
@@ -26915,6 +26962,8 @@ Make it scan-resistant. Options: (1) <strong>Segmented LRU / 2Q</strong> &mdash;
 <p class="subtitle">Four algorithms, and how each handles bursts, boundaries, and distribution.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A rate limiter caps how often an action may happen &mdash; API quotas, login attempts, outbound calls. This page covers the algorithms and their trade-offs: <strong>fixed window</strong> (simple, but allows 2&times; bursts at the boundary), <strong>sliding window log / counter</strong> (accurate, more memory), <strong>token bucket</strong> (smooth rate + bounded burst &mdash; the usual default), and <strong>leaky bucket</strong> (constant outflow). It then covers per-key limiting, returning the right response (<code>429</code> + <code>Retry-After</code> / <code>X-RateLimit-*</code>), and doing it in a <strong>distributed</strong> setting where the counter is shared state.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 108" role="img" aria-labelledby="d-lldrl-t">
 <title id="d-lldrl-t">Token bucket: tokens refill at a steady rate; each request spends one</title>
@@ -27069,6 +27118,8 @@ They solve overlapping but distinct problems. <strong>Rate limiting</strong> is 
 <p class="subtitle">A state machine plus a scheduling policy &mdash; and the multi-car dispatch problem.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">An elevator system is a scheduling problem wrapped around a state machine, and a good LLD interview answer keeps those two concerns separate. This page covers modelling the domain (<code>Elevator</code>, <code>Request</code> with source/direction, <code>Door</code>, the car&rsquo;s <strong>state machine</strong>: idle / moving-up / moving-down / doors-open), the <strong>scheduling</strong> strategy (SCAN / LOOK &mdash; serve requests in the current direction, then reverse), how multiple cars are dispatched to a hall call, and the edge cases (request for the current floor, full car, emergency, direction reversal).</p>
+
 <h3>Requests: two kinds</h3>
 <ul>
 <li><strong>Hall call</strong>: a button in the lobby/floor &mdash; has a floor and a direction (up/down). Served by the <em>system</em>, which picks a car.</li>
@@ -27224,6 +27275,165 @@ Safety is layered and mostly <em>not</em> in the dispatch software. (1) <strong>
 </div></div>
 </section>
 <!-- /TOPIC:lld:elevator -->
+<!-- TOPIC:lld:vending-machine -->
+<section class="view topic" id="v-lld-vending-machine" data-skill="lld">
+<div class="layout">
+<nav class="sidebar" data-sidebar="lld"></nav>
+<div class="topic-body">
+<h1>Design a Vending Machine</h1>
+<p class="subtitle">The canonical state-machine LLD problem &mdash; payment, inventory, change-making, and a clean State pattern.</p>
+
+<details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A vending machine is the classic <strong>State pattern</strong> exercise: the same button (&ldquo;insert coin&rdquo;, &ldquo;select&rdquo;, &ldquo;dispense&rdquo;) does different things depending on which <strong>state</strong> the machine is in, and each state decides the legal transitions. This page models the domain (<code>VendingMachine</code>, <code>Inventory</code> of <code>Slot</code>s, <code>Product</code>, a <code>CashBox</code> that makes change), walks the <strong>state machine</strong> (Idle &rarr; HasMoney &rarr; Dispensing &rarr; back to Idle, plus an OutOfService state), shows the State-pattern class layout that keeps each transition&rsquo;s rules in one place, and covers the tricky parts &mdash; <strong>making change</strong> with limited coin denominations, refunds, concurrency if it&rsquo;s networked, and the extension points (card payment, multiple currencies, telemetry).</p>
+
+<h3>Domain model</h3>
+<pre><code><span class="k">class</span> Product { String name; <span class="k">int</span> priceCents; }
+
+<span class="c">// a physical column in the machine: one product, a bounded count</span>
+<span class="k">class</span> Slot { String code; Product product; <span class="k">int</span> quantity; }
+
+<span class="k">class</span> Inventory {
+    Map&lt;String, Slot&gt; slots;
+    <span class="k">boolean</span> isAvailable(String code) { <span class="k">return</span> slots.get(code).quantity &gt; 0; }
+    <span class="k">void</span> dispense(String code)      { slots.get(code).quantity--; }
+}
+
+<span class="c">// coins/notes the machine holds, used both to accept payment and to give change</span>
+<span class="k">class</span> CashBox {
+    Map&lt;Coin, Integer&gt; count;              <span class="c">// Coin = enum with a cents value</span>
+    <span class="k">void</span> add(List&lt;Coin&gt; coins) { ... }
+    <span class="c">// greedy change; returns null if it CANNOT make the exact amount</span>
+    List&lt;Coin&gt; makeChange(<span class="k">int</span> amountCents) { ... }
+}</code></pre>
+
+<h3>The state machine</h3>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-lldvm-t">
+<title id="d-lldvm-t">Vending machine states: Idle, HasMoney, Dispensing, OutOfService and the events that move between them</title>
+<rect class="d-box-soft" x="20" y="50" width="90" height="30" rx="6"/><text class="d-t-sm" x="65" y="69" text-anchor="middle">IDLE</text>
+<rect class="d-box" x="170" y="50" width="110" height="30" rx="6"/><text class="d-t-sm" x="225" y="69" text-anchor="middle">HAS MONEY</text>
+<rect class="d-box" x="340" y="50" width="110" height="30" rx="6"/><text class="d-t-sm" x="395" y="69" text-anchor="middle">DISPENSING</text>
+<rect class="d-box-alt" x="170" y="110" width="110" height="28" rx="6"/><text class="d-t-sm" x="225" y="128" text-anchor="middle">OUT OF SERVICE</text>
+<path class="d-line" d="M110 60 L168 60" marker-end="url(#lldvm-ah)"/><text class="d-t-sm" x="112" y="52">insert coin</text>
+<path class="d-line" d="M225 50 C 150 24, 150 24, 90 48" marker-end="url(#lldvm-ah)"/><text class="d-t-sm" x="120" y="30">cancel &rarr; refund</text>
+<path class="d-line" d="M280 62 L338 62" marker-end="url(#lldvm-ah)"/><text class="d-t-sm" x="286" y="54">select (paid, in stock)</text>
+<path class="d-line" d="M395 80 C 320 118, 200 100, 112 72" marker-end="url(#lldvm-ah)"/><text class="d-t-sm" x="250" y="104">drop item + change &rarr; IDLE</text>
+<path class="d-line d-dash" d="M225 80 L225 108" marker-end="url(#lldvm-ah)"/><text class="d-t-sm" x="232" y="98">empty / jam</text>
+<defs><marker id="lldvm-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+</svg>
+<figcaption>Each state accepts only certain events; anything else is a no-op or an error message. Keeping the transition rules <em>inside</em> the state objects stops the logic becoming one giant <code>switch</code>.</figcaption>
+</figure>
+<pre><code>IDLE        --insert coin-->        HAS_MONEY
+HAS_MONEY   --insert coin-->        HAS_MONEY   (accumulate balance)
+HAS_MONEY   --cancel-->             IDLE        (refund balance)
+HAS_MONEY   --select(code)-->       DISPENSING  iff balance &ge; price AND inStock AND canMakeChange
+DISPENSING  --done-->               IDLE        (release product, return change, keep price)
+any         --restock / fault-->    OUT_OF_SERVICE / back to IDLE</code></pre>
+
+<h3>State pattern layout</h3>
+<pre><code><span class="k">interface</span> State {
+    <span class="k">void</span> insertCoin(Coin c);
+    <span class="k">void</span> selectProduct(String code);
+    <span class="k">void</span> cancel();
+}
+
+<span class="k">class</span> VendingMachine {
+    State idle, hasMoney, dispensing, outOfService;
+    State current;
+    Inventory inventory;
+    CashBox cashBox;
+    <span class="k">int</span> balanceCents;            <span class="c">// money inserted so far this session</span>
+
+    <span class="k">void</span> setState(State s) { current = s; }
+    <span class="c">// public API just delegates to the current state</span>
+    <span class="k">void</span> insertCoin(Coin c)     { current.insertCoin(c); }
+    <span class="k">void</span> selectProduct(String s) { current.selectProduct(s); }
+    <span class="k">void</span> cancel()               { current.cancel(); }
+}
+
+<span class="k">class</span> HasMoneyState <span class="k">implements</span> State {
+    <span class="k">final</span> VendingMachine m;
+    <span class="k">public void</span> selectProduct(String code) {
+        Slot slot = m.inventory.getSlot(code);
+        <span class="k">if</span> (slot == <span class="k">null</span> || slot.quantity == 0) { m.display(<span class="s">"sold out"</span>); <span class="k">return</span>; }
+        <span class="k">if</span> (m.balanceCents &lt; slot.product.priceCents) { m.display(<span class="s">"insert more"</span>); <span class="k">return</span>; }
+        <span class="k">int</span> changeDue = m.balanceCents - slot.product.priceCents;
+        <span class="k">if</span> (m.cashBox.makeChange(changeDue) == <span class="k">null</span>) { m.display(<span class="s">"no change - cancel"</span>); <span class="k">return</span>; }
+        m.setState(m.dispensing);
+        m.dispensing.selectProduct(code);   <span class="c">// or a dedicated dispense() call</span>
+    }
+    <span class="k">public void</span> cancel() { m.refund(m.balanceCents); m.balanceCents = 0; m.setState(m.idle); }
+    <span class="k">public void</span> insertCoin(Coin c) { m.cashBox.add(c); m.balanceCents += c.cents; }
+}</code></pre>
+
+<h3>Making change</h3>
+<ul>
+<li>Only commit a sale if the <code>CashBox</code> can return the <em>exact</em> change from the denominations it currently holds &mdash; check <em>before</em> dispensing, not after.</li>
+<li><strong>Greedy</strong> (largest coin first) is correct for canonical coin systems (1/5/10/25) but not for arbitrary sets &mdash; if denominations are configurable, use the DP coin-change algorithm, bounded by available counts.</li>
+<li>Edge cases: exact money (no change needed), machine can accept the sale but would be unable to make change for the <em>next</em> customer (accept anyway, just flag &ldquo;exact change only&rdquo;), a coin jam mid-transaction (refund what was counted).</li>
+</ul>
+
+<h3>Concurrency &amp; extensions</h3>
+<ul>
+<li>A single physical machine is effectively single-threaded at the button; but a <strong>networked</strong> fleet with a central inventory service needs the slot decrement and the payment capture to be atomic (reserve stock &rarr; charge &rarr; confirm, with a compensating release on failure).</li>
+<li>Extension points that shouldn&rsquo;t touch the core: <strong>payment method</strong> (coins / card / mobile) behind a <code>PaymentProcessor</code> interface; <strong>pricing</strong> (time-of-day, promotions) behind a <code>PricingStrategy</code>; <strong>telemetry</strong> as an observer on every transaction; multiple currencies as a <code>CashBox</code> per currency.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Cheat Sheet</summary><div class="section-body">
+<ul>
+<li>Entities: <code>VendingMachine</code>, <code>Inventory</code> &rarr; <code>Slot</code> &rarr; <code>Product</code>, <code>CashBox</code> (accept + make change), <code>State</code>.</li>
+<li>States: <strong>IDLE</strong> &rarr; <strong>HAS_MONEY</strong> &rarr; <strong>DISPENSING</strong> &rarr; IDLE; plus <strong>OUT_OF_SERVICE</strong>. Events: insertCoin, selectProduct, cancel, restock, fault.</li>
+<li><strong>State pattern</strong>: <code>State</code> interface with the 3 events; <code>VendingMachine</code> holds <code>current</code> and delegates; each state class encodes its own legal transitions &mdash; no mega-switch.</li>
+<li>Sale guard: <code>balance &ge; price</code> AND <code>inStock</code> AND <code>cashBox.canMakeChange(balance - price)</code> &mdash; checked <em>before</em> dispensing.</li>
+<li>Change: greedy OK for canonical coin sets; bounded coin-change DP for arbitrary denominations.</li>
+<li><code>cancel</code> in HAS_MONEY refunds the full balance and returns to IDLE.</li>
+<li>Extensions behind interfaces: <code>PaymentProcessor</code>, <code>PricingStrategy</code>, telemetry observer.</li>
+<li>Networked fleet: reserve stock &rarr; charge &rarr; confirm, with compensation on failure.</li>
+</ul>
+</div></details>
+
+<details class="section"><summary>Q&amp;A</summary><div class="section-body">
+<dl class="qa">
+<dt>Why model this with the State pattern instead of an <code>enum</code> and a <code>switch</code>?</dt>
+<dd>With an enum you end up with a <code>switch (state)</code> inside every method (<code>insertCoin</code>, <code>selectProduct</code>, <code>cancel</code>), and adding a state (say <code>CARD_AUTHORISING</code>) means editing every one of those switches &mdash; error-prone and the transition rules for one state are scattered across the class. The State pattern puts all of one state&rsquo;s behaviour and its outgoing transitions in a single class implementing a common <code>State</code> interface; the machine just delegates to <code>current</code>. Adding a state is adding a class; the compiler tells you which methods it must implement. It also makes illegal transitions explicit (a state simply doesn&rsquo;t act on an event) rather than a forgotten <code>case</code>.</dd>
+<dt>A customer inserts $1.00, the item is $0.65, but the machine only has quarters and no nickels/dimes. What should happen?</dt>
+<dd>The correct change is $0.35, which can&rsquo;t be made from quarters alone, so the sale must be <strong>rejected before dispensing</strong>: display something like &ldquo;unable to give change &mdash; make another selection or press cancel for refund.&rdquo; The machine should not dispense the item and short-change the customer, and it should not dispense and give $0.25 or $0.50. The <code>canMakeChange(35)</code> check is part of the sale guard precisely for this. A good machine also proactively shows an &ldquo;exact change only&rdquo; light when its low-denomination stock is depleted so customers know before inserting a large coin.</dd>
+<dt>Where does the balance/amount-inserted live &mdash; in the machine or in the state?</dt>
+<dd>In the <code>VendingMachine</code> (the context), not the state object. The state objects are typically stateless singletons that encode <em>behaviour</em>; the mutable session data &mdash; current balance, selected slot &mdash; belongs to the context so it survives state transitions. The state classes read and mutate it through their reference to the machine (<code>m.balanceCents</code>). If you instead stored balance in <code>HasMoneyState</code>, you&rsquo;d have to copy it around on every transition.</dd>
+<dt>How would you add card payments without disturbing the coin flow?</dt>
+<dd>Introduce a <code>PaymentProcessor</code> interface with <code>authorise(amount)</code> / <code>capture()</code> / <code>refund()</code>, and implementations <code>CoinPayment</code> (wraps the <code>CashBox</code>) and <code>CardPayment</code> (talks to a reader/gateway). The machine gets a payment method for the session. Card flow adds one state, <code>AUTHORISING</code> (between selection and dispensing, while the gateway responds), and the &ldquo;can we complete the sale&rdquo; guard becomes &ldquo;authorisation succeeded&rdquo; instead of &ldquo;balance &ge; price and can make change.&rdquo; The <code>Inventory</code>, <code>Slot</code>, dispensing mechanism, and the State-pattern skeleton are untouched &mdash; that&rsquo;s the sign the abstraction was placed correctly.</dd>
+</dl>
+</div></details>
+
+<details class="section"><summary>Interview Questions</summary><div class="section-body">
+<div class="qlevel">
+<h4>Basic <span class="lvl-tag">warm-up</span></h4>
+<details class="answer-reveal"><summary>List the core states and the events that cause transitions.</summary><div class="answer-box">
+States: IDLE, HAS_MONEY, DISPENSING, OUT_OF_SERVICE. Events: insert coin, select product, cancel, dispense-complete, restock, fault/empty. IDLE&rarr;HAS_MONEY on first coin; HAS_MONEY&rarr;DISPENSING on a valid selection; DISPENSING&rarr;IDLE when the item and change are released; cancel returns to IDLE with a refund.
+</div></details>
+<details class="answer-reveal"><summary>What are the responsibilities of the <code>CashBox</code>?</summary><div class="answer-box">
+Hold the coins/notes the machine has, accept and count inserted money, and compute/return change for a given amount from the denominations currently in stock (reporting failure if exact change isn&rsquo;t possible).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Intermediate <span class="lvl-tag">core</span></h4>
+<details class="answer-reveal"><summary>Give the class skeleton for the State-pattern version and show how <code>selectProduct</code> differs between IDLE and HAS_MONEY.</summary><div class="answer-box">
+<code>interface State { void insertCoin(Coin c); void selectProduct(String code); void cancel(); }</code>. <code>VendingMachine</code> holds references to singleton state instances (<code>idle</code>, <code>hasMoney</code>, <code>dispensing</code>, <code>outOfService</code>), a <code>current</code> pointer, plus <code>inventory</code>, <code>cashBox</code>, <code>balanceCents</code>; its public methods delegate to <code>current</code>. In <strong>IdleState.selectProduct</strong>: no money inserted, so it just displays the price (or &ldquo;insert coin&rdquo;) and stays in IDLE. In <strong>HasMoneyState.selectProduct</strong>: look up the slot; if null/empty &rarr; &ldquo;sold out&rdquo;; if <code>balance &lt; price</code> &rarr; &ldquo;insert more&rdquo;; if <code>!cashBox.canMakeChange(balance - price)</code> &rarr; &ldquo;no change, cancel&rdquo;; otherwise set state to DISPENSING and trigger the dispense. <strong>DispensingState</strong> drops the product, returns change, resets <code>balanceCents</code>, sets state back to IDLE. Each state implements <code>cancel()</code> appropriately (no-op in IDLE, refund in HAS_MONEY).
+</div></details>
+</div>
+<div class="qlevel">
+<h4>Advanced <span class="lvl-tag">deep</span></h4>
+<details class="answer-reveal"><summary>Design the system for a connected fleet of thousands of machines with central inventory, remote pricing, cashless payment, and telemetry &mdash; while each machine must still work during a network outage.</summary><div class="answer-box">
+<strong>On-machine core stays autonomous.</strong> Each machine keeps the full local model from this page &mdash; State pattern, local <code>Inventory</code> (authoritative for what&rsquo;s physically in the columns), local <code>CashBox</code>, a cached price list, and a cached payment config &mdash; so a selection can be completed with zero network calls. The network is an <em>enhancement</em>, never on the critical path for a cash sale. <strong>Inventory.</strong> The machine is the source of truth for stock (it knows when a coil turns and whether a jam occurred); it <em>reports</em> decrements upstream. The central service aggregates for restock planning and displays, and can push planogram changes (which product in which slot, par levels) that take effect on next restock. Reconciliation on reconnect: the machine replays its buffered transaction log; the server treats machine counts as truth. <strong>Pricing.</strong> Central service owns price/promo rules and pushes a versioned price list to each machine; the machine always uses its last-known-good list if offline. A <code>PricingStrategy</code> on the machine evaluates time-of-day/promo locally against that list &mdash; no per-sale server call. <strong>Cashless payment.</strong> <code>PaymentProcessor</code> interface with <code>CoinPayment</code> and <code>CardPayment</code>/<code>MobilePayment</code>. Card flow adds an <code>AUTHORISING</code> state; if the gateway is unreachable, the reader can do a store-and-forward offline authorisation up to a floor limit (risk-bounded) or simply decline and fall back to coins. Capture happens after successful dispense; a failed dispense triggers an automatic <code>refund()</code>/void. <strong>Telemetry.</strong> An observer on every transaction and fault writes events to a local durable queue; a background uploader ships them when connectivity allows (at-least-once, idempotent by event id). Health/heartbeat, temperature, door events, coin/jam faults all flow the same way. <strong>Outage behaviour, explicitly:</strong> cash sales fully work; cashless works if the reader supports offline auth, else disabled; prices/planogram frozen at last sync; all events buffered. On reconnect: push buffered events, pull price/planogram updates, reconcile stock. <strong>Consistency model:</strong> the physical machine wins for stock and cash; the server wins for pricing and configuration; payments use reserve/charge/confirm with compensation. <strong>Extension seams unchanged:</strong> adding a new payment type, a loyalty program (another observer + a <code>DiscountStrategy</code>), or a new currency doesn&rsquo;t touch the State machine or the dispensing mechanism. The guiding principle: each machine is a self-sufficient embedded system implementing the LLD from this page; the cloud layer adds fleet management around it without becoming a runtime dependency of a sale.
+</div></details>
+</div>
+</div></details>
+
+</div></div>
+</section>
+<!-- /TOPIC:lld:vending-machine -->
+
 
 <!-- TOPIC:lld:logging-library -->
 <section class="view topic" id="v-lld-logging-library" data-skill="lld">
@@ -27234,6 +27444,27 @@ Safety is layered and mostly <em>not</em> in the dispatch software. (1) <strong>
 <p class="subtitle">Levels, sinks, formatters, and getting logging off the hot path.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A logging library is a small design with several clean extension points, which is why it&rsquo;s a common LLD exercise. This page covers the pieces: <strong>levels</strong> (TRACE&hellip;FATAL) and the level check as the cheap early-out, <strong>sinks/appenders</strong> (console, file, rotating file, network) as pluggable outputs, <strong>formatters</strong> (text, JSON/structured) decoupled from sinks, a <strong>filter</strong> chain, and the concurrency design &mdash; an <strong>async</strong> path where producers push to a lock-free ring buffer and a background thread drains it, so logging never blocks the hot path.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 155" role="img" aria-labelledby="d-lldlog-t">
+<title id="d-lldlog-t">Log record path: level gate, then async ring buffer, then a background thread formats and fans out to sinks</title>
+<rect class="d-box" x="14" y="26" width="70" height="20"/><text class="d-t-sm" x="49" y="39" text-anchor="middle">log.info()</text>
+<rect class="d-box-soft" x="100" y="26" width="80" height="20"/><text class="d-t-sm" x="140" y="39" text-anchor="middle">level &ge; min?</text>
+<rect class="d-box-alt" x="196" y="26" width="110" height="20"/><text class="d-t-sm" x="251" y="39" text-anchor="middle">ring buffer (lock-free)</text>
+<path class="d-line" d="M84 36 L98 36" marker-end="url(#lldlog-ah)"/><path class="d-line" d="M180 36 L194 36" marker-end="url(#lldlog-ah)"/><text class="d-t-sm" x="120" y="58">no &rarr; drop, ~0 cost</text>
+<path class="d-line" d="M306 36 L340 36" marker-end="url(#lldlog-ah)"/>
+<rect class="d-box" x="344" y="18" width="120" height="36" rx="4"/><text class="d-t-sm" x="404" y="32" text-anchor="middle">bg thread:</text><text class="d-t-sm" x="404" y="46" text-anchor="middle">format + filter</text>
+<rect class="d-box-soft" x="344" y="70" width="70" height="18"/><text class="d-t-sm" x="379" y="83" text-anchor="middle">console</text>
+<rect class="d-box-soft" x="344" y="92" width="70" height="18"/><text class="d-t-sm" x="379" y="105" text-anchor="middle">rotating file</text>
+<rect class="d-box-soft" x="344" y="114" width="70" height="18"/><text class="d-t-sm" x="379" y="127" text-anchor="middle">network</text>
+<path class="d-line" d="M404 54 L400 68" marker-end="url(#lldlog-ah)"/><path class="d-line" d="M404 54 L390 90" marker-end="url(#lldlog-ah)"/><path class="d-line" d="M404 54 L390 112" marker-end="url(#lldlog-ah)"/>
+<defs><marker id="lldlog-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="150">Formatter (text / JSON) is separate from Sink (where). Level check happens first so a disabled log is nearly free. Buffer-full policy: block / drop-oldest / drop-new.</text>
+</svg>
+<figcaption>Three decoupled roles &mdash; <strong>filter</strong> (should this record pass?), <strong>formatter</strong> (how to render it), <strong>sink</strong> (where it goes) &mdash; plus an async hand-off so the calling thread never waits on I/O.</figcaption>
+</figure>
+
+
 <h3>Core pieces</h3>
 <table>
 <tr><th>Concept</th><th>Role</th></tr>
@@ -27369,6 +27600,8 @@ Hierarchical named loggers. A logger's effective level is its own configured lev
 <p class="subtitle">Design the object model so concurrency is contained, not sprinkled everywhere.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers the concurrency concerns that show up inside an otherwise object-oriented design. The cheapest safe design is <strong>no shared mutable state</strong> &mdash; <strong>immutability</strong> (return new objects, never mutate) and <strong>confinement</strong> (one thread owns the object). When sharing is unavoidable it covers the <strong>monitor object</strong> pattern (the object guards its own state with a lock, callers see a normal API), keeping <strong>lock scope</strong> tight and consistent to avoid deadlock, safe lazy initialisation and the thread-safe <strong>singleton</strong> (and why the double-checked-locking version was historically broken).</p>
+
 <h3>Strategy hierarchy (cheapest to most complex)</h3>
 <ol>
 <li><strong>Immutability</strong> &mdash; an object that never changes after construction is thread-safe with no locks. Value objects, config, events. Return new instances instead of mutating.</li>
@@ -27495,6 +27728,8 @@ Copy-on-write: store listeners in an immutable array/list; <code>addListener</co
 <p class="subtitle">Just enough structure now, and cheap seams for the changes you'll actually make.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Designs are wrong before they are right; this page is about changing them safely and knowing when <em>not</em> to. It covers <strong>YAGNI</strong> vs genuine extensibility, the <strong>rule of three</strong> (don&rsquo;t abstract until the third occurrence, when the real shape is visible), spotting <strong>refactoring seams</strong> where behaviour can be extracted, incremental moves (extract method &rarr; extract class &rarr; introduce interface), and recognising <strong>over-engineering</strong> &mdash; speculative interfaces, premature patterns, configurability nobody asked for &mdash; and how to talk about the trade-off in an interview.</p>
+
 <h3>YAGNI vs extensibility</h3>
 <ul>
 <li><strong>YAGNI</strong> ("You Aren't Gonna Need It"): don't build a plugin framework, generic rules engine, or config-driven abstraction for a single case that isn't varying yet. Speculative flexibility usually guesses the wrong axis and adds cost forever.</li>
@@ -46248,6 +46483,7 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       ["lru-cache",         "Design an LRU / LFU Cache",          "O(1) get/put, hashmap + doubly linked list, eviction policy, thread-safety, TTL."],
       ["rate-limiter",      "Design a Rate Limiter",              "Token bucket, leaky bucket, fixed/sliding window, distributed, per-key, headers."],
       ["elevator",          "Design an Elevator System",          "Requests, scheduling (SCAN/LOOK), multi-car dispatch, state machine, edge cases."],
+      ["vending-machine",   "Design a Vending Machine",           "State pattern, IDLE/HAS_MONEY/DISPENSING, inventory & slots, making change, card payment & fleet extension."],
       ["logging-library",   "Design a Logging Library",           "Levels, sinks/appenders, formatters, async ring buffer, filtering, structured logs."],
       ["concurrency-lld",   "Thread-Safety in Low-Level Design",  "Immutability, confinement, thread-safe singletons, monitor objects, lock scope."],
       ["evolving-design",   "Evolving a Design & Over-Engineering","YAGNI vs extensibility, rule of three, refactoring seams, when patterns pay off."]
