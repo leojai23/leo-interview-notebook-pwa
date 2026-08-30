@@ -34693,6 +34693,8 @@ Private, App, and Global.
 <p class="subtitle">Three signal types with different strengths &mdash; know which question each one answers cheaply.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Observability is usually split into three signal types with different strengths. <strong>Metrics</strong> are cheap numeric time series &mdash; great for &ldquo;is it healthy? what&rsquo;s the trend?&rdquo; and for alerting, but they can&rsquo;t tell you about one specific request. <strong>Logs</strong> are timestamped event records &mdash; rich detail for &ldquo;what exactly happened here&rdquo;, but costly at volume and hard to aggregate. <strong>Traces</strong> follow one request across services &mdash; the tool for &ldquo;where did the latency go in this call&rdquo;. This page covers what each is good and bad at, their very different cost profiles, and the events/profiles that sit alongside them.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 100" role="img" aria-labelledby="d-mon3p-t">
 <title id="d-mon3p-t">Metrics detect, traces localise, logs explain</title>
@@ -34839,6 +34841,24 @@ A log field (or span attribute) &mdash; it's high-cardinality.
 <p class="subtitle">Counter, gauge, histogram, summary &mdash; picking the wrong one makes the data lie.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A metric&rsquo;s <strong>type</strong> tells you how to query it. A <strong>counter</strong> only ever goes up (total requests, bytes sent) &mdash; you never graph it raw, you graph <code>rate()</code> of it. A <strong>gauge</strong> goes up and down (temperature, queue depth, memory) &mdash; graph it directly. A <strong>histogram</strong> buckets observations (request durations) so you can compute quantiles server-side with <code>histogram_quantile()</code> and aggregate across instances. A <strong>summary</strong> computes quantiles client-side (can&rsquo;t be aggregated). This page covers each, the counter-reset problem <code>rate()</code> handles, and choosing bucket boundaries.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-monmt-t">
+<title id="d-monmt-t">Counter only rises and is graphed via rate(); gauge moves both ways; histogram sorts observations into buckets</title>
+<text class="d-t-b" x="14" y="14">counter (monotonic)</text>
+<path class="d-line" d="M14 60 L60 52 L100 40 L150 30 L170 24"/><text class="d-t-sm" x="14" y="76">requests_total &mdash; graph <tspan class="d-t-mono">rate(...[5m])</tspan>, never raw. rate() handles resets.</text>
+<text class="d-t-b" x="270" y="14">gauge (up and down)</text>
+<path class="d-line" d="M270 40 L300 55 L330 30 L360 50 L390 35 L420 55"/><text class="d-t-sm" x="270" y="76">queue_depth, mem_bytes &mdash; graph directly.</text>
+<text class="d-t-b" x="14" y="100">histogram (buckets, server-aggregatable)</text>
+<rect class="d-box-soft" x="14" y="106" width="30" height="30"/><rect class="d-box-soft" x="48" y="96" width="30" height="40"/><rect class="d-box-soft" x="82" y="116" width="30" height="20"/><rect class="d-box-soft" x="116" y="126" width="30" height="10"/>
+<text class="d-t-sm" x="14" y="148">le=0.1   le=0.3   le=1   le=+Inf   &rarr; <tspan class="d-t-mono">histogram_quantile(0.99, ...)</tspan></text>
+<text class="d-t-sm" x="230" y="120">summary: quantiles computed in the client</text>
+<text class="d-t-sm" x="230" y="136">&mdash; precise per instance, but <tspan class="d-t-b">cannot</tspan> be aggregated across instances.</text>
+</svg>
+<figcaption>Pick the type by behaviour: monotonic total &rarr; counter (rate it); level &rarr; gauge; a distribution you need percentiles from and want to sum across instances &rarr; histogram.</figcaption>
+</figure>
+
+
 <h3>The four types (Prometheus model)</h3>
 <table>
 <tr><th>Type</th><th>Semantics</th><th>Query with</th></tr>
@@ -34997,6 +35017,8 @@ No &mdash; quantiles are not aggregatable.
 <p class="subtitle">Three overlapping checklists for "what should I actually measure" &mdash; and when each fits.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Rather than alerting on every metric, well-run systems watch a small standard set. <strong>RED</strong> (for request-driven services): <strong>Rate</strong>, <strong>Errors</strong>, <strong>Duration</strong>. <strong>USE</strong> (for resources like CPU, disk, queues): <strong>Utilisation</strong>, <strong>Saturation</strong>, <strong>Errors</strong>. Google&rsquo;s <strong>four golden signals</strong>: <strong>latency, traffic, errors, saturation</strong>. This page covers what each captures, why they&rsquo;re chosen (they catch most user-visible problems with few metrics), and which framework fits which component &mdash; RED at the service edge, USE for the machinery underneath.</p>
+
 <h3>The three frameworks</h3>
 <table>
 <tr><th>Framework</th><th>Measures</th><th>Best for</th></tr>
@@ -35144,6 +35166,8 @@ Saturation.
 <p class="subtitle">Turn "is it working?" into a number, a target, and a budget you can spend.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">An <strong>SLI</strong> is a measured ratio of good events to valid events (e.g. requests served &lt; 300&nbsp;ms &divide; all requests). An <strong>SLO</strong> is a target for that SLI over a window (99.9% over 28 days). The gap between the SLO and 100% is the <strong>error budget</strong> &mdash; the amount of failure you&rsquo;re allowed, which you can &ldquo;spend&rdquo; on releases and risk. This page covers writing good SLIs, choosing targets and windows, <strong>burn-rate alerting</strong> (page when you&rsquo;re consuming budget fast), error-budget policy (freeze features when it&rsquo;s exhausted), and how SLOs differ from a contractual SLA.</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 100" role="img" aria-labelledby="d-monslo-t">
 <title id="d-monslo-t">SLO 99.9% -> a small error budget you spend on releases and incidents</title>
@@ -35311,6 +35335,8 @@ A ratio of good events to valid events (0&ndash;100%).
 <p class="subtitle">Every page should be urgent, actionable, and about a real user-facing problem.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">Good alerting wakes someone only when a human must act now. This page covers the core principles: <strong>alert on symptoms, not causes</strong> (page on &ldquo;users see errors&rdquo;, not &ldquo;CPU is 90%&rdquo;), classify by response &mdash; <strong>page</strong> (urgent, now), <strong>ticket</strong> (soon, business hours), <strong>log/dashboard</strong> (context only) &mdash; every page must be <strong>actionable</strong> and link a <strong>runbook</strong>, and <strong>multi-window multi-burn-rate</strong> alerts that fire fast on a severe burn but need a longer confirmation for a slow one. The goal is a low, trustworthy page rate.</p>
+
 <h3>The test for a page</h3>
 <p>Before something is allowed to page a human at 3am, it should pass all of:</p>
 <ul>
@@ -35481,6 +35507,8 @@ A runbook (and it should have a named owner).
 <p class="subtitle">A dashboard is a tool for answering one question fast &mdash; not a museum of every metric.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A dashboard should answer <strong>one question</strong>. This page covers designing for that: start with an <strong>overview</strong> (the service&rsquo;s RED / golden signals, is it healthy?) and let the reader <strong>drill down</strong> to per-endpoint, per-instance detail; put the most important panel top-left; keep <strong>units and colour</strong> consistent (red = bad everywhere); add <strong>annotations</strong> for deploys and incidents; and template with variables so one dashboard serves every service/region. It also covers what <em>not</em> to do &mdash; the 60-panel wall nobody reads.</p>
+
 <h3>Start from the question</h3>
 <ul>
 <li>Each dashboard answers <strong>one question</strong>: "is service X healthy?", "what is the DB doing?", "how is the fleet?".</li>
@@ -35637,6 +35665,24 @@ Percentiles (p50/p95/p99) &mdash; the average hides the tail.
 <p class="subtitle">Every unique label-value combination is a time series &mdash; and series count is what a metrics system pays for.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">The number of distinct time series a metric produces is the <strong>product</strong> of the number of values each of its labels can take &mdash; and cost (memory, storage, query time) scales with that number. This page covers <strong>cardinality explosion</strong>: putting a user ID, email, full URL, or trace ID in a label can create millions of series from one metric and fall over your monitoring system. It covers which labels are safe (bounded sets: method, status class, region), how to bound or drop high-cardinality labels, <strong>recording rules</strong> to pre-aggregate, and downsampling/retention to control long-term cost.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 145" role="img" aria-labelledby="d-moncard-t">
+<title id="d-moncard-t">Series count is the product of label value counts; adding a high-cardinality label explodes it</title>
+<text class="d-t-mono d-t-b" x="14" y="16">http_requests_total{ method, status, region }</text>
+<rect class="d-box-soft" x="14" y="24" width="90" height="20"/><text class="d-t-sm" x="59" y="37" text-anchor="middle">method: 5</text>
+<rect class="d-box-soft" x="120" y="24" width="90" height="20"/><text class="d-t-sm" x="165" y="37" text-anchor="middle">status: 15</text>
+<rect class="d-box-soft" x="226" y="24" width="90" height="20"/><text class="d-t-sm" x="271" y="37" text-anchor="middle">region: 4</text>
+<text class="d-t-accent" x="330" y="38">= 5 x 15 x 4 = 300 series  (fine)</text>
+<text class="d-t-mono d-t-b" x="14" y="76">... + { user_id }   or  { url } with IDs   or  { trace_id }</text>
+<rect class="d-box-alt" x="14" y="84" width="140" height="20"/><text class="d-t-sm" x="84" y="97" text-anchor="middle">user_id: 2,000,000</text>
+<text class="d-t-accent" x="170" y="98">300 x 2,000,000 = 600M series &rarr; OOM</text>
+<text class="d-t-sm" x="14" y="128">Safe labels = <tspan class="d-t-b">bounded, low-cardinality</tspan> sets (method, status class, route template, region). Never: user/email/IP/full URL/trace id.</text>
+</svg>
+<figcaption>Each label multiplies the series count by its number of distinct values. One unbounded label (user id, raw URL, trace id) turns a cheap metric into one that can take down the TSDB.</figcaption>
+</figure>
+
+
 <h3>What cardinality is</h3>
 <ul>
 <li>A <strong>time series</strong> is identified by its metric name + the full set of label key/value pairs. <code>http_requests_total{method="GET",route="/x",status="200"}</code> is one series.</li>
@@ -35790,6 +35836,29 @@ In logs and/or as a trace/span attribute.
 <p class="subtitle">How measurements get from a process into a monitoring backend &mdash; and why Prometheus pulls.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">How metrics get from a process into the monitoring system. This page covers <strong>pull</strong> (Prometheus scrapes a <code>/metrics</code> HTTP endpoint on each target on a timer &mdash; simple, target health is visible, needs <strong>service discovery</strong> to know what to scrape) vs <strong>push</strong> (the app sends metrics out &mdash; StatsD, OTLP; needed for short-lived jobs, which is what the <strong>Pushgateway</strong> is for). It also covers <strong>exporters</strong> (translate a system&rsquo;s stats to the metrics format), the <strong>OpenTelemetry Collector</strong> as a vendor-neutral pipeline, and <strong>remote write</strong> to a long-term store.</p>
+<figure class="diagram">
+<svg viewBox="0 0 520 150" role="img" aria-labelledby="d-monsa-t">
+<title id="d-monsa-t">Pull: Prometheus scrapes /metrics on discovered targets. Push: short-lived jobs send to a gateway or OTLP endpoint</title>
+<text class="d-t-b" x="14" y="14">pull (Prometheus)</text>
+<rect class="d-box-alt" x="14" y="20" width="90" height="24" rx="4"/><text class="d-t-sm" x="59" y="35" text-anchor="middle">Prometheus</text>
+<rect class="d-box" x="150" y="14" width="90" height="16"/><rect class="d-box" x="150" y="34" width="90" height="16"/>
+<text class="d-t-sm" x="195" y="26" text-anchor="middle">app /metrics</text><text class="d-t-sm" x="195" y="46" text-anchor="middle">node_exporter</text>
+<path class="d-line" d="M104 28 L148 22" marker-end="url(#monsa-ah)"/><path class="d-line" d="M104 34 L148 42" marker-end="url(#monsa-ah)"/>
+<text class="d-t-sm" x="250" y="28">scrape every 15s via service discovery;</text>
+<text class="d-t-sm" x="250" y="44">a target that&rsquo;s down is visible (up=0).</text>
+<text class="d-t-b" x="14" y="82">push</text>
+<rect class="d-box" x="14" y="88" width="100" height="20"/><text class="d-t-sm" x="64" y="101" text-anchor="middle">cron / batch job</text>
+<rect class="d-box-soft" x="150" y="88" width="110" height="20"/><text class="d-t-sm" x="205" y="101" text-anchor="middle">Pushgateway / OTLP</text>
+<rect class="d-box-alt" x="300" y="88" width="90" height="20"/><text class="d-t-sm" x="345" y="101" text-anchor="middle">backend</text>
+<path class="d-line" d="M114 98 L148 98" marker-end="url(#monsa-ah)"/><path class="d-line" d="M260 98 L298 98" marker-end="url(#monsa-ah)"/>
+<defs><marker id="monsa-ah" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto"><path class="d-fill" d="M0 0 L8 4 L0 8 Z"/></marker></defs>
+<text class="d-t-sm" x="14" y="132">Use push only where pull can&rsquo;t reach: short-lived jobs, serverless, client-side. The <tspan class="d-t-b">OTel Collector</tspan> can receive both and fan out to any backend.</text>
+</svg>
+<figcaption>Pull is the default &mdash; the scraper knows what should exist (service discovery) and sees target health directly. Push fills the gap for jobs too short-lived to be scraped.</figcaption>
+</figure>
+
+
 <h3>Pull vs push</h3>
 <table>
 <tr><th></th><th>Pull (Prometheus scrape)</th><th>Push (StatsD, OTLP push, remote_write)</th></tr>
@@ -35972,6 +36041,8 @@ Service-level batch/cron jobs that exit before Prometheus can scrape them.
 <p class="subtitle">Follow one request as a tree of timed spans across every service it touches.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">A <strong>trace</strong> records the path of a single request through a distributed system as a tree of <strong>spans</strong> &mdash; each span a timed unit of work (an HTTP handler, a DB query) with a name, start/end, attributes, and a link to its parent. This page covers <strong>context propagation</strong> (passing the trace ID and parent span ID across service boundaries via headers &mdash; W3C <code>traceparent</code>), <strong>sampling</strong> (head-based: decide at the start; tail-based: decide after seeing the whole trace, keep the slow/errored ones), <strong>OpenTelemetry</strong> as the instrumentation standard, and linking spans to logs and metrics (exemplars).</p>
+
 <figure class="diagram">
 <svg viewBox="0 0 520 110" role="img" aria-labelledby="d-montr-t">
 <title id="d-montr-t">A trace is a waterfall of timed spans across services</title>
@@ -36153,6 +36224,8 @@ Tail-based sampling.
 <p class="subtitle">Respond in a structured way, learn without blame, and keep the pager survivable.</p>
 
 <details class="section" open><summary>Notes</summary><div class="section-body">
+<p class="topic-intro">This page covers what happens around an outage. <strong>Severity</strong> levels set the response; an <strong>incident commander</strong> coordinates while others investigate and communicate. Afterwards, a <strong>blameless postmortem</strong> establishes the timeline, contributing factors (plural &mdash; not a single &ldquo;root cause&rdquo;), and concrete action items with owners; the point is fixing the system, not the person. It also covers the metrics &mdash; <strong>MTTD</strong> (detect), <strong>MTTR</strong> (resolve) &mdash; and the ongoing work of <strong>tuning noisy alerts</strong> and protecting <strong>on-call health</strong> (page budgets, handoffs, follow-the-sun).</p>
+
 <h3>Incident response structure</h3>
 <ul>
 <li><strong>Severity</strong> levels (SEV1&ndash;4 / P1&ndash;P4): defined by user impact and scope, not by how stressed anyone is. SEV1 = major outage / data loss / security; lower sevs = degraded / partial / single-tenant.</li>
