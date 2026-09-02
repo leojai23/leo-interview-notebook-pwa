@@ -47648,13 +47648,11 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       g[1].forEach(function (slug) {
         var s = SKILLS[slug];
         var ready = isReady(slug);
-        var status = ready
-          ? '<span class="status">Ready &middot; ' + TOPICS[slug].length + ' topics</span>'
+        var extra = ready
+          ? (function () { var sp = skillProgress(slug); return progBar(sp.done, sp.total); })()
           : '<span class="status soon">' + ((PLANNED[slug] || []).length || "") + ' topics planned</span>';
-        var pr = "";
-        if (ready) { var sp = skillProgress(slug); pr = progBar(sp.done, sp.total); }
         html += '<li><a class="skill-link" href="#/' + slug + '">' + s.name + '</a>' +
-                '<p>' + s.blurb + '</p>' + status + pr + '</li>';
+                '<p>' + s.blurb + '</p>' + extra + '</li>';
       });
       html += '</ul>';
     });
