@@ -127,6 +127,45 @@ a:hover { text-decoration: underline; }
   .theme-picker { width: 100%; margin-left: 0; }
   .theme-picker button { flex: 1; padding: 0.32rem 0.3rem; font-size: 0.62rem; }
 }
+.settings-btn {
+  font: 600 0.9rem/1 Arial, sans-serif;
+  color: #fff; background: rgba(255,255,255,0.12);
+  border: 1px solid rgba(255,255,255,0.28); border-radius: 4px;
+  padding: 0.3rem 0.55rem; cursor: pointer; align-self: center;
+}
+.settings-btn:hover { background: rgba(255,255,255,0.22); }
+.settings-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+  z-index: 1000; align-items: center; justify-content: center; padding: 1rem;
+}
+.settings-overlay.open { display: flex; }
+.settings-panel {
+  background: var(--bg-panel); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; box-shadow: var(--shadow); max-width: 360px; width: 100%;
+  padding: 1.1rem 1.25rem 1.3rem; font-family: Arial, sans-serif;
+}
+.settings-panel h2 {
+  margin: 0 0 0.9rem; padding-bottom: 0.5rem; font-size: 1.05rem;
+  border-bottom: 2px solid var(--accent-soft); color: var(--accent);
+}
+.settings-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 0.75rem; margin: 0.7rem 0; font-size: 0.88rem;
+}
+.settings-row .label { color: var(--text-soft); }
+.settings-row .value { font-weight: bold; }
+.settings-panel button.settings-action {
+  display: block; width: 100%; margin-top: 0.7rem;
+  font: 600 0.82rem/1 Arial, sans-serif; letter-spacing: 0.02em;
+  color: var(--text); background: var(--highlight);
+  border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.55rem 0.7rem; cursor: pointer;
+}
+.settings-panel button.settings-action:hover { background: var(--accent-soft); }
+.settings-panel button.settings-close-x {
+  float: right; background: none; border: none; color: var(--text-soft);
+  font-size: 1.1rem; line-height: 1; cursor: pointer; padding: 0.1rem 0.3rem;
+}
 .site-header .brand { font-size: 1.1rem; font-weight: bold; letter-spacing: 0.02em; }
 @media (max-width: 480px) { .site-header .brand { font-size: 1rem; } .crumbs { font-size: 0.78rem; } }
 .site-header .brand .sub { display:block; font-family: Arial, sans-serif; font-size: 0.72rem; font-weight: normal; opacity: 0.82; margin-top: 0.12rem; }
@@ -375,8 +414,22 @@ footer.site-footer { text-align: center; font-family: Arial, sans-serif; font-si
       <button type="button" data-set-theme="dark">Dark</button>
       <button type="button" data-set-theme="night">Night</button>
     </div>
+    <button type="button" class="settings-btn" id="settings-open-btn" aria-haspopup="dialog" aria-controls="settings-overlay" title="Settings">&#9881;</button>
   </div>
 </header>
+
+<div class="settings-overlay" id="settings-overlay" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+  <div class="settings-panel">
+    <button type="button" class="settings-close-x" id="settings-close-x" aria-label="Close settings">&times;</button>
+    <h2 id="settings-title">Settings</h2>
+    <div class="settings-row">
+      <span class="label">Version</span>
+      <span class="value" id="settings-version">leo-interview-v67</span>
+    </div>
+    <button type="button" class="settings-action" id="settings-check-updates">Check for updates</button>
+    <button type="button" class="settings-action" id="settings-close-app">Close app</button>
+  </div>
+</div>
 
 <main id="main">
 
@@ -47823,6 +47876,70 @@ Because optics are a poor proxy for capability, and confusing them leads to bad 
       });
     }
   })();
+
+  // ---- settings panel (version / check for updates / close app) ----
+  var APP_VERSION = "leo-interview-v67"; // keep in sync with sw.js CACHE_NAME
+  (function settingsPanel() {
+    var openBtn = document.getElementById("settings-open-btn");
+    var overlay = document.getElementById("settings-overlay");
+    var closeX = document.getElementById("settings-close-x");
+    var versionEl = document.getElementById("settings-version");
+    var updateBtn = document.getElementById("settings-check-updates");
+    var closeAppBtn = document.getElementById("settings-close-app");
+
+    if (versionEl) versionEl.textContent = APP_VERSION;
+
+    function open() { if (overlay) overlay.classList.add("open"); }
+    function close() { if (overlay) overlay.classList.remove("open"); }
+
+    if (openBtn) openBtn.addEventListener("click", open);
+    if (closeX) closeX.addEventListener("click", close);
+    if (overlay) {
+      overlay.addEventListener("click", function (e) {
+        if (e.target === overlay) close();
+      });
+    }
+    document.addEventListener("keydown", function (e) {
+      if (e.key === "Escape" && overlay && overlay.classList.contains("open")) close();
+    });
+
+    if (updateBtn) updateBtn.addEventListener("click", function () { window.__checkForUpdates(); });
+    if (closeAppBtn) closeAppBtn.addEventListener("click", function () { window.__confirmAppClose(); });
+  })();
+
+  // ---- close confirmation (avoids double-prompt with beforeunload) ----
+  (function () {
+    var __intentionalClose = false;
+    window.addEventListener("beforeunload", function (e) {
+      if (__intentionalClose) return;
+      e.preventDefault();
+      e.returnValue = "";
+    });
+    window.__confirmAppClose = function () {
+      if (confirm("Close this notebook? Your reading progress is already saved automatically.")) {
+        __intentionalClose = true;
+        window.close();
+      }
+    };
+  })();
+
+  // ---- check for updates (service worker) ----
+  window.__checkForUpdates = function () {
+    if (!("serviceWorker" in navigator)) { alert("Service workers are not supported in this browser."); return; }
+    navigator.serviceWorker.getRegistration().then(function (reg) {
+      if (!reg) { alert("No service worker registered."); return; }
+      reg.update().then(function () {
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: "SKIP_WAITING" });
+          reg.waiting.addEventListener("statechange", function () {
+            if (reg.waiting === null) location.reload();
+          });
+        } else {
+          alert("You're on the latest version (" + APP_VERSION + ").");
+        }
+      });
+    });
+  };
 
   // ---- service worker (no-op on file://) ----
   if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
